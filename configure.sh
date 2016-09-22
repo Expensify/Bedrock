@@ -36,6 +36,11 @@ do
   echo "Using plugin: ${PLUGIN}"
 done
 
+for INCLUDE in "${INCLUDES[@]}"
+do
+  echo "Using include: ${INCLUDE}"
+done
+
 # Build the library.
 cd mbedtls
 make && cp library/*.a ../$BINDIR
@@ -69,7 +74,16 @@ CFLAGS += -DSVERSION="\"$(VERSION)\""
 CFLAGS += -I$(PROJECT) -Ilibstuff -g
 
 CFLAGS += -Imbedtls/include
+EOF
 
+for INCLUDE in "${INCLUDES[@]}"
+do
+cat >> Makefile << EOF
+CFLAGS += -I${INCLUDE}
+EOF
+done
+
+cat >> Makefile << "EOF"
 # Enables all warnings
 CFLAGS += -Wall
 

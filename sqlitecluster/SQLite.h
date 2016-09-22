@@ -1,6 +1,6 @@
 // SQLite.h
 #pragma once
-#include <sqlite3.h>
+#include <libstuff/sqlite3.h>
 
 // SQLite
 class SQLite
