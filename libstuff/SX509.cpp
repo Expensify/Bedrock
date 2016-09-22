@@ -22,13 +22,13 @@ SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt)
     mbedtls_pk_init(&(x509->pk));
     try {
         // Load and initialize this key
-        if (mbedtls_pk_parse_key(&x509->pk, (unsigned char *) pemPtr, (int) strlen(pemPtr), NULL, 0)) {
+        if (mbedtls_pk_parse_key(&x509->pk, (unsigned char *) pemPtr, (int) strlen(pemPtr) + 1, NULL, 0)) {
             throw "parsing key";
         }
-        if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char *) srvCrtPtr, (int) strlen(srvCrtPtr))) {
+        if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char *) srvCrtPtr, (int) strlen(srvCrtPtr) + 1)) {
             throw "parsing server certificate";
         }
-        if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char *) caCrtPtr, (int) strlen(caCrtPtr))) {
+        if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char *) caCrtPtr, (int) strlen(caCrtPtr) + 1)) {
             throw "parsing CA certificate";
         }
         return x509;

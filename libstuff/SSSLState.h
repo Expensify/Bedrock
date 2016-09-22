@@ -11,6 +11,7 @@ struct SSSLState
     mbedtls_ssl_context     ssl;
 
     SSSLState();
+    ~SSSLState();
 };
 
 // SSL helpers

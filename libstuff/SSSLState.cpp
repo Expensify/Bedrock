@@ -15,7 +15,13 @@ const char* g_S_dhm_P =
 const char* g_S_dhm_G = "4";
 
 SSSLState::SSSLState() {
-    ssl.conf = &conf;
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_ssl_init(&ssl);
+}
+
+SSSLState::~SSSLState() {
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
 }
 
 // --------------------------------------------------------------------------
@@ -25,10 +31,12 @@ SSSLState* SSSLOpen(int s, SX509* x509)
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
-    mbedtls_ssl_init(&state->ssl);
     mbedtls_entropy_init(&state->ec);
 
-    mbedtls_ssl_conf_endpoint(&state->conf, MBEDTLS_SSL_IS_CLIENT);
+    mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+
+    mbedtls_ssl_setup(&state->ssl, &state->conf);
+
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_entropy_func, &state->ec);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
@@ -89,12 +97,12 @@ int SSSLRecv(SSSLState* sslState, char* buffer, int length)
 
     case MBEDTLS_ERR_NET_CONN_RESET:
         // connection reset by peer
-        SINFO("SSL reports POLARSSL_ERR_NET_CONN_RESET");
+        SINFO("SSL reports MBEDTLS_ERR_NET_CONN_RESET");
         return -1;
 
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
         // the connection is about to be closed
-        SINFO("SSL reports POLARSSL_ERR_SSL_PEER_CLOSE_NOTIFY");
+        SINFO("SSL reports MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY");
         return -1;
 
     default:
