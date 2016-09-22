@@ -33,7 +33,7 @@ void BedrockPlugin_Jobs::upgradeDatabase( BedrockNode* node, SQLite& db )
 {
     // Create or verify the jobs table
     bool ignore;
-    while( !db.verifyTable( "jobs",
+    SASSERT(db.verifyTable("jobs",
         "CREATE TABLE jobs ( "
             "created  TIMESTAMP NOT NULL, "
             "jobID    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
@@ -44,23 +44,18 @@ void BedrockPlugin_Jobs::upgradeDatabase( BedrockNode* node, SQLite& db )
             "repeat   TEXT NOT NULL, "
             "data     TEXT NOT NULL, "
             "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + " ) ",
-
-        ignore
-    ) ) {
-        // If it couldn't create or verify, something's wrong
-        // **FIXME: Remove this after upgrade
-        SASSERT( db.write( "ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ";" ) );
-    }
+        ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
-    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsState   ON jobs ( state   );" ) );
-    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsName    ON jobs ( name    );" ) );
-    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsNextRun ON jobs ( nextRun );" ) );
-    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsLastRun ON jobs ( lastRun );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsState    ON jobs ( state    );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsNextRun  ON jobs ( nextRun  );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsLastRun  ON jobs ( lastRun  );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsPriority ON jobs ( priority );" ) );
 
     // This index is used to optimize the Bedrock::Jobs::GetJob call.
-    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsStateNextRunPriorityName ON jobs ( state, nextRun, priority, name );" ) );
+    SASSERT( db.write( "CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );" ) );
 }
 
 // ==========================================================================
@@ -100,7 +95,6 @@ bool BedrockPlugin_Jobs::peekCommand( BedrockNode* node, SQLite& db, BedrockNode
                       "WHERE state='QUEUED' "
                       "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
                       "  AND name GLOB " + SQ(name) + " " +
-                      "ORDER BY priority DESC, nextRun ASC "
                       "LIMIT 1;", result ) ) {
             throw "502 Query failed";
         }
@@ -262,7 +256,15 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
             throw "402 Malformed repeat";
 
         // If no priority set, set it
-        int priority = request.calc("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
+        int priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
+
+        // We'd initially intended for any value to be allowable here, but for performance reasons, we currently
+        // will only allow specific values to try and keep queries fast. If you pass an invalid value, we'll throw
+        // here so that the caller can know that he did something wrong rather than having his job sit unprocessed
+        // in the queue forever. Hopefully we can remove this restriction in the future.
+        if (priority != 0 && priority != 500 && priority != 1000) {
+            throw "402 Invalid priority value";
+        }
 
         // Create this new job
         db.write( "INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority ) "
@@ -295,13 +297,42 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
         // re-execute the query for real now.
         SQResult result;
         const string& name = request["name"];
-        if( !db.read( "SELECT jobID, name, data "
-                      "FROM jobs "
-                      "WHERE state='QUEUED' "
-                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
-                      "  AND name GLOB " + SQ(name) + " " +
-                      "ORDER BY priority DESC, nextRun ASC "
-                      "LIMIT 1;", result ) ) {
+
+        string query = "SELECT jobID, name, data FROM ( "
+                               "SELECT * FROM "
+                               "(SELECT jobID, name, data, priority "
+                               "FROM jobs "
+                               "WHERE state='QUEUED' "
+                               "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
+                               "  AND name GLOB " + SQ(name) + " " +
+                               "  AND priority=" + SQ(1000) + " " +
+                               "ORDER BY nextRun ASC " +
+                               "LIMIT 1) " +
+                           "UNION ALL " +
+                               "SELECT * FROM "
+                               "(SELECT jobID, name, data, priority "
+                               "FROM jobs "
+                               "WHERE state='QUEUED' "
+                               "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
+                               "  AND name GLOB " + SQ(name) + " " +
+                               "  AND priority=" + SQ(500) + " " +
+                               "ORDER BY nextRun ASC " +
+                               "LIMIT 1) " +
+                           "UNION ALL " +
+                               "SELECT * FROM "
+                               "(SELECT jobID, name, data, priority "
+                               "FROM jobs "
+                               "WHERE state='QUEUED' "
+                               "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
+                               "  AND name GLOB " + SQ(name) + " " +
+                               "  AND priority=" + SQ(0) + " " +
+                               "ORDER BY nextRun ASC " +
+                               "LIMIT 1) " +
+                           ") " +
+                       "ORDER BY priority DESC "
+                       "LIMIT 1;";
+
+        if (!db.read(query, result)) {
             throw "502 Query failed";
         }
 
