@@ -4,7 +4,7 @@
 git submodule init
 git submodule update
 cd mbedtls
-get checkout c49b808ae490f03d665df5faae457f613aa31aaf
+git checkout c49b808ae490f03d665df5faae457f613aa31aaf
 cd ..
 
 # Create the binary dir if it doesn't exist already.
