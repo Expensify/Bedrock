@@ -1,0 +1,12 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+AlignConsecutiveAssignments: true
+BreakBeforeBraces: Linux
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ForEachMacros: ['SFOREACH', 'SFOREACHMAP']
+
+Language: Cpp
+# Force pointers to the type for C++.
+DerivePointerAlignment: false
+PointerAlignment: Left
