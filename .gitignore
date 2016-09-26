@@ -1,0 +1,7 @@
+.d-*
+.o-*
+Makefile
+bedrock
+bin-*
+libstuff/libstuff.a
+sqlitecluster/sqlitecluster
