@@ -469,6 +469,7 @@ void BedrockServer::postSelect( fd_map& fdm, uint64_t& nextActivity )
             if (!SCatchSignal(SIGTTOU)) {
                 SHMMM("Suppressing command port due to SIGTTIN");
                 suppressCommandPort(true, true);
+                SClearSignals();
             }
         }
         else if (SCatchSignal(SIGTTOU))
@@ -476,6 +477,7 @@ void BedrockServer::postSelect( fd_map& fdm, uint64_t& nextActivity )
             // Clear command port suppression
             SHMMM("Clearing command port supression due to SIGTTOU");
             suppressCommandPort(false, true);
+            SClearSignals();
         }
         else if (SCatchSignal(SIGUSR2))
         {
@@ -487,12 +489,14 @@ void BedrockServer::postSelect( fd_map& fdm, uint64_t& nextActivity )
             else {
                 SWARN("Can't begin logging queries because -queryLog isn't set, ignoring.");
             }
+            SClearSignals();
         }
         else if (SCatchSignal(SIGQUIT))
         {
             // Stop query logging
             SHMMM("Stopping query logging");
             SQueryLogClose();
+            SClearSignals();
         }
         else
         {
