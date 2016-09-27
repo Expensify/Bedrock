@@ -152,6 +152,9 @@ all: libstuff sqlitecluster bedrock
 clean: cleanlibstuff cleansqlitecluster cleanbedrock
 	rm -rf $(DDIR)
 	rm -rf $(ODIR)
+	rm -rf $(BINDIR)
+	cd mbedtls && make clean
+	rm Makefile
 
 # There are several similar targets defined in a row here. For more documentation on what they're doing, scroll down to
 # libstuff, as it does basically the same thing as the other targets, but with more commenting.
@@ -168,26 +171,26 @@ EOF
 done
 
 cat >> Makefile << "EOF"
-BEDROCKOBJ = $(BEDROCKC:%.c=$(ODIR)/%.o) $(BEDROCKCPP:%.cpp=$(ODIR)/%.o)
-BEDROCKDEP = $(BEDROCKC:%.c=$(DDIR)/%.d) $(BEDROCKCPP:%.cpp=$(DDIR)/%.d)
+BEDROCKOBJ = $(BEDROCKC:%.c=$(ODIR)/current/%.o) $(BEDROCKCPP:%.cpp=$(ODIR)/current/%.o)
+BEDROCKDEP = $(BEDROCKC:%.c=$(DDIR)/current/%.d) $(BEDROCKCPP:%.cpp=$(DDIR)/current/%.d)
 bedrock: bedrock
 bedrock: libstuff/libstuff.a $(BEDROCKOBJ)
 	$(GXX) -o $@ $(BEDROCKOBJ) $(LDFLAGS)
 cleanbedrock:
-	rm -rf $(ODIR)/bedrock
-	rm -rf $(DDIR)/bedrock
+	rm -rf $(ODIR)/current/bedrock
+	rm -rf $(DDIR)/current/bedrock
 	rm -rf bedrock
 
 SQLITECLUSTERC = $(shell find sqlitecluster -name "*.c")
 SQLITECLUSTERCPP = $(shell find sqlitecluster -name "*.cpp")
-SQLITECLUSTEROBJ = $(SQLITECLUSTERC:%.c=$(ODIR)/%.o) $(SQLITECLUSTERCPP:%.cpp=$(ODIR)/%.o)
-SQLITECLUSTERDEP = $(SQLITECLUSTERC:%.c=$(DDIR)/%.d) $(SQLITECLUSTERCPP:%.cpp=$(DDIR)/%.d)
+SQLITECLUSTEROBJ = $(SQLITECLUSTERC:%.c=$(ODIR)/current/%.o) $(SQLITECLUSTERCPP:%.cpp=$(ODIR)/current/%.o)
+SQLITECLUSTERDEP = $(SQLITECLUSTERC:%.c=$(DDIR)/current/%.d) $(SQLITECLUSTERCPP:%.cpp=$(DDIR)/current/%.d)
 sqlitecluster: sqlitecluster/sqlitecluster
 sqlitecluster/sqlitecluster: libstuff/libstuff.a $(SQLITECLUSTEROBJ)
 	$(GXX) -o $@ $(SQLITECLUSTEROBJ) $(LDFLAGS)
 cleansqlitecluster:
-	rm -rf $(ODIR)/sqlitecluster
-	rm -rf $(DDIR)/sqlitecluster
+	rm -rf $(ODIR)/current/sqlitecluster
+	rm -rf $(DDIR)/current/sqlitecluster
 	rm -rf sqlitecluster/sqlitecluster
 
 ################## libstuff ############################################################################################
@@ -204,8 +207,8 @@ STUFFCPP = $(shell find libstuff -name "*.cpp")
 # and then create a list of all the .o files and .d files that we'll need based on these .c(pp)? files.
 # Reference for 'substitution references', i.e., getting '.o' files from a list of .c files.
 # http://www.gnu.org/software/make/manual/make.html#Substitution-Refs
-STUFFOBJ = $(STUFFC:%.c=$(ODIR)/%.o) $(STUFFCPP:%.cpp=$(ODIR)/%.o)
-STUFFDEP = $(STUFFC:%.c=$(DDIR)/%.d) $(STUFFCPP:%.cpp=$(DDIR)/%.d)
+STUFFOBJ = $(STUFFC:%.c=$(ODIR)/current/%.o) $(STUFFCPP:%.cpp=$(ODIR)/current/%.o)
+STUFFDEP = $(STUFFC:%.c=$(DDIR)/current/%.d) $(STUFFCPP:%.cpp=$(DDIR)/current/%.d)
 
 # Then create the PHONY target that actually depends on our real file.
 libstuff: libstuff/libstuff.a
@@ -217,8 +220,8 @@ libstuff/libstuff.a: $(STUFFOBJ)
 
 # And create our clean recipe. We delete all our dependency files, all our object files, and our library itself.
 cleanlibstuff:
-	rm -rf $(ODIR)/libstuff
-	rm -rf $(DDIR)/libstuff
+	rm -rf $(ODIR)/current/libstuff
+	rm -rf $(DDIR)/current/libstuff
 	rm -rf libstuff/libstuff.a
 
 # Just delete the binaries, not all the intermediates.
@@ -233,12 +236,12 @@ cleanbinaries:
 # source root. This keeps all of these files from polluting our entire workspace.
 # TODO: this is inefficient, we can build .o and .d files in one pass by the compiler (composing a list of dependencies)
 # is a necessary step in compiling a whole .c(pp)? file).
-$(DDIR)/%.d: %.cpp
+$(DDIR)/current/%.d: %.cpp
 	mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -MT $(patsubst $(DDIR)/%.d, $(ODIR)/%.o, $@) -MM $< > $@
-$(DDIR)/%.d: %.c
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -MT $(patsubst $(DDIR)/current/%.d, $(ODIR)/%.o, $@) -MM $< > $@
+$(DDIR)/current/%.d: %.c
 	mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -MT $(patsubst $(DDIR)/%.d, $(ODIR)/%.o, $@) -MM $< > $@
+	$(CC) $(CFLAGS) -MT $(patsubst $(DDIR)/current/%.d, $(ODIR)/%.o, $@) -MM $< > $@
 
 # Now that we've computed our .d files, we want to include them here, but only if we're not inside of *clean* or
 # similar, because in that case we'd genreate them all and then just delete them.
@@ -259,11 +262,11 @@ endif
 # This recipe creates `.o` files from `.c` or `.cpp` files. These files all get created inside the `.o` directory at our
 # source root. This keeps all of these files from polluting our entire workspace.
 
-$(ODIR)/%.o: %.cpp
+$(ODIR)/current/%.o: %.cpp
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -o $@ -c $<
 
-$(ODIR)/%.o: %.c
+$(ODIR)/current/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -o $@ -c $<
 EOF
