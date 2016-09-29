@@ -59,8 +59,12 @@ class SQLite
     }
 
     // Returns the timing of the last command
-    uint64_t getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
-                                      uint64_t& commit, uint64_t& rollback);
+    uint64_t getLastTransactionTiming(uint64_t& begin,
+                                      uint64_t& read,
+                                      uint64_t& write,
+                                      uint64_t& prepare,
+                                      uint64_t& commit,
+                                      uint64_t& rollback);
 
     // Returns the number of changes that were performed in the last query.
     size_t getLastWriteChangeCount();

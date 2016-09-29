@@ -1008,7 +1008,10 @@ template <typename Container> string SQList(const Container& valueList)
 
 extern void SQueryLogOpen(const string& logFilename);
 extern void SQueryLogClose();
-extern bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
+extern bool SQuery(sqlite3* db,
+                   const char* e,
+                   const string& sql,
+                   SQResult& result,
                    int64_t warnThreshold = 1000 * STIME_US_PER_MS);
 inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS)
 {

@@ -57,11 +57,18 @@ list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 
 // --------------------------------------------------------------------------
 BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
-    : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
+    : SQLiteNode(args["-db"],
+                 args["-nodeName"],
+                 args["-nodeHost"],
+                 args.calc("-priority"),
+                 args.calc("-cacheSize"),
                  1024,                                                 // auto-checkpoint every 1024 pages
                  STIME_US_PER_M * 2 + SRand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
-                 args.test("-readOnly"), args.calc("-maxJournalSize")),
+                 server_->getVersion(),
+                 args.calc("-quorumCheckpoint"),
+                 args["-synchronousCommands"],
+                 args.test("-readOnly"),
+                 args.calc("-maxJournalSize")),
       server(server_)
 {
     // Initialize

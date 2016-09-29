@@ -337,8 +337,12 @@ void SQLite::rollback()
 }
 
 // --------------------------------------------------------------------------
-uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
-                                          uint64_t& commit, uint64_t& rollback)
+uint64_t SQLite::getLastTransactionTiming(uint64_t& begin,
+                                          uint64_t& read,
+                                          uint64_t& write,
+                                          uint64_t& prepare,
+                                          uint64_t& commit,
+                                          uint64_t& rollback)
 {
     // Just populate and return
     begin    = _beginElapsed;

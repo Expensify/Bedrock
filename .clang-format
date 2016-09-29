@@ -7,8 +7,9 @@ ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ForEachMacros: ['SFOREACH', 'SFOREACHMAP']
 AllowShortFunctionsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: false
-
-Language: Cpp
-# Force pointers to the type for C++.
+BinPackParameters: false
+AllowAllParametersOfDeclarationOnNextLine: false
 DerivePointerAlignment: false
 PointerAlignment: Left
+
+PenaltyReturnTypeOnItsOwnLine: 1000

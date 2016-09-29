@@ -80,9 +80,18 @@ class SQLiteNode : public STCPNode
     typedef map<string, Command*>::iterator CommandMapIt;
 
     // Constructor
-    SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-               int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0,
-               const string& synchronousCommands = "", bool readOnly = false, int maxJournalSize = 1000000);
+    SQLiteNode(const string& filename,
+               const string& name,
+               const string& host,
+               int priority,
+               int cacheSize,
+               int autoCheckpoint,
+               uint64_t firstTimeout,
+               const string& version,
+               int quorumCheckpoint              = 0,
+               const string& synchronousCommands = "",
+               bool readOnly                     = false,
+               int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
     // Simple accessors

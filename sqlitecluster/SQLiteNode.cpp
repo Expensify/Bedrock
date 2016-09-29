@@ -52,9 +52,18 @@ const char* SQLCStateNames[] = {"SEARCHING", "SYNCHRONIZING", "WAITING",     "ST
 const char* SQLCConsistencyLevelNames[] = {"ASYNC", "ONE", "QUORUM"};
 
 // --------------------------------------------------------------------------
-SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint,
-                       const string& synchronousCommands, bool readOnly, int maxJournalSize)
+SQLiteNode::SQLiteNode(const string& filename,
+                       const string& name,
+                       const string& host,
+                       int priority,
+                       int cacheSize,
+                       int autoCheckpoint,
+                       uint64_t firstTimeout,
+                       const string& version,
+                       int quorumCheckpoint,
+                       const string& synchronousCommands,
+                       bool readOnly,
+                       int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize)
 {
@@ -168,7 +177,9 @@ bool SQLiteNode::shutdownComplete()
 }
 
 // --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority, bool unique,
+SQLiteNode::Command* SQLiteNode::openCommand(const SData& request,
+                                             int priority,
+                                             bool unique,
                                              int64_t commandExecuteTime)
 {
     SASSERT(!request.empty());

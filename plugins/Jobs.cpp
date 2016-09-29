@@ -596,7 +596,8 @@ void BedrockPlugin_Jobs::test(BedrockTester* tester)
 }
 
 // ==========================================================================
-string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun,
+string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled,
+                                                     const string& lastRun,
                                                      const string& repeat)
 {
     // Some "canned" times for convenience
