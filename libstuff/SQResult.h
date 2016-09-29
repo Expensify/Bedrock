@@ -2,7 +2,7 @@
 
 class SQResult
 {
-  public:
+public:
     // Attributes
     vector<string> headers;
     vector<vector<string>> rows;

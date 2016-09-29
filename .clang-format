@@ -11,5 +11,5 @@ BinPackParameters: false
 AllowAllParametersOfDeclarationOnNextLine: false
 DerivePointerAlignment: false
 PointerAlignment: Left
-
+AccessModifierOffset: -4
 PenaltyReturnTypeOnItsOwnLine: 1000

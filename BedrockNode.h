@@ -11,7 +11,7 @@ class BedrockServer;
 struct BedrockTester; // Defined in BedrockTester.h, but can't include else circular
 class BedrockNode : public SQLiteNode
 {
-  public:
+public:
     // Construct the base class
     BedrockNode(const SData& args, BedrockServer* server_);
     virtual ~BedrockNode();
@@ -19,7 +19,7 @@ class BedrockNode : public SQLiteNode
     // Simple plugin system to add functionality to a node at runtime
     class Plugin
     {
-      public:
+    public:
         // --- Parent interface ---
         Plugin();
 
@@ -81,11 +81,11 @@ class BedrockNode : public SQLiteNode
         {
         }
 
-      protected:
+    protected:
         // Attributes
         bool _enabled;
 
-      public:
+    public:
         // Global static attributes
         static list<Plugin*>* g_registeredPluginList;
     };

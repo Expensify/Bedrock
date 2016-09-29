@@ -107,16 +107,16 @@ using namespace std;
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
 class STableComp : binary_function<string, string, bool>
 {
-  public:
+public:
     bool operator()(const string& s1, const string& s2) const
     {
         return lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(), nocase_compare());
     }
 
-  private:
+private:
     class nocase_compare : public binary_function<unsigned char, unsigned char, bool>
     {
-      public:
+    public:
         bool operator()(const unsigned char& c1, const unsigned char& c2) const
         {
             return tolower(c1) < tolower(c2);
@@ -360,7 +360,7 @@ struct SAutoThreadPrefix {
         SLogSetThreadPrefix(oldPrefix);
     }
 
-  private:
+private:
     // Attributes
     string oldPrefix;
 };
@@ -397,7 +397,7 @@ struct SAutoMutex {
 // Convenient interface for multi-threaded, synchronized variables.
 template <typename T> class SSynchronized
 {
-  public:
+public:
     // Initialize and wrap with a mutex that is cleaned up in the destructor
     SSynchronized(const T& val)
     {
@@ -421,7 +421,7 @@ template <typename T> class SSynchronized
         _synchronizedValue = val;
     }
 
-  private:
+private:
     // Attributes
     T _synchronizedValue;
     void* _mutex;

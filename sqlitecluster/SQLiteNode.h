@@ -27,7 +27,7 @@ extern const char* SQLCConsistencyLevelNames[];
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode
 {
-  public: // External API
+public: // External API
     // Captures all data associated with an atomic command
     struct Command {
         // Attributes
@@ -256,12 +256,12 @@ class SQLiteNode : public STCPNode
         return _quorumCheckpoint;
     };
 
-  protected:
+protected:
     bool _readOnly;
     SQLite _db;
     map<int, list<Command*>> _queuedCommandMap; // priority  -> list<Command*> map
 
-  private: // Internal API
+private: // Internal API
     // Attributes
     // Escalated commands are a map for faster lookup times.  In circumstances
     // where we had many (~20k) escalated commands as a list, the slave CPUs

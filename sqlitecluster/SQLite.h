@@ -5,7 +5,7 @@
 // SQLite
 class SQLite
 {
-  public: // External API
+public: // External API
     // Loads a database and confirms its schema
     SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize);
     virtual ~SQLite();
@@ -125,11 +125,11 @@ class SQLite
     // This is the callback function we use to log SQLite's internal errors.
     static void sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
-  protected: // Internal API
+protected: // Internal API
     sqlite3* _db;
     uint64_t _commitCount;
 
-  private:
+private:
     // Attributes
     string _filename;
     uint64_t _journalSize;

@@ -2,7 +2,7 @@
 
 class SHTTPSManager : public STCPManager
 {
-  public: // External API
+public: // External API
     // Transaction
     struct Transaction {
         // Constructor/Destructor
@@ -38,16 +38,16 @@ class SHTTPSManager : public STCPManager
     // Methods
     void closeTransaction(Transaction* transaction);
 
-  public: // STCPServer API
+public: // STCPServer API
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
 
-  protected: // Child API
+protected: // Child API
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction) = 0;
 
-  private: // Internal API
+private: // Internal API
     // Attriubutes
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;

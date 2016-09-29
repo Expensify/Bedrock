@@ -6,7 +6,7 @@
 // Declare the class we're going to implement below
 class BedrockPlugin_Cache : public BedrockNode::Plugin
 {
-  public:
+public:
     // Constructor / Destructor
     BedrockPlugin_Cache();
     ~BedrockPlugin_Cache();
@@ -22,11 +22,11 @@ class BedrockPlugin_Cache : public BedrockNode::Plugin
     virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
     virtual void test(BedrockTester* tester);
 
-  private:
+private:
     // Bedrock Cache LRU map
     class LRUMap
     {
-      public:
+    public:
         // Constructor / Destructor
         LRUMap();
         ~LRUMap();
@@ -40,7 +40,7 @@ class BedrockPlugin_Cache : public BedrockNode::Plugin
         // Remove the name that is the least recently used (LRU)
         string popLRU();
 
-      private:
+    private:
         // A single entry being tracked
         struct Entry {
             // Attributes

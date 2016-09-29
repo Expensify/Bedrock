@@ -10,7 +10,7 @@
 // Declare the class we're going to implement below
 class BedrockPlugin_Jobs : public BedrockNode::Plugin
 {
-  public:
+public:
     // Implement base class interface
     virtual string getName()
     {
@@ -21,7 +21,7 @@ class BedrockPlugin_Jobs : public BedrockNode::Plugin
     virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
     virtual void test(BedrockTester* tester);
 
-  private:
+private:
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
     bool _validateRepeat(const string& repeat)

@@ -13,13 +13,13 @@
 /// ---------
 class BedrockServer : public STCPServer
 {
-  public: // External Bedrock
+public: // External Bedrock
     // A synchronized queue of messages for enabling the main, read, and write
     // threads to communicate safely.
     //
     class MessageQueue
     {
-      public:
+    public:
         // Constructor / Destructor
         MessageQueue();
         ~MessageQueue();
@@ -34,7 +34,7 @@ class BedrockServer : public STCPServer
         bool empty();
         bool cancel(const string& name, const string& value);
 
-      private:
+    private:
         // Private state
         list<SData> _queue;
         void* _queueMutex;
@@ -122,7 +122,7 @@ class BedrockServer : public STCPServer
     // read loop on the write thread.
     list<list<SHTTPSManager*>> httpsManagers;
 
-  private: // Internal Bedrock
+private: // Internal Bedrock
     // Attributes
     SData _args;
     uint64_t _requestCount;

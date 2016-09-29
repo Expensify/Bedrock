@@ -59,7 +59,7 @@ struct STCPNode : public STCPServer {
     // Called when the peer sends us a message; throw a (const char*) to reconnect.
     virtual void _onMESSAGE(Peer* peer, const SData& message) = 0;
 
-  private:
+private:
     // Override dead function
     void postSelect(fd_map& ignore)
     {

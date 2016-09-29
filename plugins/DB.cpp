@@ -8,7 +8,7 @@
 // Declare the class we're going to implement below
 class BedrockPlugin_DB : public BedrockNode::Plugin
 {
-  public:
+public:
     virtual string getName()
     {
         return "DB";
