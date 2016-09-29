@@ -1,8 +1,7 @@
 #pragma once
 
 // Convenience class for listening on a port and accepting sockets.
-struct STCPServer : public STCPManager
-{
+struct STCPServer : public STCPManager {
     // Listens on a given port and accepts sockets, and shuts them down
     STCPServer(const string& host);
     virtual ~STCPServer();
@@ -12,10 +11,10 @@ struct STCPServer : public STCPManager
     void closePort();
 
     // Tries to accept a new incoming socket
-    Socket *acceptSocket();
+    Socket* acceptSocket();
 
     // Updates all managed ports and sockets
-    int  preSelect(fd_map& fdm);
+    int preSelect(fd_map& fdm);
     void postSelect(fd_map& fdm);
 
     // Attributes

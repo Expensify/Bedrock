@@ -3,10 +3,9 @@
 #include <mbedtls/x509_crt.h>
 
 // Wraps a X509 Cert
-struct SX509
-{
+struct SX509 {
     // Attributes
-    mbedtls_x509_crt   srvcert;
+    mbedtls_x509_crt srvcert;
     mbedtls_pk_context pk;
 };
 

@@ -81,7 +81,7 @@ bool SData::isSet(const string& name) const
 int SData::calc(const string& name) const
 {
     // Forcing 32 bitness here.
-    return (int) SMin<int64_t>(calc64(name), 0x7fffffffL);
+    return (int)SMin<int64_t>(calc64(name), 0x7fffffffL);
 }
 
 // --------------------------------------------------------------------------
@@ -145,7 +145,7 @@ int SData::deserialize(const string& rhs)
 }
 
 // --------------------------------------------------------------------------
-int SData::deserialize(const char *buffer, int length)
+int SData::deserialize(const char* buffer, int length)
 {
     // Deserializes from a buffer
     return (SParseHTTP(buffer, length, methodLine, nameValueMap, content));
@@ -157,7 +157,7 @@ SData SData::create(const string& rhs)
     // Initializes a new SData from a string.  If there is no content provided,
     // then use whatever data remains in the string as the content
     SData data;
-    int   header = data.deserialize(rhs);
+    int header = data.deserialize(rhs);
     if (header && data.content.empty()) {
         data.content = rhs.substr(header);
     }

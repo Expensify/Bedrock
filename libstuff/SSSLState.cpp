@@ -3,23 +3,24 @@
 #include <mbedtls/net.h>
 
 // --------------------------------------------------------------------------
-const char* g_S_dhm_P =
-    "E4004C1F94182000103D883A448B3F80"
-    "2CE4B44A83301270002C20D0321CFD00"
-    "11CCEF784C26A400F43DFB901BCA7538"
-    "F2C6B176001CF5A0FD16D2C48B1D0C1C"
-    "F6AC8E1DA6BCC3B4E1F96B0564965300"
-    "FFA1D0B601EB2800F489AA512C4B248C"
-    "01F76949A60BB7F00A40B1EAB64BDD48"
-    "E8A700D60B7F1200FA8E77B0A979DABF";
+const char* g_S_dhm_P = "E4004C1F94182000103D883A448B3F80"
+                        "2CE4B44A83301270002C20D0321CFD00"
+                        "11CCEF784C26A400F43DFB901BCA7538"
+                        "F2C6B176001CF5A0FD16D2C48B1D0C1C"
+                        "F6AC8E1DA6BCC3B4E1F96B0564965300"
+                        "FFA1D0B601EB2800F489AA512C4B248C"
+                        "01F76949A60BB7F00A40B1EAB64BDD48"
+                        "E8A700D60B7F1200FA8E77B0A979DABF";
 const char* g_S_dhm_G = "4";
 
-SSSLState::SSSLState() {
+SSSLState::SSSLState()
+{
     mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
 }
 
-SSSLState::~SSSLState() {
+SSSLState::~SSSLState()
+{
     mbedtls_ssl_free(&ssl);
     mbedtls_ssl_config_free(&conf);
 }
@@ -45,7 +46,7 @@ SSSLState* SSSLOpen(int s, SX509* x509)
         // Add the certificate
         mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
         SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
-        SASSERT(mbedtls_ssl_conf_dh_param(&state->conf, g_S_dhm_P, g_S_dhm_G)      == 0);
+        SASSERT(mbedtls_ssl_conf_dh_param(&state->conf, g_S_dhm_P, g_S_dhm_G) == 0);
     }
     return state;
 }
@@ -55,14 +56,13 @@ int SSSLSend(SSSLState* sslState, const char* buffer, int length)
 {
     // Send as much as possible and report what happened
     SASSERT(sslState && buffer);
-    const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*) buffer, length);
+    const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
         return numSent;
     }
 
     // Handle the result
-    switch (numSent)
-    {
+    switch (numSent) {
     case MBEDTLS_ERR_SSL_WANT_READ:
     case MBEDTLS_ERR_SSL_WANT_WRITE:
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
@@ -82,14 +82,13 @@ int SSSLRecv(SSSLState* sslState, char* buffer, int length)
 {
     // Receive as much as we can and report what happened
     SASSERT(sslState && buffer);
-    const int numRecv = mbedtls_ssl_read(&sslState->ssl, (unsigned char*) buffer, length);
+    const int numRecv = mbedtls_ssl_read(&sslState->ssl, (unsigned char*)buffer, length);
     if (numRecv > 0) {
         return numRecv;
     }
 
     // Handle the response
-    switch (numRecv)
-    {
+    switch (numRecv) {
     case MBEDTLS_ERR_SSL_WANT_READ:
     case MBEDTLS_ERR_SSL_WANT_WRITE:
         // retry
@@ -114,13 +113,14 @@ int SSSLRecv(SSSLState* sslState, char* buffer, int length)
     }
 }
 
-
 // --------------------------------------------------------------------------
 string SSSLGetState(SSSLState* ssl)
 {
     // Just return direct
     SASSERT(ssl);
-    #define SSLSTATE(_STATE_) case _STATE_ : return #_STATE_
+#define SSLSTATE(_STATE_)                                                                                              \
+    case _STATE_:                                                                                                      \
+        return #_STATE_
     switch (ssl->ssl.state) {
         SSLSTATE(MBEDTLS_SSL_HELLO_REQUEST);
         SSLSTATE(MBEDTLS_SSL_CLIENT_HELLO);
@@ -138,10 +138,10 @@ string SSSLGetState(SSSLState* ssl)
         SSLSTATE(MBEDTLS_SSL_SERVER_FINISHED);
         SSLSTATE(MBEDTLS_SSL_FLUSH_BUFFERS);
         SSLSTATE(MBEDTLS_SSL_HANDSHAKE_OVER);
-        default:
-            return "(unknown)";
+    default:
+        return "(unknown)";
     }
-    #undef SSLSTATE
+#undef SSLSTATE
 }
 
 // --------------------------------------------------------------------------
@@ -165,7 +165,7 @@ void SSSLClose(SSSLState* ssl)
 int SSSLSend(SSSLState* ssl, const string& buffer)
 {
     // Unwind the buffer
-    return SSSLSend(ssl, buffer.c_str(), (int) buffer.size());
+    return SSSLSend(ssl, buffer.c_str(), (int)buffer.size());
 }
 
 // --------------------------------------------------------------------------
@@ -192,8 +192,8 @@ bool SSSLSendAll(SSSLState* ssl, const string& buffer)
     // Keep sending until there is an error or we're done
     SASSERT(ssl);
     int totalSent = 0;
-    while (totalSent < (int) buffer.size()) {
-        int numSent = SSSLSend(ssl, &buffer[totalSent], (int) buffer.size() - totalSent);
+    while (totalSent < (int)buffer.size()) {
+        int numSent = SSSLSend(ssl, &buffer[totalSent], (int)buffer.size() - totalSent);
         if (numSent == -1) {
             return false;
         }
@@ -208,8 +208,8 @@ bool SSSLRecvAppend(SSSLState* ssl, string& recvBuffer)
     // Keep trying to receive as long as we can
     SASSERT(ssl);
     char buffer[1024 * 16];
-    int  totalRecv = 0;
-    int  numRecv   = 0;
+    int totalRecv = 0;
+    int numRecv = 0;
     while ((numRecv = SSSLRecv(ssl, buffer, sizeof(buffer))) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);

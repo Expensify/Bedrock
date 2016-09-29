@@ -6,7 +6,7 @@ uint64_t STimeNow()
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
     timeval time;
     gettimeofday(&time, 0);
-    return ((uint64_t) time.tv_sec * 1000000 + (uint64_t) time.tv_usec);
+    return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
 }
 
 // --------------------------------------------------------------------------
@@ -40,12 +40,12 @@ uint64_t STimeThisMorning()
     // timestamp, and then into a libstuff timestamp.
     time_t loNow;
     time(&loNow);
-    uint64_t  hiNow = STimeNow();
-    struct tm gmt   = *gmtime(&loNow);
-    gmt.tm_hour = 0;
-    gmt.tm_min  = 0;
-    gmt.tm_sec  = 0;
-    time_t  gmtTime   = timegm(&gmt);
+    uint64_t hiNow    = STimeNow();
+    struct tm gmt     = *gmtime(&loNow);
+    gmt.tm_hour       = 0;
+    gmt.tm_min        = 0;
+    gmt.tm_sec        = 0;
+    time_t gmtTime    = timegm(&gmt);
     int64_t hiLoDelta = hiNow - loNow * STIME_US_PER_S;
     return gmtTime * STIME_US_PER_S + hiLoDelta;
 }
@@ -54,5 +54,5 @@ uint64_t STimeThisMorning()
 timeval SToTimeval(uint64_t when)
 {
     // Just split by high and low bits
-    return {(time_t) (when / STIME_US_PER_S), (suseconds_t) (when % STIME_US_PER_S)};
+    return {(time_t)(when / STIME_US_PER_S), (suseconds_t)(when % STIME_US_PER_S)};
 }

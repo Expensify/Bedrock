@@ -41,7 +41,7 @@ void STCPServer::closePort()
 }
 
 // --------------------------------------------------------------------------
-STCPManager::Socket* STCPServer::acceptSocket( )
+STCPManager::Socket* STCPServer::acceptSocket()
 {
     // Ignore if no socket
     if (port < 0) {
@@ -64,7 +64,7 @@ STCPManager::Socket* STCPServer::acceptSocket( )
     socket->connectFailure = false;
     socket->openTime       = STimeNow();
     socket->ssl            = 0;
-    socket->data           = 0; // Used by caller, not libstuff
+    socket->data = 0; // Used by caller, not libstuff
     socketList.push_back(socket);
 
     // Try to read immediately
