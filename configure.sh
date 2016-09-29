@@ -129,8 +129,8 @@ ifdef EXTRALIBS
 LDFLAGS += -L$(EXTRALIBS)
 endif
 
-# I have no idea how this ever works.
-# TODO: Remove/refactor this section?
+# This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here
+# when set that way.
 PRODUCTION=false
 ifeq ($(PRODUCTION),true)
 # Extra build stuff
