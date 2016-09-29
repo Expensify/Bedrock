@@ -117,7 +117,10 @@ class STableComp : binary_function<string, string, bool>
     class nocase_compare : public binary_function<unsigned char, unsigned char, bool>
     {
       public:
-        bool operator()(const unsigned char& c1, const unsigned char& c2) const { return tolower(c1) < tolower(c2); }
+        bool operator()(const unsigned char& c1, const unsigned char& c2) const
+        {
+            return tolower(c1) < tolower(c2);
+        }
     };
 };
 typedef map<string, string, STableComp> STable;
@@ -203,11 +206,20 @@ struct SStopwatch {
     }
 
     // Accessors
-    uint64_t elapsed() { return STimeNow() - startTime; }
-    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration); }
+    uint64_t elapsed()
+    {
+        return STimeNow() - startTime;
+    }
+    uint64_t ringing()
+    {
+        return alarmDuration && (elapsed() > alarmDuration);
+    }
 
     // Mutators
-    void start() { startTime = STimeNow(); }
+    void start()
+    {
+        startTime = STimeNow();
+    }
     bool ding()
     {
         if (!ringing())
@@ -248,7 +260,10 @@ inline void SLogLevel(int level)
     _g_SLogMask = LOG_UPTO(level);
     setlogmask(_g_SLogMask);
 }
-inline bool SLogLevelIsSet(int level) { return (_g_SLogMask & (1 << level)); }
+inline bool SLogLevelIsSet(int level)
+{
+    return (_g_SLogMask & (1 << level));
+}
 
 // Stack trace logging
 extern void SLogStackTrace();
@@ -340,7 +355,11 @@ struct SAutoThreadPrefix {
             SLogSetThreadPrefix(prefix + " ");
         }
     }
-    ~SAutoThreadPrefix() { SLogSetThreadPrefix(oldPrefix); }
+    ~SAutoThreadPrefix()
+    {
+        SLogSetThreadPrefix(oldPrefix);
+    }
+
   private:
     // Attributes
     string oldPrefix;
@@ -385,7 +404,10 @@ template <typename T> class SSynchronized
         _mutex             = SMutexOpen();
         _synchronizedValue = val;
     }
-    ~SSynchronized() { SMutexClose(_mutex); }
+    ~SSynchronized()
+    {
+        SMutexClose(_mutex);
+    }
 
     // Getter and setter
     T get()
@@ -423,7 +445,10 @@ template <typename T> class SSynchronized
 // --------------------------------------------------------------------------
 // Converting between various bases
 extern string SToHex(uint64_t value, int digits = 16);
-inline string SToHex(uint32_t value) { return SToHex(value, 8); }
+inline string SToHex(uint32_t value)
+{
+    return SToHex(value, 8);
+}
 extern string SToHex(const string& buffer);
 extern uint64_t SFromHex(const string& value);
 extern string SStrFromHex(const string& buffer);
@@ -435,12 +460,21 @@ extern string SClampSize(const string& in, int digits, char fill);
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
 
 // Clamping
-template <class T> inline T SMax(T lhs, T rhs) { return (lhs > rhs ? lhs : rhs); }
-template <class T> inline T SMin(T lhs, T rhs) { return (lhs < rhs ? lhs : rhs); }
+template <class T> inline T SMax(T lhs, T rhs)
+{
+    return (lhs > rhs ? lhs : rhs);
+}
+template <class T> inline T SMin(T lhs, T rhs)
+{
+    return (lhs < rhs ? lhs : rhs);
+}
 #define SABS(_VAL_) ((_VAL_) < 0 ? -1 * (_VAL_) : (_VAL_))
 
 // Random functions
-inline uint64_t SRand15() { return (int64_t)(rand() & 0x7FFF); }
+inline uint64_t SRand15()
+{
+    return (int64_t)(rand() & 0x7FFF);
+}
 inline uint64_t SRand64()
 {
     return ((SRand15() << 60) | (SRand15() << 45) | (SRand15() << 30) | (SRand15() << 15) | (SRand15() << 0));
@@ -468,10 +502,22 @@ template <class T> inline string SToStr(const T& t)
 }
 
 // Numeric conversion
-inline float SToFloat(const string& val) { return (float)atof(val.c_str()); }
-inline int SToInt(const string& val) { return atoi(val.c_str()); }
-inline int64_t SToInt64(const string& val) { return atoll(val.c_str()); }
-inline uint64_t SToUInt64(const string& val) { return strtoull(val.c_str(), NULL, 10); }
+inline float SToFloat(const string& val)
+{
+    return (float)atof(val.c_str());
+}
+inline int SToInt(const string& val)
+{
+    return atoi(val.c_str());
+}
+inline int64_t SToInt64(const string& val)
+{
+    return atoll(val.c_str());
+}
+inline uint64_t SToUInt64(const string& val)
+{
+    return strtoull(val.c_str(), NULL, 10);
+}
 
 // General utility for testing map containment
 template <class A, class B, class C> inline bool SContains(const map<A, B, C>& nameValueMap, const A& name)
@@ -488,11 +534,23 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
 }
 
 // General testing functions
-inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
-inline bool SContains(const string& haystack, const string& needle) { return haystack.find(needle) != string::npos; }
-inline bool SContains(const string& haystack, char needle) { return haystack.find(needle) != string::npos; }
+inline bool SIEquals(const string& lhs, const string& rhs)
+{
+    return !strcasecmp(lhs.c_str(), rhs.c_str());
+}
+inline bool SContains(const string& haystack, const string& needle)
+{
+    return haystack.find(needle) != string::npos;
+}
+inline bool SContains(const string& haystack, char needle)
+{
+    return haystack.find(needle) != string::npos;
+}
 extern bool SIContains(const string& haystack, const string& needle);
-inline bool SStartsWith(const string& haystack, const string& needle) { return haystack.find(needle) == 0; }
+inline bool SStartsWith(const string& haystack, const string& needle)
+{
+    return haystack.find(needle) == 0;
+}
 inline bool SEndsWith(const string& haystack, const string& needle)
 {
     if (needle.size() > haystack.size())
@@ -504,15 +562,24 @@ extern bool SConstantTimeEquals(const string& secret, const string& userInput);
 extern bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 // Perform a full regex match. The '^' and '$' symbols are implicit.
-inline bool SREMatch(const string& regExp, const string& s) { return pcrecpp::RE(regExp).FullMatch(s); }
+inline bool SREMatch(const string& regExp, const string& s)
+{
+    return pcrecpp::RE(regExp).FullMatch(s);
+}
 inline bool SREMatch(const string& regExp, const string& s, string& match)
 {
     return pcrecpp::RE(regExp).FullMatch(s, &match);
 }
 
 // Case testing and conversion
-inline char SToLower(char from) { return (SWITHIN('A', from, 'Z') ? from - 'A' + 'a' : from); }
-inline char SToUpper(char from) { return (SWITHIN('a', from, 'z') ? from - 'a' + 'A' : from); }
+inline char SToLower(char from)
+{
+    return (SWITHIN('A', from, 'Z') ? from - 'A' + 'a' : from);
+}
+inline char SToUpper(char from)
+{
+    return (SWITHIN('a', from, 'z') ? from - 'a' + 'A' : from);
+}
 inline string SToLower(const string& value)
 {
     string out;
@@ -535,16 +602,28 @@ extern string SCollapse(const string& lhs);
 extern string STrim(const string& lhs);
 extern string SStrip(const string& lhs);
 extern string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
-inline string SStripAllBut(const string& lhs, const string& chars) { return SStrip(lhs, chars, true); }
-inline string SStripNonNum(const string& lhs) { return SStripAllBut(lhs, "0123456789"); }
+inline string SStripAllBut(const string& lhs, const string& chars)
+{
+    return SStrip(lhs, chars, true);
+}
+inline string SStripNonNum(const string& lhs)
+{
+    return SStripAllBut(lhs, "0123456789");
+}
 extern string SEscape(const char* lhs, const string& unsafe, char escaper);
 inline string SEscape(const string& lhs, const string& unsafe, char escaper = '\\')
 {
     return SEscape(lhs.c_str(), unsafe, escaper);
 }
 extern string SUnescape(const char* lhs, char escaper);
-inline string SUnescape(const string& lhs, char escaper = '\\') { return SUnescape(lhs.c_str(), escaper); }
-inline string SStripTrim(const string& lhs) { return STrim(SStrip(lhs)); }
+inline string SUnescape(const string& lhs, char escaper = '\\')
+{
+    return SUnescape(lhs.c_str(), escaper);
+}
+inline string SStripTrim(const string& lhs)
+{
+    return STrim(SStrip(lhs));
+}
 inline string SBefore(const string& value, const string& needle)
 {
     size_t pos = value.find(needle);
@@ -634,7 +713,10 @@ inline string SComposeHTTP(const string& methodLine, const STable& nameValueMap,
     return buffer;
 }
 extern string SComposePOST(const STable& nameValueMap);
-inline string SComposeHost(const string& host, int port) { return (host + ":" + SToStr(port)); }
+inline string SComposeHost(const string& host, int port)
+{
+    return (host + ":" + SToStr(port));
+}
 extern bool SParseHost(const string& host, string& domain, uint16_t& port);
 inline bool SHostIsValid(const string& host)
 {
@@ -657,7 +739,10 @@ inline string SGetDomain(const string& host)
         return host;
 }
 extern string SDecodeURIComponent(const char* buffer, int length);
-inline string SDecodeURIComponent(const string& value) { return SDecodeURIComponent(value.c_str(), (int)value.size()); }
+inline string SDecodeURIComponent(const string& value)
+{
+    return SDecodeURIComponent(value.c_str(), (int)value.size());
+}
 extern string SEncodeURIComponent(const string& value);
 
 // --------------------------------------------------------------------------
@@ -765,7 +850,10 @@ inline string SToStr(const sockaddr_in& addr)
 {
     return SToStr(inet_ntoa(addr.sin_addr)) + ":" + SToStr(ntohs(addr.sin_port));
 }
-inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << SToStr(addr); }
+inline ostream& operator<<(ostream& os, const sockaddr_in& addr)
+{
+    return os << SToStr(addr);
+}
 
 // map of FDs to pollfds
 typedef map<int, pollfd> fd_map;
@@ -843,8 +931,14 @@ extern string SAESDecrypt(const string& buffer, const string& iv, const string& 
 // Credit card stuff
 // --------------------------------------------------------------------------
 // Determine if some input is a PAN
-inline bool SIsPAN(const string& value) { return SREMatch("^\\d{13,19}$", value); }
-inline bool SIsMaskedPAN(const string& value) { return SREMatch("^\\d{0,6}[Xx]+\\d{4,7}$", value); }
+inline bool SIsPAN(const string& value)
+{
+    return SREMatch("^\\d{13,19}$", value);
+}
+inline bool SIsMaskedPAN(const string& value)
+{
+    return SREMatch("^\\d{0,6}[Xx]+\\d{4,7}$", value);
+}
 
 // --------------------------------------------------------------------------
 // Helper function to mask out the necessary digits in a card number to
@@ -873,13 +967,34 @@ inline string SMaskPAN(const string& pan)
 // --------------------------------------------------------------------------
 #include "sqlite3.h"
 #include "SQResult.h"
-inline string SQ(const char* val) { return "'" + SEscape(val, "'", '\'') + "'"; }
-inline string SQ(const string& val) { return SQ(val.c_str()); }
-inline string SQ(int val) { return SToStr(val); }
-inline string SQ(unsigned val) { return SToStr(val); }
-inline string SQ(uint64_t val) { return SToStr(val); }
-inline string SQ(int64_t val) { return SToStr(val); }
-inline string SQ(double val) { return SToStr(val); }
+inline string SQ(const char* val)
+{
+    return "'" + SEscape(val, "'", '\'') + "'";
+}
+inline string SQ(const string& val)
+{
+    return SQ(val.c_str());
+}
+inline string SQ(int val)
+{
+    return SToStr(val);
+}
+inline string SQ(unsigned val)
+{
+    return SToStr(val);
+}
+inline string SQ(uint64_t val)
+{
+    return SToStr(val);
+}
+inline string SQ(int64_t val)
+{
+    return SToStr(val);
+}
+inline string SQ(double val)
+{
+    return SToStr(val);
+}
 extern string SQList(const string& val, bool integersOnly = true);
 
 template <typename Container> string SQList(const Container& valueList)
@@ -909,8 +1024,14 @@ inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnTh
 extern bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 
 // --------------------------------------------------------------------------
-inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }
-inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
+inline string STIMESTAMP(uint64_t when)
+{
+    return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when));
+}
+inline string SCURRENT_TIMESTAMP()
+{
+    return STIMESTAMP(STimeNow());
+}
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff

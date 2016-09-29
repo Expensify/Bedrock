@@ -19,7 +19,9 @@
 /////////////////////////////////////////////////////////////////////////////
 struct SQLiteTestWebServer : public STCPServer {
     // Simple constructor
-    SQLiteTestWebServer(const string& host) : STCPServer(host) {}
+    SQLiteTestWebServer(const string& host) : STCPServer(host)
+    {
+    }
 
     // Accept and respond to everything after a delay
     void postSelect(fd_map& fdm, uint64_t& nextActivity)
@@ -243,10 +245,22 @@ struct SQLiteTester {
     }
 
     // ---------------------------------------------------------------------
-    bool slaving(size_t c) { return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_SLAVING; }
-    bool waiting(size_t c) { return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_WAITING; }
-    bool searching(size_t c) { return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_SEARCHING; }
-    bool mastering(size_t c) { return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_MASTERING; }
+    bool slaving(size_t c)
+    {
+        return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_SLAVING;
+    }
+    bool waiting(size_t c)
+    {
+        return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_WAITING;
+    }
+    bool searching(size_t c)
+    {
+        return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_SEARCHING;
+    }
+    bool mastering(size_t c)
+    {
+        return _nodeArray[c] && _nodeArray[c]->getState() == SQLC_MASTERING;
+    }
 
     // ---------------------------------------------------------------------
     string getActivitySummary()

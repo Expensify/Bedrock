@@ -94,7 +94,10 @@ class BedrockServer : public STCPServer
     virtual ~BedrockServer();
 
     // Accessors
-    SQLCState getState() { return _replicationState.get(); }
+    SQLCState getState()
+    {
+        return _replicationState.get();
+    }
 
     // Ready to gracefully shut down
     bool shutdownComplete();

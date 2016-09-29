@@ -680,4 +680,7 @@ void BedrockServer::queueRequest(const SData& request)
     _queuedRequests.push(request);
 }
 
-const string& BedrockServer::getVersion() { return _version; }
+const string& BedrockServer::getVersion()
+{
+    return _version;
+}

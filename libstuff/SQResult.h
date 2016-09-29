@@ -8,8 +8,14 @@ class SQResult
     vector<vector<string>> rows;
 
     // Accessors
-    inline bool empty() const { return rows.empty(); }
-    inline size_t size() const { return rows.size(); }
+    inline bool empty() const
+    {
+        return rows.empty();
+    }
+    inline size_t size() const
+    {
+        return rows.size();
+    }
 
     // Mutators
     inline void clear()
@@ -19,8 +25,14 @@ class SQResult
     }
 
     // Operators
-    inline vector<string>& operator[](size_t rowNum) { return rows[rowNum]; }
-    inline const vector<string>& operator[](size_t rowNum) const { return rows[rowNum]; }
+    inline vector<string>& operator[](size_t rowNum)
+    {
+        return rows[rowNum];
+    }
+    inline const vector<string>& operator[](size_t rowNum) const
+    {
+        return rows[rowNum];
+    }
 
     // Serializers
     string serializeToJSON() const;

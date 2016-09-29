@@ -85,7 +85,10 @@ void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity)
     SQLiteNode::postSelect(fdm, nextActivity);
 }
 
-bool BedrockNode::isReadOnly() { return _readOnly; }
+bool BedrockNode::isReadOnly()
+{
+    return _readOnly;
+}
 
 /// Read-Only Command Definitions
 /// ------------------------------

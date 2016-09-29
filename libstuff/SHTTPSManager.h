@@ -13,7 +13,10 @@ class SHTTPSManager : public STCPManager
             finished = 0;
             response = 0;
         }
-        ~Transaction() { SASSERT(!s); }
+        ~Transaction()
+        {
+            SASSERT(!s);
+        }
 
         // Attributes
         STCPManager::Socket* s;

@@ -86,15 +86,33 @@ class SQLiteNode : public STCPNode
     virtual ~SQLiteNode();
 
     // Simple accessors
-    SQLCState getState() { return _state; }
-    int getPriority() { return _priority; }
-    string getHash() { return _db.getCommittedHash(); }
-    uint64_t getCommitCount() { return _db.getCommitCount(); }
+    SQLCState getState()
+    {
+        return _state;
+    }
+    int getPriority()
+    {
+        return _priority;
+    }
+    string getHash()
+    {
+        return _db.getCommittedHash();
+    }
+    uint64_t getCommitCount()
+    {
+        return _db.getCommitCount();
+    }
     list<string> getQueuedCommandList();
     list<string> getEscalatedCommandList();
     list<string> getProcessedCommandList();
-    const string& getMasterVersion() { return _masterVersion; };
-    const string& getVersion() { return _version; };
+    const string& getMasterVersion()
+    {
+        return _masterVersion;
+    };
+    const string& getVersion()
+    {
+        return _version;
+    };
 
     // Only let a read only node have an external party set the state master version. These need to be known
     // by the read only threads even though they are replication concepts.  They let the slaves know if they
@@ -113,16 +131,28 @@ class SQLiteNode : public STCPNode
 
     // Can shut down without causing problems
     void beginShutdown();
-    bool gracefulShutdown() { return (_gracefulShutdownTimeout.alarmDuration != 0); }
+    bool gracefulShutdown()
+    {
+        return (_gracefulShutdownTimeout.alarmDuration != 0);
+    }
     bool shutdownComplete();
 
     // Performs a read-only operation on the database.  Can happen in mid-
     // transaction, even if that transaction is later rolled back.
-    string read(const string& query) { return _db.read(query); }
-    bool read(const string& query, SQResult& result) { return _db.read(query, result); }
+    string read(const string& query)
+    {
+        return _db.read(query);
+    }
+    bool read(const string& query, SQResult& result)
+    {
+        return _db.read(query, result);
+    }
 
     // Returns true when we're ready to process commands
-    bool ready() { return (_state == SQLC_MASTERING || _state == SQLC_SLAVING); }
+    bool ready()
+    {
+        return (_state == SQLC_MASTERING || _state == SQLC_SLAVING);
+    }
 
 // Executes a new command on the distributed database with a given priority.
 // High priority commands take precedence over low, otherwise it's FIFO.
@@ -208,8 +238,14 @@ class SQLiteNode : public STCPNode
     // Force quorum among the replica after every N commits.  This prevents master from running ahead
     // too far. "Too far" is an arbitrary threshold that trades potential loss of consistency in the
     // failure case for better performance.
-    void setQuroumCheckpoint(const int quroumCheckpoint) { _quorumCheckpoint = quroumCheckpoint; };
-    int getQuorumCheckpoint() { return _quorumCheckpoint; };
+    void setQuroumCheckpoint(const int quroumCheckpoint)
+    {
+        _quorumCheckpoint = quroumCheckpoint;
+    };
+    int getQuorumCheckpoint()
+    {
+        return _quorumCheckpoint;
+    };
 
   protected:
     bool _readOnly;

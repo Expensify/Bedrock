@@ -12,7 +12,10 @@ class BedrockPlugin_Jobs : public BedrockNode::Plugin
 {
   public:
     // Implement base class interface
-    virtual string getName() { return "Jobs"; }
+    virtual string getName()
+    {
+        return "Jobs";
+    }
     virtual void upgradeDatabase(BedrockNode* node, SQLite& db);
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
     virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
@@ -21,7 +24,10 @@ class BedrockPlugin_Jobs : public BedrockNode::Plugin
   private:
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
-    bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
+    bool _validateRepeat(const string& repeat)
+    {
+        return !_constructNextRunDATETIME("", "", repeat).empty();
+    }
 };
 
 // Register for auto-discovery at boot

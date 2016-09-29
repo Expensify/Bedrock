@@ -10,7 +10,10 @@
 class BedrockPlugin_Status : public BedrockNode::Plugin
 {
   public:
-    virtual string getName() { return "Status"; }
+    virtual string getName()
+    {
+        return "Status";
+    }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
 };
 

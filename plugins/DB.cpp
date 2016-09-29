@@ -9,7 +9,10 @@
 class BedrockPlugin_DB : public BedrockNode::Plugin
 {
   public:
-    virtual string getName() { return "DB"; }
+    virtual string getName()
+    {
+        return "DB";
+    }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
     virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
 };

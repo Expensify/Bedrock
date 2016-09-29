@@ -5,6 +5,8 @@ AlignConsecutiveAssignments: true
 BreakBeforeBraces: Linux
 ConstructorInitializerAllOnOneLineOrOnePerLine: true
 ForEachMacros: ['SFOREACH', 'SFOREACHMAP']
+AllowShortFunctionsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
 
 Language: Cpp
 # Force pointers to the type for C++.

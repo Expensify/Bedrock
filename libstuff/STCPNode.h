@@ -32,7 +32,10 @@ struct STCPNode : public STCPServer {
             params            = params_;
             failedConnections = 0;
         }
-        bool connected() { return (s && s->state == STCP_CONNECTED); }
+        bool connected()
+        {
+            return (s && s->state == STCP_CONNECTED);
+        }
         void reset()
         {
             clear();
@@ -58,7 +61,10 @@ struct STCPNode : public STCPServer {
 
   private:
     // Override dead function
-    void postSelect(fd_map& ignore) { SERROR("Don't call."); }
+    void postSelect(fd_map& ignore)
+    {
+        SERROR("Don't call.");
+    }
 
     // Helper functions
     void _sendPING(Peer* peer);

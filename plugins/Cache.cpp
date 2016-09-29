@@ -12,7 +12,10 @@ class BedrockPlugin_Cache : public BedrockNode::Plugin
     ~BedrockPlugin_Cache();
 
     // Implement base class interface
-    virtual string getName() { return "Cache"; }
+    virtual string getName()
+    {
+        return "Cache";
+    }
     virtual void initialize(const SData& args);
     virtual void upgradeDatabase(BedrockNode* node, SQLite& db);
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
