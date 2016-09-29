@@ -1,0 +1,15 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 120
+AlignConsecutiveAssignments: true
+BreakBeforeBraces: Linux
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+ForEachMacros: ['SFOREACH', 'SFOREACHMAP']
+AllowShortFunctionsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: false
+BinPackParameters: false
+AllowAllParametersOfDeclarationOnNextLine: false
+DerivePointerAlignment: false
+PointerAlignment: Left
+AccessModifierOffset: -4
+PenaltyReturnTypeOnItsOwnLine: 1000

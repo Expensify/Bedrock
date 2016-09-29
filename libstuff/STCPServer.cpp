@@ -1,8 +1,7 @@
 #include "libstuff.h"
 
 // --------------------------------------------------------------------------
-STCPServer::STCPServer(const string& host)
-{
+STCPServer::STCPServer(const string& host) {
     // Initialize
     port = -1;
     if (!host.empty()) {
@@ -11,8 +10,7 @@ STCPServer::STCPServer(const string& host)
 }
 
 // --------------------------------------------------------------------------
-STCPServer::~STCPServer()
-{
+STCPServer::~STCPServer() {
     // Close the port
     if (port >= 0) {
         ::closesocket(port);
@@ -20,8 +18,7 @@ STCPServer::~STCPServer()
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::openPort(const string& host)
-{
+void STCPServer::openPort(const string& host) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
     SASSERT(port < 0);
@@ -29,8 +26,7 @@ void STCPServer::openPort(const string& host)
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::closePort()
-{
+void STCPServer::closePort() {
     // Close the port
     if (port >= 0) {
         ::closesocket(port);
@@ -41,8 +37,7 @@ void STCPServer::closePort()
 }
 
 // --------------------------------------------------------------------------
-STCPManager::Socket* STCPServer::acceptSocket( )
-{
+STCPManager::Socket* STCPServer::acceptSocket() {
     // Ignore if no socket
     if (port < 0) {
         return 0;
@@ -57,14 +52,14 @@ STCPManager::Socket* STCPServer::acceptSocket( )
 
     // Received a socket, wrap
     SDEBUG("Accepting socket from '" << addr << "'");
-    Socket* socket         = new Socket;
-    socket->s              = s;
-    socket->addr           = addr;
-    socket->state          = STCP_CONNECTED;
+    Socket* socket = new Socket;
+    socket->s = s;
+    socket->addr = addr;
+    socket->state = STCP_CONNECTED;
     socket->connectFailure = false;
-    socket->openTime       = STimeNow();
-    socket->ssl            = 0;
-    socket->data           = 0; // Used by caller, not libstuff
+    socket->openTime = STimeNow();
+    socket->ssl = 0;
+    socket->data = 0; // Used by caller, not libstuff
     socketList.push_back(socket);
 
     // Try to read immediately
@@ -73,8 +68,7 @@ STCPManager::Socket* STCPServer::acceptSocket( )
 }
 
 // --------------------------------------------------------------------------
-int STCPServer::preSelect(fd_map& fdm)
-{
+int STCPServer::preSelect(fd_map& fdm) {
     // Do the base class
     int maxS = STCPManager::preSelect(fdm);
 
@@ -89,8 +83,7 @@ int STCPServer::preSelect(fd_map& fdm)
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::postSelect(fd_map& fdm)
-{
+void STCPServer::postSelect(fd_map& fdm) {
     // Process all the existing sockets;
     STCPManager::postSelect(fdm);
     // **FIXME: Detect port failure
