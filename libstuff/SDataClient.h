@@ -2,26 +2,27 @@
 
 // Convenience class for sending requests and processing responses
 struct SDataClient : public STCPManager {
-    // Connection
-    struct Connection {
-        // Attributes
-        string host;
-        Socket* s;
-        SData request;
-    };
-
+  // Connection
+  struct Connection {
     // Attributes
-    list<Connection *> activeConnectionList, idleConnectionList;
+    string host;
+    Socket *s;
+    SData request;
+  };
 
-    // Maintains a series of outbound connections
-    virtual ~SDataClient();
+  // Attributes
+  list<Connection *> activeConnectionList, idleConnectionList;
 
-    // Send a new request to a given host
-    void sendRequest(const string& host, const SData& request);
+  // Maintains a series of outbound connections
+  virtual ~SDataClient();
 
-    // Override this to process responses
-    virtual void onResponse(const string& host, const SData& request, const SData& response) = 0;
+  // Send a new request to a given host
+  void sendRequest(const string &host, const SData &request);
 
-    // Processes the sockets and handles responses
-    void postSelect(fd_map& fdm);
+  // Override this to process responses
+  virtual void onResponse(const string &host, const SData &request,
+                          const SData &response) = 0;
+
+  // Processes the sockets and handles responses
+  void postSelect(fd_map &fdm);
 };
