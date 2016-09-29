@@ -1,4 +1,4 @@
-////p /src/bedrock/plugins/Status.cpp
+/// /src/bedrock/plugins/Status.cpp
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "../BedrockPlugin.h"
@@ -28,23 +28,23 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     SData& response = command->response;
     STable& content = command->jsonContent;
 
-    /// p
-    /// p Admin Commands
-    /// p --------------------
-    /// p
+    //
+    // Admin Commands
+    // --------------------
+    //
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1")) {
-        /// p - GET /status/isSlave HTTP/1.1
-        /// p
-        /// p    Used for liveness check for HAProxy. Unfortunately it's limited to
-        /// p    HTTP style requests for it's liveness checks, so let's pretend to be
-        /// p    an HTTP server for this purpose. This allows us to load balance
-        /// p    incoming requests.
-        /// p
-        /// p    **NOTE: HAProxy interprets 2xx/3xx level responses as alive
-        /// p                               4xx/5xx level responses as dead
-        /// p
-        /// p    Also we must prepend response status with HTTP/1.1
+        // - GET /status/isSlave HTTP/1.1
+        //
+        //    Used for liveness check for HAProxy. Unfortunately it's limited to
+        //    HTTP style requests for it's liveness checks, so let's pretend to be
+        //    an HTTP server for this purpose. This allows us to load balance
+        //    incoming requests.
+        //
+        //    **NOTE: HAProxy interprets 2xx/3xx level responses as alive
+        //                               4xx/5xx level responses as dead
+        //
+        //    Also we must prepend response status with HTTP/1.1
         if (node->getState() == SQLC_SLAVING)
             response.methodLine = "HTTP/1.1 200 Slaving";
         else
@@ -54,18 +54,18 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
 
     // --------------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
-        /// p - GET /status/handlingCommands HTTP/1.1
-        /// p
-        /// p    Used for liveness check for HAProxy. Unfortunately it's limited to
-        /// p    HTTP style requests for it's liveness checks, so let's pretend to be
-        /// p    an HTTP server for this purpose. This allows us to load balance
-        /// p    between the www nodes and the db nodes. This command returns 200
-        /// p    if this node should be given new commands
-        /// p
-        /// p     **NOTE: HAProxy interprets 2xx/3xx level responses as alive
-        /// p                                4xx/5xx level responses as dead
-        /// p
-        /// p             Also we must prepend response status with HTTP/1.1
+        // - GET /status/handlingCommands HTTP/1.1
+        //
+        //    Used for liveness check for HAProxy. Unfortunately it's limited to
+        //    HTTP style requests for it's liveness checks, so let's pretend to be
+        //    an HTTP server for this purpose. This allows us to load balance
+        //    between the www nodes and the db nodes. This command returns 200
+        //    if this node should be given new commands
+        //
+        //     **NOTE: HAProxy interprets 2xx/3xx level responses as alive
+        //                                4xx/5xx level responses as dead
+        //
+        //             Also we must prepend response status with HTTP/1.1
         if (node->getState() != SQLC_SLAVING) {
             response.methodLine = "HTTP/1.1 500 Not slaving. State=" + (string)SQLCStateNames[node->getState()];
         } else if (node->getVersion() != node->getMasterVersion()) {
@@ -78,19 +78,19 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
 
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "Ping")) {
-        /// p - Ping( )
-        /// p
-        /// p     For liveness tests.
-        /// p
+        // - Ping( )
+        //
+        //     For liveness tests.
+        //
         return true; // Successfully peeked
     }
 
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "Status")) {
-        /// p - Status( )
-        /// p
-        /// p     Give us some data on this server.
-        /// p
+        // - Status( )
+        //
+        //     Give us some data on this server.
+        //
         content["state"]       = SQLCStateNames[node->getState()];
         content["hash"]        = node->getHash();
         content["commitCount"] = SToStr(node->getCommitCount());

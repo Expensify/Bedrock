@@ -1,4 +1,4 @@
-/// p /srs/bedrock/BedrockNode.cpp
+// /srs/bedrock/BedrockNode.cpp
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "BedrockNode.h"
@@ -8,52 +8,52 @@
 // Global static values
 list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 
-/// p *jsonCode* Values
-/// p -----------------------
-/// p For consistency, all API commands return response codes in the following categories:
-/// p
-/// p ### 2xx Class ###
-/// p Any response between 200 and 299 means the request was valid and accepted.
-/// p
-/// p * 200 OK
-/// p
-/// p ### 3xx Class ###
-/// p Any response between 300 and 399 means that the request was valid, but rejected
-/// p for some reason less than failure.
-/// p
-/// p * 300 Redundant request
-/// p * 301 Limit hit.
-/// p * 302 Invalid validateCode (for bank account validation)
-/// p
-/// p ### 4xx Class ###
-/// p Any response between 400 and 499 means the request was valid, but failed.
-/// p
-/// p * 400 Unknown request failure
-/// p * 401 Unauthorized
-/// p * 402 Incomplete request
-/// p * 403 Terrorist <-- no longer used, but left in for nostalgia.
-/// p * 404 Resource doesn't exist
-/// p * 405 Resource in incorrect state
-/// p * 410 Resource not ready.
-/// p * 411 Insufficient privileges
-/// p * 412 Down for maintenance (used in waf)
-/// p
-/// p ### 5xx Class ###
-/// p Any response between 500 and 599 indicates the server experienced some internal
-/// p failure, and it's unknown if the request was valid.
-/// p
-/// p * 500 Unknown server failure
-/// p * 501 Transaction failure
-/// p * 502 Failed to execute query
-/// p * 503 Query returned invalid response
-/// p * 504 Resource in invalid state
-/// p * 507 Vendor error
-/// p * 508 Live operation not enabled
-/// p * 509 Operation timed out.
-/// p * 530 Unexpected response.
-/// p * 531 Expected but unusable response, retry later.
-/// p * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
-/// p
+// *jsonCode* Values
+// -----------------------
+// For consistency, all API commands return response codes in the following categories:
+//
+// ### 2xx Class ###
+// Any response between 200 and 299 means the request was valid and accepted.
+//
+// * 200 OK
+//
+// ### 3xx Class ###
+// Any response between 300 and 399 means that the request was valid, but rejected
+// for some reason less than failure.
+//
+// * 300 Redundant request
+// * 301 Limit hit.
+// * 302 Invalid validateCode (for bank account validation)
+//
+// ### 4xx Class ###
+// Any response between 400 and 499 means the request was valid, but failed.
+//
+// * 400 Unknown request failure
+// * 401 Unauthorized
+// * 402 Incomplete request
+// * 403 Terrorist <-- no longer used, but left in for nostalgia.
+// * 404 Resource doesn't exist
+// * 405 Resource in incorrect state
+// * 410 Resource not ready.
+// * 411 Insufficient privileges
+// * 412 Down for maintenance (used in waf)
+//
+// ### 5xx Class ###
+// Any response between 500 and 599 indicates the server experienced some internal
+// failure, and it's unknown if the request was valid.
+//
+// * 500 Unknown server failure
+// * 501 Transaction failure
+// * 502 Failed to execute query
+// * 503 Query returned invalid response
+// * 504 Resource in invalid state
+// * 507 Vendor error
+// * 508 Live operation not enabled
+// * 509 Operation timed out.
+// * 530 Unexpected response.
+// * 531 Expected but unusable response, retry later.
+// * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
+//
 
 // --------------------------------------------------------------------------
 BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
