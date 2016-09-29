@@ -173,7 +173,6 @@ done
 cat >> Makefile << "EOF"
 BEDROCKOBJ = $(BEDROCKC:%.c=$(ODIR)/current/%.o) $(BEDROCKCPP:%.cpp=$(ODIR)/current/%.o)
 BEDROCKDEP = $(BEDROCKC:%.c=$(DDIR)/current/%.d) $(BEDROCKCPP:%.cpp=$(DDIR)/current/%.d)
-bedrock: bedrock
 bedrock: libstuff/libstuff.a $(BEDROCKOBJ)
 	$(GXX) -o $@ $(BEDROCKOBJ) $(LDFLAGS)
 cleanbedrock:
@@ -227,7 +226,7 @@ cleanlibstuff:
 # Just delete the binaries, not all the intermediates.
 cleanbinaries:
 	rm -rf libstuff/libstuff.a
-	rm -rf bedrock/bedrock
+	rm -rf bedrock
 	rm -rf sqlitecluster/sqlitecluster
 
 ########################################################################################################################
