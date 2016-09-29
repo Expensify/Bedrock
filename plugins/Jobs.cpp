@@ -1,4 +1,4 @@
-////p /src/bedrock/BedrockPlugin_Jobs.cpp
+/// /src/bedrock/BedrockPlugin_Jobs.cpp
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
@@ -69,22 +69,22 @@ bool BedrockPlugin_Jobs::peekCommand( BedrockNode* node, SQLite& db, BedrockNode
     // ----------------------------------------------------------------------
     if( SIEquals( request.methodLine, "GetJob" ) )
     {
-        ///p - GetJob( name )
-        ///p 
-        ///p     Atomically dequeues exactly one job, if available.
-        ///p
-        ///p     Parameters:
-        ///p     - name - name pattern of jobs to match 
-        ///p     - timeout - (optional) maximum time (in ms) to wait, default forever
-        ///p
-        ///p     Returns:
-        ///p     - 200 - OK
-        ///p         . jobID - unique ID of the job
-        ///p         . name  - name of the actual job matched
-        ///p         . data  - JSON data associated with this job
-        ///p     - 303 - Timeout
-        ///p     - 404 - No jobs found
-        ///p 
+        // - GetJob( name )
+        // 
+        //     Atomically dequeues exactly one job, if available.
+        //
+        //     Parameters:
+        //     - name - name pattern of jobs to match 
+        //     - timeout - (optional) maximum time (in ms) to wait, default forever
+        //
+        //     Returns:
+        //     - 200 - OK
+        //         . jobID - unique ID of the job
+        //         . name  - name of the actual job matched
+        //         . data  - JSON data associated with this job
+        //     - 303 - Timeout
+        //     - 404 - No jobs found
+        // 
         BVERIFY_ATTRIBUTE_SIZE( "name", 1, BMAX_SIZE_SMALL );
 
         // Get the list
@@ -129,25 +129,25 @@ bool BedrockPlugin_Jobs::peekCommand( BedrockNode* node, SQLite& db, BedrockNode
     // ----------------------------------------------------------------------
     else if( SIEquals( request.methodLine, "QueryJob" ) )
     {
-        ///p - QueryJob( jobID )
-        ///p 
-        ///p     Returns all known information about a given job.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID - Identifier of the job to query
-        ///p
-        ///p     Returns:
-        ///p     - 200 - OK
-        ///p         . created - creation time of this job
-        ///p         . jobID - unique ID of the job
-        ///p         . state - One of QUEUED, RUNNING, FINISHED
-        ///p         . name  - name of the actual job matched
-        ///p         . nextRun - timestamp of next scheduled run
-        ///p         . lastRun - timestamp it was last run
-        ///p         . repeat - recurring description
-        ///p         . data - JSON data associated with this job
-        ///p     - 404 - No jobs found
-        ///p 
+        // - QueryJob( jobID )
+        // 
+        //     Returns all known information about a given job.
+        //
+        //     Parameters:
+        //     - jobID - Identifier of the job to query
+        //
+        //     Returns:
+        //     - 200 - OK
+        //         . created - creation time of this job
+        //         . jobID - unique ID of the job
+        //         . state - One of QUEUED, RUNNING, FINISHED
+        //         . name  - name of the actual job matched
+        //         . nextRun - timestamp of next scheduled run
+        //         . lastRun - timestamp it was last run
+        //         . repeat - recurring description
+        //         . data - JSON data associated with this job
+        //     - 404 - No jobs found
+        // 
         BVERIFY_ATTRIBUTE_INT64( "jobID", 1 );
 
         // Verify there is a job like this
@@ -207,22 +207,22 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
     // ----------------------------------------------------------------------
     if( SIEquals( request.methodLine, "CreateJob" ) )
     {
-        ///p - CreateJob( name, [data], [firstRun], [repeat] )
-        ///p 
-        ///p     Creates a "job" for future processing by a worker. 
-        ///p
-        ///p     Parameters:
-        ///p     - name  - An arbitrary string identifier (case insensitive)
-        ///p     - data  - A JSON object describing work to be done (optional)
-        ///p     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when
-        ///p                  this job should next execute (optional)
-        ///p     - repeat - A description of how to repeat (optional)
-        ///p     - priority - High priorities go first (optional, default 500)
-        ///p     - unique - if true, it will check that no other job with this name already exists, if it does it will return that jobID
-        ///p
-        ///p     Returns:
-        ///p     - jobID - Unique identifier of this job
-        ///p 
+        // - CreateJob( name, [data], [firstRun], [repeat] )
+        // 
+        //     Creates a "job" for future processing by a worker. 
+        //
+        //     Parameters:
+        //     - name  - An arbitrary string identifier (case insensitive)
+        //     - data  - A JSON object describing work to be done (optional)
+        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when
+        //                  this job should next execute (optional)
+        //     - repeat - A description of how to repeat (optional)
+        //     - priority - High priorities go first (optional, default 500)
+        //     - unique - if true, it will check that no other job with this name already exists, if it does it will return that jobID
+        //
+        //     Returns:
+        //     - jobID - Unique identifier of this job
+        // 
         BVERIFY_ATTRIBUTE_SIZE( "name", 1, BMAX_SIZE_SMALL );
 
         // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to master.
@@ -364,14 +364,14 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
     // ----------------------------------------------------------------------
     else if( SIEquals( request.methodLine, "UpdateJob" ) )
     {
-        ///p - UpdateJob( jobID, data )
-        ///p 
-        ///p     Atomically updates the data associated with a job.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID - ID of the job to delete
-        ///p     - data  - A JSON object describing work to be done
-        ///p 
+        // - UpdateJob( jobID, data )
+        // 
+        //     Atomically updates the data associated with a job.
+        //
+        //     Parameters:
+        //     - jobID - ID of the job to delete
+        //     - data  - A JSON object describing work to be done
+        // 
         BVERIFY_ATTRIBUTE_INT64( "jobID", 1 );
         BVERIFY_ATTRIBUTE_SIZE( "data", 1, BMAX_SIZE_BLOB );
 
@@ -400,28 +400,28 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
     else if( SIEquals( request.methodLine, "RetryJob"  ) ||
              SIEquals( request.methodLine, "FinishJob" ) )
     {
-        ///p - RetryJob( jobID, delay, [data] )
-        ///p
-        ///p     Re-queues a RUNNING job for "delay" seconds in the future,
-        ///p     unless the job is configured to "repeat" in which it will
-        ///p     just schedule for the next repeat time.
-        ///p     Use this when a job was only partially completed but
-        ///p     interrupted in a non-fatal way.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID  - ID of the job to retry
-        ///p     - delay  - Number of seconds to wait before retrying
-        ///p     - data   - Data to associate with this finsihed job
-        ///p 
-        ///p - FinishJob( jobID, [data] )
-        ///p
-        ///p     Finishes a job.  If it's set to recur, reschedules it. If
-        ///p     not recurring, deletes it.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID  - ID of the job to finish
-        ///p     - data   - Data to associate with this finsihed job
-        ///p 
+        // - RetryJob( jobID, delay, [data] )
+        //
+        //     Re-queues a RUNNING job for "delay" seconds in the future,
+        //     unless the job is configured to "repeat" in which it will
+        //     just schedule for the next repeat time.
+        //     Use this when a job was only partially completed but
+        //     interrupted in a non-fatal way.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to retry
+        //     - delay  - Number of seconds to wait before retrying
+        //     - data   - Data to associate with this finsihed job
+        // 
+        // - FinishJob( jobID, [data] )
+        //
+        //     Finishes a job.  If it's set to recur, reschedules it. If
+        //     not recurring, deletes it.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to finish
+        //     - data   - Data to associate with this finsihed job
+        // 
         BVERIFY_ATTRIBUTE_INT64( "jobID", 1 );
 
         // Verify there is a job like this and it's running
@@ -502,14 +502,14 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
 
     else if( SIEquals( request.methodLine, "FailJob" ) )
     {
-        ///p - FailJob( jobID, [data] )
-        ///p
-        ///p     Fails a job.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID - ID of the job to fail
-        ///p     - data  - Data to associate with this failed job
-        ///p
+        // - FailJob( jobID, [data] )
+        //
+        //     Fails a job.
+        //
+        //     Parameters:
+        //     - jobID - ID of the job to fail
+        //     - data  - Data to associate with this failed job
+        //
         BVERIFY_ATTRIBUTE_INT64( "jobID", 1 );
 
         // Verify there is a job like this and it's running
@@ -556,13 +556,13 @@ bool BedrockPlugin_Jobs::processCommand( BedrockNode* node, SQLite& db, BedrockN
 
     else if( SIEquals( request.methodLine, "DeleteJob" ) )
     {
-        ///p - DeleteJob( jobID )
-        ///p 
-        ///p     Deletes a given job.
-        ///p
-        ///p     Parameters:
-        ///p     - jobID - ID of the job to delete
-        ///p 
+        // - DeleteJob( jobID )
+        // 
+        //     Deletes a given job.
+        //
+        //     Parameters:
+        //     - jobID - ID of the job to delete
+        // 
         BVERIFY_ATTRIBUTE_INT64( "jobID", 1 );
 
         // Verify there is a job like this and it's not running

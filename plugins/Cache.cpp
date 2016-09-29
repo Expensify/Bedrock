@@ -1,4 +1,4 @@
-////p /src/bedrock/BedrockPlugin_Cache.cpp
+/// /src/bedrock/BedrockPlugin_Cache.cpp
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 #include "../BedrockTest.h"
@@ -229,19 +229,19 @@ bool BedrockPlugin_Cache::peekCommand( BedrockNode* node, SQLite& db, BedrockNod
     // ----------------------------------------------------------------------
     if( SIEquals( request.methodLine, "ReadCache" ) )
     {
-        ///p - ReadCache( name )
-        ///p 
-        ///p     Looks up the cached value corresponding to a name, if any.
-        ///p
-        ///p     Parameters:
-        ///p     - name - name pattern with which to search the cache (in GLOB syntax)
-        ///p
-        ///p     Returns:
-        ///p     - 200 - OK
-        ///p         . name  - name matched (as a header)
-        ///p         . value - raw value associated with that name (in the body of the response)
-        ///p     - 404 - No cache found
-        ///p 
+        // - ReadCache( name )
+        // 
+        //     Looks up the cached value corresponding to a name, if any.
+        //
+        //     Parameters:
+        //     - name - name pattern with which to search the cache (in GLOB syntax)
+        //
+        //     Returns:
+        //     - 200 - OK
+        //         . name  - name matched (as a header)
+        //         . value - raw value associated with that name (in the body of the response)
+        //     - 404 - No cache found
+        // 
         BVERIFY_ATTRIBUTE_SIZE( "name", 1, BMAX_SIZE_SMALL );
         const string& name = request["name"];
 
@@ -286,20 +286,20 @@ bool BedrockPlugin_Cache::processCommand( BedrockNode* node, SQLite& db, Bedrock
     // ----------------------------------------------------------------------
     if( SIEquals( request.methodLine, "WriteCache" ) )
     {
-        ///p - WriteCache( name, value, [invalidateName] )
-        ///p 
-        ///p     Records a named value into the cache, overwriting any other value
-        ///p     with the same name.  Also, optionally invalidates other
-        ///p     cache entries matching a pattern.
-        ///p
-        ///p     Note: For convenience, the value can either be provided as a
-        ///p     header, or in the content body of the request.
-        ///p
-        ///p     Parameters:
-        ///p     - name           - An arbitrary string identifier (case insensitive)
-        ///p     - value          - Raw data to associate with this value, as a request header (1MB max) or content body (64MB max)
-        ///p     - invalidateName - A name pattern to erase from the cache (optional)
-        ///p 
+        // - WriteCache( name, value, [invalidateName] )
+        // 
+        //     Records a named value into the cache, overwriting any other value
+        //     with the same name.  Also, optionally invalidates other
+        //     cache entries matching a pattern.
+        //
+        //     Note: For convenience, the value can either be provided as a
+        //     header, or in the content body of the request.
+        //
+        //     Parameters:
+        //     - name           - An arbitrary string identifier (case insensitive)
+        //     - value          - Raw data to associate with this value, as a request header (1MB max) or content body (64MB max)
+        //     - invalidateName - A name pattern to erase from the cache (optional)
+        // 
         BVERIFY_ATTRIBUTE_SIZE( "name", 1, BMAX_SIZE_SMALL );
         const string& valueHeader = request["value"];
         if( !valueHeader.empty() ) {
