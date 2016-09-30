@@ -137,6 +137,22 @@ bool SQLiteNode::shutdownComplete() {
         SINFO("Can't graceful shutdown yet because state="
               << SQLCStateNames[_state] << ", queued=" << getQueuedCommandList().size()
               << ", escalated=" << _escalatedCommandMap.size() << ", processed=" << _processedCommandList.size());
+
+        // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
+        // so we can try and diagnose what's happening.
+        if (_escalatedCommandMap.size()) {
+            for_each(_escalatedCommandMap.begin(), _escalatedCommandMap.end(), [&](std::pair<string, Command*> cmd) {
+                string name = cmd.first;
+                Command* command = cmd.second;
+                int64_t created = command->creationTimestamp;
+                int64_t elapsed = STimeNow() - created;
+                double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
+                string hasHTTPS = (command->httpsRequest) ? "true" : "false";
+                SINFO("Escalated command remaining at shutdown(" << name << "): "
+                      << command->request.methodLine << ". Created: " << command->creationTimestamp
+                      << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
+            });
+        }
         return false;
     }
 
