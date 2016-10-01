@@ -43,6 +43,9 @@ done
 
 # Build the library.
 cd mbedtls
+
+#i HACK:
+perl -pi -e 's/(MBEDTLS_ENTROPY_BLOCK_SIZE\s+)64/$1 256/g' include/mbedtls/entropy.h
 make && cp library/*.a ../$BINDIR
 cd ..
 
