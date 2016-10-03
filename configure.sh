@@ -43,7 +43,6 @@ done
 
 # Build the library.
 cd mbedtls
-
 make && cp library/*.a ../$BINDIR
 cd ..
 
