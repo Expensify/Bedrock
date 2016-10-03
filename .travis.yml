@@ -1,0 +1,19 @@
+sudo: false
+language: cpp
+compiler:
+    - gcc
+env:
+    - GXX=g++-4.8 CC=gcc-4.8
+addons:
+    apt:
+        sources:
+            - ubuntu-toolchain-r-test
+        packages:
+            - gcc-4.8
+            - g++-4.8
+notifications:
+    email:
+        on_success: never
+before_install:
+script: ./travis.sh
+
