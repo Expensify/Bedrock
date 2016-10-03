@@ -25,7 +25,7 @@ void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
 
 // --------------------------------------------------------------------------
 // **FIXME: Refactor thread to use an object to simplify logic reuse
-void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, BedrockServer::MessageQueue& directMessages) {
+void Be(BedrockNode& node, BedrockServer::MessageQueue& directMessages) {
     // Keep going until all messages are processed
     while (true) {
         // See if we have any messages sent to us for processing
