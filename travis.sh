@@ -43,4 +43,3 @@ travis_time_start
 make
 travis_time_finish
 travis_fold end build_bedrock
-
