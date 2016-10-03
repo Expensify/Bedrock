@@ -41,7 +41,7 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
     mbedtls_ssl_setup(&state->ssl, &state->conf);
 
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    mbedtls_ssl_conf_rng(&state->conf, mbedtls_entropy_func, &state->ec);
+    mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
     if (x509) {

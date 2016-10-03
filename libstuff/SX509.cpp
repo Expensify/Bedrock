@@ -16,8 +16,8 @@ SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt) {
 
     // Just create a fake certificate from the PolarSSL defaults
     SX509* x509 = new SX509;
-    mbedtls_x509_crt_init(&(x509->srvcert));
-    mbedtls_pk_init(&(x509->pk));
+    mbedtls_x509_crt_init(&x509->srvcert);
+    mbedtls_pk_init(&x509->pk);
     try {
         // Load and initialize this key
         if (mbedtls_pk_parse_key(&x509->pk, (unsigned char*)pemPtr, (int)strlen(pemPtr) + 1, NULL, 0)) {
