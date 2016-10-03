@@ -1,7 +1,6 @@
 #include "libstuff.h"
 #include <mbedtls/error.h>
 #include <mbedtls/net.h>
-#include <mbedtls/debug.h>
 
 // --------------------------------------------------------------------------
 const char* g_S_dhm_P = "E4004C1F94182000103D883A448B3F80"
