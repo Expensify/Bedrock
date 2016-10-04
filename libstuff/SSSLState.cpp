@@ -14,13 +14,17 @@ const char* g_S_dhm_P = "E4004C1F94182000103D883A448B3F80"
 const char* g_S_dhm_G = "4";
 
 SSSLState::SSSLState() {
-    mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_entropy_init(&ec);
 }
 
 SSSLState::~SSSLState() {
-    mbedtls_ssl_free(&ssl);
+    mbedtls_entropy_free(&ec);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_ssl_config_free(&conf);
+    mbedtls_ssl_free(&ssl);
 }
 
 // --------------------------------------------------------------------------
@@ -29,14 +33,14 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
-    mbedtls_entropy_init(&state->ec);
 
+    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
     mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
 
     mbedtls_ssl_setup(&state->ssl, &state->conf);
 
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
-    mbedtls_ssl_conf_rng(&state->conf, mbedtls_entropy_func, &state->ec);
+    mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
     if (x509) {

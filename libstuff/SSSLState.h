@@ -1,11 +1,13 @@
 #pragma once
 #include <mbedtls/ssl.h>
 #include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
 
 struct SSSLState {
     // Attributes
     int s;
     mbedtls_entropy_context ec;
+    mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
 
