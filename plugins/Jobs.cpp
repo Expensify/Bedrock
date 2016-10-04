@@ -45,6 +45,9 @@ void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
                                    "parentJobID INTEGER )",
                            ignore));
 
+    // FIXME: Remove this after upgrade
+    SASSERT( db.write( "ALTER TABLE jobs ADD COLUMN parentJobID INTEGER;" ) );
+
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsState    ON jobs ( state    );"));
