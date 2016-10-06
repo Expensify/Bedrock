@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+$(CC) -version
+$(CXX) -version
+
 travis_time_start() {
   travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
   travis_start_time=$(travis_nanoseconds)
