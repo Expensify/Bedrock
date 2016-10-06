@@ -3,14 +3,14 @@ language: cpp
 compiler:
     - gcc
 env:
-    - GXX=g++-4.8 CC=gcc-4.8
+    - GXX=g++-6 CC=gcc-6
 addons:
     apt:
         sources:
             - ubuntu-toolchain-r-test
         packages:
-            - gcc-4.8
-            - g++-4.8
+            - gcc-6
+            - g++-6
 notifications:
     email:
         on_success: never
