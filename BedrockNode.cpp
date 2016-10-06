@@ -2,11 +2,9 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "BedrockNode.h"
+#include "BedrockPlugin.h"
 #include "BedrockServer.h"
 #include <iomanip>
-
-// Global static values
-list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 
 // *jsonCode* Values
 // -----------------------
@@ -53,9 +51,7 @@ list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 // * 530 Unexpected response.
 // * 531 Expected but unusable response, retry later.
 // * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
-//
 
-// --------------------------------------------------------------------------
 BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
                  1024,                                                 // auto-checkpoint every 1024 pages
@@ -67,7 +63,6 @@ BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
     SINFO("BedrockNode constructor");
 }
 
-// --------------------------------------------------------------------------
 BedrockNode::~BedrockNode() {
     // Note any orphaned commands; this list should ideally be empty
     list<string> commandList;
@@ -76,7 +71,6 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
-// --------------------------------------------------------------------------
 void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Update the parent and attributes
     SQLiteNode::postSelect(fdm, nextActivity);
@@ -84,8 +78,6 @@ void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
 bool BedrockNode::isReadOnly() { return _readOnly; }
 
-/// Read-Only Command Definitions
-/// ------------------------------
 bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
@@ -98,9 +90,9 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     try {
         // Loop across the plugins to see which wants to take this
         bool pluginPeeked = false;
-        SFOREACH (list<Plugin*>, *Plugin::g_registeredPluginList, pluginIt) {
+        SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
             // See if it peeks this
-            Plugin* plugin = *pluginIt;
+            BedrockPlugin* plugin = *pluginIt;
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
                 // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
@@ -149,10 +141,6 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     return true;
 }
 
-// --------------------------------------------------------------------------
-///
-/// Read-Write Command Definitions
-/// -------------------------------
 void BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
@@ -170,8 +158,8 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
             SINFO("Upgrading database");
-            for_each(Plugin::g_registeredPluginList->begin(), Plugin::g_registeredPluginList->end(),
-                     [this, &db](Plugin* plugin) {
+            for_each(BedrockPlugin::g_registeredPluginList.begin(), BedrockPlugin::g_registeredPluginList.end(),
+                     [this, &db](BedrockPlugin* plugin) {
                          // See if it processes this
                          if (plugin->enabled()) {
                              plugin->upgradeDatabase(this, db);
@@ -182,9 +170,9 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // --------------------------------------------------------------------------
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
-            SFOREACH (list<Plugin*>, *Plugin::g_registeredPluginList, pluginIt) {
+            SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
                 // See if it processes this
-                Plugin* plugin = *pluginIt;
+                BedrockPlugin* plugin = *pluginIt;
                 if (plugin->enabled() && plugin->processCommand(this, db, command)) {
                     // Processed it!
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
@@ -243,14 +231,12 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     }
 }
 
-// --------------------------------------------------------------------------
 // Notes that we failed to process something
 void BedrockNode::_abortCommand(SQLite& db, Command* command) {
     // Note the failure in the response
     command->response.methodLine = "500 ABORTED";
 }
 
-// --------------------------------------------------------------------------
 void BedrockNode::_cleanCommand(Command* command) {
     if (command->httpsRequest) {
         if (command->httpsRequest->owner) {
@@ -260,20 +246,4 @@ void BedrockNode::_cleanCommand(Command* command) {
         }
         command->httpsRequest = 0;
     }
-}
-
-// --------------------------------------------------------------------------
-BedrockNode::Plugin::Plugin() {
-    // Auto-register this instance into the global static list, initializing
-    // the list if that hasn't yet been done. This just makes it available for
-    // enabling via the command line: by default all plugins start out
-    // disabled.
-    //
-    // **NOTE: This code runs *before* main().  This means that libstuff
-    //         hasn't yet been initialized, so there is no logging.
-    if (!g_registeredPluginList) {
-        g_registeredPluginList = new list<BedrockNode::Plugin*>;
-    }
-    _enabled = false;
-    g_registeredPluginList->push_back(this);
 }

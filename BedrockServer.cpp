@@ -4,6 +4,7 @@
 ///
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
+#include "BedrockPlugin.h"
 
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
@@ -260,10 +261,10 @@ BedrockServer::BedrockServer(const SData& args)
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : SVERSION;
 
     // Output the list of plugins compiled in
-    map<string, BedrockNode::Plugin*> registeredPluginMap;
-    SFOREACH (list<BedrockNode::Plugin*>, *BedrockNode::Plugin::g_registeredPluginList, pluginIt) {
+    map<string, BedrockPlugin*> registeredPluginMap;
+    SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
         // Add one more plugin
-        BedrockNode::Plugin* plugin = *pluginIt;
+        BedrockPlugin* plugin = *pluginIt;
         const string& pluginName = SToLower(plugin->getName());
         SINFO("Registering plugin '" << pluginName << "'");
         registeredPluginMap[pluginName] = plugin;
@@ -275,7 +276,7 @@ BedrockServer::BedrockServer(const SData& args)
     SFOREACH (list<string>, pluginNameList, pluginNameIt) {
         // Enable the named plugin
         const string& pluginName = SToLower(*pluginNameIt);
-        BedrockNode::Plugin* plugin = registeredPluginMap[pluginName];
+        BedrockPlugin* plugin = registeredPluginMap[pluginName];
         if (!plugin)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
@@ -620,8 +621,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for_each(BedrockNode::Plugin::g_registeredPluginList->begin(), BedrockNode::Plugin::g_registeredPluginList->end(),
-             [&](BedrockNode::Plugin* plugin) {
+    for_each(BedrockPlugin::g_registeredPluginList.begin(), BedrockPlugin::g_registeredPluginList.end(),
+             [&](BedrockPlugin* plugin) {
                  for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
                      if (timer->ding()) {
                          plugin->timerFired(timer);

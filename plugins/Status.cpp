@@ -7,7 +7,7 @@
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
 // Declare the class we're going to implement below
-class BedrockPlugin_Status : public BedrockNode::Plugin {
+class BedrockPlugin_Status : public BedrockPlugin {
   public:
     virtual string getName() { return "Status"; }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);

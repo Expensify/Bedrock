@@ -6,7 +6,7 @@
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
 // Declare the class we're going to implement below
-class BedrockPlugin_DB : public BedrockNode::Plugin {
+class BedrockPlugin_DB : public BedrockPlugin {
   public:
     virtual string getName() { return "DB"; }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
@@ -47,7 +47,7 @@ bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::C
         //
         //     Executes a simple query
         //
-        BVERIFY_ATTRIBUTE_SIZE("query", 1, BMAX_SIZE_QUERY);
+        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
 
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
@@ -113,7 +113,7 @@ bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode
         //
         //     Executes a simple read/write query
         //
-        BVERIFY_ATTRIBUTE_SIZE("query", 1, BMAX_SIZE_QUERY);
+        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
 
         // Attempt the query
         const string& query = request["query"] + ";";
