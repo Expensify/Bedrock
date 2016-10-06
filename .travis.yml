@@ -1,4 +1,6 @@
 sudo: false
+env:
+    - GXX=g++-6 CC=gcc-6
 addons:
     apt:
         sources:
