@@ -1,8 +1,11 @@
 #!/bin/bash
 set -e
 
-$(CC) -version
-$(CXX) -version
+export GXX=g++-6
+export CC=gcc-6
+
+${CC} -version
+${GXX} -version
 
 travis_time_start() {
   travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
