@@ -1,9 +1,4 @@
 sudo: false
-language: cpp
-compiler:
-    - gcc
-env:
-    - GXX=g++-6 CC=gcc-6
 addons:
     apt:
         sources:
