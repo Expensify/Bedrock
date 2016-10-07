@@ -1,12 +1,11 @@
 #pragma once
 #include "BedrockNode.h"
 
-/* BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
- * just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
- * automatically registered with Bedrock.
- * Why the weird `EXPAND{N}` macros? Because the pre-processor doesn't do recursive macro expansion with concatenation.
- * See: http://stackoverflow.com/questions/1597007/
- */
+// BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
+// just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
+// automatically registered with Bedrock.
+// Why the weird `EXPAND{N}` macros? Because the pre-processor doesn't do recursive macro expansion with concatenation.
+// See: http://stackoverflow.com/questions/1597007/
 #define BREGISTER_PLUGIN_EXPAND2(_CT_, _NUM_) _CT_ __BREGISTER_PLUGIN_##_CT_##_NUM_
 #define BREGISTER_PLUGIN_EXPAND1(_CT_, _NUM_) BREGISTER_PLUGIN_EXPAND2(_CT_, _NUM_)
 #define BREGISTER_PLUGIN(_CT_) BREGISTER_PLUGIN_EXPAND1(_CT_, __COUNTER__)
@@ -14,9 +13,8 @@
 // Simple plugin system to add functionality to a node at runtime
 class BedrockPlugin {
   public:
-    /* We use these sizes to make sure the storage engine does not silently truncate data. We throw an exception
-     * instead.
-     */
+    // We use these sizes to make sure the storage engine does not silently truncate data. We throw an exception
+    // instead.
     static constexpr int64_t MAX_SIZE_NONCOLUMN = 1024 * 1024 * 1024;
     static constexpr int64_t MAX_SIZE_QUERY = 1024 * 1024;
     static constexpr int64_t MAX_SIZE_BLOB = 1024 * 1024;
@@ -67,5 +65,5 @@ class BedrockPlugin {
 
   public:
     // Global static attributes
-    static list<BedrockPlugin*> g_registeredPluginList;
+    static list<BedrockPlugin*>* g_registeredPluginList;
 };

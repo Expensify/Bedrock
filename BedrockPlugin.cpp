@@ -2,16 +2,18 @@
 #include "BedrockPlugin.h"
 
 // Global static values
-list<BedrockPlugin*> BedrockPlugin::g_registeredPluginList;
+list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = 0;
 
 BedrockPlugin::BedrockPlugin() : _enabled(false) {
-    /* Auto-register this instance into the global static list. This just makes it available for enabling via the
-     * command line: by default all plugins start out disabled.
-     *
-     * NOTE: This code runs *before* main(). This means that libstuff hasn't yet been initialized, so there is no
-     * logging.
-     */
-    g_registeredPluginList.push_back(this);
+    // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.
+    // This just makes it available for enabling via the command line: by default all plugins start out disabled.
+    //
+    // NOTE: This code runs *before* main(). This means that libstuff hasn't yet been initialized, so there is no
+    // logging.
+    if (!g_registeredPluginList) {
+        g_registeredPluginList = new list<BedrockPlugin*>;
+    }
+    g_registeredPluginList->push_back(this);
 }
 
 void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize) {

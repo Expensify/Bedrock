@@ -207,7 +207,7 @@ void BedrockTest(SData& trueArgs) {
     }
 
     // Test each of the plugins
-    for_each(Plugin::g_registeredPluginList.begin(), Plugin::g_registeredPluginList.end(), [&](Plugin* plugin) {
+    for_each(Plugin::g_registeredPluginList->begin(), Plugin::g_registeredPluginList->end(), [&](Plugin* plugin) {
         // Do we need to clean up?
         if (tester->server) {
             // Stop the server to provide a clean test environment for the next plugin

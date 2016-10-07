@@ -262,7 +262,7 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Output the list of plugins compiled in
     map<string, BedrockPlugin*> registeredPluginMap;
-    SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
+    SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
         // Add one more plugin
         BedrockPlugin* plugin = *pluginIt;
         const string& pluginName = SToLower(plugin->getName());
@@ -621,7 +621,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for_each(BedrockPlugin::g_registeredPluginList.begin(), BedrockPlugin::g_registeredPluginList.end(),
+    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
              [&](BedrockPlugin* plugin) {
                  for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
                      if (timer->ding()) {

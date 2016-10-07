@@ -1,4 +1,3 @@
-/// /src/bedrock/plugins/DB.cpp
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
@@ -47,7 +46,7 @@ bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::C
         //
         //     Executes a simple query
         //
-        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
+        verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
 
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
@@ -113,7 +112,7 @@ bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode
         //
         //     Executes a simple read/write query
         //
-        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
+        verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
 
         // Attempt the query
         const string& query = request["query"] + ";";

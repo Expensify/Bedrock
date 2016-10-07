@@ -90,7 +90,7 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     try {
         // Loop across the plugins to see which wants to take this
         bool pluginPeeked = false;
-        SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
+        SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
             // See if it peeks this
             BedrockPlugin* plugin = *pluginIt;
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
@@ -158,7 +158,7 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
             SINFO("Upgrading database");
-            for_each(BedrockPlugin::g_registeredPluginList.begin(), BedrockPlugin::g_registeredPluginList.end(),
+            for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
                      [this, &db](BedrockPlugin* plugin) {
                          // See if it processes this
                          if (plugin->enabled()) {
@@ -170,7 +170,7 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // --------------------------------------------------------------------------
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
-            SFOREACH (list<BedrockPlugin*>, BedrockPlugin::g_registeredPluginList, pluginIt) {
+            SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
                 // See if it processes this
                 BedrockPlugin* plugin = *pluginIt;
                 if (plugin->enabled() && plugin->processCommand(this, db, command)) {
