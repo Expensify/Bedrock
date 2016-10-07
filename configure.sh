@@ -43,7 +43,7 @@ done
 
 # Build the library.
 cd mbedtls
-make && cp library/*.a ../$BINDIR
+make -j 4 && cp library/*.a ../$BINDIR
 cd ..
 
 # Create the Makefile.
