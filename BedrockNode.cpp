@@ -205,7 +205,7 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     } catch (const char* e) {
         handleCommandException(db, command, e, true);
     } catch (const string e) {
-        handleCommandException(db, command, e, false);
+        handleCommandException(db, command, e, true);
     } catch (...) {
         handleCommandException(db, command, "", true);
     }
