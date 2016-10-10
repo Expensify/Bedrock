@@ -1,10 +1,9 @@
-/// /src/bedrock/BedrockPlugin_Cache.cpp
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 #include "../BedrockTest.h"
 
 // Declare the class we're going to implement below
-class BedrockPlugin_Cache : public BedrockNode::Plugin {
+class BedrockPlugin_Cache : public BedrockPlugin {
   public:
     // Constructor / Destructor
     BedrockPlugin_Cache();
@@ -218,7 +217,7 @@ bool BedrockPlugin_Cache::peekCommand(BedrockNode* node, SQLite& db, BedrockNode
         //         . value - raw value associated with that name (in the body of the response)
         //     - 404 - No cache found
         //
-        BVERIFY_ATTRIBUTE_SIZE("name", 1, BMAX_SIZE_SMALL);
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
         const string& name = request["name"];
 
         // Get the list
@@ -276,11 +275,11 @@ bool BedrockPlugin_Cache::processCommand(BedrockNode* node, SQLite& db, BedrockN
         //     (64MB max)
         //     - invalidateName - A name pattern to erase from the cache (optional)
         //
-        BVERIFY_ATTRIBUTE_SIZE("name", 1, BMAX_SIZE_SMALL);
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
         const string& valueHeader = request["value"];
         if (!valueHeader.empty()) {
             // Value is provided via the header -- make sure it's not too long
-            if (valueHeader.size() > BMAX_SIZE_BLOB) {
+            if (valueHeader.size() > MAX_SIZE_BLOB) {
                 throw "402 Value too large, 1MB max -- use content body";
             }
         } else if (!request.content.empty()) {

@@ -1,4 +1,3 @@
-/// /src/bedrock/BedrockPlugin_Jobs.cpp
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
@@ -8,7 +7,7 @@
 #define JOBS_DEFAULT_PRIORITY 500
 
 // Declare the class we're going to implement below
-class BedrockPlugin_Jobs : public BedrockNode::Plugin {
+class BedrockPlugin_Jobs : public BedrockPlugin {
   public:
     // Implement base class interface
     virtual string getName() { return "Jobs"; }
@@ -81,7 +80,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         //     - 303 - Timeout
         //     - 404 - No jobs found
         //
-        BVERIFY_ATTRIBUTE_SIZE("name", 1, BMAX_SIZE_SMALL);
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
 
         // Get the list
         SQResult result;
@@ -141,7 +140,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         //         . data - JSON data associated with this job
         //     - 404 - No jobs found
         //
-        BVERIFY_ATTRIBUTE_INT64("jobID", 1);
+        verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this
         SQResult result;
@@ -218,7 +217,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     Returns:
         //     - jobID - Unique identifier of this job
         //
-        BVERIFY_ATTRIBUTE_SIZE("name", 1, BMAX_SIZE_SMALL);
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
 
         // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
         // master.
@@ -349,8 +348,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     - jobID - ID of the job to delete
         //     - data  - A JSON object describing work to be done
         //
-        BVERIFY_ATTRIBUTE_INT64("jobID", 1);
-        BVERIFY_ATTRIBUTE_SIZE("data", 1, BMAX_SIZE_BLOB);
+        verifyAttributeInt64(request, "jobID", 1);
+        verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
 
         // Verify there is a job like this
         SQResult result;
@@ -400,7 +399,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     - jobID  - ID of the job to finish
         //     - data   - Data to associate with this finsihed job
         //
-        BVERIFY_ATTRIBUTE_INT64("jobID", 1);
+        verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's running
         SQResult result;
@@ -485,7 +484,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     - jobID - ID of the job to fail
         //     - data  - Data to associate with this failed job
         //
-        BVERIFY_ATTRIBUTE_INT64("jobID", 1);
+        verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's running
         SQResult result;
@@ -537,7 +536,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     Parameters:
         //     - jobID - ID of the job to delete
         //
-        BVERIFY_ATTRIBUTE_INT64("jobID", 1);
+        verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's not running
         SQResult result;

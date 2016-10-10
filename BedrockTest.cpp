@@ -1,8 +1,8 @@
-/// bedrock/BedrockTest.cpp
 #include <libstuff/libstuff.h>
+#include "BedrockPlugin.h"
 #include "BedrockTest.h"
 
-using Plugin = BedrockNode::Plugin;
+using Plugin = BedrockPlugin;
 
 BedrockTester::BedrockTester() {
     // Initialize
