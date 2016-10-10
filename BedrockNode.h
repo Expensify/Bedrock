@@ -18,6 +18,9 @@ class BedrockNode : public SQLiteNode {
     // STCPManager API: Socket management
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
 
+    // Handle an exception thrown by a plugin while peek/processing a command.
+    void handleCommandException(SQLite& db, Command* command, const string& errorStr, bool wasProcessing);
+
     // SQLiteNode API: Command management
     virtual bool _peekCommand(SQLite& db, Command* command);
     virtual void _processCommand(SQLite& db, Command* command);

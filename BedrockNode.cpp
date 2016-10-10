@@ -121,20 +121,9 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             }
         }
     } catch (const char* e) {
-        // Error -- roll back the database and return the error
-        const string& msg = "Error processing read-only command '" + request.methodLine + "' (" + e + "), ignoring: " +
-                            request.serialize();
-        if (SContains(e, "_ALERT_"))
-            SALERT(msg);
-        else if (SContains(e, "_WARN_"))
-            SWARN(msg);
-        else if (SContains(e, "_HMMM_"))
-            SHMMM(msg);
-        else if (SStartsWith(e, "50"))
-            SALERT(msg); // Alert on 500 level errors.
-        else
-            SINFO(msg);
-        response.methodLine = e;
+        handleCommandException(db, command, e, false);
+    } catch (...) {
+        handleCommandException(db, command, "", false);
     }
 
     // If we get here, it means the command is fully completed.
@@ -211,23 +200,39 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                 response.content = newContent;
             }
         }
-
     } catch (const char* e) {
-        // Error -- roll back the database and return the error
+        handleCommandException(db, command, e, true);
+    } catch (...) {
+        handleCommandException(db, command, "", true);
+    }
+}
+
+void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing)
+{
+    // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
+    if (wasProcessing) {
         db.rollback();
-        const string& msg =
-            "Error processing command '" + request.methodLine + "' (" + e + "), ignoring: " + request.serialize();
-        if (SContains(e, "_ALERT_"))
-            SALERT(msg);
-        else if (SContains(e, "_WARN_"))
-            SWARN(msg);
-        else if (SContains(e, "_HMMM_"))
-            SHMMM(msg);
-        else if (SStartsWith(e, "50"))
-            SALERT(msg); // Alert on 500 level errors.
-        else
-            SINFO(msg);
-        response.methodLine = e;
+    }
+
+    const string& msg = "Error processing command '" + command->request.methodLine
+                        + "' (" + e + "), ignoring: " + command->request.serialize();
+
+    if (SContains(e, "_ALERT_")) {
+        SALERT(msg);
+    } else if (SContains(e, "_WARN_")) {
+        SWARN(msg);
+    } else if (SContains(e, "_HMMM_")) {
+        SHMMM(msg);
+    } else if (SStartsWith(e, "50")) {
+        SALERT(msg); // Alert on 500 level errors.
+    } else {
+        SINFO(msg);
+    }
+
+    // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
+    // we'll use the text of the error.
+    if (command->response.methodLine == "") {
+        command->response.methodLine = e;
     }
 }
 
