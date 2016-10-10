@@ -21,7 +21,7 @@ class BedrockPlugin_Jobs : public BedrockNode::Plugin {
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
     bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
-    int _getCountPendingChildJobs(SQLite& db, const int jobID);
+    int _getCountOfPendingChildJobs(SQLite& db, const int jobID);
 };
 
 // Register for auto-discovery at boot
@@ -259,7 +259,21 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // If no priority set, set it
         int priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
 
-        const string& safeParentJobID = request["parentJobID"].empty() ? SQ("NULL") : SQ(request["parentJobID"]);
+        string safeParentJobID = SQ("NULL");
+        if (!request["parentJobID"].empty()) {
+            safeParentJobID = SQ(request["parentJobID"]);
+            SQResult result;
+            if (!db.read("SELECT 1 "
+                         "FROM jobs "
+                         "WHERE jobID = " + safeParentJobID + ";",
+                         result)) {
+                throw "502 Select failed";
+            }
+
+            if (result.empty()) {
+                throw "403 parentJobID does not exist";
+            }
+        }
 
         // We'd initially intended for any value to be allowable here, but for performance reasons, we currently
         // will only allow specific values to try and keep queries fast. If you pass an invalid value, we'll throw
@@ -436,9 +450,9 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         }
 
         // If we are finishing a job that has child jobs, set its state to paused.
-        const int childCount = _getCountPendingChildJobs(db, request.calc64("jobID"));
+        const int childCount = _getCountOfPendingChildJobs(db, request.calc64("jobID"));
         if (SIEquals(request.methodLine, "FinishJob") && childCount != 0) {
-            SINFO("Job has " + SToStr(childCount) + "child jobs, PAUSING");
+            SINFO("Job has " + SToStr(childCount) + " child jobs, PAUSING");
             if (!db.write("UPDATE jobs SET state=" + SQ("PAUSED") + " WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Update failed";
             }
@@ -489,7 +503,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Delete failed";
             }
-            if (parentJobID > 0 && _getCountPendingChildJobs(db, parentJobID) == 0) {
+            if (parentJobID > 0 && _getCountOfPendingChildJobs(db, parentJobID) == 0) {
                 SINFO("Job has parentJobID: " + SToStr(parentJobID) + " and no other pending children, resuming parent job");
                 if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                     throw "502 Update failed";
@@ -668,11 +682,8 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 
 /**
  * Returns the number of RUNNING or QUEUED jobs that have the passed jobID as their parent.
- * @param db
- * @param jobID
- * @return
  */
-int BedrockPlugin_Jobs::_getCountPendingChildJobs(SQLite& db, const int jobID)
+int BedrockPlugin_Jobs::_getCountOfPendingChildJobs(SQLite& db, const int jobID)
 {
     SQResult result;
     if (!db.read("SELECT count(1) "
