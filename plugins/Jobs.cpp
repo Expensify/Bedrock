@@ -271,7 +271,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             }
 
             if (result.empty()) {
-                throw "403 parentJobID does not exist";
+                throw "404 parentJobID does not exist";
             }
         }
 
