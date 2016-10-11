@@ -20,7 +20,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
     bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
-    int _getCountOfPendingChildJobs(SQLite& db, const int jobID);
+    bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
 };
 
 // Register for auto-discovery at boot
@@ -30,7 +30,7 @@ BREGISTER_PLUGIN(BedrockPlugin_Jobs);
 void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
-    SASSERT(db.verifyTable("jobs", "CREATE TABLE jobs ( "
+    while (!db.verifyTable("jobs", "CREATE TABLE jobs ( "
                                    "created  TIMESTAMP NOT NULL, "
                                    "jobID    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                    "state    TEXT NOT NULL, "
@@ -40,12 +40,12 @@ void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
                                    "repeat   TEXT NOT NULL, "
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " +
-                                       SToStr(JOBS_DEFAULT_PRIORITY) + ", "+
-                                   "parentJobID INTEGER )",
-                           ignore));
-
-    // FIXME: Remove this after upgrade
-    SASSERT( db.write( "ALTER TABLE jobs ADD COLUMN parentJobID INTEGER;" ) );
+                                       SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                                   "parentJobID INTEGER NOT NULL DEFAULT 0 )",
+                           ignore)) {
+        // FIXME: Remove this after upgrade
+        SASSERT(db.write("ALTER TABLE jobs ADD COLUMN parentJobID INTEGER NOT NULL DEFAULT 0;"));
+    }
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
@@ -54,7 +54,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsNextRun  ON jobs ( nextRun  );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsLastRun  ON jobs ( lastRun  );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsPriority ON jobs ( priority );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobID ON jobs ( parentJobID );"));
+    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state );"));
 
     // This index is used to optimize the Bedrock::Jobs::GetJob call.
     SASSERT(db.write(
@@ -219,7 +219,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     - priority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //     return that jobID
-        //     - parentJobID - The ID of the parent job
+        //     - parentJobID - The ID of the parent job (optional)
         //
         //     Returns:
         //     - jobID - Unique identifier of this job
@@ -256,9 +256,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             throw "402 Malformed repeat";
 
         // If no priority set, set it
-        int priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
+        int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
 
-        string safeParentJobID = SQ("NULL");
+        // Validate that the parentJobID exists if one was passed.
+        string safeParentJobID = "0";
         if (!request["parentJobID"].empty()) {
             safeParentJobID = SQ(request["parentJobID"]);
             SQResult result;
@@ -268,7 +269,6 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                          result)) {
                 throw "502 Select failed";
             }
-
             if (result.empty()) {
                 throw "404 parentJobID does not exist";
             }
@@ -440,7 +440,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
         string repeat = result[0][3];
-        const int parentJobID = SToInt(result[0][4]);
+        int64_t parentJobID = SToInt(result[0][4]);
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING") {
@@ -449,9 +449,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         }
 
         // If we are finishing a job that has child jobs, set its state to paused.
-        const int childCount = _getCountOfPendingChildJobs(db, request.calc64("jobID"));
-        if (SIEquals(request.methodLine, "FinishJob") && childCount != 0) {
-            SINFO("Job has " + SToStr(childCount) + " child jobs, PAUSING");
+        if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
+            SINFO("Job has child jobs, PAUSING");
             if (!db.write("UPDATE jobs SET state=" + SQ("PAUSED") + " WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Update failed";
             }
@@ -502,7 +501,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Delete failed";
             }
-            if (parentJobID > 0 && _getCountOfPendingChildJobs(db, parentJobID) == 0) {
+            if (parentJobID > 0 && !_hasPendingChildJobs(db, parentJobID)) {
                 SINFO("Job has parentJobID: " + SToStr(parentJobID) + " and no other pending children, resuming parent job");
                 if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                     throw "502 Update failed";
@@ -680,18 +679,19 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 }
 
 /**
- * Returns the number of RUNNING or QUEUED jobs that have the passed jobID as their parent.
+ * Returns true if there are any children of this jobID in a RUNNING or QUEUED state.
  */
-int BedrockPlugin_Jobs::_getCountOfPendingChildJobs(SQLite& db, const int jobID)
+bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID)
 {
     SQResult result;
-    if (!db.read("SELECT count(1) "
+    if (!db.read("SELECT 1 "
                  "FROM jobs "
                  "WHERE parentJobID = " + SQ(jobID) + " " +
-                   "AND state IN ('QUEUED', 'RUNNING');",
+                   "AND state IN ('QUEUED', 'RUNNING') " +
+                 "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
     }
 
-    return SToInt(result[0][0]);
+    return !result.empty();
 }
