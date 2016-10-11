@@ -38,7 +38,7 @@ This would execute the "Query" command of the Bedrock::DB plugin and return the 
     foo | bar
     1 | 2
 
-The "200 OK" indicates the command was processed successfully.  "foo | bar" is the header row, and "1 | 2" are the results.  This example only shows a stateless query, but this same technique works with any sqlite compatible query -- including creating tables and index, inserting rows, joining tables, or pretty much everything every other SQL database does.
+The "200 OK" indicates the command was processed successfully.  "foo &#124; bar" is the header row, and "1 &#124; 2" are the results.  This example only shows a stateless query, but this same technique works with any sqlite compatible query -- including creating tables and index, inserting rows, joining tables, or pretty much everything every other SQL database does.
 
 ## How is Bedrock::DB like/unlike MySQL?
 On the surface, Bedrock (using the Bedrock::DB plugin) is effectively equivalent to MySQL in that both:
@@ -80,7 +80,7 @@ Provides basic status about the health the database cluster.  Commands include:
 ### Bedrock::DB
 Provides direct SQL access to the underlying database.  Commands include:
 
- * *Query( query, [format: json|text] )* - Returns the result of a read query, or executes a write query
+ * *Query( query, [format: json&#124;text] )* - Returns the result of a read query, or executes a write query
 
 For example, this can be used just like any other database.  First, create a table:
 
