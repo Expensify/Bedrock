@@ -25,7 +25,7 @@ The parameters mean:
     -nodeHost <host:port>: Listen on this host:port for connections from other nodes
     -plugins <first,second,...,last>: Enable these plugins
 
-Once started, it listens on *serverHost* for commands implemented by the stated plugins.  To see how this works with the Bedrock::DB plugin, you would connect to *serverHost* using any TCP socket client, send a request, and get the response.  An example with netcat is:
+Once started, it listens on `serverHost` for commands implemented by the stated plugins.  To see how this works with the Bedrock::DB plugin, you would connect to `serverHost` using any TCP socket client, send a request, and get the response.  An example with netcat is:
 
     $ nc localhost 8888
     Query: SELECT 1 AS foo, 2 AS bar;
