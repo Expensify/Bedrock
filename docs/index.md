@@ -107,9 +107,9 @@ Then query data back out of that table:
     {"headers":["foo","bar"],"rows":[[1,2]]}
     
 ### Bedrock::Jobs
-(See [Bedrock::Jobs](jobs.md))
+(See [Bedrock::Jobs](jobs.html))
 
 ### Bedrock::Cache
-(See [Bedrock::Cache](cache.md))
+(See [Bedrock::Cache](cache.html))
 
 
