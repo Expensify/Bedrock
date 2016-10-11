@@ -235,7 +235,7 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
 
     // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
     // we'll use the text of the error.
-    if (command->response.methodLine == "") {
+    if (command->response.methodLine == "" || command->response.methodLine == "200 OK") {
         command->response.methodLine = e;
     }
 }
