@@ -1,4 +1,6 @@
 # Bedrock -- Rock-solid distributed data
+
+[![Join the chat at https://gitter.im/Expensify-Bedrock/Lobby](https://badges.gitter.im/Expensify-Bedrock/Lobby.svg)](https://gitter.im/Expensify-Bedrock/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 Bedrock is a simple, modular, WAN-replicated data foundation for global-scale applications.  Taking each of those in turn:
 
 * **Bedrock is simple.** This means it exposes the fewest knobs necessary, with appropriate defaults at every layer.
