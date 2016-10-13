@@ -86,7 +86,6 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
     // Assume success; will throw failure if necessary
-    response.methodLine = "200 OK";
     try {
         // Loop across the plugins to see which wants to take this
         bool pluginPeeked = false;
@@ -106,6 +105,11 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             // Not a peekable command
             SINFO("Command '" << request.methodLine << "' is not peekable, queuing for processing.");
             return false; // Not done
+        }
+
+        // If no response was sent, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
         }
 
         // Success.  If a command has set "content", encode it in the response.
@@ -187,6 +191,11 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             db.rollback();
         else if (!db.prepare())
             throw "501 Failed to prepare transaction";
+
+        // If no response was sent, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
+        }
 
         // Success, this command will be committed.
         SINFO("Responding '" << response.methodLine << "' to '" << request.methodLine << "'.");
