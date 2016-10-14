@@ -59,6 +59,26 @@ class BedrockPlugin {
     set<SStopwatch*> timers;
     virtual void timerFired(SStopwatch* timer);
 
+    // Returns "host:port" on which to listen, or empty if none
+    virtual string getPort() { return ""; }
+
+    // Called when a socket is accepted on this plugin's port
+    virtual void onPortAccept(STCPManager::Socket* s) { }
+
+    // Called when a socket receives input
+    // Param request: optional request to queue internally 
+    // Return true if the socket is still alive
+    virtual bool onPortRecv(STCPManager::Socket* s, SData& request) { return false; }
+
+    // Gets a specific plugin by name, if it exists
+    static BedrockPlugin* getPlugin(const string& name);
+
+    // After processing the request from this plugin, this is called to send the response
+    // param response The response from the processed request
+    // param s        Optional socket from which this request was received
+    // return         True if the socket should be kept open
+    virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s) { return false; }
+
   protected:
     // Attributes
     bool _enabled;

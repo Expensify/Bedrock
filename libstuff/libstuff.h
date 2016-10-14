@@ -466,10 +466,14 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
 
-// General testing functions
-inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
 inline bool SContains(const string& haystack, const string& needle) { return haystack.find(needle) != string::npos; }
 inline bool SContains(const string& haystack, char needle) { return haystack.find(needle) != string::npos; }
+inline bool SContains(const STable& nameValueMap, const string& name) {
+    return(nameValueMap.find(name) != nameValueMap.end());
+}
+
+// General testing functions
+inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
 extern bool SIContains(const string& haystack, const string& needle);
 inline bool SStartsWith(const string& haystack, const string& needle) { return haystack.find(needle) == 0; }
 inline bool SEndsWith(const string& haystack, const string& needle) {
@@ -567,11 +571,12 @@ inline void SConsumeBack(string& lhs, int num) {
         lhs = lhs.substr(0, lhs.size() - num);
     }
 }
-inline void SAppend(string& lhs, const char* rhs, int num) {
+inline void SAppend(string& lhs, const void* rhs, int num) {
     size_t oldSize = lhs.size();
     lhs.resize(oldSize + num);
     memcpy(&lhs[oldSize], rhs, num);
 }
+inline void SAppend(string& lhs, const string& rhs) { lhs += rhs; }
 
 // HTTP message management
 #define S_COOKIE_SEPARATOR ((char)0xFF)

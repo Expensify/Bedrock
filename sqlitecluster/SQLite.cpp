@@ -22,6 +22,10 @@ void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize) {
     // Initialize
     SINFO("Opening " << (readOnly ? "Read Only" : "Writable") << " sqlite connection");
+    SASSERT(!filename.empty());
+    SASSERT(cacheSize > 0);
+    SASSERT(autoCheckpoint >= 0);
+    SASSERT(maxJournalSize > 0);
     _filename = filename;
     _insideTransaction = false;
     _lastWriteChanged = false;

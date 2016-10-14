@@ -57,7 +57,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
                        const string& synchronousCommands, bool readOnly, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize) {
-    SASSERT(readOnly || port > 0);
+    SASSERT(readOnly || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
@@ -148,8 +148,8 @@ bool SQLiteNode::shutdownComplete() {
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
                 string hasHTTPS = (command->httpsRequest) ? "true" : "false";
-                SINFO("Escalated command remaining at shutdown(" << name << "): "
-                      << command->request.methodLine << ". Created: " << command->creationTimestamp
+                SINFO("Escalated command remaining at shutdown("
+                      << name << "): " << command->request.methodLine << ". Created: " << command->creationTimestamp
                       << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
             });
         }
