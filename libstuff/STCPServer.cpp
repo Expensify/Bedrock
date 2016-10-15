@@ -43,15 +43,19 @@ void STCPServer::closePorts() {
 
 // --------------------------------------------------------------------------
 STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    portOut = 0;
+    Socket* socket = 0;
+
     // See if we can accept on any port
-    for_each(portList.begin(), portList.end(), [&](Port port) {
+    for_each(portList.begin(), portList.end(), [&](Port& port) {
         // Try to accept on the port and wrap in a socket
         sockaddr_in addr;
         int s = S_accept(port.s, addr, false);
         if (s > 0) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            Socket* socket = new Socket;
+            socket = new Socket;
             socket->s = s;
             socket->addr = addr;
             socket->state = STCP_CONNECTED;
@@ -66,15 +70,10 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
 
             // Record what port it was accepted on
             portOut = &port;
-
-            // Done
-            return socket;
         }
     });
 
-    // Didn't accept anything
-    portOut = 0;
-    return 0;
+    return socket;
 }
 
 // --------------------------------------------------------------------------

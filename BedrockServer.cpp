@@ -467,8 +467,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         //         reuse the STCPManager::socketList
 
         // Look up the plugin that owns this port (if any)
-        BedrockPlugin* plugin = _portPluginMap[acceptPort];
-        if (plugin) {
+        if (SContains(_portPluginMap, acceptPort)) {
+            BedrockPlugin* plugin = _portPluginMap[acceptPort];
             // Allow the plugin to process this
             SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
             plugin->onPortAccept(s);
