@@ -39,10 +39,10 @@ BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
     BedrockPlugin* foundPlugin = 0;
     for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
              [&](BedrockPlugin* plugin) {
-        if (SIEquals(plugin->getName(), name)) {
-            foundPlugin = plugin;
-        }
-    });
+                 if (SIEquals(plugin->getName(), name)) {
+                     foundPlugin = plugin;
+                 }
+             });
 
     // Didn't find anything
     return foundPlugin;

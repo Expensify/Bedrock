@@ -220,15 +220,14 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     }
 }
 
-void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing)
-{
+void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing) {
     // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
     if (wasProcessing) {
         db.rollback();
     }
 
-    const string& msg = "Error processing command '" + command->request.methodLine
-                        + "' (" + e + "), ignoring: " + command->request.serialize();
+    const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e + "), ignoring: " +
+                        command->request.serialize();
 
     if (SContains(e, "_ALERT_")) {
         SALERT(msg);

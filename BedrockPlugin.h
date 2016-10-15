@@ -63,10 +63,10 @@ class BedrockPlugin {
     virtual string getPort() { return ""; }
 
     // Called when a socket is accepted on this plugin's port
-    virtual void onPortAccept(STCPManager::Socket* s) { }
+    virtual void onPortAccept(STCPManager::Socket* s) {}
 
     // Called when a socket receives input
-    // Param request: optional request to queue internally 
+    // Param request: optional request to queue internally
     // Return true if the socket is still alive
     virtual bool onPortRecv(STCPManager::Socket* s, SData& request) { return false; }
 

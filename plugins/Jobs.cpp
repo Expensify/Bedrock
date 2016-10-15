@@ -41,7 +41,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " +
                                        SToStr(JOBS_DEFAULT_PRIORITY) + ", "
-                                   "parentJobID INTEGER NOT NULL DEFAULT 0 )",
+                                                                       "parentJobID INTEGER NOT NULL DEFAULT 0 )",
                            ignore)) {
         // FIXME: Remove this after upgrade
         SASSERT(db.write("ALTER TABLE jobs ADD COLUMN parentJobID INTEGER NOT NULL DEFAULT 0;"));
@@ -265,7 +265,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             SQResult result;
             if (!db.read("SELECT 1 "
                          "FROM jobs "
-                         "WHERE jobID = " + safeParentJobID + ";",
+                         "WHERE jobID = " +
+                             safeParentJobID + ";",
                          result)) {
                 throw "502 Select failed";
             }
@@ -286,7 +287,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
                  "VALUES( " +
                  SCURRENT_TIMESTAMP() + ", " + SQ("QUEUED") + ", " + SQ(request["name"]) + ", " + safeFirstRun + ", " +
-                 SQ(SToUpper(request["repeat"])) + ", " + safeData + ", " + SQ(priority) + ", " + safeParentJobID + " );");
+                 SQ(SToUpper(request["repeat"])) + ", " + safeData + ", " + SQ(priority) + ", " + safeParentJobID +
+                 " );");
 
         // Release workers waiting on this state
         node->clearCommandHolds("Jobs:" + request["name"]);
@@ -451,7 +453,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
             SINFO("Job has child jobs, PAUSING");
-            if (!db.write("UPDATE jobs SET state=" + SQ("PAUSED") + " WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+            if (!db.write("UPDATE jobs SET state=" + SQ("PAUSED") + " WHERE jobID=" + SQ(request.calc64("jobID")) +
+                          ";")) {
                 throw "502 Update failed";
             }
 
@@ -502,7 +505,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 throw "502 Delete failed";
             }
             if (parentJobID > 0 && !_hasPendingChildJobs(db, parentJobID)) {
-                SINFO("Job has parentJobID: " + SToStr(parentJobID) + " and no other pending children, resuming parent job");
+                SINFO("Job has parentJobID: " + SToStr(parentJobID) +
+                      " and no other pending children, resuming parent job");
                 if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                     throw "502 Update failed";
                 }
@@ -681,14 +685,12 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 /**
  * Returns true if there are any children of this jobID in a RUNNING or QUEUED state.
  */
-bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID)
-{
+bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " +
-                   "AND state IN ('QUEUED', 'RUNNING') " +
-                 "LIMIT 1;",
+                 "WHERE parentJobID = " +
+                     SQ(jobID) + " " + "AND state IN ('QUEUED', 'RUNNING') " + "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
     }

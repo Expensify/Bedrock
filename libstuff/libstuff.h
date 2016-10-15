@@ -469,7 +469,7 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
 inline bool SContains(const string& haystack, const string& needle) { return haystack.find(needle) != string::npos; }
 inline bool SContains(const string& haystack, char needle) { return haystack.find(needle) != string::npos; }
 inline bool SContains(const STable& nameValueMap, const string& name) {
-    return(nameValueMap.find(name) != nameValueMap.end());
+    return (nameValueMap.find(name) != nameValueMap.end());
 }
 
 // General testing functions
