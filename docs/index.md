@@ -11,6 +11,21 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
+## Download and Install Bedrock::DB
+
+1. Add the Bedrock::DB repo to apt sources:
+
+  ```
+  sudo wget -O /etc/apt/sources.list.d/bedrockdb.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrockdb.list
+  ```
+2. Add the Bedrock:DB repo key:
+
+  ```
+  wget -O - https://apt.bedrockdb.com/bedrockdb.gpg | sudo apt-key add -
+  ```
+3. Run `sudo apt-get update`
+4. Run `sudo apt-get install bedrock`
+
 ## A Simple Example of Bedrock::DB
 To start it:
 
@@ -34,7 +49,7 @@ This would execute the "Query" command of the Bedrock::DB plugin and return the 
 
     200 OK
     Content-Length: 16
-    
+
     foo | bar
     1 | 2
 
@@ -58,7 +73,7 @@ To be fair, MySQL has a lot of things that Bedrock doesn't:
 However, Bedrock has its own tricks up its sleeve, including:
 
 * Simple command-line parameters and a sane default configuration
-* "Selective synchronization" to achieve linear scalability of distributed transactions even in high-latency environments 
+* "Selective synchronization" to achieve linear scalability of distributed transactions even in high-latency environments
 * No need for application-level awareness of which node is the master
 * Automatic "failover" to a slave without requiring application reconfiguration or loss of data
 * Automatic recovery back to the master
@@ -86,7 +101,7 @@ For example, this can be used just like any other database.  First, create a tab
 
     $ nc localhost 8888
     Query: create table foobar ( foo int, bar int );
-    
+
     200 OK
 
 Next insert some data into that table:
@@ -103,13 +118,11 @@ Then query data back out of that table:
 
     200 OK
     Content-Length: 40
-    
+
     {"headers":["foo","bar"],"rows":[[1,2]]}
-    
+
 ### Bedrock::Jobs
 (See [Bedrock::Jobs](jobs.html))
 
 ### Bedrock::Cache
 (See [Bedrock::Cache](cache.html))
-
-
