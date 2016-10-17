@@ -16,7 +16,6 @@ Bedrock was built by [Expensify](https://www.expensify.com), and is a networking
 ## How to get it
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:
 
-    ```
     # Add the Bedrock repo to apt sources:
     sudo wget -O /etc/apt/sources.list.d/bedrockdb.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrock.list
 
@@ -26,29 +25,23 @@ Bedrock can be compiled from source using the [Expensify/Bedrock](https://github
     # Update the apt-get and install Bedrock
     sudo apt-get update
     sudo apt-get install bedrock
-    ```
 
 ## How to use it
 Bedrock is so easy to use, you'll think you're missing something.  Once installed, Bedrock listens on `localhost` port 8888, and stores its database in `/var/lib/bedrock`.  The easiest way to talk with Bedrock is using `netcat` as follows:
 
-    ```
     $ nc localhost 8888
     Query: SELECT 1 AS foo, 2 AS bar;
-    ````
 
 That query can be any [SQLite-compatible query](http://sqlite.org/lang.html) -- including schema changes, foreign key constraints, partial indexes, native JSON expressions, or any of the tremendous amount of functionality SQLite offers.  The result will be returned in an HTTP-like response format:
 
-    ```
     200 OK
     Content-Length: 16
     
     foo | bar
     1 | 2
-    ```
 
 By default, Bedrock optimizes the output for human consumption.  If you are a robot, request JSON output:
 
-    ```
     $ nc localhost 8888
     Query
     query: SELECT 1 AS foo, 2 AS bar;
@@ -58,21 +51,16 @@ By default, Bedrock optimizes the output for human consumption.  If you are a ro
     Content-Length: 16
 
     {...}
-    ```
 
 Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock supports the MySQL protocol, meaning you can continue using whatever MySQL client you prefer:
 
-    ```
     $ mysql
     ...
-    ```
 
 That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't like any of them, Bedrock also provides a PHP binding that looks something like this:
 
-    ```
     $bedrock = new Bedrock();
     $result = $bedrock->db->query("SELECT 1 AS foo, 2 AS bar;");
-    ```
 
 It really can be that easy.
 
