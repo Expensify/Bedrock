@@ -35,17 +35,11 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
 }
 
 BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
-    // Just loop over and return, if any
-    BedrockPlugin* foundPlugin = 0;
-    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
-             [&](BedrockPlugin* plugin) {
-                 if (SIEquals(plugin->getName(), name)) {
-                     foundPlugin = plugin;
-                 }
-             });
-
-    // Didn't find anything
-    return foundPlugin;
+    list<BedrockPlugin*>::iterator plugin;
+    plugin = find_if(g_registeredPluginList->begin(), g_registeredPluginList->end(),
+                     [&](BedrockPlugin* plugin) { return SIEquals(plugin->getName(), name); });
+    // Return what we found, or null if nothing.
+    return (plugin == g_registeredPluginList->end()) ? 0 : *plugin;
 }
 
 // One-liner default implementations.
