@@ -17,7 +17,7 @@ Bedrock was built by [Expensify](https://www.expensify.com), and is a networking
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:
 
     # Add the Bedrock repo to apt sources:
-    sudo wget -O /etc/apt/sources.list.d/bedrockdb.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrock.list
+    sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrock.list
 
     # Add the Bedrock repo key:
     wget -O - https://apt.bedrockdb.com/bedrock.gpg | sudo apt-key add -
