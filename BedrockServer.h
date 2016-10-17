@@ -1,11 +1,8 @@
-/// bedrock/BedrockServer.h
-/// =================
-/// Manages connections to a single instance of the bedrock server.
-///
-#ifndef _BEDROCKSERVER_H
-#define _BEDROCKSERVER_H
+// Manages connections to a single instance of the bedrock server.
+#pragma once
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
+#include "BedrockPlugin.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -132,8 +129,6 @@ class BedrockServer : public STCPServer {
     MessageQueue _processedResponses;
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
+    map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
 };
-
-// BedrockServer.h
-#endif

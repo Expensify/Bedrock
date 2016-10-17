@@ -1,4 +1,8 @@
 #pragma once
+// Can't include libstuff.h here because it'd be circular.
+#include <string>
+#include <vector>
+using namespace std;
 
 class SQResult {
   public:
@@ -24,4 +28,7 @@ class SQResult {
     string serializeToJSON() const;
     string serializeToText() const;
     string serialize(const string& format) const;
+
+    // Deserializers
+    bool deserialize(const string& json);
 };

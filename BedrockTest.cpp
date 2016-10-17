@@ -45,12 +45,14 @@ void BedrockTester::startServer(SData args) {
             args[_NAME_] = _VAL_;                                                                                      \
     } while (false)
     SETDEFAULT("-db", "test.db");
-    SETDEFAULT("-serverHost", "localhost:9988");
+    SETDEFAULT("-serverHost", "localhost:8888");
     SETDEFAULT("-nodeName", "bedrock");
-    SETDEFAULT("-nodeHost", "localhost:8899");
+    SETDEFAULT("-nodeHost", "localhost:9999");
     SETDEFAULT("-plugins", "DB");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-readThreads", "1");
+    SETDEFAULT("-cacheSize", "1000000");
+    SETDEFAULT("-maxJournalSize", "1000000");
 
     // Process some flags that main.cpp would normally handle
     if (args.isSet("-clean")) {
