@@ -712,7 +712,7 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
         // Close the command port, and all plugin's ports.
         // won't reopen.
         SHMMM("Suppressing command port");
-        if (portList.size())
+        if (!portList.empty())
             closePorts();
     } else {
         // Clearing past suppression, but don't reopen.  (It's always safe
