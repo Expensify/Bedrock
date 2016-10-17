@@ -72,3 +72,11 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 * [Jobs](jobs.html) - Provides a simple job queue.
 * [Cache](cache.html) - Provides a simiple replicated cache.
 
+## How to get help
+So many ways!
+
+* Chat with us live on [Bedrock's Gitter page](https://gitter.im/Expensify-Bedrock/Lobby)
+* Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock)
+* Create an issue in [Bedrock's GitHub issue list](https://github.com/Expensify/Bedrock/issues)
+
+
