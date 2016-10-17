@@ -57,7 +57,7 @@ Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock s
     $ mysql
     ...
 
-That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't like any of them, Bedrock also provides a PHP binding that looks something like this:
+That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't like any of them, Bedrock also provides a [PHP binding](https://github.com/Expensify/Bedrock-PHP) that looks something like this:
 
     $bedrock = new Bedrock();
     $result = $bedrock->db->query("SELECT 1 AS foo, 2 AS bar;");
