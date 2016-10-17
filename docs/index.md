@@ -76,7 +76,7 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 So many ways!
 
 * Chat with us live on [Bedrock's Gitter page](https://gitter.im/Expensify-Bedrock/Lobby)
-* Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock)
+* Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock) by emailing [bedrock@googlegroups.com]
 * Create an issue in [Bedrock's GitHub issue list](https://github.com/Expensify/Bedrock/issues)
 
 
