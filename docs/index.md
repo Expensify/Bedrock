@@ -11,105 +11,76 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
-## A Simple Example of Bedrock::DB
-To start it:
+Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distribute database in the world.
 
-    ./bedrock -clean -db bedrock.db -serverHost localhost:8888 -nodeName bedrock -nodeHost localhost:8889 -plugins status,db
+## How to get it
+Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:
 
-The parameters mean:
+    ```
+    # Add the Bedrock repo to apt sources:
+    sudo wget -O /etc/apt/sources.list.d/bedrockdb.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrock.list
 
-    -clean: Create a new database if one doesn't already exist
-    -db <filename>: Use a database with the given name
-    -serverHost <host:port>: Listen on this host:port for incoming commands from the application
-    -nodeName <name>: Name this specfic node in the cluster as indicated
-    -nodeHost <host:port>: Listen on this host:port for connections from other nodes
-    -plugins <first,second,...,last>: Enable these plugins
+    # Add the Bedrock repo key:
+    wget -O - https://apt.bedrockdb.com/bedrock.gpg | sudo apt-key add -
 
-Once started, it listens on `serverHost` for commands implemented by the stated plugins.  To see how this works with the Bedrock::DB plugin, you would connect to `serverHost` using any TCP socket client, send a request, and get the response.  An example with netcat is:
+    # Update the apt-get and install Bedrock
+    sudo apt-get update
+    sudo apt-get install bedrock
+    ```
 
+## How to use it
+Bedrock is so easy to use, you'll think you're missing something.  Once installed, Bedrock listens on `localhost` port 8888, and stores its database in `/var/lib/bedrock`.  The easiest way to talk with Bedrock is using `netcat` as follows:
+
+    ```
     $ nc localhost 8888
     Query: SELECT 1 AS foo, 2 AS bar;
+    ````
 
-This would execute the "Query" command of the Bedrock::DB plugin and return the following response:
+That query can be any [SQLite-compatible query](http://sqlite.org/lang.html) -- including schema changes, foreign key constraints, partial indexes, native JSON expressions, or any of the tremendous amount of functionality SQLite offers.  The result will be returned in an HTTP-like response format:
 
+    ```
     200 OK
     Content-Length: 16
     
     foo | bar
     1 | 2
+    ```
 
-The "200 OK" indicates the command was processed successfully.  "foo &#124; bar" is the header row, and "1 &#124; 2" are the results.  This example only shows a stateless query, but this same technique works with any sqlite compatible query -- including creating tables and index, inserting rows, joining tables, or pretty much everything every other SQL database does.
+By default, Bedrock optimizes the output for human consumption.  If you are a robot, request JSON output:
 
-## How is Bedrock::DB like/unlike MySQL?
-On the surface, Bedrock (using the Bedrock::DB plugin) is effectively equivalent to MySQL in that both:
+    ```
+    $ nc localhost 8888
+    Query
+    query: SELECT 1 AS foo, 2 AS bar;
+    format: json
 
-* Store ACID-safe relational data
-* Accept SQL requests from clients over a network connection
-* Replicate data to multiple hosts
-* Execute simultaneous SELECTs using multiple CPUs on the host
+    200 OK
+    Content-Length: 16
 
-To be fair, MySQL has a lot of things that Bedrock doesn't:
+    {...}
+    ```
 
-* Row-level locking, which when used correctly can enable simultaneous INSERTS on multiple threads
-* A huge ecosystem of client apps and platform libraries
-* An incredibly huge range of knobs to dial and tweak
-* A very familiar name
+Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock supports the MySQL protocol, meaning you can continue using whatever MySQL client you prefer:
 
-However, Bedrock has its own tricks up its sleeve, including:
+    ```
+    $ mysql
+    ...
+    ```
 
-* Simple command-line parameters and a sane default configuration
-* "Selective synchronization" to achieve linear scalability of distributed transactions even in high-latency environments 
-* No need for application-level awareness of which node is the master
-* Automatic "failover" to a slave without requiring application reconfiguration or loss of data
-* Automatic recovery back to the master
-* C++ as its primary stored procedure language
-* A plugin system that combines both schema changes and stored procedures into a self-contained, independently-enableable module
-* Advanced connection controls (eg, "Wait until there are results before responding")
+That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't like any of them, Bedrock also provides a PHP binding that looks something like this:
 
-In short, both do pretty much anything you need to build an online service.  But while MySQL is optimized for single-datacenter operation with light use of stored procedures, Bedrock is designed from the ground up to operate in a multi-datacenter environment with rigorous use of stored procedures -- the new standard for modern application design.
+    ```
+    $bedrock = new Bedrock();
+    $result = $bedrock->db->query("SELECT 1 AS foo, 2 AS bar;");
+    ```
+
+It really can be that easy.
 
 ## Bedrock plugins
 Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procdures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command like parameter.  Current plugins include:
 
-### Bedrock::Status
-Provides basic status about the health the database cluster.  Commands include:
-
- * *Ping()* - Just responds OK
- * *Status()* - Responds with detailed information on the status of all peers (so far as this node knows)
-
-### Bedrock::DB
-Provides direct SQL access to the underlying database.  Commands include:
-
- * *Query( query, [format: json&#124;text] )* - Returns the result of a read query, or executes a write query
-
-For example, this can be used just like any other database.  First, create a table:
-
-    $ nc localhost 8888
-    Query: create table foobar ( foo int, bar int );
-    
-    200 OK
-
-Next insert some data into that table:
-
-    Query: insert into foobar values ( 1, 2 );
-
-    200 OK
-
-Then query data back out of that table:
-
-    Query
-    query: select * from foobar;
-    format: json
-
-    200 OK
-    Content-Length: 40
-    
-    {"headers":["foo","bar"],"rows":[[1,2]]}
-    
-### Bedrock::Jobs
-(See [Bedrock::Jobs](jobs.html))
-
-### Bedrock::Cache
-(See [Bedrock::Cache](cache.html))
-
+* [Status](status.html) - Provides basic status about the health the Bedrock cluster.
+* [DB](db.html) - Provides direct SQL access to the underlying database.
+* [Jobs](jobs.html) - Provides a simple job queue.
+* [Cache](cache.html) - Provides a simiple replicated cache.
 
