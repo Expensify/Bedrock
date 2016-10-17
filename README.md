@@ -7,6 +7,22 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
+## Download and Install Bedrock::DB
+
+1. Add the Bedrock:DB apt sources list:
+
+    ```
+    sudo wget -O /etc/apt/sources.list.d/bedrockdb.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrockdb.list
+    ```
+2. Add the Bedrock::DB repo key:
+
+    ```
+    wget -O - https://apt.bedrockdb.com/bedrockdb.gpg | sudo apt-key add -
+    ```
+3. Run `sudo apt-get update`.
+
+4. Run `sudo apt-get install bedrock`.
+
 ## A Simple Example of Bedrock::DB
 To start it:
 
