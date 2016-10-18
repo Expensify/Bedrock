@@ -2,7 +2,7 @@
 layout: default
 ---
 # How does Bedrock compare to MySQL
-On the surface, Bedrock (using the Bedrock::DB plugin) is effectively equivalent to MySQL in that both:
+On the surface, Bedrock (using the [Bedrock::DB](http://bedrockdb.com/db.html) plugin) is effectively equivalent to MySQL in that both:
 
 * Store ACID-safe relational data
 * Accept SQL requests from clients over a network connection
