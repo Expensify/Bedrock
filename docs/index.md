@@ -11,7 +11,7 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
-Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distribute database in the world.
+Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distributed database in the world.
 
 ## Why to use it
 If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alterantives?  We've provided a more [detailed comparision against MySQL](vs_mysql.html), but in general Bedrock is:
