@@ -21,7 +21,7 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-versionOverride <version>  Pretends to be a different version when talking to peers
 	-db             <filename>  Use a database with the given name (default 'bedrock.db')
 	-serverHost     <host:port> Listen on this host:port for cluster connections (default 'localhost:8888')
-	-nodeName       <name>      Name this specfic node in the cluster as indicated (defaults to 'vagrant-ubuntu-trusty-64')
+	-nodeName       <name>      Name this specfic node in the cluster as indicated (defaults to the value of $hostname)
 	-nodeHost       <host:port> Listen on this host:port for connections from other nodes
 	-peerList       <list>      See below
 	-priority       <value>     See '-peerList Details' below (defaults to 100)
