@@ -11,10 +11,31 @@ However you normally connect to MySQL will work for Bedrock as well.  For exampl
     # Install the standard MySQL client library
     $ sudo apt-get install mysql-client
     
-    # Run the MySQL command line tool with all its defaults
-    $ mysql
+    # Run the MySQL command line tool, pointing to localhost
+    $ mysql -h 127.0.0.1
+    Welcome to the MySQL monitor.  Commands end with ; or \g.
+    Your MySQL connection id is 1
+    Server version: bedrock f93b67976a61e96ca5671789cdba857e11ec6cc2
+    
+    Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+    
+    Oracle is a registered trademark of Oracle Corporation and/or its
+    affiliates. Other names may be trademarks of their respective
+    owners.
+    
+    Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+    
+    mysql> select "Hello Bedrock!";
+    +------------------+
+    | "Hello Bedrock!" |
+    +------------------+
+    |   Hello Bedrock! |
+    +------------------+
+    1 row in set (0.00 sec)
+    
+    mysql>
 
-However, your standard MySQL language bindings should also "just work".
+Additionally, your standard MySQL language bindings should also "just work".
 
 ## How to migrate your existing MySQL service to Bedrock
 Migrating to Bedrock is easy:
