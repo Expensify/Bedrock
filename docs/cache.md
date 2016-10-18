@@ -98,14 +98,14 @@ Finally, Bedrock::Cache works particularly well with the standard Bedrock `Conne
 ## Using the cache in PHP
 If you're using PHP, we've handily provided a client interface in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/master/src/Cache.php) library.  It works pretty much as you'd expect:
 
-  // Connect to Bedrock
-  $bedrock = new Bedrock();
-  
-  // Write a new version of this cached object (invalidating any previous)
-  $bedrock->cache->write("foo", "v4", "value");
-  
-  // Request the latest version of this object
-  $value = $bedrock->read("foo");
-  
-  // Request a specific version of this object (if available)
-  $value = $bedrock->read("foo","v3"); // will return null because v4 invalidated v3
+    // Connect to Bedrock
+    $bedrock = new Bedrock();
+    
+    // Write a new version of this cached object (invalidating any previous)
+    $bedrock->cache->write("foo", "v4", "value");
+    
+    // Request the latest version of this object
+    $value = $bedrock->read("foo");
+    
+    // Request a specific version of this object (if available)
+    $value = $bedrock->read("foo","v3"); // will return null because v4 invalidated v3
