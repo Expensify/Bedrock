@@ -453,8 +453,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
             SINFO("Job has child jobs, PAUSING");
-            if (!db.write("UPDATE jobs SET state=" + SQ("PAUSED") + " WHERE jobID=" + SQ(request.calc64("jobID")) +
-                          ";")) {
+            if (!db.write("UPDATE jobs SET "
+                          "state=" + SQ("PAUSED") + " " +
+                          (request.isSet("data") ? ", data=" + SQ(request["data"]) : "") +
+                          "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Update failed";
             }
 
