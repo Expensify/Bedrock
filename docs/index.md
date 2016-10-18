@@ -93,6 +93,7 @@ So many ways!
 * Chat with us live on [Bedrock's Gitter page](https://gitter.im/Expensify-Bedrock/Lobby)
 * Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock) by emailing [bedrock@googlegroups.com](mailto:bedrock@googlegroups.com)
 * Create an issue in [Bedrock's GitHub issue list](https://github.com/Expensify/Bedrock/issues)
+* Submit a PR to [Bedrock's GitHub repo](https://github.com/Expensify/Bedrock)
 * Email David, the CEO of Expensify (and biggest Bedrock fanboy ever) directly: [dbarrett@expensify.com](mailto:dbarrett@expensify.com)
 * [Join Expensify](http://we.are.expensify.com) and you can work on Bedrock (and other, even cooler things) full time!
 
