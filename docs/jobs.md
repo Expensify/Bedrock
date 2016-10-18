@@ -35,7 +35,7 @@ This provides comprehensive functionality for scheduled, recurring, atomically-p
 
     $ nc localhost 8888
     CreateJob
-    name: foo
+    name: CheckSiteLiveness
     data: {"value":1}
     repeat: finished, +1 minute
     
@@ -47,7 +47,7 @@ This provides comprehensive functionality for scheduled, recurring, atomically-p
 Next, a worker queries for a job:  (Protip: Set "Connection: wait" and "Timeout: 60000" to wait up to 60s for a response and thus get instant worker activation, without high-frequency worker polling.)
 
     GetJob
-    name: foo
+    name: CheckSiteLiveness
     
     200 OK
     Content-Length: 43
@@ -83,7 +83,7 @@ When the worker finishes, it marks it as complete.  Additionally, it can provide
 In this case, the job was configured to repeat in one minute.  This means a request for the job immediately after fails:
 
     GetJob
-    name: foo
+    name: CheckSiteLiveness
     
     404 No job found
 
@@ -100,7 +100,7 @@ But as we can see, the job is there, queued for the future:
 Once 1 minute elapses, the job is available to be worked on again -- and is seeded with the data provided when it was finished last time.  This is a very simple, reliable mechanism to allow one job to finish where the last job left off (eg, when processing a feed where it's bad to double-process the same entry):
 
     GetJob
-    name: foo
+    name: CheckSiteLiveness
     
     200 OK
     Content-Length: 43
