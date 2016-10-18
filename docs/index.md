@@ -13,6 +13,17 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 
 Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distribute database in the world.
 
+## Why to use it
+If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alterantives?  We've provided a more [detailed comparision against MySQL](vs_mysql.html), but in general Bedrock is:
+
+* **Faster.**  This is true for networked queries using the Bedrock::DB plugin, but especially true for custom plugins you write yourself because SQLite is just a library the operates inside your process's memory space.  That means when your plugin queries SQLite, it isn't serializing/deserializing over a network: it's directly accessing the RAM of the database itself.  If you want high performance data access, there is simply no contest.
+
+* **Simpler.**  This is because Bedrock is written for modern hardware with large SSD-backed RAID drives and generous RAM file caches, and thereby doesn't mess with the zillion hacky tricks the other databases do the eek out high performance on largely obsolete hardware.  This results in fewer esoteric knobs, and sane defaults that "just work".
+
+* **More reliable.**  This is because Bedrock can be clustered not just inside a single datacenter, but across multiple datacenters spanning the internet.  This means Bedrock continues functioning not only if a single node goes down, but even if you lose an entire datacenter.  After all, it doesn't matter who you are using: your datacenter *will fail*, eventually.  But you needn't fail along with it.
+
+* **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed.
+
 ## How to get it
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:
 
