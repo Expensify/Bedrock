@@ -59,16 +59,36 @@ By default, Bedrock optimizes the output for human consumption.  If you are a ro
     Query
     query: SELECT 1 AS foo, 2 AS bar;
     format: json
-
+    
     200 OK
-    Content-Length: 16
-
-    {...}
+    Content-Length: 40
+    
+    {"headers":["foo","bar"],"rows":[[1,2]]}
 
 Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock supports the MySQL protocol, meaning you can continue using whatever MySQL client you prefer:
 
-    $ mysql
-    ...
+    $ mysql -h 127.0.0.1
+    Welcome to the MySQL monitor.  Commands end with ; or \g.
+    Your MySQL connection id is 1
+    Server version: bedrock 09b08f82e6eefe69f79bb8414882dd64182e3e8c
+    
+    Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+    
+    Oracle is a registered trademark of Oracle Corporation and/or its
+    affiliates. Other names may be trademarks of their respective
+    owners.
+    
+    Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+    
+    mysql> SELECT 1 AS foo, 2 AS bar;
+    +------+------+
+    | foo  | bar  |
+    +------+------+
+    |    1 |    2 |
+    +------+------+
+    1 row in set (0.01 sec)
+    
+    mysql> 
 
 That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't know or love any of them, Bedrock also provides a [PHP binding](https://github.com/Expensify/Bedrock-PHP) that looks something like this:
 
