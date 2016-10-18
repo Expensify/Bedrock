@@ -70,12 +70,12 @@ Like all Bedrock plugins, Bedrock::Cache stores its data in a replicated SQL dat
     Query: SELECT * FROM cache;
 
     200 OK
-    Content-Length: 64
-
-    lastWritten | name | value
-    2015-03-15 18:05:50 | foo/v2 | barv2
-
-Finally, Bedrock::Cache works particularly well with the standard Bedrock "Connection: forget" header.  This feature allows you to queue a command to Bedrock that is executed asynchronously, without "blocking" on its completion.  In this way, you can queue a write to the cache (which will be replicated out to all nodes in the cache) while continuing ahead without delay:
+    Content-Length: 28
+    
+    name | value
+    foo/v2 | barv2
+    
+Finally, Bedrock::Cache works particularly well with the standard Bedrock `Connection: forget` header.  This feature allows you to queue a command to Bedrock that is executed asynchronously, without "blocking" on its completion.  In this way, you can queue a write to the cache (which will be replicated out to all nodes in the cache) while continuing ahead without delay:
 
     WriteCache
     name: foo/v3
