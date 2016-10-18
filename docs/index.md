@@ -25,7 +25,7 @@ If you're building a website or other online service, you've got to use *somethi
 * **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed.
 
 ## How to get it
-Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:
+Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:  (Go ahead and copy paste this whole section and copy it into your Ubuntu terminal.)
 
     # Add the Bedrock repo to apt sources:
     sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/trusty/bedrock.list
