@@ -14,7 +14,7 @@ Bedrock is a simple, modular, WAN-replicated data foundation for global-scale ap
 Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distributed database in the world.
 
 ## Why to use it
-If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alterantives?  We've provided a more [detailed comparision against MySQL](http://bedrockdb.com/vs_mysql.html), but in general Bedrock is:
+If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alternatives?  We've provided a more [detailed comparision against MySQL](http://bedrockdb.com/vs_mysql.html), but in general Bedrock is:
 
 * **Faster.**  This is true for networked queries using the Bedrock::DB plugin, but especially true for custom plugins you write yourself because SQLite is just a library the operates inside your process's memory space.  That means when your plugin queries SQLite, it isn't serializing/deserializing over a network: it's directly accessing the RAM of the database itself.  This is great in a single node, but if you still want more (becuase who doesn't?) then install any number of nodes and load-balance reads across all of them.  This means every CPU of every database server is available for parallel reads, each of which has direct access to the database RAM.
 
