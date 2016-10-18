@@ -84,6 +84,7 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 * [DB](http://bedrockdb.com/db.html) - Provides direct SQL access to the underlying database.
 * [Jobs](http://bedrockdb.com/jobs.html) - Provides a simple job queue.
 * [Cache](http://bedrockdb.com/cache.html) - Provides a simiple replicated cache.
+* [MySQL](http://bedrockdb.com/mysql.html) - Emulates MySQL
 
 ## How to get help
 So many ways!
