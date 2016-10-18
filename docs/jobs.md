@@ -50,62 +50,100 @@ Next, a worker queries for a job:  (Protip: Set "Connection: wait" and "Timeout:
     name: CheckLiveness
     
     200 OK
-    Content-Length: 43
+    Content-Length: 72
     
-    {"data":{"value":1},"jobID":1,"CheckLiveness":"foo"}
+    {"data":{"url":"http://bedrockdb.com"},"jobID":1,"name":"CheckLiveness"}
 
 This atomically dequeues exactly one job, returning the data associated with that job.  As the worker operates on the job, it can report incremental progress back to Bedrock:
 
     UpdateJob
     jobID: 1
-    data: {"value":2}
+    data: {"url":"http://bedrockdb.com","status":"CHECKING"}
     
     200 OK
 
-This allows some other party (such as the service that queued the job) to optionally track progress on the job (eg, to show a progress bar): (*coming soon*)
+This allows some other party (such as the service that queued the job) to optionally track progress on the job (eg, to show a progress bar):
 
     QueryJob
     jobID: 1
     
     200 OK
-    Content-Length: 43
-    
-    {"data":{"value":2},"jobID":1,"name":"foo","state":"RUNNING"}
+    Content-Length: 237
+
+    {"created":"2016-10-18 18:45:19","data":{"url":"http://bedrockdb.com","status":"CHECKING"},"jobID":1,"lastRun":"2016-10-18 18:45:33","name":"CheckLiveness","nextRun":"2016-10-18 18:45:19","repeat":"FINISHED, +1 MINUTE","state":"RUNNING"}
 
 When the worker finishes, it marks it as complete.  Additionally, it can provide final data on the job, which will be provided to the next worker in the event this job is a recurring one.
 
     FinishJob
     jobID: 1
-    data: {"value":3}
+    data: {"url":"http://bedrockdb.com","failCount":1}
     
     200 OK
 
 In this case, the job was configured to repeat in one minute.  This means a request for the job immediately after fails:
 
     GetJob
-    name: CheckLiveness
+    name: *
     
     404 No job found
 
 But as we can see, the job is there, queued for the future:
 
-    Query
-    query: select * from jobs;
+    Query: SELECT * FROM jobs;
     
     200 OK
-    Content-Length: 110
+    Content-Length: 262
     
-    [["2014-12-29 07:38:51",1,"QUEUED","foo","2014-12-29 07:39:51","2014-12-29 07:39:04","finished, +1 minute",{"value":2}]]
+    created | jobID | state | name | nextRun | lastRun | repeat | data | priority | parentJobID
+    2016-10-18 18:45:19 | 1 | QUEUED | CheckLiveness | 2016-10-18 18:54:11 | 2016-10-18 18:52:54 | FINISHED, +1 MINUTE | {"url":"http://bedrockdb.com","failCount":1} | 0 | 0
 
 Once 1 minute elapses, the job is available to be worked on again -- and is seeded with the data provided when it was finished last time.  This is a very simple, reliable mechanism to allow one job to finish where the last job left off (eg, when processing a feed where it's bad to double-process the same entry):
 
     GetJob
-    name: CheckLiveness
+    name: *
     
     200 OK
-    Content-Length: 43
+    Content-Length: 86
     
-    {"data":{"value":3},"jobID":1,"name":"foo"}
+    {"data":{"url":"http://bedrockdb.com","failCount":1},"jobID":1,"name":"CheckLiveness"}
+
+## Blocking not polling
+The point of a job system is to distribute a bunch of worker processes across a bunch of different servers.  To do this means each of those job servers is continuously asking for work.  A straightforward way to do that is to have each worker just "poll" Bedrock::Jobs at some high frequency until work is available.  However, that's very wasteful, and means there is an average delay between queuing and processing a job equal to half the period of the polling frequency.  Accordingly, Bedrock::Jobs eschews polling in favor of a "blocking" design that allows a worker to wait up to some timeout for work to develop.  So if the worker process requests work when none is available:
+
+    GetJob
+    name: SendEmail
+    connection: wait
+    timeout: 60000
+
+The worker will just block until it's avaiable.  Then if we queue a job from some other process (or server):
+
+    CreateJob
+    name: SendEmail
+           
+    200 OK
+    Content-Length: 11
+    
+    {"jobID":2}
+
+That causes Bedrock::Jobs to instantly respond to the other worker that is waiting for work, thereby processing it immediately without delay:
+
+    200 OK
+    Content-Length: 40
+    
+    {"data":{},"jobID":2,"name":"SendEmail"}
+
+This enables you to build a very efficient, very high performance job queuing engine.  However, there's no need for you to build it yourself -- this is already provoided as part of the base Bedrock::Jobs engine in the form of `BedrockWorkerManager`, which is available in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/master/bin/BedrockWorkerManager.php) repo.  `BedrockWorkerManager` (or "BWM" among friends) is a simple PHP command-line application that:
+
+1. Waits for resources to free up
+2. Waits for a job
+3. Spawns a worker for that job
+4. Goto 1
+
+It's usage is simply:
+
+    sudo -u user php ./bin/BedrockWorkerManager.php --jobName=* --workerPath=/your/code/path --maxLoad=5.0
+
+This will pull down jobs of any name, and look in the `/your/code/path` directory for a worker class that shares the name of the job to be queued.  It will keep spawning new workers so long as new jobs are queued, so long as the total CPU load stays under `maxLoad`.  In general, you can run BWM on all your webservers to also make them into job servers that "soak up" excess capacity to do background operations, without impacting live site performance.
 
 ## Repeat Syntax
 It's surprisingly tricky to come up with a succint but powerful language to describe all the myriad possible recurring patterns.  With this in mind, we lean heavily upon the extensive capabilities already built into sqlite.  Specifically, a recurring pattern is defined as a "base" and one or more "modifiers":
