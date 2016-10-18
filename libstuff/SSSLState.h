@@ -26,8 +26,3 @@ extern bool SSSLRecvAppend(SSSLState* ssl, string& recvBuffer);
 extern string SSSLGetState(SSSLState* ssl);
 extern void SSSLShutdown(SSSLState* ssl);
 extern void SSSLClose(SSSLState* ssl);
-
-// Pre-computed DH-1024 prime
-// **FIXME: This is XySSL default -- change
-extern const char* g_S_dhm_P;
-extern const char* g_S_dhm_G;
