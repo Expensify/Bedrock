@@ -12,9 +12,7 @@ On the surface, Bedrock (using the [Bedrock::DB](http://bedrockdb.com/db.html) p
 
 To be fair, MySQL has a lot of things that Bedrock doesn't:
 
-* Row-level locking, which when used correctly can enable simultaneous INSERTS on multiple threads
-  * However, MySQL doesn't support multi-threaded replication, so this is of limited use in a distributed environment because you're ultimately limited by a single-threaded replication "bottleneck"
-  * Also, Bedrock has multi-threaded replication on the way
+* Row-level locking, which when used correctly can enable simultaneous INSERTS on multiple threads (except in replicated environments, because replication is single-threaded and thus the master can overwhelm slaves) 
 * A huge ecosystem of client apps and platform libraries (all of which are compatible with Bedrock)
 * An incredibly huge range of knobs to dial and tweak
 * A very familiar name
@@ -29,5 +27,6 @@ However, Bedrock has its own tricks up its sleeve, including:
 * C++ as its primary stored procedure language
 * A plugin system that combines both schema changes and stored procedures into a self-contained, independently-enableable module
 * Advanced connection controls (eg, "Wait until there are results before responding")
+* Multi-threaded replication (coming soon...)
 
 In short, both do pretty much anything you need to build an online service.  But while MySQL is optimized for single-datacenter operation with light use of stored procedures, Bedrock is designed from the ground up to operate in a multi-datacenter environment with rigorous use of stored procedures -- the new standard for modern application design.
