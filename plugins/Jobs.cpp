@@ -690,7 +690,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     if (!db.read("SELECT 1 "
                  "FROM jobs "
                  "WHERE parentJobID = " +
-                     SQ(jobID) + " " + "AND state IN ('QUEUED', 'RUNNING') " + "LIMIT 1;",
+                     SQ(jobID) + " " + "AND state IN ('QUEUED', 'RUNNING', 'PAUSED') " + "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
     }
