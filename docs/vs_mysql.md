@@ -8,10 +8,13 @@ On the surface, Bedrock (using the [Bedrock::DB](http://bedrockdb.com/db.html) p
 * Accept SQL requests from clients over a network connection
 * Replicate data to multiple hosts
 * Execute simultaneous SELECTs using multiple CPUs on the host
+* Compatible with MySQL command-line tools and client libraries
 
 To be fair, MySQL has a lot of things that Bedrock doesn't:
 
-* Row-level locking, which when used correctly can enable simultaneous INSERTS on multiple threads (though MySQL doesn't support multi-threaded replication, so this is of limited use in a real-world environment)
+* Row-level locking, which when used correctly can enable simultaneous INSERTS on multiple threads
+  * However, MySQL doesn't support multi-threaded replication, so this is of limited use in a distributed environment because you're ultimately limited by a single-threaded replication "bottleneck"
+  * Also, Bedrock has multi-threaded replication on the way
 * A huge ecosystem of client apps and platform libraries (all of which are compatible with Bedrock)
 * An incredibly huge range of knobs to dial and tweak
 * A very familiar name
