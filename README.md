@@ -6,4 +6,4 @@ This public repo contains the Bedrock database server.  For more information on 
 * `/libstuff` - A general purpose C++ framework for cross-platform application development
 * `/mbedtls` - The mbed TLS from here: https://tls.mbed.org/
 * `/plugins` - The various plugins provided "out of the box" to Bedrock
-* `/sqlitecluster` - The distributed transaction framework built atop sqlite: http://sqlite.or
+* `/sqlitecluster` - The distributed transaction framework built atop sqlite: http://sqlite.org
