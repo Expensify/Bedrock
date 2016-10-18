@@ -22,7 +22,7 @@ If you're building a website or other online service, you've got to use *somethi
 
 * **More reliable.**  This is because Bedrock can be clustered not just inside a single datacenter, but across multiple datacenters spanning the internet.  This means Bedrock continues functioning not only if a single node goes down, but even if you lose an entire datacenter.  After all, it doesn't matter who you are using: your datacenter *will fail*, eventually.  But you needn't fail along with it.
 
-* **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed.
+* **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed, but that's just the start.  On top of this Bedrock layers a robust plugin system, and includes a fully functional [job queue](jobs.html) and [replicated cache](cache.html) -- all the basics you need for modern service design, wrapped into one simple package.
 
 Bedrock is not only production ready, but actively used by Expensify's many thousands of customers, and millions of users.  (Curious why an expense reporting company built their own database?  Read what the [First Round Review](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) has to say about it.)
 
