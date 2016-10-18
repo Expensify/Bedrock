@@ -88,6 +88,7 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 ## How to get help
 So many ways!
 
+* Run `bedrock -?` on the command line to see all the available [command-line options](cli.html)
 * Chat with us live on [Bedrock's Gitter page](https://gitter.im/Expensify-Bedrock/Lobby)
 * Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock) by emailing [bedrock@googlegroups.com](mailto:bedrock@googlegroups.com)
 * Create an issue in [Bedrock's GitHub issue list](https://github.com/Expensify/Bedrock/issues)
