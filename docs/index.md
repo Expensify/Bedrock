@@ -103,7 +103,7 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 * [Status](http://bedrockdb.com/status.html) - Provides basic status about the health the Bedrock cluster.
 * [DB](http://bedrockdb.com/db.html) - Provides direct SQL access to the underlying database.
 * [Jobs](http://bedrockdb.com/jobs.html) - Provides a simple job queue.
-* [Cache](http://bedrockdb.com/cache.html) - Provides a simiple replicated cache.
+* [Cache](http://bedrockdb.com/cache.html) - Provides a simple replicated cache.
 * [MySQL](http://bedrockdb.com/mysql.html) - Emulates MySQL
 
 ## How to help and get helped
