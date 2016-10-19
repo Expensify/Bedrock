@@ -30,10 +30,7 @@ Bedrock is not only production ready, but actively used by Expensify's many thou
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:  (Go ahead and copy/paste this whole section and copy it into your Ubuntu terminal.)
 
     # Add the Bedrock repo to apt sources for your distro:
-    # Note: Replace "xenial" with the version of Ubuntu you want:
-    # - "trusty" - Ubuntu 14.04
-    # - "xenial" - Ubuntu 16.04
-    sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/xenial/bedrock.list
+    sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/$(lsb_release -cs)/bedrock.list
 
     # Add the Bedrock repo key:
     wget -O - https://apt.bedrockdb.com/bedrock.gpg | sudo apt-key add -
