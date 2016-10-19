@@ -1,4 +1,4 @@
-/svn/src/sqlitecluster
+Bedrock/sqlitecluster
 ======================
 A general purpose clustered SQL database designed for embedding into servers to achieve high fault-tolerance and seamless failover/recovery.  Consists of two primary classes:
 
