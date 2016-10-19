@@ -98,7 +98,7 @@ That also means you can continue using whatever MySQL language binding you alrea
 It really can be that easy.
 
 ## Bedrock plugins
-Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procdures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command like parameter.  Current plugins include:
+Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procedures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command like parameter.  Current plugins include:
 
 * [Status](http://bedrockdb.com/status.html) - Provides basic status about the health the Bedrock cluster.
 * [DB](http://bedrockdb.com/db.html) - Provides direct SQL access to the underlying database.
