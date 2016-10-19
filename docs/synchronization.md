@@ -33,7 +33,3 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 13. If the master dies before an escalated command has been processed, the slave will re-escalate the command to the new master once elected.  Furthermore, slaves will continue accepting commands during the period of master failover, thereby ensuring that the client sees no "downtime" and merely a short delay (typically imperceptible).
 
 14. When the master returns to operation, the master will synchronize any transactions it missed while down, and then stand back up and take over control from the interim master seamlessly.
-
-Bedrock uses the Paxos distributed consensus algorithm.  The full details and edge cases are very complex, but in general it works like this:
-
-1. All nodes start in the SEARCHING state, where they try au
