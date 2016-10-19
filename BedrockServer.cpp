@@ -693,6 +693,16 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             _requestCountSocketMap.erase(socketIt);
         }
     }
+
+    // If any plugin timers are firing, let the plugins know.
+    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
+             [&](BedrockPlugin* plugin) {
+                 for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
+                     if (timer->ding()) {
+                         plugin->timerFired(timer);
+                     }
+                 });
+             });
 }
 
 // --------------------------------------------------------------------------
