@@ -46,7 +46,7 @@ BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
 void BedrockPlugin::enable(bool enabled) { _enabled = enabled; }
 bool BedrockPlugin::enabled() { return _enabled; }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-string BedrockPlugin::getVersion() { return ""; }
+const STable& BedrockPlugin::getInfo() { return pluginInfo; }
 void BedrockPlugin::initialize(const SData& args) {}
 bool BedrockPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
 bool BedrockPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
