@@ -28,6 +28,9 @@ class BedrockPlugin {
     // Returns a short, descriptive name of this plugin
     virtual string getName();
 
+    // Returns a version string indicating the version of this plugin.
+    virtual string getVersion();
+
     // Initializes it with command-line arguments
     virtual void initialize(const SData& args);
 
