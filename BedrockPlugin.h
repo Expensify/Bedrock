@@ -28,6 +28,9 @@ class BedrockPlugin {
     // Returns a short, descriptive name of this plugin
     virtual string getName();
 
+    // Returns a version string indicating the version of this plugin.
+    virtual const STable& getInfo();
+
     // Initializes it with command-line arguments
     virtual void initialize(const SData& args);
 
@@ -82,6 +85,8 @@ class BedrockPlugin {
   protected:
     // Attributes
     bool _enabled;
+
+    STable pluginInfo;
 
   public:
     // Global static attributes
