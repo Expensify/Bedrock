@@ -1,6 +1,5 @@
 #pragma once
 #include "BedrockNode.h"
-#include <mutex>
 
 // BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
 // just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
@@ -86,8 +85,7 @@ class BedrockPlugin {
   protected:
     // Attributes
     bool _enabled;
-    STable _pluginInfo;
-    static mutex _pluginMutex;
+    SSynchronized<STable> _pluginInfo;
 
   public:
     // Global static attributes

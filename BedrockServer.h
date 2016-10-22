@@ -17,7 +17,6 @@ class BedrockServer : public STCPServer {
       public:
         // Constructor / Destructor
         MessageQueue();
-        ~MessageQueue();
 
         // Wait for something to be put onto the queue
         int preSelect(fd_map& fdm);
@@ -32,7 +31,7 @@ class BedrockServer : public STCPServer {
       private:
         // Private state
         list<SData> _queue;
-        void* _queueMutex;
+        mutex _queueMutex;
         int _pipeFD[2];
     };
 

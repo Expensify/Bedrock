@@ -44,7 +44,7 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         };
 
         // Attributes
-        void* _mutex;
+        mutex _mutex;
         list<Entry*> _lruList;
         map<string, Entry*> _lruMap;
     };
@@ -60,7 +60,6 @@ BREGISTER_PLUGIN(BedrockPlugin_Cache);
 // ==========================================================================
 BedrockPlugin_Cache::LRUMap::LRUMap() {
     // Initialize
-    _mutex = SMutexOpen();
 }
 
 // ==========================================================================
@@ -70,9 +69,6 @@ BedrockPlugin_Cache::LRUMap::~LRUMap() {
         // Pop it off
         popLRU();
     }
-
-    // Clean up the mutex
-    SMutexClose(_mutex);
 }
 
 // ==========================================================================

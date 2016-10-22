@@ -46,6 +46,7 @@ extern int STestLibStuff();
 #include <set>
 #include <algorithm>
 #include <stdlib.h>
+#include <mutex>
 using namespace std;
 
 // Useful STL macros
@@ -338,56 +339,34 @@ struct SAutoThreadPrefix {
 };
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX##__LINE__(_PREFIX_)
 
-// Light wrapper around mutex functions
-extern void* SMutexOpen();
-extern void SMutexLock(void* mutex);
-extern void SMutexUnlock(void* mutex);
-extern void SMutexClose(void* mutex);
-
 // Automatically locks/unlocks a mutex by scope
-#define SAUTOLOCK(_MUTEX_) SAutoMutex __SAUTOLOCK_##__LINE__(_MUTEX_)
-struct SAutoMutex {
-    // Attributes
-    void* mutex;
-
-    // Locks on creation
-    SAutoMutex(void* mutex_) {
-        SASSERT(mutex_);
-        mutex = mutex_;
-        SMutexLock(mutex);
-    }
-
-    // Unlocks on destruction
-    ~SAutoMutex() {
-        SASSERT(mutex);
-        SMutexUnlock(mutex);
-    }
-};
+#define SAUTOLOCK(_MUTEX_) lock_guard<mutex> __SAUTOLOCK_##__LINE__(_MUTEX_);
 
 // Convenient interface for multi-threaded, synchronized variables.
 template <typename T> class SSynchronized {
   public:
     // Initialize and wrap with a mutex that is cleaned up in the destructor
+    // Initialize with the default constructor for the value.
+    SSynchronized() {}
+    // Initialize with a specific value.
     SSynchronized(const T& val) {
-        _mutex = SMutexOpen();
         _synchronizedValue = val;
     }
-    ~SSynchronized() { SMutexClose(_mutex); }
 
     // Getter and setter
     T get() {
-        SAUTOLOCK(_mutex);
+        lock_guard<mutex> lock(_mutex);
         return _synchronizedValue;
     }
     void set(const T& val) {
-        SAUTOLOCK(_mutex);
+        lock_guard<mutex> lock(_mutex);
         _synchronizedValue = val;
     }
 
   private:
     // Attributes
     T _synchronizedValue;
-    void* _mutex;
+    mutex _mutex;
 };
 
 // --------------------------------------------------------------------------
