@@ -45,8 +45,8 @@ BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
 // One-liner default implementations.
 void BedrockPlugin::enable(bool enabled) { _enabled = enabled; }
 bool BedrockPlugin::enabled() { return _enabled; }
+STable BedrockPlugin::getInfo() { return _pluginInfo.get(); }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-const STable& BedrockPlugin::getInfo() { return pluginInfo; }
 void BedrockPlugin::initialize(const SData& args) {}
 bool BedrockPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
 bool BedrockPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }

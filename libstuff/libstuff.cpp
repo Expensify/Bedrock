@@ -2261,44 +2261,6 @@ void SThreadSleep(uint64_t duration) {
     select(0, &readfds, &writefds, &exceptfds, &tv);
 }
 
-// --------------------------------------------------------------------------
-void* SMutexOpen() {
-    // Enable re-entrant locking
-    pthread_mutexattr_t attr;
-    SASSERT(!pthread_mutexattr_init(&attr));
-    SASSERT(!pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP));
-
-    // Create a new mutex and initialize it
-    pthread_mutex_t* pmutex = new pthread_mutex_t;
-    SASSERT(!pthread_mutex_init(pmutex, &attr));
-    SASSERT(!pthread_mutexattr_destroy(&attr));
-    return (void*)pmutex;
-}
-
-// --------------------------------------------------------------------------
-void SMutexLock(void* mutex) {
-    SASSERT(mutex);
-    // Lock this section
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_lock(pmutex));
-}
-
-// --------------------------------------------------------------------------
-void SMutexUnlock(void* mutex) {
-    SASSERT(mutex);
-    // Unlock this mutex
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_unlock(pmutex));
-}
-
-// --------------------------------------------------------------------------
-void SMutexClose(void* mutex) {
-    SASSERT(mutex);
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_destroy(pmutex));
-    SDELETE(pmutex);
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // SQLite Stuff
 /////////////////////////////////////////////////////////////////////////////
