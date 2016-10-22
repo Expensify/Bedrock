@@ -3,6 +3,7 @@
 
 // Global static values
 list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = 0;
+mutex BedrockPlugin::_pluginMutex;
 
 BedrockPlugin::BedrockPlugin() : _enabled(false) {
     // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.
@@ -42,11 +43,15 @@ BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
     return (plugin == g_registeredPluginList->end()) ? 0 : *plugin;
 }
 
+STable BedrockPlugin::getInfo() {
+    lock_guard<mutex> lock(_pluginMutex);
+    return _pluginInfo;
+}
+
 // One-liner default implementations.
 void BedrockPlugin::enable(bool enabled) { _enabled = enabled; }
 bool BedrockPlugin::enabled() { return _enabled; }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-const STable& BedrockPlugin::getInfo() { return pluginInfo; }
 void BedrockPlugin::initialize(const SData& args) {}
 bool BedrockPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
 bool BedrockPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }

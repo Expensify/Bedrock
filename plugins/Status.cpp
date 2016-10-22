@@ -89,7 +89,8 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         for_each(g_registeredPluginList->begin(), g_registeredPluginList->end(), [&](BedrockPlugin* plugin){
             STable pluginData;
             pluginData["name"] = plugin->getName();
-            for_each(plugin->getInfo().begin(), plugin->getInfo().end(), [&](pair<string, string> row){
+            STable pluginInfo = plugin->getInfo();
+            for_each(pluginInfo.begin(), pluginInfo.end(), [&](pair<string, string> row){
                 pluginData[row.first] = row.second;
             });
             plugins.push_back(SComposeJSONObject(pluginData));
