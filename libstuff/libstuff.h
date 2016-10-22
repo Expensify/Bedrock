@@ -355,11 +355,11 @@ template <typename T> class SSynchronized {
 
     // Getter and setter
     T get() {
-        lock_guard<mutex> lock(_mutex);
+        SAUTOLOCK(_mutex);
         return _synchronizedValue;
     }
     void set(const T& val) {
-        lock_guard<mutex> lock(_mutex);
+        SAUTOLOCK(_mutex);
         _synchronizedValue = val;
     }
 
