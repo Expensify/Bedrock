@@ -31,7 +31,7 @@ class BedrockServer : public STCPServer {
       private:
         // Private state
         list<SData> _queue;
-        mutex _queueMutex;
+        recursive_mutex _queueMutex;
         int _pipeFD[2];
     };
 

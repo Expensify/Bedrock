@@ -340,7 +340,7 @@ struct SAutoThreadPrefix {
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX##__LINE__(_PREFIX_)
 
 // Automatically locks/unlocks a mutex by scope
-#define SAUTOLOCK(_MUTEX_) lock_guard<mutex> __SAUTOLOCK_##__LINE__(_MUTEX_);
+#define SAUTOLOCK(_MUTEX_) lock_guard<recursive_mutex> __SAUTOLOCK_##__LINE__(_MUTEX_);
 
 // Convenient interface for multi-threaded, synchronized variables.
 template <typename T> class SSynchronized {
@@ -366,7 +366,7 @@ template <typename T> class SSynchronized {
   private:
     // Attributes
     T _synchronizedValue;
-    mutex _mutex;
+    recursive_mutex _mutex;
 };
 
 // --------------------------------------------------------------------------
