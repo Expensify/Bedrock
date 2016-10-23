@@ -44,7 +44,7 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         };
 
         // Attributes
-        mutex _mutex;
+        recursive_mutex _mutex;
         list<Entry*> _lruList;
         map<string, Entry*> _lruMap;
     };
