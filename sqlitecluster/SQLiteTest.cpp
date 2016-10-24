@@ -228,7 +228,7 @@ struct SQLiteTester {
     ~SQLiteTester() {
         for (size_t c = 0; c < _nodeArray.size(); ++c)
             if (_nodeArray[c])
-                SDELETE(_nodeArray[c]);
+                delete _nodeArray[c];
     }
 
     // ---------------------------------------------------------------------
@@ -353,8 +353,10 @@ struct SQLiteTester {
             }
 
             // Hard kill it, if not graceful
-            if (!graceful)
-                SDELETE(_nodeArray[c]);
+            if (!graceful) {
+                delete _nodeArray[c];
+                _nodeArray[c] = 0;
+            }
         } else {
             // Add a new peer
             SHMMM(">>>>>>>>>>>>>>>>>>> Adding server #" << c << ">>>>>>>>>>>>>>>>>>>>>");
@@ -385,7 +387,8 @@ struct SQLiteTester {
                 if (_nodeArray[c]->shutdownComplete()) {
                     // Graceful shutdown has completed
                     SINFO("<<<<<<<<<<<<<<<< Graceful shutdown complete #" << c << "<<<<<<<<<<<<<");
-                    SDELETE(_nodeArray[c]);
+                    delete _nodeArray[c];
+                    _nodeArray[c] = 0;
                 } else {
                     // Alive, process
                     maxS = SMax(maxS, _nodeArray[c]->preSelect(fdm));

@@ -451,7 +451,7 @@ void SQLiteNode::closeCommand(Command* command) {
 
     // Finish the cleanup
     _processedCommandList.remove(command);
-    SDELETE(command);
+    delete command;
 }
 
 // --------------------------------------------------------------------------
@@ -596,11 +596,11 @@ void SQLiteNode::_finishCommand(Command* command) {
         escalate["ID"] = command->id;
         escalate.content = command->response.serialize();
         _sendToPeer(command->initiator, escalate);
-        SDELETE(command);
+        delete command;
     } else if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
         // Special command, just delete it.
         SINFO("Database upgrade complete");
-        SDELETE(command);
+        delete command;
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
         _processedCommandList.push_back(command);
@@ -2306,7 +2306,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 SASSERTWARN(_state == SQLC_MASTERING || _state == SQLC_STANDINGDOWN);
                 SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
                 commandList->erase(commandIt);
-                SDELETE(command);
+                delete command;
             }
         }
     }
@@ -2338,7 +2338,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 SASSERT(peer->s);
                 _sendToPeer(peer, rollback);
             }
-        SDELETE(_currentCommand);
+        delete _currentCommand;
+        _currentCommand = 0;
     }
 }
 
@@ -2431,7 +2432,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
                         aborted["Reason"] = "Standing down";
                         _sendToPeer(command->initiator, aborted);
                         commandList->erase(commandIt);
-                        SDELETE(command);
+                        delete command;
                     }
                 }
             }

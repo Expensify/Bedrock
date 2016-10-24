@@ -21,7 +21,7 @@ STCPNode::~STCPNode() {
         Peer* peer = *peerIt;
         if (peer->s)
             closeSocket(peer->s);
-        SDELETE(peer);
+        delete peer;
     }
     peerList.clear();
 }

@@ -83,7 +83,8 @@ void BedrockTester::stopServer() {
     SSendSignal(SIGTERM);
     while (!server->shutdownComplete())
         loop(nextActivity);
-    SDELETE(server);
+    delete server;
+    server = 0;
 }
 
 void BedrockTester::waitForResponses() {
@@ -226,6 +227,7 @@ void BedrockTest(SData& trueArgs) {
     });
 
     // All done!
-    SDELETE(tester);
+    delete tester;
+    tester = 0;
     SINFO("Finished BedrockTest");
 }

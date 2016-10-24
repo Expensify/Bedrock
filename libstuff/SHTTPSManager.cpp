@@ -36,7 +36,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction->s)
         closeSocket(transaction->s);
     transaction->s = 0;
-    SDELETE(transaction);
+    delete transaction;
 }
 
 // --------------------------------------------------------------------------

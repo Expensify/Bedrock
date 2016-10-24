@@ -335,13 +335,13 @@ BedrockServer::~BedrockServer() {
     // Shut down the threads
     SINFO("Closing write thread '" << _writeThread->name << "'");
     SThreadClose(_writeThread->thread);
-    SDELETE(_writeThread);
+    delete _writeThread;
     SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
         // Close this thread
         Thread* readThread = *readThreadIt;
         SINFO("Closing read thread '" << readThread->name << "'");
         SThreadClose(readThread->thread);
-        SDELETE(readThread);
+        delete readThread;
     }
     _readThreadList.clear();
     SINFO("Threads closed.");
