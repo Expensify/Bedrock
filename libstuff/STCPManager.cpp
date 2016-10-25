@@ -258,7 +258,7 @@ void STCPManager::closeSocket(Socket* socket) {
     if (socket->ssl) {
         SSSLClose(socket->ssl);
     }
-    SDELETE(socket);
+    delete socket;
 }
 
 // --------------------------------------------------------------------------

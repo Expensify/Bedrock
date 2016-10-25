@@ -110,7 +110,7 @@ string BedrockPlugin_Cache::LRUMap::popLRU() {
     _lruList.erase(entry->listIt);
     _lruMap.erase(entry->mapIt);
     string nameCopy = entry->name;
-    SDELETE(entry);
+    delete entry;
     return nameCopy;
 }
 

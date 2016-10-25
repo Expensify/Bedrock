@@ -142,7 +142,7 @@ void SSSLClose(SSSLState* ssl) {
     // Just clean up
     SASSERT(ssl);
     mbedtls_ssl_free(&ssl->ssl);
-    SDELETE(ssl);
+    delete ssl;
 }
 
 // --------------------------------------------------------------------------

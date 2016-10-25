@@ -372,14 +372,6 @@ template <typename T> class SSynchronized {
 // --------------------------------------------------------------------------
 // Memory stuff
 // --------------------------------------------------------------------------
-// Macros for ensuring allocated memory is cleaned up right
-#define SDELETE(_PTR_)                                                                                                 \
-    do {                                                                                                               \
-        if (_PTR_) {                                                                                                   \
-            delete _PTR_;                                                                                              \
-            _PTR_ = 0;                                                                                                 \
-        }                                                                                                              \
-    } while (false)
 #define SZERO(_OBJ_) memset(&_OBJ_, 0, sizeof(_OBJ_))
 
 // --------------------------------------------------------------------------
