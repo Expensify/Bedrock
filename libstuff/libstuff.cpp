@@ -65,9 +65,6 @@ extern void _SInitializeSignals();
 pthread_key_t _g_SThread_TLSKey = 0;
 bool _g_SThread_TLSKey_Initialized = false;
 void SInitialize() {
-    // Seed the random generator
-    // srand((unsigned int)STimeNow());
-
     // Initialize signal handling
     _SInitializeSignals();
 
