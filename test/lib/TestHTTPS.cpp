@@ -11,7 +11,7 @@ TestHTTPS::~TestHTTPS()
 bool TestHTTPS::_onRecv(Transaction* transaction)
 {
     // Parse the method line, this is more complicated than in most of our code because here we're handling HTTP
-    // responses instead of Auth responses, the difference being that HTTP responses start with `HTTP/X.Y `, which
+    // responses instead of bedrock responses, the difference being that HTTP responses start with `HTTP/X.Y `, which
     // we don't care about. This code looks for the first space in the methodLine, and then for the first non-space
     // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
     // integer, we default to 400.

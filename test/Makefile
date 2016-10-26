@@ -118,12 +118,9 @@ $(DDIR)/%.d: %.c
 # similar, because in that case we'd genreate them all and then just delete them.
 # Reference on automatic prerequisities:
 # https://www.gnu.org/software/make/manual/html_node/Automatic-Prerequisites.html
-# NOTE: This always generates all the dependencies for everything (i.e., doing `build bedrock`) will still include the
-# dependencies for `auth`, so you'll end up generating all those if you haven't already.
 
 # TODO make this check for any of the `clean` targets, not just `clean`.
 ifneq ($(MAKECMDGOALS),clean)
--include $(AUTHTESTDEP)
 -include $(RECEIPTSDEP)
 endif
 
