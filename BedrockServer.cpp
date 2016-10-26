@@ -248,6 +248,7 @@ void BedrockServer_WorkerThread(void* _data) {
 
     // Done!
     SINFO("Thread exiting");
+    data->finished = true;
 }
 
 // --------------------------------------------------------------------------
@@ -362,20 +363,37 @@ bool BedrockServer::shutdownComplete() {
     //return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
     //       _queuedEscalatedRequests.empty() && _processedResponses.empty();
 
+    bool retVal = false;
+
     // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
     // or that nothing is.
-    if (gs && rs && qr && qe && pr) {
-        SINFO("returning TRUE in shutdownComplete");
-        return true;
-    } else if (gs) {
-        SINFO("Conditions that failed and are blocking shutdown: " <<
-              (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
-              (qr ? "" : "_queuedRequests.empty(), ") <<
-              (qe ? "" : "_queuedEscalatedRequests.empty(), ") <<
-              (pr ? "" : "_processedResponses.empty(), ") <<
-              "returning FALSE in shutdownComplete");
+    if (gs) {
+        if (rs && qr && qe && pr) {
+            retVal = true;
+        } else {
+            SINFO("Conditions that failed and are blocking shutdown: " <<
+                  (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
+                  (qr ? "" : "_queuedRequests.empty(), ") <<
+                  (qe ? "" : "_queuedEscalatedRequests.empty(), ") <<
+                  (pr ? "" : "_processedResponses.empty(), ") <<
+                  "returning FALSE in shutdownComplete");
+        }
+
+        // Count how many threads we have that are still running.
+        int remainingThreads = 0;
+        if(!_writeThread->finished) {
+            remainingThreads++;
+        }
+        for_each(_readThreadList.begin(), _readThreadList.end(), [&](Thread* thread){
+            if (!thread->finished) {
+                remainingThreads++;
+            }
+        });
+
+        SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
     }
-    return false;
+
+    return retVal;
 }
 
 // --------------------------------------------------------------------------

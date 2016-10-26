@@ -80,6 +80,7 @@ class BedrockServer : public STCPServer {
         void* thread;
         SSynchronized<bool> ready;
         BedrockServer* server;
+        bool finished = false;
     };
 
     // Constructor / Destructor
