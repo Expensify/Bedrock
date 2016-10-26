@@ -1020,8 +1020,8 @@ void SQLiteTest(const SData& args) {
                 uint64_t now = STimeNow();
                 if (!numAlive || now - lastBlink > STIME_US_PER_S * 20) {
                     // Time for another blink
-                    uint64_t blinker = SRand15() % tester._nodeArray.size();
-                    tester.toggle(blinker, SRand15() % 2); // Randomly choose dirty or clean
+                    uint64_t blinker = SRand64() % tester._nodeArray.size();
+                    tester.toggle(blinker, SRand64() % 2); // Randomly choose dirty or clean
                     lastBlink = now;
                     ++numBlinks;
                 }

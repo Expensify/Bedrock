@@ -47,6 +47,7 @@ extern int STestLibStuff();
 #include <algorithm>
 #include <stdlib.h>
 #include <mutex>
+#include <random>
 using namespace std;
 
 // Useful STL macros
@@ -211,6 +212,19 @@ struct SStopwatch {
         return true;
     }
 };
+
+// Random number generator class.
+class SRandom {
+private:
+    static mt19937_64* generator;
+    static uniform_int_distribution<uint64_t>* distribution64;
+    static void init();
+public:
+    static uint64_t rand64();
+};
+
+// Compatibility function for the old random number generator (just `rand()`). Uses SRandom.
+uint64_t SRand64();
 
 // --------------------------------------------------------------------------
 // Signal stuff
@@ -394,12 +408,6 @@ extern string SClampSize(const string& in, int digits, char fill);
 template <class T> inline T SMax(T lhs, T rhs) { return (lhs > rhs ? lhs : rhs); }
 template <class T> inline T SMin(T lhs, T rhs) { return (lhs < rhs ? lhs : rhs); }
 #define SABS(_VAL_) ((_VAL_) < 0 ? -1 * (_VAL_) : (_VAL_))
-
-// Random functions
-inline uint64_t SRand15() { return (int64_t)(rand() & 0x7FFF); }
-inline uint64_t SRand64() {
-    return ((SRand15() << 60) | (SRand15() << 45) | (SRand15() << 30) | (SRand15() << 15) | (SRand15() << 0));
-}
 
 // Helper function to convert from cents to dollars
 inline string SToDecimal(int cents) {
@@ -755,7 +763,6 @@ extern string SHMACSHA1(const string& key, const string& buffer);
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
 #define SAES_BLOCK_SIZE 16
-extern string SAESGenerate();
 extern string SAESEncrypt(const string& buffer, const string& iv, const string& key);
 extern string SAESDecrypt(const string& buffer, const string& iv, const string& key);
 

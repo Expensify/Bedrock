@@ -66,7 +66,7 @@ pthread_key_t _g_SThread_TLSKey = 0;
 bool _g_SThread_TLSKey_Initialized = false;
 void SInitialize() {
     // Seed the random generator
-    srand((unsigned int)STimeNow());
+    // srand((unsigned int)STimeNow());
 
     // Initialize signal handling
     _SInitializeSignals();
@@ -1925,6 +1925,9 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
+    if (timeoutVal > 10000) {
+        cout << "that's probably wrong." << endl;
+    }
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
@@ -1959,18 +1962,6 @@ string SGetPeerName(int s) {
     } else {
         return "(errno#" + SToStr(S_errno) + ")";
     }
-}
-
-// --------------------------------------------------------------------------
-string SAESGenerate() {
-    // Generate a 256Bit random key.
-    // **FIXME: This shouldn't be used; just create using GPG -- more random
-    string key;
-    key.resize(SAES_KEY_SIZE);
-    for (int i = 0; i < SAES_KEY_SIZE; i++) {
-        key[i] = SRand15() & 0xFF;
-    }
-    return key;
 }
 
 // --------------------------------------------------------------------------
@@ -2409,6 +2400,28 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     }
 }
 
+mt19937_64* SRandom::generator = 0;
+uniform_int_distribution<uint64_t>* SRandom::distribution64 = 0;
+
+void SRandom::init(){
+    if (!generator) {
+        random_device randomDevice;
+        generator = new mt19937_64(randomDevice());
+    }
+    if (!distribution64) {
+        distribution64 = new uniform_int_distribution<uint64_t>;
+    }
+}
+
+uint64_t SRandom::rand64(){
+    init();
+    return (*distribution64)(*generator);
+}
+
+uint64_t SRand64() {
+    return SRandom::rand64();
+}
+
 /////////////////////////////////////////////////////////////////////////////
 //                        Testing Stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -2460,17 +2473,13 @@ int STestLibStuff() {
 
     {
         STestTimer test("Testing AES encrypt/decrypt", testGroup);
-        for (int c = 0; c < SAES_BLOCK_SIZE; ++c) {
-            // Try 100 variations
-            srand(c);
-            string iv = SAESGenerate().substr(0, SAES_BLOCK_SIZE);
-            const string key = SAESGenerate();
-            string clearText = SToHex(SAESGenerate());
-            clearText = clearText.substr(0, (SAES_BLOCK_SIZE * 2) - c);
-            const string encrypted = SAESEncrypt(clearText, iv, key);
-            const string decrypted = SAESDecrypt(encrypted, iv, key);
-            STESTEQUALS(clearText, decrypted);
-        }
+        string iv = "58fae8d18b6fe8ed";
+        const string key = "44e8ff3f0e0e5323e953ac91685a62e0";
+        string clearText = "Encrypt this message.";
+        const string encrypted = SAESEncrypt(clearText, iv, key);
+        const string decrypted = SAESDecrypt(encrypted, iv, key);
+        STESTASSERT(clearText != encrypted);
+        STESTEQUALS(clearText, decrypted);
     }
 
     {
