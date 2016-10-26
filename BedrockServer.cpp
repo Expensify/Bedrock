@@ -240,7 +240,9 @@ void BedrockServer_WorkerThread(void* _data) {
         }
 
         // Update the state one last time when the writing replication thread exits.
-        data->replicationState.set(node.getState());
+        SQLCState state = node.getState();
+        data->replicationState.set(state);
+        SINFO("Write thread exiting, setting state to: " << state << endl;
         data->replicationCommitCount.set(node.getCommitCount());
     }
 
@@ -350,8 +352,30 @@ BedrockServer::~BedrockServer() {
 // --------------------------------------------------------------------------
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
-    return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
-           _queuedEscalatedRequests.empty() && _processedResponses.empty();
+    bool gs = _nodeGracefulShutdown.get();
+    bool rs = (_replicationState.get() <= SQLC_WAITING);
+    bool qr = _queuedRequests.empty();
+    bool qe = _queuedEscalatedRequests.empty();
+    bool pr = _processedResponses.empty();
+
+    // Original code - restore once shutdown issue has been diagnosed.
+    //return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
+    //       _queuedEscalatedRequests.empty() && _processedResponses.empty();
+
+    // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
+    // or that nothing is.
+    if (gs && rs && qr && qe && pr) {
+        SINFO("returning TRUE in shutdownComplete");
+        return true;
+    } else if (gs) {
+        SINFO("Conditions that failed and are blocking shutdown: " <<
+              (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
+              (qr ? "" : "_queuedRequests.empty(), ") <<
+              (qe ? "" : "_queuedEscalatedRequests.empty(), ") <<
+              (pr ? "" : "_processedResponses.empty(), ") <<
+              "returning FALSE in shutdownComplete");
+    }
+    return false;
 }
 
 // --------------------------------------------------------------------------
