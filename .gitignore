@@ -1,6 +1,7 @@
 .d-*
 .o-*
 Makefile
+!test/Makefile
 bedrock
 bin-*
 libstuff/libstuff.a
