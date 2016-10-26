@@ -242,7 +242,7 @@ void BedrockServer_WorkerThread(void* _data) {
         // Update the state one last time when the writing replication thread exits.
         SQLCState state = node.getState();
         data->replicationState.set(state);
-        SINFO("Write thread exiting, setting state to: " << state << endl;
+        SINFO("Write thread exiting, setting state to: " << state);
         data->replicationCommitCount.set(node.getCommitCount());
     }
 
