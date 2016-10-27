@@ -137,12 +137,6 @@ void BedrockTest(SData& trueArgs) {
         trueArgs["-all"] = "true";
     }
 
-    // Start with libstuff itself
-    if (trueArgs.isSet("-all")) {
-        // Libstuff
-        STestLibStuff();
-    }
-
     // What do we test?
     if (trueArgs.isSet("-all")) {
         // Create and run the main tester

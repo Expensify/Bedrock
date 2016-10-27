@@ -28,10 +28,7 @@
 // Initialization / Shutdown
 // --------------------------------------------------------------------------
 // Initialize libstuff on every thread before calling any of its functions
-extern void SInitialize();
-
-// Runs an internal test
-extern int STestLibStuff();
+void SInitialize();
 
 // --------------------------------------------------------------------------
 // Standard Template Library stuff
@@ -175,11 +172,11 @@ struct SData {
 #define STIME_HZ(_HZ_) (STIME_US_PER_S / (_HZ_))
 
 // Various helper time functions
-extern uint64_t STimeNow();
-extern uint64_t STimeThisMorning(); // Timestamp for this morning at midnight GMT
-extern int SDaysInMonth(int year, int month);
-extern string SComposeTime(const string& format, uint64_t when);
-extern timeval SToTimeval(uint64_t when);
+uint64_t STimeNow();
+uint64_t STimeThisMorning(); // Timestamp for this morning at midnight GMT
+int SDaysInMonth(int year, int month);
+string SComposeTime(const string& format, uint64_t when);
+timeval SToTimeval(uint64_t when);
 
 // Helpful class for timing
 struct SStopwatch {
@@ -230,22 +227,22 @@ uint64_t SRand64();
 // Signal stuff
 // --------------------------------------------------------------------------
 // Returns whether or not a single signal has been sent
-extern bool SCatchSignal(int signum);
+bool SCatchSignal(int signum);
 
 // Clears all signals that have been previously sent
-extern void SClearSignals();
+void SClearSignals();
 
 // Returns the bitmask of which signals have been sent
-extern uint64_t SGetSignals();
+uint64_t SGetSignals();
 
 // Manually "sends" one of the signals
-extern void SSendSignal(int signum);
+void SSendSignal(int signum);
 
 // Returns the name of a signal
-extern string SGetSignalName(int signum);
+string SGetSignalName(int signum);
 
 // Returns all signals set in a bitmask
-extern string SGetSignalNames(uint64_t sigmask);
+string SGetSignalNames(uint64_t sigmask);
 
 // --------------------------------------------------------------------------
 // Log stuff
@@ -256,16 +253,14 @@ inline void SLogLevel(int level) {
     _g_SLogMask = LOG_UPTO(level);
     setlogmask(_g_SLogMask);
 }
-inline bool SLogLevelIsSet(int level) { return (_g_SLogMask & (1 << level)); }
 
 // Stack trace logging
-extern void SLogStackTrace();
+void SLogStackTrace();
 
 // Simply logs a stream to the debugger
 // **NOTE: rsyslog max line size is 2048 bytes.  We split on 1500 byte bounderies in order to fit the
 //         syslog line prefix and the expanded \r\n to #015#012
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
-extern bool _g_SLogToSTDOUT;
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
     do {                                                                                                               \
         SThreadLocalStorage* tls = SThreadGetLocalStorage();                                                           \
@@ -273,11 +268,8 @@ extern bool _g_SLogToSTDOUT;
             ostringstream __out;                                                                                       \
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
-            if (_g_SLogToSTDOUT)                                                                                       \
-                printf("%s", __s.c_str());                                                                             \
-            else                                                                                                       \
-                for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                  \
-                    syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                          \
+            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                  \
+                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                          \
         }                                                                                                              \
     } while (false)
 
@@ -312,11 +304,10 @@ extern bool _g_SLogToSTDOUT;
 // --------------------------------------------------------------------------
 // Light wrapper around thread functions
 void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& threadName = "", size_t stackSize = 0);
-extern void SThreadClose(void* thread);
-extern void SThreadSleep(uint64_t delay);
+void SThreadClose(void* thread);
+void SThreadSleep(uint64_t delay);
 
 // Thread local storage
-extern pthread_key_t _g_SThread_TLSKey;
 struct SThreadLocalStorage {
     // Attributes
     void (*proc)(void* procData);
@@ -325,15 +316,12 @@ struct SThreadLocalStorage {
     string logPrefix;
     SData data;
 };
-inline SThreadLocalStorage* SThreadGetLocalStorage() {
-    return (SThreadLocalStorage*)pthread_getspecific(_g_SThread_TLSKey);
-}
+
+SThreadLocalStorage* SThreadGetLocalStorage();
 
 // Thread-local log prefix
-inline void SLogSetThreadPrefix(const string& logPrefix) {
-    SThreadLocalStorage* tls = SThreadGetLocalStorage();
-    tls->logPrefix = logPrefix;
-}
+void SLogSetThreadPrefix(const string& logPrefix);
+
 struct SAutoThreadPrefix {
     // Set on construction; reset on destruction
     SAutoThreadPrefix(const string& prefix) {
@@ -392,14 +380,14 @@ template <typename T> class SSynchronized {
 // Math stuff
 // --------------------------------------------------------------------------
 // Converting between various bases
-extern string SToHex(uint64_t value, int digits = 16);
+string SToHex(uint64_t value, int digits = 16);
 inline string SToHex(uint32_t value) { return SToHex(value, 8); }
-extern string SToHex(const string& buffer);
-extern uint64_t SFromHex(const string& value);
-extern string SStrFromHex(const string& buffer);
-extern string SToBase26(uint64_t value);
-extern string SToBase36(uint64_t value);
-extern string SClampSize(const string& in, int digits, char fill);
+string SToHex(const string& buffer);
+uint64_t SFromHex(const string& value);
+string SStrFromHex(const string& buffer);
+string SToBase26(uint64_t value);
+string SToBase36(uint64_t value);
+string SClampSize(const string& in, int digits, char fill);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
@@ -453,7 +441,7 @@ inline bool SContains(const STable& nameValueMap, const string& name) {
 
 // General testing functions
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
-extern bool SIContains(const string& haystack, const string& needle);
+bool SIContains(const string& haystack, const string& needle);
 inline bool SStartsWith(const string& haystack, const string& needle) { return haystack.find(needle) == 0; }
 inline bool SEndsWith(const string& haystack, const string& needle) {
     if (needle.size() > haystack.size())
@@ -461,8 +449,8 @@ inline bool SEndsWith(const string& haystack, const string& needle) {
     else
         return (haystack.substr(haystack.size() - needle.size()) == needle);
 }
-extern bool SConstantTimeEquals(const string& secret, const string& userInput);
-extern bool SConstantTimeIEquals(const string& secret, const string& userInput);
+bool SConstantTimeEquals(const string& secret, const string& userInput);
+bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 // Perform a full regex match. The '^' and '$' symbols are implicit.
 inline bool SREMatch(const string& regExp, const string& s) { return pcrecpp::RE(regExp).FullMatch(s); }
@@ -489,17 +477,17 @@ inline string SToUpper(const string& value) {
 }
 
 // String alteration
-extern string SCollapse(const string& lhs);
-extern string STrim(const string& lhs);
-extern string SStrip(const string& lhs);
-extern string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
+string SCollapse(const string& lhs);
+string STrim(const string& lhs);
+string SStrip(const string& lhs);
+string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
 inline string SStripAllBut(const string& lhs, const string& chars) { return SStrip(lhs, chars, true); }
 inline string SStripNonNum(const string& lhs) { return SStripAllBut(lhs, "0123456789"); }
-extern string SEscape(const char* lhs, const string& unsafe, char escaper);
+string SEscape(const char* lhs, const string& unsafe, char escaper);
 inline string SEscape(const string& lhs, const string& unsafe, char escaper = '\\') {
     return SEscape(lhs.c_str(), unsafe, escaper);
 }
-extern string SUnescape(const char* lhs, char escaper);
+string SUnescape(const char* lhs, char escaper);
 inline string SUnescape(const string& lhs, char escaper = '\\') { return SUnescape(lhs.c_str(), escaper); }
 inline string SStripTrim(const string& lhs) { return STrim(SStrip(lhs)); }
 inline string SBefore(const string& value, const string& needle) {
@@ -536,13 +524,13 @@ inline bool SInsertAfter(string& value, const string& needle, const string& thre
 inline string SAfterUpTo(const string& value, const string& after, const string& upTo) {
     return (SBefore(SAfter(value, after), upTo));
 }
-extern string SReplace(const string& value, const string& find, const string& replace);
-extern string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
-extern string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
-extern int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
+string SReplace(const string& value, const string& find, const string& replace);
+string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
+string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
+int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
 
 // Stream management
-extern void SConsumeFront(string& lhs, ssize_t num);
+void SConsumeFront(string& lhs, ssize_t num);
 inline void SConsumeBack(string& lhs, int num) {
     if ((int)lhs.size() <= num) {
         lhs.clear();
@@ -559,29 +547,29 @@ inline void SAppend(string& lhs, const string& rhs) { lhs += rhs; }
 
 // HTTP message management
 #define S_COOKIE_SEPARATOR ((char)0xFF)
-extern int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
+int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
 inline int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content) {
     return SParseHTTP(buffer.c_str(), (int)buffer.size(), methodLine, nameValueMap, content);
 }
-extern bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
-extern bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
-extern bool SParseURI(const char* buffer, int length, string& host, string& path);
+bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
+bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
+bool SParseURI(const char* buffer, int length, string& host, string& path);
 inline bool SParseURI(const string& uri, string& host, string& path) {
     return SParseURI(uri.c_str(), (int)uri.size(), host, path);
 }
-extern bool SParseURIPath(const char* buffer, int length, string& path, STable& nameValueMap);
+bool SParseURIPath(const char* buffer, int length, string& path, STable& nameValueMap);
 inline bool SParseURIPath(const string& uri, string& path, STable& nameValueMap) {
     return SParseURIPath(uri.c_str(), (int)uri.size(), path, nameValueMap);
 }
-extern void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameValueMap, const string& content);
+void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameValueMap, const string& content);
 inline string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content) {
     string buffer;
     SComposeHTTP(buffer, methodLine, nameValueMap, content);
     return buffer;
 }
-extern string SComposePOST(const STable& nameValueMap);
+string SComposePOST(const STable& nameValueMap);
 inline string SComposeHost(const string& host, int port) { return (host + ":" + SToStr(port)); }
-extern bool SParseHost(const string& host, string& domain, uint16_t& port);
+bool SParseHost(const string& host, string& domain, uint16_t& port);
 inline bool SHostIsValid(const string& host) {
     string domain;
     uint16_t port = 0;
@@ -599,15 +587,15 @@ inline string SGetDomain(const string& host) {
     else
         return host;
 }
-extern string SDecodeURIComponent(const char* buffer, int length);
+string SDecodeURIComponent(const char* buffer, int length);
 inline string SDecodeURIComponent(const string& value) { return SDecodeURIComponent(value.c_str(), (int)value.size()); }
-extern string SEncodeURIComponent(const string& value);
+string SEncodeURIComponent(const string& value);
 
 // --------------------------------------------------------------------------
 // List stuff
 // --------------------------------------------------------------------------
 // List management
-extern bool SParseIntegerList(const char* value, list<int64_t>& valueList, char separator = ',');
+bool SParseIntegerList(const char* value, list<int64_t>& valueList, char separator = ',');
 inline bool SParseIntegerList(const string& value, list<int64_t>& valueList, char separator = ',') {
     return SParseIntegerList(value.c_str(), valueList, separator);
 }
@@ -617,8 +605,8 @@ inline list<int64_t> SParseIntegerList(const string& value, char separator = ','
     return valueList;
 }
 
-extern bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-extern bool SParseVector(const char* value, vector<string>& valueVector, char separator = ',');
+bool SParseList(const char* value, list<string>& valueList, char separator = ',');
+bool SParseVector(const char* value, vector<string>& valueVector, char separator = ',');
 inline bool SParseList(const string& value, list<string>& valueList, char separator = ',') {
     return SParseList(value.c_str(), valueList, separator);
 }
@@ -661,7 +649,7 @@ inline void SAppendToList(string& value, const string& addValue) {
 // JSON stuff
 // --------------------------------------------------------------------------
 // JSON message management
-extern string SToJSON(const string& value, const bool forceString = false);
+string SToJSON(const string& value, const bool forceString = false);
 inline string SComposeJSONArray(const vector<string>& valueList) {
     if (valueList.empty())
         return "[]";
@@ -680,9 +668,9 @@ inline string SComposeJSONArray(const list<string>& valueList) {
     working += "]";
     return working;
 }
-extern string SComposeJSONObject(const STable& nameValueMap, const bool forceString = false);
-extern STable SParseJSONObject(const string& object);
-extern list<string> SParseJSONArray(const string& array);
+string SComposeJSONObject(const STable& nameValueMap, const bool forceString = false);
+STable SParseJSONObject(const string& object);
+list<string> SParseJSONArray(const string& array);
 inline string SGetJSONArrayFront(const string& jsonArray) {
     list<string> l = SParseJSONArray(jsonArray);
     return l.empty() ? "" : l.front();
@@ -705,66 +693,63 @@ typedef map<int, pollfd> fd_map;
 
 // This will add the events specified in `evts` to the events we'll listen for for this socket,
 // or, if this socket isn't in our set, it'll add it.
-extern void SFDset(fd_map& fdm, int socket, short evts);
+void SFDset(fd_map& fdm, int socket, short evts);
 
 // Returns true if *ANY* of the bits in evts are set as returned value for this socket.
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
-extern bool SFDAnySet(fd_map& fdm, int socket, short evts);
+bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
 // Socket helpers
-extern int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
-extern int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
-extern ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
-extern bool S_recvappend(int s, string& recvBuffer);
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
+int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
+ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
+bool S_recvappend(int s, string& recvBuffer);
 inline string S_recv(int s) {
     string buf;
     S_recvappend(s, buf);
     return buf;
 }
-extern bool S_sendconsume(int s, string& sendBuffer);
+bool S_sendconsume(int s, string& sendBuffer);
 inline bool S_send(int s, string sendBuffer) {
     S_sendconsume(s, sendBuffer);
     return sendBuffer.empty();
 }
-extern int S_poll(fd_map& fdm, uint64_t timeout);
+int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
-extern string SGetHostName();
-extern string SGetPeerName(int s);
+string SGetHostName();
+string SGetPeerName(int s);
 
 // --------------------------------------------------------------------------
 // File stuff
 // --------------------------------------------------------------------------
 // Basic file loading and saving
-extern bool SFileExists(const string& path);
-extern bool SFileLoad(const string& path, string& buffer);
-inline string SFileLoad(const string& path) {
-    string buffer;
-    SFileLoad(path, buffer);
-    return buffer;
-}
-extern bool SFileSave(const string& path, const string& buffer);
-extern bool SFileCopy(const string& fromPath, const string& toPath);
-extern uint64_t SFileSize(const string& path);
+bool SFileExists(const string& path);
+bool SFileLoad(const string& path, string& buffer);
+string SFileLoad(const string& path);
+bool SFileSave(const string& path, const string& buffer);
+bool SFileDelete(const string& path);
+bool SFileCopy(const string& fromPath, const string& toPath);
+uint64_t SFileSize(const string& path);
 
 // --------------------------------------------------------------------------
 // Crypto stuff
 // --------------------------------------------------------------------------
 // Various hashing functions
-extern string SHashSHA1(const string& buffer);
+string SHashSHA1(const string& buffer);
 
 // Various encoding/decoding functions
-extern string SEncodeBase64(const string& buffer);
-extern string SDecodeBase64(const string& buffer);
+string SEncodeBase64(const string& buffer);
+string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
-extern string SHMACSHA1(const string& key, const string& buffer);
+string SHMACSHA1(const string& key, const string& buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
 #define SAES_BLOCK_SIZE 16
-extern string SAESEncrypt(const string& buffer, const string& iv, const string& key);
-extern string SAESDecrypt(const string& buffer, const string& iv, const string& key);
+string SAESEncrypt(const string& buffer, const string& iv, const string& key);
+string SAESDecrypt(const string& buffer, const string& iv, const string& key);
 
 // --------------------------------------------------------------------------
 // Credit card stuff
@@ -806,7 +791,7 @@ inline string SQ(unsigned val) { return SToStr(val); }
 inline string SQ(uint64_t val) { return SToStr(val); }
 inline string SQ(int64_t val) { return SToStr(val); }
 inline string SQ(double val) { return SToStr(val); }
-extern string SQList(const string& val, bool integersOnly = true);
+string SQList(const string& val, bool integersOnly = true);
 
 template <typename Container> string SQList(const Container& valueList) {
     list<string> safeValues;
@@ -816,9 +801,9 @@ template <typename Container> string SQList(const Container& valueList) {
     return SComposeList(safeValues);
 }
 
-extern void SQueryLogOpen(const string& logFilename);
-extern void SQueryLogClose();
-extern bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
+void SQueryLogOpen(const string& logFilename);
+void SQueryLogClose();
+bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
                    int64_t warnThreshold = 1000 * STIME_US_PER_MS);
 inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
     SQResult ignore;
@@ -830,7 +815,7 @@ inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnTh
 #define SQUERYIGNORE(_db_, _query_) SQuery(_db_, __FILE__ __SLINE__, (string)_query_)
 #define SASSERTQUERY(_db_, _query_, _result_) SASSERT(SQUERY(_db_, _query_, _result_))
 #define SASSERTQUERYIGNORE(_db_, _query_) SASSERT(SQUERYIGNORE(_db_, _query_))
-extern bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
+bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 
 // --------------------------------------------------------------------------
 inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }
@@ -840,10 +825,10 @@ inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
 // Miscellaneous stuff
 // --------------------------------------------------------------------------
 // Compression
-extern string SGZip(const string& content);
+string SGZip(const string& content);
 
 // Command-line helpers
-extern SData SParseCommandLine(int argc, char* argv[]);
+SData SParseCommandLine(int argc, char* argv[]);
 
 // --------------------------------------------------------------------------
 // Testing Stuff
