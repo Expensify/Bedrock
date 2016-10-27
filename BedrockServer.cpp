@@ -240,12 +240,15 @@ void BedrockServer_WorkerThread(void* _data) {
         }
 
         // Update the state one last time when the writing replication thread exits.
-        data->replicationState.set(node.getState());
+        SQLCState state = node.getState();
+        data->replicationState.set(state);
+        SINFO("Write thread exiting, setting state to: " << state);
         data->replicationCommitCount.set(node.getCommitCount());
     }
 
     // Done!
     SINFO("Thread exiting");
+    data->finished = true;
 }
 
 // --------------------------------------------------------------------------
@@ -350,8 +353,47 @@ BedrockServer::~BedrockServer() {
 // --------------------------------------------------------------------------
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
-    return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
-           _queuedEscalatedRequests.empty() && _processedResponses.empty();
+    bool gs = _nodeGracefulShutdown.get();
+    bool rs = (_replicationState.get() <= SQLC_WAITING);
+    bool qr = _queuedRequests.empty();
+    bool qe = _queuedEscalatedRequests.empty();
+    bool pr = _processedResponses.empty();
+
+    // Original code - restore once shutdown issue has been diagnosed.
+    //return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
+    //       _queuedEscalatedRequests.empty() && _processedResponses.empty();
+
+    bool retVal = false;
+
+    // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
+    // or that nothing is.
+    if (gs) {
+        if (rs && qr && qe && pr) {
+            retVal = true;
+        } else {
+            SINFO("Conditions that failed and are blocking shutdown: " <<
+                  (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
+                  (qr ? "" : "_queuedRequests.empty(), ") <<
+                  (qe ? "" : "_queuedEscalatedRequests.empty(), ") <<
+                  (pr ? "" : "_processedResponses.empty(), ") <<
+                  "returning FALSE in shutdownComplete");
+        }
+
+        // Count how many threads we have that are still running.
+        int remainingThreads = 0;
+        if(!_writeThread->finished) {
+            remainingThreads++;
+        }
+        for_each(_readThreadList.begin(), _readThreadList.end(), [&](Thread* thread){
+            if (!thread->finished) {
+                remainingThreads++;
+            }
+        });
+
+        SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
+    }
+
+    return retVal;
 }
 
 // --------------------------------------------------------------------------
