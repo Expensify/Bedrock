@@ -289,7 +289,7 @@ struct LibStuff : tpunit::TestFixture
         data = "";
         for (int i = 0; i < 10000000; i++)
         {
-            data += (char)(SRandom::randd64() % 256);
+            data += (char)(SRandom::rand64() % 256);
         }
         ASSERT_TRUE(SGZip(data).length() > 1);
 
