@@ -44,7 +44,6 @@ void SInitialize();
 #include <algorithm>
 #include <stdlib.h>
 #include <mutex>
-#include <random>
 using namespace std;
 
 // Useful STL macros

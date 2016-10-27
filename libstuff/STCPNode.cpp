@@ -33,7 +33,7 @@ void STCPNode::addPeer(const string& peerName, const string& host, const STable&
     SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), "
                           << SComposeJSONObject(params));
     Peer* peer = new Peer(peerName, host, params);
-    peer->nextReconnect = STimeNow() + SRandom:rand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
+    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
     peerList.push_back(peer);
 }
 
