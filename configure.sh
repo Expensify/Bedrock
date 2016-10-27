@@ -159,7 +159,6 @@ clean: cleanlibstuff cleansqlitecluster cleanbedrock
 # There are several similar targets defined in a row here. For more documentation on what they're doing, scroll down to
 # libstuff, as it does basically the same thing as the other targets, but with more commenting.
 BEDROCKC = $(shell find . -name "*.c" -not -path "*mbedtls*")
-BEDROCKCPP = $(shell find . -name "*.cpp" -not -path "*mbedtls*" -not -path "*sqlitecluster/main.cpp")
 BEDROCKCPP = $(shell find . -name "*.cpp" -not -path "*mbedtls*" -not -path "*sqlitecluster/main.cpp" -not -path "*test/*")
 EOF
 

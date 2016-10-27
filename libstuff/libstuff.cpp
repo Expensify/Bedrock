@@ -1931,9 +1931,6 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
-    if (timeoutVal > 10000) {
-        cout << "that's probably wrong." << endl;
-    }
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
@@ -2412,26 +2409,3 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
         return false; // Table already exists with correct definition
     }
 }
-
-mt19937_64* SRandom::generator = 0;
-uniform_int_distribution<uint64_t>* SRandom::distribution64 = 0;
-
-void SRandom::init(){
-    if (!generator) {
-        random_device randomDevice;
-        generator = new mt19937_64(randomDevice());
-    }
-    if (!distribution64) {
-        distribution64 = new uniform_int_distribution<uint64_t>;
-    }
-}
-
-uint64_t SRandom::rand64(){
-    init();
-    return (*distribution64)(*generator);
-}
-
-uint64_t SRand64() {
-    return SRandom::rand64();
-}
-
