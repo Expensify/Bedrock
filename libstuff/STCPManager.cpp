@@ -22,7 +22,7 @@ int STCPManager::preSelect(fd_map& fdm) {
             // Add this socket.  First, we always want to read, and we always
             // want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
-            maxS = SMax(maxS, socket->s);
+            maxS = max(maxS, socket->s);
 
             // However, we only want to write in some states.  No matter
             // what, we want to send if we're not yet connected.  And if we're

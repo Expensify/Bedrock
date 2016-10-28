@@ -46,7 +46,7 @@ struct SQLiteTestWebServer : public STCPServer {
                     s->sendBuffer += SData("HTTP 200 OK").serialize();
                     shutdownSocket(s, SHUT_RD);
                 } else
-                    nextActivity = SMin(nextActivity, timeout);
+                    nextActivity = min(nextActivity, timeout);
             } else if (s->state == STCP_CLOSED) {
                 // Close this socket
                 SDEBUG("Done with socket from '" << s->addr << "'");
@@ -184,7 +184,7 @@ struct SQLiteTestNode : public SQLiteNode {
         // If a timeout is set, use that
         bool result = SQLiteNode::update(nextActivity);
         if (commandTimeout)
-            nextActivity = SMin(nextActivity, commandTimeout);
+            nextActivity = min(nextActivity, commandTimeout);
         return result;
     }
 };
@@ -391,14 +391,14 @@ struct SQLiteTester {
                     _nodeArray[c] = 0;
                 } else {
                     // Alive, process
-                    maxS = SMax(maxS, _nodeArray[c]->preSelect(fdm));
-                    maxS = SMax(maxS, _nodeArray[c]->httpsClient.preSelect(fdm));
+                    maxS = max(maxS, _nodeArray[c]->preSelect(fdm));
+                    maxS = max(maxS, _nodeArray[c]->httpsClient.preSelect(fdm));
                 }
             }
 
         // Wait for activity or timeout, and measure how long it took
         uint64_t now = STimeNow();
-        uint64_t timeout = SMax(_nextActivity, now) - now;
+        uint64_t timeout = max(_nextActivity, now) - now;
         uint64_t before = STimeNow();
         int activeSockets = S_poll(fdm, timeout);
         uint64_t elapsed = STimeNow() - before;

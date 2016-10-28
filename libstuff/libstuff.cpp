@@ -224,7 +224,16 @@ string SClampSize(const string& in, int digits, char fill) {
 /////////////////////////////////////////////////////////////////////////////
 // String stuff
 /////////////////////////////////////////////////////////////////////////////
-// --------------------------------------------------------------------------
+string SToLower(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::tolower);
+    return value;
+}
+
+string SToUpper(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::toupper);
+    return value;
+}
+
 bool SIContains(const string& lhs, const string& rhs) {
     // Case insensitive contains
     return SContains(SToLower(lhs), SToLower(rhs));
@@ -497,42 +506,13 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 }
 
 // --------------------------------------------------------------------------
-bool SParseIntegerList(const char* ptr, list<int64_t>& valueList, char separator) {
-    // Clear the input
-    valueList.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the list
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty()) {
-                valueList.push_back(SToInt64(component));
-            }
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty()) {
-        valueList.push_back(SToInt(component));
-    }
-
-    // Return if we were able to find anything
-    return !valueList.empty();
+list<int64_t> SParseIntegerList(const string& value, char separator) {
+    list<int64_t> valueList;
+    list<string> strings = SParseList(value, separator);
+    for_each(strings.begin(), strings.end(), [&](string str){
+        valueList.push_back(SToInt64(str));
+    });
+    return valueList;
 }
 
 // --------------------------------------------------------------------------
@@ -573,54 +553,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-// **FIXME: What's the proper STL way to do this, without just duplicating
-//          all the list/vector code?
-bool SParseVector(const char* ptr, vector<string>& valueVector, char separator) {
-    // STL way:
-    //
-    // valueVector.clear();
-    // stringstream inputStream( string(ptr) )
-    // for( string component; getline( inputStream, component, separator ); )
-    //     valueVector.push_back( STrim(component) );
-    // return !valueVector.empty();
-    //
-
-    // Clear the input
-    valueVector.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the vector
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty())
-                valueVector.push_back(component);
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty())
-        valueVector.push_back(component);
-
-    // Return if we were able to find anything
-    return (!component.empty());
-}
-
-// --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
     SASSERT((int)lhs.size() >= num);
     // If nothing, early out
@@ -649,10 +581,14 @@ SData SParseCommandLine(int argc, char* argv[]) {
         bool isName = SStartsWith(argv[c], "-");
         if (name.empty()) {
             // We're not already processing a name, either start or add
-            if (isName)
+            if (isName) {
                 name = argv[c];
-            else
-                SAppendToList(results.methodLine, argv[c]);
+            } else {
+                list<string> valueList;
+                SParseList(results.methodLine, valueList);
+                valueList.push_back(argv[c]);
+                results.methodLine = SComposeList(valueList);
+            }
         } else {
             // Processing a name, do we have a value or another name?
             if (isName) {

@@ -82,7 +82,7 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
-            nextActivity = SMin(nextActivity, active->created + TIMEOUT);
+            nextActivity = min(nextActivity, active->created + TIMEOUT);
         }
 
         // If we're done, remove from the active and add to completd
