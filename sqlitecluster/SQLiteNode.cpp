@@ -1833,7 +1833,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
 
                 // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRand64() % STIME_US_PER_M * 5;
+                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
             }
         } catch (const char* e) {
             // Transaction failed
@@ -2383,9 +2383,9 @@ void SQLiteNode::_changeState(SQLCState newState) {
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
         if (newState == SQLC_SEARCHING || newState == SQLC_STANDINGUP || newState == SQLC_SUBSCRIBING)
-            timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRand64() % STIME_US_PER_S * 5;
+            timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         else if (newState == SQLC_SYNCHRONIZING)
-            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRand64() % STIME_US_PER_M * 5;
+            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
         else
             timeout = 0;
         SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
