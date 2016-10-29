@@ -1,4 +1,3 @@
-#include <libstuff/libstuff.h>
 #include "TestSQLite.h"
 
 TestSQLite::TestSQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize) :
