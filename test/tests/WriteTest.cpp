@@ -1,36 +1,25 @@
 #include <test/lib/BedrockTester.h>
 
-struct WriteTest : tpunit::TestFixture
-{
-    WriteTest() : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup),
-                                           TEST(WriteTest::create),
-                                           TEST(WriteTest::insert),
-                                           AFTER_CLASS(WriteTest::tearDown))
-    {
+struct WriteTest : tpunit::TestFixture {
+    WriteTest()
+        : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup), TEST(WriteTest::create), TEST(WriteTest::insert),
+                              AFTER_CLASS(WriteTest::tearDown)) {
         NAME(Write);
     }
 
     BedrockTester* tester;
 
-    void setup()
-    {
-        tester = new BedrockTester();
-    }
+    void setup() { tester = new BedrockTester(); }
 
-    void tearDown()
-    {
-        delete tester;
-    }
+    void tearDown() { delete tester; }
 
-    void create()
-    {
+    void create() {
         SData status("Query");
         status["query"] = "CREATE TABLE foo (bar INTEGER);";
         tester->executeWait(status);
     }
 
-    void insert()
-    {
+    void insert() {
         for (int i = 0; i < 50; i++) {
             SData status("Query");
             status["query"] = "INSERT INTO foo VALUES ( RANDOM() );";

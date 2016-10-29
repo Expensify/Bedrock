@@ -13,15 +13,13 @@ set<int> BedrockTester::serverPIDs;
 #endif
 
 class BedrockTestException : public std::exception {
-private:
+  private:
     const string message;
 
-public:
+  public:
     BedrockTestException(string message_) : message(message_) {}
 
-    virtual const char* what() const __NOEXCEPT {
-        return message.c_str();
-    }
+    virtual const char* what() const __NOEXCEPT { return message.c_str(); }
 };
 
 BedrockTester::BedrockTester(string filename) : passing(true) {
@@ -39,8 +37,7 @@ BedrockTester::BedrockTester(string filename) : passing(true) {
     }
 }
 
-BedrockTester::~BedrockTester()
-{
+BedrockTester::~BedrockTester() {
     if (db) {
         delete db;
         db = 0;
@@ -55,16 +52,14 @@ BedrockTester::~BedrockTester()
     }
 }
 
-SQLite& BedrockTester::getSQLiteDB()
-{
+SQLite& BedrockTester::getSQLiteDB() {
     if (!db) {
         db = new TestSQLite(dbFile, 1000000, false, true, 3000000);
     }
     return *db;
 }
 
-SQLite& BedrockTester::getWritableSQLiteDB()
-{
+SQLite& BedrockTester::getWritableSQLiteDB() {
     if (!writableDB) {
         writableDB = new TestSQLite(dbFile, 1000000, false, false, 3000000);
     }
@@ -74,18 +69,11 @@ SQLite& BedrockTester::getWritableSQLiteDB()
 // This is sort of convoluted because of the way it was originally built. We can probably just have this always
 // use the member variable db and never open it's own handle. This was added early ob for debugging and should be
 // obsolete.
-string BedrockTester::readDB(const string& query)
-{
-    return getSQLiteDB().read(query);
-}
+string BedrockTester::readDB(const string& query) { return getSQLiteDB().read(query); }
 
-bool BedrockTester::readDB(const string& query, SQResult& result)
-{
-    return getSQLiteDB().read(query, result);
-}
+bool BedrockTester::readDB(const string& query, SQResult& result) { return getSQLiteDB().read(query, result); }
 
-bool BedrockTester::deleteFile(string name)
-{
+bool BedrockTester::deleteFile(string name) {
     string shm = name + "-shm";
     string wal = name + "-wal";
     bool retval = true;
@@ -101,34 +89,24 @@ bool BedrockTester::deleteFile(string name)
     return retval;
 }
 
-bool BedrockTester::createFile(string name)
-{
-    if(!SFileExists(name)) {
+bool BedrockTester::createFile(string name) {
+    if (!SFileExists(name)) {
         return SFileSave(name, "");
     }
     return true;
 }
 
-string BedrockTester::getServerName() {
-    return "../bedrock";
-}
+string BedrockTester::getServerName() { return "../bedrock"; }
 
 list<string> BedrockTester::getServerArgs() {
     list<string> args = {
-        "-db",
-        BedrockTester::DB_FILE,
-        "-serverHost",
-        SERVER_ADDR,
-        "-nodeName",
-        "bedrock_test",
-        "-nodeHost",
-        "localhost:9889",
-        "-priority",
-        "200",
-        "-plugins",
-        "status,db,cache",
-        "-v",
-        "-cache",
+        "-db",         BedrockTester::DB_FILE,
+        "-serverHost", SERVER_ADDR,
+        "-nodeName",   "bedrock_test",
+        "-nodeHost",   "localhost:9889",
+        "-priority",   "200",
+        "-plugins",    "status,db,cache",
+        "-v",          "-cache",
         "10001",
     };
 
@@ -138,14 +116,11 @@ list<string> BedrockTester::getServerArgs() {
 string BedrockTester::getCommandLine() {
     string cmd = getServerName();
     list<string> args = getServerArgs();
-    for_each(args.begin(), args.end(), [&](string arg) {
-        cmd += " " + arg;
-    });
+    for_each(args.begin(), args.end(), [&](string arg) { cmd += " " + arg; });
     return cmd;
 }
 
-void BedrockTester::startServer()
-{
+void BedrockTester::startServer() {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
@@ -160,7 +135,7 @@ void BedrockTester::startServer()
         // Convert our c++ strings to old-school C strings for exec.
         char* cargs[args.size() + 1];
         int count = 0;
-        for_each(args.begin(), args.end(), [&](string arg){
+        for_each(args.begin(), args.end(), [&](string arg) {
             char* newstr = (char*)malloc(arg.size() + 1);
             strcpy(newstr, arg.c_str());
             cargs[count] = newstr;
@@ -190,8 +165,7 @@ void BedrockTester::startServer()
                 SData status("Status");
                 executeWait(status, "200");
                 break;
-            }
-            catch (...) {
+            } catch (...) {
                 // This will happen if the server's not up yet. We'll just try again.
             }
             usleep(100000); // 0.1 seconds.
@@ -199,27 +173,22 @@ void BedrockTester::startServer()
     }
 }
 
-void BedrockTester::stopServer(int pid)
-{
+void BedrockTester::stopServer(int pid) {
     kill(pid, SIGKILL);
     int status;
     waitpid(pid, &status, 0);
     serverPIDs.erase(pid);
 }
 
-void BedrockTester::stopServer()
-{
-    stopServer(serverPID);
-}
+void BedrockTester::stopServer() { stopServer(serverPID); }
 
-string BedrockTester::executeWait(const SData& request, const std::string& correctResponse)
-{
+string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
     int socket = S_socket(SERVER_ADDR, true, false, true);
 
     string sendBuffer = request.serialize();
     // Send our data.
-    while(sendBuffer.size()) {
+    while (sendBuffer.size()) {
         bool result = S_sendconsume(socket, sendBuffer);
         if (!result) {
             break;
@@ -243,6 +212,6 @@ string BedrockTester::executeWait(const SData& request, const std::string& corre
     }
 
     close(socket);
-    
+
     return content;
 }

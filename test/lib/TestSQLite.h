@@ -6,7 +6,7 @@
  * different executables. This class simply bypasses the check for commit count integrity.
  */
 class TestSQLite : public SQLite {
-public:
+  public:
     TestSQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize);
     ~TestSQLite();
 };

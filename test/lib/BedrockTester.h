@@ -1,13 +1,12 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
-#include <test/lib/tpunit++.hpp>
-#include <test/lib/TestSQLite.h>
 #include <test/lib/TestHTTPS.h>
+#include <test/lib/TestSQLite.h>
+#include <test/lib/tpunit++.hpp>
 
-class BedrockTester
-{
-public:
+class BedrockTester {
+  public:
     // The location of the database. This is static so we can re-use it for the life of the test app.
     static string DB_FILE;
     static string SERVER;
@@ -17,27 +16,27 @@ public:
     static bool deleteFile(string name);
     static bool startServers;
 
-    string      dbFile;
-    uint64_t    nextActivity;
-    bool        passing;
-    int         serverPID = 0;
-    SQLite*     db = 0;
-    SQLite*     writableDB = 0;
+    string dbFile;
+    uint64_t nextActivity;
+    bool passing;
+    int serverPID = 0;
+    SQLite* db = 0;
+    SQLite* writableDB = 0;
 
     // Constructor
     BedrockTester(string filename = "");
-    ~BedrockTester(); 
+    ~BedrockTester();
 
     // Executes a command and waits for the response
     string executeWait(const SData& request, const std::string& correctResponse = "200");
 
-    string readDB(const string& query); 
+    string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
     SQLite& getWritableSQLiteDB();
     static string getCommandLine();
 
-private:
+  private:
     // these exist to allow us to create and delete our database file.
     bool createFile(string name);
 
