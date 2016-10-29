@@ -1,10 +1,9 @@
 #pragma once
-#include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>
+#include <libstuff/libstuff.h>
 
-class TestHTTPS : public SHTTPSManager
-{
-public:
+class TestHTTPS : public SHTTPSManager {
+  public:
     TestHTTPS();
     virtual ~TestHTTPS();
 

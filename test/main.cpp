@@ -10,8 +10,7 @@
  */
 
 // Create temporary file. Returns its name or the empty string on failure.
-string getTempFileName()
-{
+string getTempFileName() {
     char buffer[24] = "bedrocktest_XXXXXX.db";
     int filedes = mkstemps(buffer, 3);
     close(filedes);
@@ -30,40 +29,34 @@ void cleanup() {
     BedrockTester::deleteFile(BedrockTester::DB_FILE);
 }
 
-void sigclean(int sig)
-{
+void sigclean(int sig) {
     cout << "Got SIGINT, cleaning up." << endl;
     cleanup();
     cout << "Done." << endl;
     exit(1);
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.
     signal(SIGINT, sigclean);
-    
+
     // Tests to run (or skip);
     set<string> include;
     set<string> exclude;
 
     if (args.isSet("-only")) {
         list<string> includeList = SParseList(args["-only"]);
-        for_each(includeList.begin(), includeList.end(), [&](string name){
-            include.insert(name);
-        });
+        for_each(includeList.begin(), includeList.end(), [&](string name) { include.insert(name); });
     }
     if (args.isSet("-except")) {
         list<string> excludeList = SParseList(args["-except"]);
-        for_each(excludeList.begin(), excludeList.end(), [&](string name){
-            exclude.insert(name);
-        });
+        for_each(excludeList.begin(), excludeList.end(), [&](string name) { exclude.insert(name); });
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
-    BedrockTester::DB_FILE     = getTempFileName();
+    BedrockTester::DB_FILE = getTempFileName();
     cout << "Temp file for this run: " << BedrockTester::DB_FILE << endl;
     BedrockTester::SERVER_ADDR = "127.0.0.1:8989";
 

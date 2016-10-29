@@ -1,8 +1,7 @@
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 
-struct LibStuff : tpunit::TestFixture
-{
+struct LibStuff : tpunit::TestFixture {
     LibStuff() : tpunit::TestFixture(
                                     TEST(LibStuff::testMaskPAN),
                                     TEST(LibStuff::testEncryptDecrpyt),
@@ -19,13 +18,14 @@ struct LibStuff : tpunit::TestFixture
                                     TEST(LibStuff::testFileIO),
                                     TEST(LibStuff::testSTimeNow),
                                     TEST(LibStuff::testCurrentTimestamp),
-                                    TEST(LibStuff::testSQList))
+                                    TEST(LibStuff::testSQList),
+                                    TEST(LibStuff::testRandom))
     {
+
         NAME(LibStuff);
     }
 
-    void testMaskPAN()
-    {
+    void testMaskPAN() {
         ASSERT_EQUAL(SMaskPAN("12345"), "XXXXX");
         ASSERT_EQUAL(SMaskPAN("1234567"), "XXX4567");
         ASSERT_EQUAL(SMaskPAN("12345678"), "XXXX5678");
@@ -36,8 +36,7 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SMaskPAN("123456789012345678901"), "XXXXXXXXXXXXXXXXXXXXX");
     }
 
-    void testEncryptDecrpyt()
-    {
+    void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";
         const string key = "44e8ff3f0e0e5323e953ac91685a62e0";
         string clearText = "Encrypt this message.";
@@ -47,15 +46,13 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(clearText, decrypted);
     }
 
-    void testSHMACSHA1()
-    {
+    void testSHMACSHA1() {
         ASSERT_EQUAL(SToHex(SHMACSHA1("", "")), "FBDB1D1B18AA6C08324B7D64B71FB76370690E1D");
         ASSERT_EQUAL(SToHex(SHMACSHA1("key", "The quick brown fox jumps over the lazy dog")),
-                    "DE7C9B85B8B78AA6BC8A7A36F70A90701C9DB4D9");
+                     "DE7C9B85B8B78AA6BC8A7A36F70A90701C9DB4D9");
     }
 
-    void testJSONDecode()
-    {
+    void testJSONDecode() {
         const string& samplePolicy = SFileLoad("sample_data/samplePolicy.json");
         ASSERT_FALSE(samplePolicy.empty());
 
@@ -67,8 +64,7 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(distance["defaultUnit"], "mi");
     }
 
-    void testJSON()
-    {
+    void testJSON() {
         // Floating point value tests
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":1.2}"), "{\"imAFloat\":1.2}");
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":-0.23456789}"), "{\"imAFloat\":-0.23456789}");
@@ -287,8 +283,7 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(SGZip(data).length() > 1);
 
         data = "";
-        for (int i = 0; i < 10000000; i++)
-        {
+        for (int i = 0; i < 10000000; i++) {
             data += (char)(SRandom::rand64() % 256);
         }
         ASSERT_TRUE(SGZip(data).length() > 1);
@@ -507,4 +502,22 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SQList(stringList), SQList(SComposeList(stringList), false));
     }
 
+    void testUpperLower() {
+        ASSERT_EQUAL(SToUpper("asdf"), "ASDF");
+        ASSERT_EQUAL(SToUpper("as-as"), "AS-AS");
+        ASSERT_EQUAL(SToLower("ASDF"), "asdf");
+        ASSERT_EQUAL(SToLower("AS_DF"), "as_df");
+    }
+
+    void testRandom() {
+        // There's not really a good way to test a random number generator. This test is here in case someone wants to
+        // uncomment the `cout` line and verify that the numbers don't all come out the same, or sequential, but an
+        // automated test for this is impractical. This might be useful if you change the random number code and want
+        // to make sure it's not fundamentally broken.
+        for (int i = 0; i < 50; i++) {
+            uint64_t randomNumber = SRandom::rand64();
+            ASSERT_TRUE(randomNumber | 1); // Shuts up the "unused variable" warning.
+            // cout << "Randomly generated uint64_t: " << randomNumber << endl;
+        }
+    }
 } __LibStuff;
