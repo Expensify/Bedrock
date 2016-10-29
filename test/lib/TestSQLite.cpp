@@ -1,5 +1,4 @@
 #include "TestSQLite.h"
-#include <libstuff/libstuff.h>
 
 TestSQLite::TestSQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize)
     : SQLite(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize) {}

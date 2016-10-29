@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
 
 /* This class exists because when we read the test DB from a separate program, like BedrockTest, we don't
