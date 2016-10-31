@@ -86,7 +86,7 @@ struct SQLiteTestNode : public SQLiteNode {
 
     // Construct the base class
     SQLiteTestNode(const string& filename, const string& host, int priority)
-        : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRand64() % STIME_US_PER_S * 5,
+        : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRandom::rand64() % STIME_US_PER_S * 5,
                      "testversion", 100) {
         // Nothing to initialize
         commandTimeout = 0;
@@ -1020,8 +1020,8 @@ void SQLiteTest(const SData& args) {
                 uint64_t now = STimeNow();
                 if (!numAlive || now - lastBlink > STIME_US_PER_S * 20) {
                     // Time for another blink
-                    uint64_t blinker = SRand15() % tester._nodeArray.size();
-                    tester.toggle(blinker, SRand15() % 2); // Randomly choose dirty or clean
+                    uint64_t blinker = SRandom::rand64() % tester._nodeArray.size();
+                    tester.toggle(blinker, SRandom::rand64() % 2); // Randomly choose dirty or clean
                     lastBlink = now;
                     ++numBlinks;
                 }

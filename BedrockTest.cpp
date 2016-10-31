@@ -29,7 +29,8 @@ void BedrockTester::onResponse(const string& host, const SData& request, const S
 void BedrockTester::loop(uint64_t& nextActivity) {
     // Do one iteration of the select loop
     fd_map fdm;
-    SMax(preSelect(fdm), server->preSelect(fdm));
+    preSelect(fdm);
+    server->preSelect(fdm);
     uint64_t now = STimeNow();
     S_poll(fdm, SMax(nextActivity, now) - now);
     nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
@@ -90,8 +91,9 @@ void BedrockTester::stopServer() {
 void BedrockTester::waitForResponses() {
     // Keep going so long as there are active connections
     uint64_t nextActivity = STimeNow();
-    while (!activeConnectionList.empty())
+    while (!activeConnectionList.empty()) {
         loop(nextActivity);
+    }
 }
 
 void BedrockTester::sendQuery(const string& query, int numToSend, int numActiveConnections) {
@@ -133,12 +135,6 @@ void BedrockTest(SData& trueArgs) {
     if (trueArgs.nameValueMap.size() == 1) {
         // Do a full test
         trueArgs["-all"] = "true";
-    }
-
-    // Start with libstuff itself
-    if (trueArgs.isSet("-all")) {
-        // Libstuff
-        STestLibStuff();
     }
 
     // What do we test?

@@ -4,7 +4,6 @@
 // --------------------------------------------------------------------------
 // Global logging state; unsynchronized but shared between all threads
 int _g_SLogMask = LOG_WARNING;
-bool _g_SLogToSTDOUT = false;
 
 // --------------------------------------------------------------------------
 void SLogStackTrace() {

@@ -55,7 +55,7 @@
 BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
                  1024,                                                 // auto-checkpoint every 1024 pages
-                 STIME_US_PER_M * 2 + SRand64() % STIME_US_PER_S * 30, // Be patient first time
+                 STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
                  server_->getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
                  args.test("-readOnly"), args.calc("-maxJournalSize")),
       server(server_) {
