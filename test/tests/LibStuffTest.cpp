@@ -2,14 +2,25 @@
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {
-    LibStuff()
-        : tpunit::TestFixture(
-              TEST(LibStuff::testMaskPAN), TEST(LibStuff::testEncryptDecrpyt), TEST(LibStuff::testSHMACSHA1),
-              TEST(LibStuff::testJSONDecode), TEST(LibStuff::testJSON), TEST(LibStuff::testEscapeUnescape),
-              TEST(LibStuff::testChunkedEncoding), TEST(LibStuff::testDaysInMonth), TEST(LibStuff::testGZip),
-              TEST(LibStuff::testConstantTimeEquals), TEST(LibStuff::testParseIntegerList), TEST(LibStuff::testSData),
-              TEST(LibStuff::testFileIO), TEST(LibStuff::testSTimeNow), TEST(LibStuff::testCurrentTimestamp),
-              TEST(LibStuff::testSQList), TEST(LibStuff::testUpperLower), TEST(LibStuff::testRandom)) {
+    LibStuff() : tpunit::TestFixture(
+                                    TEST(LibStuff::testMaskPAN),
+                                    TEST(LibStuff::testEncryptDecrpyt),
+                                    TEST(LibStuff::testSHMACSHA1),
+                                    TEST(LibStuff::testJSONDecode),
+                                    TEST(LibStuff::testJSON),
+                                    TEST(LibStuff::testEscapeUnescape),
+                                    TEST(LibStuff::testChunkedEncoding),
+                                    TEST(LibStuff::testDaysInMonth),
+                                    TEST(LibStuff::testGZip),
+                                    TEST(LibStuff::testConstantTimeEquals),
+                                    TEST(LibStuff::testParseIntegerList),
+                                    TEST(LibStuff::testSData),
+                                    TEST(LibStuff::testFileIO),
+                                    TEST(LibStuff::testSTimeNow),
+                                    TEST(LibStuff::testCurrentTimestamp),
+                                    TEST(LibStuff::testSQList),
+                                    TEST(LibStuff::testRandom))
+    {
         NAME(LibStuff);
     }
 
@@ -508,5 +519,4 @@ struct LibStuff : tpunit::TestFixture {
             // cout << "Randomly generated uint64_t: " << randomNumber << endl;
         }
     }
-
 } __LibStuff;
