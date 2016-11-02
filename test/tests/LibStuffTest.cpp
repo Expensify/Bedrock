@@ -19,7 +19,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSTimeNow),
                                     TEST(LibStuff::testCurrentTimestamp),
                                     TEST(LibStuff::testSQList),
-                                    TEST(LibStuff::testRandom))
+                                    TEST(LibStuff::testRandom),
+                                    TEST(LibStuff::testHexConversion))
     {
         NAME(LibStuff);
     }
@@ -518,5 +519,13 @@ struct LibStuff : tpunit::TestFixture {
             ASSERT_TRUE(randomNumber | 1); // Shuts up the "unused variable" warning.
             // cout << "Randomly generated uint64_t: " << randomNumber << endl;
         }
+    }
+
+    void testHexConversion() {
+        ASSERT_EQUAL(SStrFromHex("48656c6c6f"), "Hello");
+        ASSERT_EQUAL(SStrFromHex("48656C6C6f"), "Hello");
+
+        string start = "I wish I was an Oscar Meyer Weiner";
+        ASSERT_EQUAL(SStrFromHex(SToHex(start)), start);
     }
 } __LibStuff;

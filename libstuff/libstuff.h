@@ -20,10 +20,6 @@
 #include <signal.h>
 #include <pthread.h>
 
-// Define places where we must follow Win32's lead
-#define closesocket(_S_) close(_S_)
-#define mkgmtime timegm
-
 // --------------------------------------------------------------------------
 // Initialization / Shutdown
 // --------------------------------------------------------------------------
@@ -359,11 +355,6 @@ template <typename T> class SSynchronized {
 };
 
 // --------------------------------------------------------------------------
-// Memory stuff
-// --------------------------------------------------------------------------
-#define SZERO(_OBJ_) memset(&_OBJ_, 0, sizeof(_OBJ_))
-
-// --------------------------------------------------------------------------
 // Math stuff
 // --------------------------------------------------------------------------
 // Converting between various bases
@@ -372,9 +363,6 @@ inline string SToHex(uint32_t value) { return SToHex(value, 8); }
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
 string SStrFromHex(const string& buffer);
-string SToBase26(uint64_t value);
-string SToBase36(uint64_t value);
-string SClampSize(const string& in, int digits, char fill);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))

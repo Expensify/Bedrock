@@ -234,7 +234,7 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     socket->data = 0; // Used by caller, not libstuff
     SASSERT(!x509 || socket->ssl);
-    SZERO(socket->addr);
+    memset(&socket->addr, 0, sizeof(socket->addr));
     socketList.push_back(socket);
     return socket;
 }
@@ -254,7 +254,7 @@ void STCPManager::closeSocket(Socket* socket) {
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
     socketList.remove(socket);
-    ::closesocket(socket->s);
+    ::close(socket->s);
     if (socket->ssl) {
         SSSLClose(socket->ssl);
     }

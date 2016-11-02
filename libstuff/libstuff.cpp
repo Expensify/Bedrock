@@ -107,6 +107,7 @@ string SToHex(uint64_t value, int digits) {
     }
     return working;
 }
+
 string SToHex(const string& value) {
     // Fill from front to back
     string working;
@@ -139,92 +140,13 @@ uint64_t SFromHex(const string& value) {
     }
     return binValue;
 }
+
 string SStrFromHex(const string& buffer) {
-    // Convert from front to back
-    string working;
-    for (size_t c = 0; c < buffer.size(); c += 2) {
-        // Generate one byte from each pair of characters
-        unsigned char a = (unsigned char)buffer[c + 0];
-        unsigned char b = (unsigned char)buffer[c + 1];
-        if (a < '0')
-            a = 0; // Invalid
-        else if (a <= '9')
-            a = a - '0';
-        else if (a < 'A')
-            a = 0; // Invalid
-        else if (a <= 'F')
-            a = a - 'A' + 10;
-        else if (a < 'a')
-            a = 0; // Invalid
-        else if (a <= 'f')
-            a = a - 'a' + 10;
-        else
-            a = 0; // Invalid
-        a <<= 4;
-        if (b < '0')
-            b = 0; // Invalid
-        else if (b <= '9')
-            b = b - '0';
-        else if (b < 'A')
-            b = 0; // Invalid
-        else if (b <= 'F')
-            b = b - 'A' + 10;
-        else if (b < 'a')
-            b = 0; // Invalid
-        else if (b <= 'f')
-            b = b - 'a' + 10;
-        else
-            b = 0; // Invalid
-        unsigned char out = a | b;
-        working += (char)out;
+    string retVal;
+    for(size_t i = 0; i < buffer.length(); i += 2) {
+        retVal.push_back((char)strtol(buffer.substr(i, 2).c_str(), 0, 16));
     }
-    return working;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base26" (case insensitive letters).
-string SToBase26(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 26;
-        value /= 26;
-
-        // Convert to a character
-        out += 'A' + c;
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base36", meaning numbers and letters (case insensitive).
-string SToBase36(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 36;
-        value /= 36;
-
-        // Convert to a character
-        if (c < 10)
-            out += '0' + c;
-        else
-            out += 'A' + (c - 10);
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-string SClampSize(const string& in, int digits, char fill) {
-    // If bigger, just return the substring
-    if ((int)in.size() >= digits)
-        return in.substr(0, digits);
-
-    // Otherwise, fill
-    string out(digits - (int)in.size(), fill);
-    return out + in;
+    return retVal;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1615,7 +1537,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
                                 << "': " << message << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s > 0)
-            closesocket(s);
+            close(s);
         return -1;
     }
 }
@@ -1627,7 +1549,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
     SASSERT(recvBufferSize > 0);
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     ssize_t numRecv = recvfrom(s, recvBuffer, recvBufferSize - 1, 0, (sockaddr*)&fromAddr, &fromAddrLen);
     recvBuffer[numRecv] = 0;
 
@@ -1679,7 +1601,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     int s = (int)accept(port, (sockaddr*)&fromAddr, &fromAddrLen);
 
     // Process the result
@@ -1892,8 +1814,7 @@ string SGetHostName() {
 // --------------------------------------------------------------------------
 string SGetPeerName(int s) {
     // Just call the function that does this
-    sockaddr_in addr;
-    SZERO(addr);
+    sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*)&addr, &socklen);
     if (result == 0) {
