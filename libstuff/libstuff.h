@@ -460,13 +460,6 @@ inline string SAfterLastOf(const string& value, const string& needle) {
         return value.substr(pos + 1);
 }
 
-inline bool SInsertAfter(string& value, const string& needle, const string& thread) {
-    size_t pos = value.find(needle);
-    if (pos == string::npos)
-        return false;
-    value.insert(pos + needle.size(), thread);
-    return true;
-}
 inline string SAfterUpTo(const string& value, const string& after, const string& upTo) {
     return (SBefore(SAfter(value, after), upTo));
 }
