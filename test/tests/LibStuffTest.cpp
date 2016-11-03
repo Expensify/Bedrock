@@ -19,9 +19,9 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSTimeNow),
                                     TEST(LibStuff::testCurrentTimestamp),
                                     TEST(LibStuff::testSQList),
-                                    TEST(LibStuff::testRandom))
+                                    TEST(LibStuff::testRandom),
+                                    TEST(LibStuff::testHexConversion))
     {
-
         NAME(LibStuff);
     }
 
@@ -310,7 +310,7 @@ struct LibStuff : tpunit::TestFixture {
 
     void testParseIntegerList() {
         list<int64_t> before;
-        for (int i = -10; i < 300000; i++) {
+        for (int i = -10; i < 300; i++) {
             before.push_back(i);
         }
         list<int64_t> after = SParseIntegerList(SComposeList(before));
@@ -519,5 +519,13 @@ struct LibStuff : tpunit::TestFixture {
             ASSERT_TRUE(randomNumber | 1); // Shuts up the "unused variable" warning.
             // cout << "Randomly generated uint64_t: " << randomNumber << endl;
         }
+    }
+
+    void testHexConversion() {
+        ASSERT_EQUAL(SStrFromHex("48656c6c6f"), "Hello");
+        ASSERT_EQUAL(SStrFromHex("48656C6C6f"), "Hello");
+
+        string start = "I wish I was an Oscar Meyer Weiner";
+        ASSERT_EQUAL(SStrFromHex(SToHex(start)), start);
     }
 } __LibStuff;

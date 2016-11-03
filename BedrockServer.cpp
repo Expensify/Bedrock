@@ -90,7 +90,7 @@ void BedrockServer_WorkerThread(void* _data) {
             // Block until work is available.
             fd_map fdm;
             int maxS = queuedRequests.preSelect(fdm);
-            maxS = SMax(directMessages.preSelect(fdm), maxS);
+            maxS = max(directMessages.preSelect(fdm), maxS);
             S_poll(fdm, STIME_US_PER_S);
             queuedRequests.postSelect(fdm);
             directMessages.postSelect(fdm);
@@ -187,10 +187,10 @@ void BedrockServer_WorkerThread(void* _data) {
             });
 
             int maxS = node.preSelect(fdm);
-            maxS = SMax(queuedEscalatedRequests.preSelect(fdm), maxS);
-            maxS = SMax(directMessages.preSelect(fdm), maxS);
+            maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
+            maxS = max(directMessages.preSelect(fdm), maxS);
             const uint64_t now = STimeNow();
-            S_poll(fdm, SMax(nextActivity, now) - now);
+            S_poll(fdm, max(nextActivity, now) - now);
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
@@ -306,7 +306,7 @@ BedrockServer::BedrockServer(const SData& args)
     }
 
     // Add as many read threads as requested
-    int readThreads = SMax(1, _args.calc("-readThreads"));
+    int readThreads = max(1, _args.calc("-readThreads"));
     SINFO("Starting " << readThreads << " read threads (" << args["-readThreads"] << ")");
     for (int c = 0; c < readThreads; ++c) {
         // Add this read thread

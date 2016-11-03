@@ -33,7 +33,7 @@ void STCPServer::closePorts() {
         // Loop across and close all ports
         SFOREACH (list<Port>, portList, portIt) {
             // Close this port
-            ::closesocket(portIt->s);
+            ::close(portIt->s);
         }
         portList.clear();
     } else {

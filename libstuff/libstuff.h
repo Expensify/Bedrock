@@ -20,10 +20,6 @@
 #include <signal.h>
 #include <pthread.h>
 
-// Define places where we must follow Win32's lead
-#define closesocket(_S_) close(_S_)
-#define mkgmtime timegm
-
 // --------------------------------------------------------------------------
 // Initialization / Shutdown
 // --------------------------------------------------------------------------
@@ -44,6 +40,7 @@ void SInitialize();
 #include <algorithm>
 #include <stdlib.h>
 #include <mutex>
+#include <cctype>
 using namespace std;
 
 // Useful STL macros
@@ -59,7 +56,6 @@ using namespace std;
     for (map<_CT0_, _CT1_>::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
 #define SFOREACHMAPCONST(_CT0_, _CT1_, _C_, _I_)                                                                       \
     for (map<_CT0_, _CT1_>::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHTABLE(_C_, _I_) for (STable::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
 
 // --------------------------------------------------------------------------
 // Assertion stuff
@@ -358,11 +354,6 @@ template <typename T> class SSynchronized {
 };
 
 // --------------------------------------------------------------------------
-// Memory stuff
-// --------------------------------------------------------------------------
-#define SZERO(_OBJ_) memset(&_OBJ_, 0, sizeof(_OBJ_))
-
-// --------------------------------------------------------------------------
 // Math stuff
 // --------------------------------------------------------------------------
 // Converting between various bases
@@ -371,25 +362,9 @@ inline string SToHex(uint32_t value) { return SToHex(value, 8); }
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
 string SStrFromHex(const string& buffer);
-string SToBase26(uint64_t value);
-string SToBase36(uint64_t value);
-string SClampSize(const string& in, int digits, char fill);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
-
-// Clamping
-template <class T> inline T SMax(T lhs, T rhs) { return (lhs > rhs ? lhs : rhs); }
-template <class T> inline T SMin(T lhs, T rhs) { return (lhs < rhs ? lhs : rhs); }
-#define SABS(_VAL_) ((_VAL_) < 0 ? -1 * (_VAL_) : (_VAL_))
-
-// Helper function to convert from cents to dollars
-inline string SToDecimal(int cents) {
-    // Just render with 2 decimal points
-    char buf[32];
-    sprintf(buf, "%d.%02d", SABS(cents) / 100, SABS(cents) % 100);
-    return string(cents < 0 ? "-" : "") + buf;
-}
 
 // --------------------------------------------------------------------------
 // String stuff
@@ -445,22 +420,8 @@ inline bool SREMatch(const string& regExp, const string& s, string& match) {
 }
 
 // Case testing and conversion
-inline char SToLower(char from) { return (SWITHIN('A', from, 'Z') ? from - 'A' + 'a' : from); }
-inline char SToUpper(char from) { return (SWITHIN('a', from, 'z') ? from - 'a' + 'A' : from); }
-inline string SToLower(const string& value) {
-    string out;
-    out.resize(value.size());
-    for (int c = 0; c < (int)value.size(); ++c)
-        out[c] = SToLower(value[c]);
-    return out;
-}
-inline string SToUpper(const string& value) {
-    string out;
-    out.resize(value.size());
-    for (int c = 0; c < (int)value.size(); ++c)
-        out[c] = SToUpper(value[c]);
-    return out;
-}
+string SToLower(string value);
+string SToUpper(string value);
 
 // String alteration
 string SCollapse(const string& lhs);
@@ -497,16 +458,7 @@ inline string SAfterLastOf(const string& value, const string& needle) {
     else
         return value.substr(pos + 1);
 }
-inline string SBetween(const string& value, const string& lhs, const string& rhs) {
-    return SBefore(SAfter(value, lhs), rhs);
-}
-inline bool SInsertAfter(string& value, const string& needle, const string& thread) {
-    size_t pos = value.find(needle);
-    if (pos == string::npos)
-        return false;
-    value.insert(pos + needle.size(), thread);
-    return true;
-}
+
 inline string SAfterUpTo(const string& value, const string& after, const string& upTo) {
     return (SBefore(SAfter(value, after), upTo));
 }
@@ -561,10 +513,6 @@ inline bool SHostIsValid(const string& host) {
     uint16_t port = 0;
     return SParseHost(host, domain, port);
 }
-inline bool SURIIsValid(const string& uri) {
-    string host, path;
-    return SParseURI(uri, host, path);
-}
 inline string SGetDomain(const string& host) {
     string domain;
     uint16_t ignore;
@@ -581,33 +529,15 @@ string SEncodeURIComponent(const string& value);
 // List stuff
 // --------------------------------------------------------------------------
 // List management
-bool SParseIntegerList(const char* value, list<int64_t>& valueList, char separator = ',');
-inline bool SParseIntegerList(const string& value, list<int64_t>& valueList, char separator = ',') {
-    return SParseIntegerList(value.c_str(), valueList, separator);
-}
-inline list<int64_t> SParseIntegerList(const string& value, char separator = ',') {
-    list<int64_t> valueList;
-    SParseIntegerList(value, valueList, separator);
-    return valueList;
-}
-
+list<int64_t> SParseIntegerList(const string& value, char separator = ',');
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-bool SParseVector(const char* value, vector<string>& valueVector, char separator = ',');
 inline bool SParseList(const string& value, list<string>& valueList, char separator = ',') {
     return SParseList(value.c_str(), valueList, separator);
-}
-inline bool SParseVector(const string& value, vector<string>& valueVector, char separator = ',') {
-    return SParseVector(value.c_str(), valueVector, separator);
 }
 inline list<string> SParseList(const string& value, char separator = ',') {
     list<string> valueList;
     SParseList(value, valueList, separator);
     return valueList;
-}
-inline vector<string> SParseVector(const string& value, char separator = ',') {
-    vector<string> valueVector;
-    SParseVector(value, valueVector, separator);
-    return valueVector;
 }
 
 // Concatenates things into a string. "Things" can mean essentially any
@@ -622,13 +552,6 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
         working += separator;
     });
     return working.substr(0, working.size() - separator.size());
-}
-
-inline void SAppendToList(string& value, const string& addValue) {
-    list<string> valueList;
-    SParseList(value, valueList);
-    valueList.push_back(addValue);
-    value = SComposeList(valueList);
 }
 
 // --------------------------------------------------------------------------

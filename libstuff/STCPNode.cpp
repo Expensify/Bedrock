@@ -202,7 +202,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 closeSocket(peer->s);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
-                nextActivity = SMin(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect);
                 break;
             }
 
@@ -234,7 +234,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 }
             } else {
                 // Waiting to reconnect -- notify the caller
-                nextActivity = SMin(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect);
             }
         }
     }

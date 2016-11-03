@@ -20,7 +20,7 @@ struct SSLTest : tpunit::TestFixture {
             fdm.clear();
             https.preSelect(fdm);
             const uint64_t now = STimeNow();
-            S_poll(fdm, SMax(nextActivity, now) - now);
+            S_poll(fdm, max(nextActivity, now) - now);
             nextActivity = STimeNow() + STIME_US_PER_S;
             https.postSelect(fdm, nextActivity);
         }

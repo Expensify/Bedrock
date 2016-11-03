@@ -22,7 +22,7 @@ int STCPManager::preSelect(fd_map& fdm) {
             // Add this socket.  First, we always want to read, and we always
             // want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
-            maxS = SMax(maxS, socket->s);
+            maxS = max(maxS, socket->s);
 
             // However, we only want to write in some states.  No matter
             // what, we want to send if we're not yet connected.  And if we're
@@ -234,7 +234,7 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     socket->data = 0; // Used by caller, not libstuff
     SASSERT(!x509 || socket->ssl);
-    SZERO(socket->addr);
+    memset(&socket->addr, 0, sizeof(socket->addr));
     socketList.push_back(socket);
     return socket;
 }
@@ -254,7 +254,7 @@ void STCPManager::closeSocket(Socket* socket) {
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
     socketList.remove(socket);
-    ::closesocket(socket->s);
+    ::close(socket->s);
     if (socket->ssl) {
         SSSLClose(socket->ssl);
     }

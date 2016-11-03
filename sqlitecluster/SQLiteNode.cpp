@@ -2492,7 +2492,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = _db.getCommitCount();
         if (!sendAll)
-            toIndex = SMin(toIndex, fromIndex + 100); // 100 transactions at a time
+            toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         if (!_db.getCommits(fromIndex, toIndex, result))
             throw "error getting commits";
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)

@@ -107,6 +107,7 @@ string SToHex(uint64_t value, int digits) {
     }
     return working;
 }
+
 string SToHex(const string& value) {
     // Fill from front to back
     string working;
@@ -139,98 +140,28 @@ uint64_t SFromHex(const string& value) {
     }
     return binValue;
 }
+
 string SStrFromHex(const string& buffer) {
-    // Convert from front to back
-    string working;
-    for (size_t c = 0; c < buffer.size(); c += 2) {
-        // Generate one byte from each pair of characters
-        unsigned char a = (unsigned char)buffer[c + 0];
-        unsigned char b = (unsigned char)buffer[c + 1];
-        if (a < '0')
-            a = 0; // Invalid
-        else if (a <= '9')
-            a = a - '0';
-        else if (a < 'A')
-            a = 0; // Invalid
-        else if (a <= 'F')
-            a = a - 'A' + 10;
-        else if (a < 'a')
-            a = 0; // Invalid
-        else if (a <= 'f')
-            a = a - 'a' + 10;
-        else
-            a = 0; // Invalid
-        a <<= 4;
-        if (b < '0')
-            b = 0; // Invalid
-        else if (b <= '9')
-            b = b - '0';
-        else if (b < 'A')
-            b = 0; // Invalid
-        else if (b <= 'F')
-            b = b - 'A' + 10;
-        else if (b < 'a')
-            b = 0; // Invalid
-        else if (b <= 'f')
-            b = b - 'a' + 10;
-        else
-            b = 0; // Invalid
-        unsigned char out = a | b;
-        working += (char)out;
+    string retVal;
+    for(size_t i = 0; i < buffer.length(); i += 2) {
+        retVal.push_back((char)strtol(buffer.substr(i, 2).c_str(), 0, 16));
     }
-    return working;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base26" (case insensitive letters).
-string SToBase26(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 26;
-        value /= 26;
-
-        // Convert to a character
-        out += 'A' + c;
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base36", meaning numbers and letters (case insensitive).
-string SToBase36(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 36;
-        value /= 36;
-
-        // Convert to a character
-        if (c < 10)
-            out += '0' + c;
-        else
-            out += 'A' + (c - 10);
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-string SClampSize(const string& in, int digits, char fill) {
-    // If bigger, just return the substring
-    if ((int)in.size() >= digits)
-        return in.substr(0, digits);
-
-    // Otherwise, fill
-    string out(digits - (int)in.size(), fill);
-    return out + in;
+    return retVal;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // String stuff
 /////////////////////////////////////////////////////////////////////////////
-// --------------------------------------------------------------------------
+string SToLower(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::tolower);
+    return value;
+}
+
+string SToUpper(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::toupper);
+    return value;
+}
+
 bool SIContains(const string& lhs, const string& rhs) {
     // Case insensitive contains
     return SContains(SToLower(lhs), SToLower(rhs));
@@ -503,42 +434,13 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 }
 
 // --------------------------------------------------------------------------
-bool SParseIntegerList(const char* ptr, list<int64_t>& valueList, char separator) {
-    // Clear the input
-    valueList.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the list
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty()) {
-                valueList.push_back(SToInt64(component));
-            }
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty()) {
-        valueList.push_back(SToInt(component));
-    }
-
-    // Return if we were able to find anything
-    return !valueList.empty();
+list<int64_t> SParseIntegerList(const string& value, char separator) {
+    list<int64_t> valueList;
+    list<string> strings = SParseList(value, separator);
+    for_each(strings.begin(), strings.end(), [&](string str){
+        valueList.push_back(SToInt64(str));
+    });
+    return valueList;
 }
 
 // --------------------------------------------------------------------------
@@ -579,54 +481,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-// **FIXME: What's the proper STL way to do this, without just duplicating
-//          all the list/vector code?
-bool SParseVector(const char* ptr, vector<string>& valueVector, char separator) {
-    // STL way:
-    //
-    // valueVector.clear();
-    // stringstream inputStream( string(ptr) )
-    // for( string component; getline( inputStream, component, separator ); )
-    //     valueVector.push_back( STrim(component) );
-    // return !valueVector.empty();
-    //
-
-    // Clear the input
-    valueVector.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the vector
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty())
-                valueVector.push_back(component);
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty())
-        valueVector.push_back(component);
-
-    // Return if we were able to find anything
-    return (!component.empty());
-}
-
-// --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
     SASSERT((int)lhs.size() >= num);
     // If nothing, early out
@@ -655,10 +509,14 @@ SData SParseCommandLine(int argc, char* argv[]) {
         bool isName = SStartsWith(argv[c], "-");
         if (name.empty()) {
             // We're not already processing a name, either start or add
-            if (isName)
+            if (isName) {
                 name = argv[c];
-            else
-                SAppendToList(results.methodLine, argv[c]);
+            } else {
+                list<string> valueList;
+                SParseList(results.methodLine, valueList);
+                valueList.push_back(argv[c]);
+                results.methodLine = SComposeList(valueList);
+            }
         } else {
             // Processing a name, do we have a value or another name?
             if (isName) {
@@ -1087,23 +945,23 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    SFOREACHTABLE(nameValueMap, mapIt) {
-        if (SIEquals("Set-Cookie", mapIt->first)) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
             // says cookies can be comma- delimited.  But it doesn't appear to
             // work in Firefox.
             list<string> cookieList;
-            SParseList(mapIt->second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
+            SParseList(item.second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
             SFOREACH (list<string>, cookieList, cookieIt) { buffer += "Set-Cookie: " + *cookieIt + "\r\n"; }
-        } else if (SIEquals("Content-Length", mapIt->first)) {
+        } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
-        } else if (SIEquals("Content-Encoding", mapIt->first) && SIEquals("gzip", mapIt->second)) {
+        } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
             tryGzip = !content.empty();
         } else {
-            buffer += mapIt->first + ": " + SEscape(mapIt->second, "\r\n\t") + "\r\n";
+            buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
         }
-    }
+    });
 
     const string gzipContent = tryGzip ? SGZip(content) : "";
     const bool gzipSuccess = !gzipContent.empty();
@@ -1125,20 +983,20 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 string SComposePOST(const STable& nameValueMap) {
     // Accumulate and convert
     ostringstream out;
-    SFOREACHTABLE(nameValueMap, nameValueIt) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
         // Output the name and value, if any.  If the value is actually a
         // separated list of values, re-add the name each time
-        if (nameValueIt->second.empty()) {
+        if (item.second.empty()) {
             // No value, just add without
-            out << SEncodeURIComponent(nameValueIt->first) << "=&";
+            out << SEncodeURIComponent(item.first) << "=&";
         } else {
             // Add as many times as there are values
             list<string> valueList;
-            SParseList(nameValueIt->second, valueList, S_COOKIE_SEPARATOR);
+            SParseList(item.second, valueList, S_COOKIE_SEPARATOR);
             SFOREACH (list<string>, valueList, valueIt)
-                out << SEncodeURIComponent(nameValueIt->first) << "=" << SEncodeURIComponent(*valueIt) << "&";
+                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
         }
-    }
+    });
     string outStr = out.str();
     SConsumeBack(outStr, 1); // Trim off trailing '&'
     return outStr;
@@ -1265,8 +1123,9 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString) {
     if (nameValueMap.empty())
         return "{}";
     string working = "{";
-    SFOREACHTABLE(nameValueMap, mapIt)
-    working += "\"" + mapIt->first + "\":" + SToJSON(mapIt->second, forceString) + ",";
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        working += "\"" + item.first + "\":" + SToJSON(item.second, forceString) + ",";
+    });
     working.resize(working.size() - 1);
     working += "}";
     return working;
@@ -1679,7 +1538,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
                                 << "': " << message << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s > 0)
-            closesocket(s);
+            close(s);
         return -1;
     }
 }
@@ -1691,7 +1550,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
     SASSERT(recvBufferSize > 0);
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     ssize_t numRecv = recvfrom(s, recvBuffer, recvBufferSize - 1, 0, (sockaddr*)&fromAddr, &fromAddrLen);
     recvBuffer[numRecv] = 0;
 
@@ -1743,7 +1602,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     int s = (int)accept(port, (sockaddr*)&fromAddr, &fromAddrLen);
 
     // Process the result
@@ -1956,8 +1815,7 @@ string SGetHostName() {
 // --------------------------------------------------------------------------
 string SGetPeerName(int s) {
     // Just call the function that does this
-    sockaddr_in addr;
-    SZERO(addr);
+    sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*)&addr, &socklen);
     if (result == 0) {

@@ -32,7 +32,7 @@ void BedrockTester::loop(uint64_t& nextActivity) {
     preSelect(fdm);
     server->preSelect(fdm);
     uint64_t now = STimeNow();
-    S_poll(fdm, SMax(nextActivity, now) - now);
+    S_poll(fdm, max(nextActivity, now) - now);
     nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
     postSelect(fdm);
     server->postSelect(fdm, nextActivity);
