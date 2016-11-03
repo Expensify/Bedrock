@@ -56,7 +56,6 @@ using namespace std;
     for (map<_CT0_, _CT1_>::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
 #define SFOREACHMAPCONST(_CT0_, _CT1_, _C_, _I_)                                                                       \
     for (map<_CT0_, _CT1_>::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHTABLE(_C_, _I_) for (STable::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
 
 // --------------------------------------------------------------------------
 // Assertion stuff

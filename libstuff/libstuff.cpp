@@ -945,23 +945,23 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    SFOREACHTABLE(nameValueMap, mapIt) {
-        if (SIEquals("Set-Cookie", mapIt->first)) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
             // says cookies can be comma- delimited.  But it doesn't appear to
             // work in Firefox.
             list<string> cookieList;
-            SParseList(mapIt->second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
+            SParseList(item.second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
             SFOREACH (list<string>, cookieList, cookieIt) { buffer += "Set-Cookie: " + *cookieIt + "\r\n"; }
-        } else if (SIEquals("Content-Length", mapIt->first)) {
+        } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
-        } else if (SIEquals("Content-Encoding", mapIt->first) && SIEquals("gzip", mapIt->second)) {
+        } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
             tryGzip = !content.empty();
         } else {
-            buffer += mapIt->first + ": " + SEscape(mapIt->second, "\r\n\t") + "\r\n";
+            buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
         }
-    }
+    });
 
     const string gzipContent = tryGzip ? SGZip(content) : "";
     const bool gzipSuccess = !gzipContent.empty();
@@ -983,20 +983,20 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 string SComposePOST(const STable& nameValueMap) {
     // Accumulate and convert
     ostringstream out;
-    SFOREACHTABLE(nameValueMap, nameValueIt) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
         // Output the name and value, if any.  If the value is actually a
         // separated list of values, re-add the name each time
-        if (nameValueIt->second.empty()) {
+        if (item.second.empty()) {
             // No value, just add without
-            out << SEncodeURIComponent(nameValueIt->first) << "=&";
+            out << SEncodeURIComponent(item.first) << "=&";
         } else {
             // Add as many times as there are values
             list<string> valueList;
-            SParseList(nameValueIt->second, valueList, S_COOKIE_SEPARATOR);
+            SParseList(item.second, valueList, S_COOKIE_SEPARATOR);
             SFOREACH (list<string>, valueList, valueIt)
-                out << SEncodeURIComponent(nameValueIt->first) << "=" << SEncodeURIComponent(*valueIt) << "&";
+                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
         }
-    }
+    });
     string outStr = out.str();
     SConsumeBack(outStr, 1); // Trim off trailing '&'
     return outStr;
@@ -1123,8 +1123,9 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString) {
     if (nameValueMap.empty())
         return "{}";
     string working = "{";
-    SFOREACHTABLE(nameValueMap, mapIt)
-    working += "\"" + mapIt->first + "\":" + SToJSON(mapIt->second, forceString) + ",";
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        working += "\"" + item.first + "\":" + SToJSON(item.second, forceString) + ",";
+    });
     working.resize(working.size() - 1);
     working += "}";
     return working;
