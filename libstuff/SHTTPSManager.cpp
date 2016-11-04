@@ -102,7 +102,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
     // Sometimes we have to create transactions without an attempted
     // connect.  This could happen if we dont have the host or service id yet.
     SWARN("We had to create an error transaction instead of attempting a real one.");
-    Transaction* transaction = new Transaction();
+    Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
     _completedTransactionList.push_front(transaction);
@@ -124,7 +124,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
         return _createErrorTransaction();
 
     // Wrap in a transaction
-    Transaction* transaction = new Transaction();
+    Transaction* transaction = new Transaction(*this);
     transaction->s = s;
     transaction->fullRequest = request;
 
