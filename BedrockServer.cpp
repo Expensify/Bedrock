@@ -190,7 +190,9 @@ void BedrockServer_WorkerThread(void* _data) {
             maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
             maxS = max(directMessages.preSelect(fdm), maxS);
             const uint64_t now = STimeNow();
+            data->server->pollTimer.startPoll();
             S_poll(fdm, max(nextActivity, now) - now);
+            data->server->pollTimer.stopPoll();
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
@@ -238,6 +240,9 @@ void BedrockServer_WorkerThread(void* _data) {
                 node.closeCommand(command);
             }
         }
+
+        // We're shutting down, do the final performance log.
+        data->server->pollTimer.stopPoll(true);
 
         // Update the state one last time when the writing replication thread exits.
         SQLCState state = node.getState();

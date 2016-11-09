@@ -3,6 +3,7 @@
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
+#include "PollTimer.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -112,6 +113,9 @@ class BedrockServer : public STCPServer {
     // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
     // read loop on the write thread.
     list<list<SHTTPSManager*>> httpsManagers;
+
+    // Keeps track of the time we spend idle.
+    PollTimer pollTimer;
 
   private: // Internal Bedrock
     // Attributes
