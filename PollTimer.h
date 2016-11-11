@@ -1,10 +1,10 @@
 #pragma once
-#include <libstuff/libstuff.h>
 class PollTimer {
   public:
     PollTimer(uint64_t logIntervalSeconds = 60);
     void startPoll();
-    void stopPoll(bool force = false);
+    void stopPoll();
+    void log();
 
   private:
     uint64_t _logPeriod;

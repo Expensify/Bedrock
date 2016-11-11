@@ -242,7 +242,7 @@ void BedrockServer_WorkerThread(void* _data) {
         }
 
         // We're shutting down, do the final performance log.
-        data->server->pollTimer.stopPoll(true);
+        data->server->pollTimer.log();
 
         // Update the state one last time when the writing replication thread exits.
         SQLCState state = node.getState();
