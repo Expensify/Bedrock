@@ -174,7 +174,7 @@ void BedrockTester::startServer() {
 }
 
 void BedrockTester::stopServer(int pid) {
-    kill(pid, SIGKILL);
+    kill(pid, SIGINT);
     int status;
     waitpid(pid, &status, 0);
     serverPIDs.erase(pid);
