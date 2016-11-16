@@ -246,8 +246,16 @@ void BedrockServer_WorkerThread(void* _data) {
 
         // Update the state one last time when the writing replication thread exits.
         SQLCState state = node.getState();
+        if (state > SQLC_WAITING) {
+            // This is because the graceful shutdown timer fired and node.shutdownComplete() returned `true` above, but
+            // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
+            // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
+            SWARN("Write thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
+            state = SQLC_SEARCHING;
+        } else {
+            SINFO("Write thread exiting, setting state to: " << state);
+        }
         data->replicationState.set(state);
-        SINFO("Write thread exiting, setting state to: " << state);
         data->replicationCommitCount.set(node.getCommitCount());
     }
 
