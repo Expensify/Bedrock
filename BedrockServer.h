@@ -18,6 +18,10 @@ class BedrockServer : public STCPServer {
       public:
         // Constructor / Destructor
         MessageQueue();
+        ~MessageQueue();
+
+        // Explicitly delete copy constructor so it can't accidentally get called.
+        MessageQueue(const MessageQueue& other) = delete;
 
         // Wait for something to be put onto the queue
         int preSelect(fd_map& fdm);
@@ -33,13 +37,13 @@ class BedrockServer : public STCPServer {
         // Private state
         list<SData> _queue;
         recursive_mutex _queueMutex;
-        int _pipeFD[2];
+        int _pipeFD[2] = {-1, -1};
     };
 
     // All the data required for a thread to create an BedrockNode
     // and coordinate with other threads.
     struct Thread {
-        Thread(const string& name_,                         // Thraed name
+        Thread(const string& name_,                         // Thread name
                SData args_,                                 // Command line args passed in.
                SSynchronized<SQLCState>& replicationState_, // Shared var for communicating replication thread's status.
                SSynchronized<uint64_t>& replicationCommitCount_, // Shared var for communicating replication thread's

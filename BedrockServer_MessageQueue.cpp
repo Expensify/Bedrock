@@ -15,6 +15,16 @@ BedrockServer::MessageQueue::MessageQueue() {
 }
 
 // --------------------------------------------------------------------------
+BedrockServer::MessageQueue::~MessageQueue() {
+    if (_pipeFD[0] != -1) {
+        close(_pipeFD[0]);
+    }
+    if (_pipeFD[1] != -1) {
+        close(_pipeFD[0]);
+    }
+}
+
+// --------------------------------------------------------------------------
 int BedrockServer::MessageQueue::preSelect(fd_map& fdm) {
     // Put the read-side of the pipe into the fd set.
     // **NOTE: This is *not* synchronized.  All threads use the same pipes.

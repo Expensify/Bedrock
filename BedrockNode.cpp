@@ -256,11 +256,7 @@ void BedrockNode::_abortCommand(SQLite& db, Command* command) {
 
 void BedrockNode::_cleanCommand(Command* command) {
     if (command->httpsRequest) {
-        if (command->httpsRequest->owner) {
-            command->httpsRequest->owner->closeTransaction(command->httpsRequest);
-        } else {
-            SERROR("No owner for this https request " << command->httpsRequest->fullResponse.methodLine);
-        }
+        command->httpsRequest->owner.closeTransaction(command->httpsRequest);
         command->httpsRequest = 0;
     }
 }
