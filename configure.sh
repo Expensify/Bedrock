@@ -147,6 +147,27 @@ endif
 # Define what counts as 'all' and list this at the top so that it gets run if no target is specified.
 all: libstuff sqlitecluster bedrock
 
+# Experimental precompiled header support. Currently we're just using libstuff.h here, but we could potentially include
+# everything else as well. We include libstuff.h from pretty much every cpp file, and it pulls in most of the standard
+# library, so it's a *lot* of header to re-compile over and over.
+# We also generate libstuff.h's dependency file here as a side-effect of compiling the header file. This is another
+# experiment, where we'd like to do this for all our CPP files as well, so we don't have to do this as a separate step.
+# I think that with some careful consideration, using precompiled headers and not having a separate dependency
+# generation step, we can speed up our build process 2-3x.
+
+# Include the dependency file for our precompiled header. This will cause it to get generated if it doesn't exist.
+include libstuff/libstuff.d
+
+# This will generate a dependency from our header file. Since we have to parse the whole header and all its includes to
+# do this, we also generate the precompiled header while we're at it.
+libstuff/libstuff.d: libstuff/libstuff.h
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -MT libstuff/libstuff.h.gch -c $<
+
+# This will generate the precompiled header, but generally shouldn't need to run, because it will have already run
+# when we generated our dependency file. If it does run, it updates the dependency file as well.
+libstuff/libstuff.h.gch: libstuff/libstuff.h libstuff/libstuff.d
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -MT libstuff/libstuff.h.gch -c $<
+
 # Our rule to clean up calls the clean recipe for each target, and then, in addition, it deletes our entire `.d` and
 # `.o` directories.
 clean: cleanlibstuff cleansqlitecluster cleanbedrock
@@ -155,6 +176,8 @@ clean: cleanlibstuff cleansqlitecluster cleanbedrock
 	rm -rf $(BINDIR)
 	cd mbedtls && make clean
 	rm Makefile
+	rm libstuff/libstuff.d
+	rm libstuff/libstuff.h.gch
 
 # There are several similar targets defined in a row here. For more documentation on what they're doing, scroll down to
 # libstuff, as it does basically the same thing as the other targets, but with more commenting.
@@ -261,9 +284,12 @@ endif
 # This recipe creates `.o` files from `.c` or `.cpp` files. These files all get created inside the `.o` directory at our
 # source root. This keeps all of these files from polluting our entire workspace.
 
+# The `include` flag forces libstuff.h to be included as the *first* line of every CPP file. This is important with
+# precompiled headers, as they aren't used if we've already included anything else, so anywhere that any other
+# header precedes libstuff.h, we'll lose the benefits of our precompiled header.
 $(ODIR)/current/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -o $@ -c $<
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -include libstuff/libstuff.h -o $@ -c $<
 
 $(ODIR)/current/%.o: %.c
 	@mkdir -p $(dir $@)
