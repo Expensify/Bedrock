@@ -36,6 +36,7 @@ void SInitialize();
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <random>
 #include <set>
 #include <algorithm>
 #include <stdlib.h>
