@@ -39,7 +39,8 @@ test: test/test
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
-libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h
+# Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
+libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
 -include  libstuff/libstuff.d
