@@ -33,24 +33,22 @@ INTERMEDIATEDIR = .build
 # These targets aren't actual files.
 .PHONY: all test clean
 
+# This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 all: bedrock test
+test: test/test
 
-# To force the file to get included (it will fail to parse as a makefile).
+# Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
+# Including it here causes it to be generated.
+# This is a hack to get the gch file to be generated before everything else. See here:
+# http://stackoverflow.com/questions/10726321/how-to-ensure-a-target-is-run-before-all-the-other-build-rules-in-a-makefile
+# The dependency file generated here currently isn't used.
 .PHONY: dummy
-
 dummy: libstuff/libstuff.h.gch
-
-#libstuff/libstuff.d: libstuff/libstuff.h
-#	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
-
 libstuff/libstuff.h.gch: libstuff/libstuff.h
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
-
--include dummy
-
-# This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-
-test: test/test
+ifneq ($(MAKECMDGOALS),clean)
+-include  libstuff/libstuff.d
+endif
 
 clean:
 	rm -rf $(INTERMEDIATEDIR)
@@ -61,12 +59,6 @@ clean:
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
 	cd mbedtls && make clean
-
-# Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
-# Including it here causes it to be generated.
-ifneq ($(MAKECMDGOALS),clean)
--include precompile.d
-endif
 
 # The mbedtls libraries are all built the same way.
 mbedtls/library/libmbedcrypto.a:
@@ -103,6 +95,8 @@ TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 ifneq ($(MAKECMDGOALS),clean)
 -include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
+-include $(BEDROCKDEP)
+-include $(TESTDEP)
 endif
 
 # Our static libraries just depend on their object files.
