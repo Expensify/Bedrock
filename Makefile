@@ -42,7 +42,7 @@ test: test/test
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
-include  libstuff/libstuff.d
+-include  libstuff/libstuff.d
 endif
 
 clean:
