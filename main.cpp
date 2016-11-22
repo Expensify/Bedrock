@@ -5,7 +5,13 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "BedrockServer.h"
+#include "BedrockPlugin.h"
+#include "plugins/Cache.h"
+#include "plugins/DB.h"
+#include "plugins/Jobs.h"
+#include "plugins/Status.h"
 #include <sys/stat.h> // for umask()
+#include <dlfcn.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -64,6 +70,51 @@ void BackupDB(const string& dbPath) {
         SASSERT(SFileCopy(dbShmPath, BACKUP_DIR + string(basename((char*)dbShmPath.c_str()))));
         SINFO("Finished " << dbFile << "-shm database backup.");
     }
+}
+
+void loadPlugins(list<string> plugins) {
+    for_each(plugins.begin(), plugins.end(), [&](string pluginName){
+        cout << "Loading plugin " << pluginName << endl;
+        // Load the standard plugins
+        if (SToUpper(pluginName) == "DB") {
+            new BedrockPlugin_DB();
+            return;
+        }
+        if (SToUpper(pluginName) == "STATUS") {
+            new BedrockPlugin_Status();
+            return;
+        }
+        if (SToUpper(pluginName) == "JOBS") {
+            new BedrockPlugin_Jobs();
+            return;
+        }
+        if (SToUpper(pluginName) == "CACHE") {
+            new BedrockPlugin_Cache();
+            return;
+        }
+
+        // Now we load any plugins in shared libraries.
+
+        // Find the 'base name' of the plugin, and compute the symbol we'll need to load to use it.
+        size_t slash = pluginName.rfind('/');
+        size_t dot = pluginName.find('.', slash);
+        string name = pluginName.substr(slash + 1, dot - slash - 1);
+        string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
+
+        // Open the library.
+        void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
+        if(!lib) {
+            cout << dlerror() << endl;
+        } else {
+            void* sym = dlsym(lib, symbolName.c_str());
+            if (!sym) {
+                cout << "Couldn't find symbol " << symbolName << endl;
+            } else {
+                // Call the plugin registration function with the same name.
+                ((void(*)()) sym)();
+            }
+        }
+    });
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -200,6 +251,8 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
+
+    loadPlugins(SParseList(args["-plugins"]));
 
     // Reset the database if requested
     if (args.isSet("-clean")) {

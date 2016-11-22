@@ -39,16 +39,13 @@ CORES=4
 
 travis_fold start build_bedrock
 travis_time_start
-./configure.sh
-make
+make bedrock
 travis_time_finish
 travis_fold end build_bedrock
 
 travis_fold start build_bedrock_test
 travis_time_start
-cd test
-make
-cd ..
+make test
 travis_time_finish
 travis_fold end build_bedrock_test
 

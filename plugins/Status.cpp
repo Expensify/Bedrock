@@ -1,20 +1,7 @@
-/// /src/bedrock/plugins/Status.cpp
-#include <libstuff/libstuff.h>
-#include <libstuff/version.h>
-#include "../BedrockPlugin.h"
+#include "Status.h"
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
-
-// Declare the class we're going to implement below
-class BedrockPlugin_Status : public BedrockPlugin {
-  public:
-    virtual string getName() { return "Status"; }
-    virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
-};
-
-// Register for auto-discovery at boot
-BREGISTER_PLUGIN(BedrockPlugin_Status);
 
 // ==========================================================================
 bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {

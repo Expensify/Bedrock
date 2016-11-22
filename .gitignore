@@ -1,12 +1,8 @@
-.d-*
-.o-*
-Makefile
-!test/Makefile
 test/test
 bedrock
-bin-*
-libstuff/libstuff.a
+.build
+libbedrock.a
+libstuff.a
 sqlitecluster/sqlitecluster
-
 libstuff/libstuff.d
 libstuff/libstuff.h.gch
