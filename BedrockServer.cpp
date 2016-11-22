@@ -278,6 +278,7 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Output the list of plugins compiled in
     map<string, BedrockPlugin*> registeredPluginMap;
+
     SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
         // Add one more plugin
         BedrockPlugin* plugin = *pluginIt;
