@@ -74,8 +74,7 @@ void BackupDB(const string& dbPath) {
 
 void loadPlugins(list<string> plugins) {
     for_each(plugins.begin(), plugins.end(), [&](string pluginName){
-        cout << "Loading plugin " << pluginName << endl;
-        // Load the standard plugins
+        // Load the standard plugins.
         if (SToUpper(pluginName) == "DB") {
             new BedrockPlugin_DB();
             return;
@@ -93,7 +92,7 @@ void loadPlugins(list<string> plugins) {
             return;
         }
 
-        // Now we load any plugins in shared libraries.
+        // Now we load any plugins from shared libraries.
 
         // Find the 'base name' of the plugin, and compute the symbol we'll need to load to use it.
         size_t slash = pluginName.rfind('/');
