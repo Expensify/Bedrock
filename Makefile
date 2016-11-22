@@ -39,15 +39,10 @@ test: test/test
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
-# This is a hack to get the gch file to be generated before everything else. See here:
-# http://stackoverflow.com/questions/10726321/how-to-ensure-a-target-is-run-before-all-the-other-build-rules-in-a-makefile
-# The dependency file generated here currently isn't used.
-.PHONY: dummy
-dummy: libstuff/libstuff.h.gch
-libstuff/libstuff.h.gch: libstuff/libstuff.h
+libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
--include  libstuff/libstuff.d
+include  libstuff/libstuff.d
 endif
 
 clean:
@@ -121,12 +116,12 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 # This is the same as making the object files, both dependencies and object files are built together. The only
 # difference is that here, the fie passed as `-MF` is the target, and the output file is a modified version of that,
 # where for the object file rule, the reverse is true.
-$(INTERMEDIATEDIR)/%.d: %.cpp libstuff/libstuff.h.gch
+$(INTERMEDIATEDIR)/%.d: %.cpp libstuff/libstuff.d
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -include libstuff/libstuff.h -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
-$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d libstuff/libstuff.h.gch
+$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d libstuff/libstuff.d
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -include libstuff/libstuff.h -o $@ -c $<
 
