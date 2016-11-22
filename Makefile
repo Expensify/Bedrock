@@ -63,10 +63,10 @@ mbedtls/library/libmbedx509.a:
 	cd mbedtls && make no_test && touch library/libmbedx509.a
 
 libstuff/libstuff.d: libstuff/libstuff.h
-	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c $<
+	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 
-libstuff/libstuff.h.gch: libstuff/libstuff.h libstuff/libstuff.d
-	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c $<
+libstuff/libstuff.h.gch: libstuff/libstuff.d
+	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
@@ -102,7 +102,7 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 	ar crv $@ $(LIBBEDROCKOBJ)
 
 # We use the same library paths and required libraries for both binaries.
-LIBPATHS = -Lmbedtls/library -L$(PROJECT)
+LIBPATHS =-Lmbedtls/library -L$(PROJECT)
 LIBRARIES =-lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
 # The prerequisites for both binaries are the same.
