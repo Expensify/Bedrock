@@ -33,8 +33,22 @@ INTERMEDIATEDIR = .build
 # These targets aren't actual files.
 .PHONY: all test clean
 
-# This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 all: bedrock test
+
+# To force the file to get included (it will fail to parse as a makefile).
+.PHONY: dummy
+
+dummy: libstuff/libstuff.h.gch
+
+#libstuff/libstuff.d: libstuff/libstuff.h
+#	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
+
+libstuff/libstuff.h.gch: libstuff/libstuff.h
+	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
+
+-include dummy
+
+# This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 
 test: test/test
 
@@ -62,11 +76,7 @@ mbedtls/library/libmbedtls.a:
 mbedtls/library/libmbedx509.a:
 	cd mbedtls && make no_test && touch library/libmbedx509.a
 
-libstuff/libstuff.d: libstuff/libstuff.h
-	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 
-libstuff/libstuff.h.gch: libstuff/libstuff.d
-	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
