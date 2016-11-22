@@ -105,8 +105,9 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 LIBPATHS =-Lmbedtls/library -L$(PROJECT)
 LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
-# The prerequisites for both binaries are the same.
-BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a
+# The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
+# times in parallel.
+BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # Both of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
@@ -122,9 +123,8 @@ $(INTERMEDIATEDIR)/%.d: %.cpp libstuff/libstuff.h.gch
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -include libstuff/libstuff.h -o $(INTERMEDIATEDIR)/$*.o -c $<
 
-# Make object files from cpp files, putting them in $INTERMEDIATEDIR.
-# This is the same as making the dependency files, both dependencies and object files are built together.
-$(INTERMEDIATEDIR)/%.o: %.cpp libstuff/libstuff.h.gch
+# .o files depend on .d files to prevent simultaneous jobs from trying to create both.
+$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d libstuff/libstuff.h.gch
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -include libstuff/libstuff.h -o $@ -c $<
 
