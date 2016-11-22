@@ -71,8 +71,8 @@ libstuff/libstuff.h.gch: libstuff/libstuff.d
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
 # We're going to build a shared library from every CPP file in this directory or it's children.
-STUFFCPP = $(shell find libstuff -name "*.cpp")
-STUFFC = $(shell find libstuff -name "*.c")
+STUFFCPP = $(shell find libstuff -name '*.cpp')
+STUFFC = $(shell find libstuff -name '*.c')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
@@ -103,7 +103,7 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 
 # We use the same library paths and required libraries for both binaries.
 LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
 # The prerequisites for both binaries are the same.
 BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a
