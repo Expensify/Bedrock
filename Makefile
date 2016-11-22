@@ -68,8 +68,6 @@ mbedtls/library/libmbedtls.a:
 mbedtls/library/libmbedx509.a:
 	cd mbedtls && make no_test && touch library/libmbedx509.a
 
-
-
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
 # We're going to build a shared library from every CPP file in this directory or it's children.
