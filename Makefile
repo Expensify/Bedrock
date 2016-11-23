@@ -121,7 +121,7 @@ $(INTERMEDIATEDIR)/%.d: %.cpp libstuff/libstuff.d
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -include libstuff/libstuff.h -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
-$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d libstuff/libstuff.d
+$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -include libstuff/libstuff.h -o $@ -c $<
 
