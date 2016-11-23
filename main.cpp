@@ -72,22 +72,27 @@ void BackupDB(const string& dbPath) {
     }
 }
 
-void loadPlugins(list<string> plugins) {
+list<string> loadPlugins(list<string> plugins) {
+    list <string> postProcessedNames;
     for_each(plugins.begin(), plugins.end(), [&](string pluginName){
         // Load the standard plugins.
         if (SToUpper(pluginName) == "DB") {
+            postProcessedNames.push_back(pluginName);
             new BedrockPlugin_DB();
             return;
         }
         if (SToUpper(pluginName) == "STATUS") {
+            postProcessedNames.push_back(pluginName);
             new BedrockPlugin_Status();
             return;
         }
         if (SToUpper(pluginName) == "JOBS") {
+            postProcessedNames.push_back(pluginName);
             new BedrockPlugin_Jobs();
             return;
         }
         if (SToUpper(pluginName) == "CACHE") {
+            postProcessedNames.push_back(pluginName);
             new BedrockPlugin_Cache();
             return;
         }
@@ -99,6 +104,8 @@ void loadPlugins(list<string> plugins) {
         size_t dot = pluginName.find('.', slash);
         string name = pluginName.substr(slash + 1, dot - slash - 1);
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
+
+        postProcessedNames.push_back(name);
 
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
@@ -114,6 +121,7 @@ void loadPlugins(list<string> plugins) {
             }
         }
     });
+    return postProcessedNames;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -251,7 +259,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
 
-    loadPlugins(SParseList(args["-plugins"]));
+    args["-plugins"] = SComposeList(loadPlugins(SParseList(args["-plugins"])));
 
     // Reset the database if requested
     if (args.isSet("-clean")) {
