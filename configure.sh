@@ -289,12 +289,12 @@ endif
 # header precedes libstuff.h, we'll lose the benefits of our precompiled header.
 
 ifneq ($(UNAME_S),Darwin)
-	PCHINCLUDE = -include libstuff/libstuff.h
+	PCHINCLUDE =-include libstuff/libstuff.h
 endif
 
 $(ODIR)/current/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -o $@ -c $<
+	$(GXX) $(CFLAGS) $(CXXFLAGS) $(PCHINCLUDE) -o $@ -c $<
 
 $(ODIR)/current/%.o: %.c
 	@mkdir -p $(dir $@)
