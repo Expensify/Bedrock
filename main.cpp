@@ -74,49 +74,43 @@ void BackupDB(const string& dbPath) {
 }
 
 list<string> loadPlugins(list<string> plugins) {
+
+    // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
+    // Those are stored here. TODO: It would probably make more sense for this to be a set, to avoid duplicates.
     list <string> postProcessedNames;
-    for_each(plugins.begin(), plugins.end(), [&](string pluginName){
-        // Load the standard plugins.
-        if (SToUpper(pluginName) == "DB") {
+
+    // Instantiate all of our built-in plugins.
+    map<string, BedrockPlugin*> standardPluginMap = {
+        {"DB",     new BedrockPlugin_DB()},
+        {"STATUS", new BedrockPlugin_Status()},
+        {"JOBS",   new BedrockPlugin_Jobs()},
+        {"CACHE",  new BedrockPlugin_Cache()},
+        {"MYSQL",  new BedrockPlugin_MySQL()}
+    };
+    for_each(plugins.begin(), plugins.end(), [&](string pluginName) {
+        // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
+        if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
             postProcessedNames.push_back(pluginName);
-            new BedrockPlugin_DB();
-            return;
-        }
-        if (SToUpper(pluginName) == "STATUS") {
-            postProcessedNames.push_back(pluginName);
-            new BedrockPlugin_Status();
-            return;
-        }
-        if (SToUpper(pluginName) == "JOBS") {
-            postProcessedNames.push_back(pluginName);
-            new BedrockPlugin_Jobs();
-            return;
-        }
-        if (SToUpper(pluginName) == "CACHE") {
-            postProcessedNames.push_back(pluginName);
-            new BedrockPlugin_Cache();
-            return;
-        }
-        if (SToUpper(pluginName) == "MYSQL") {
-            postProcessedNames.push_back(pluginName);
-            new BedrockPlugin_MySQL();
             return;
         }
 
-        // Now we load any plugins from shared libraries.
+        // Any non-standard plugin is loaded from a shared library. If a name is passed without a trailing '.so', we
+        // will add it, and look for a file with that name. A file should be passed with either a complete absolute
+        // path, or the file should exist in a place that dlopen() can find it (like, /usr/lib).
 
-        // Find the 'base name' of the plugin, and compute the symbol we'll need to load to use it.
+        // We look for the 'base name' of the plugin. I.e., the filename excluding a path or extension. We'll look for
+        // a symbol based on this name to call to instantiate our plugin.
         size_t slash = pluginName.rfind('/');
         size_t dot = pluginName.find('.', slash);
         string name = pluginName.substr(slash + 1, dot - slash - 1);
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
 
-        // Save the name of the plugin.
+        // Save the base name of the plugin.
         postProcessedNames.push_back(name);
 
         // Add the file extension if it's missing.
-        if (!SEndsWith(name, ".so")) {
-            name += ".so";
+        if (!SEndsWith(pluginName, ".so")) {
+            pluginName += ".so";
         }
 
         // Open the library.
