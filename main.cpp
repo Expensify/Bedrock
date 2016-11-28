@@ -10,6 +10,7 @@
 #include "plugins/DB.h"
 #include "plugins/Jobs.h"
 #include "plugins/Status.h"
+#include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
 
@@ -96,6 +97,11 @@ list<string> loadPlugins(list<string> plugins) {
             new BedrockPlugin_Cache();
             return;
         }
+        if (SToUpper(pluginName) == "MYSQL") {
+            postProcessedNames.push_back(pluginName);
+            new BedrockPlugin_MySQL();
+            return;
+        }
 
         // Now we load any plugins from shared libraries.
 
@@ -105,7 +111,13 @@ list<string> loadPlugins(list<string> plugins) {
         string name = pluginName.substr(slash + 1, dot - slash - 1);
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
 
+        // Save the name of the plugin.
         postProcessedNames.push_back(name);
+
+        // Add the file extension if it's missing.
+        if (!SEndsWith(name, ".so")) {
+            name += ".so";
+        }
 
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);

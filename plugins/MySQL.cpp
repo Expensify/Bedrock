@@ -1,259 +1,167 @@
-#include <libstuff/libstuff.h>
-#include "../BedrockPlugin.h"
-
-#define MYSQL_NUM_VARIABLES 292
-extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
-
-/**
-  * Simple convenience structure to construct MySQL packets
-  */
-struct MySQLPacket {
-    // Attributes
-    uint8_t sequenceID;
-    string payload;
-
-    /**
-     * Constructor
-     */
-    MySQLPacket() {
-        // Initialize
-        sequenceID = 0;
-    }
-
-    /**
-     * Compose a MySQL packet ready for sending
-     *
-     * @return Binary packet in MySQL format
-     */
-    string serialize() {
-        // Wrap in a 3-byte header
-        uint32_t payloadLength = payload.size();
-        string header;
-        header.resize(4);
-        memcpy(&header[0], &payloadLength, 3);
-        header[3] = sequenceID;
-        return header + payload;
-    }
-
-    /**
-     * Parse a MySQL packet from the wire
-     *
-     * @param packet Binary data received from the MySQL client
-     * @return       Number of bytes deserialized, or 0 on failure
-     */
-    int deserialize(const string& packet) {
-        // Does it have a header?
-        if (packet.size() < 4) {
-            return 0;
-        }
-
-        // Has a header, parse it out
-        uint32_t payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
-        sequenceID = (uint8_t)packet[3];
-
-        // Do we have enough data for the full payload?
-        if (packet.size() < (4 + payloadLength)) {
-            return 0;
-        }
-
-        // Have the full payload, parse it out
-        payload.resize(payloadLength);
-        memcpy(&payload[0], &packet[4], payloadLength);
-
-        // Indicate that we've consumed this full packet
-        return 4 + payloadLength;
-    }
-
-    /**
-     * Creates a MySQL length-encoded integer
-     * See: https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger
-     *
-     * @param val Integer value to be length-encoded
-     * @return    Lenght-encoded integer value
-     */
-    static string lenEncInt(uint64_t val) {
-        // Encode based on the length.
-        // **NOTE: The below assume this is running on a "little-endian"
-        //         machine, which means the least significant byte comes first
-        string out;
-        void* valPtr = &val;
-        if (val < 251) {
-            // Take the last byte
-            SAppend(out, valPtr, 1);
-        } else if (val < 1 << 16) {
-            // Take the last 2 bytes
-            out += "\xFC";
-            SAppend(out, valPtr, 2);
-        } else if (val < 1 << 24) {
-            // Take the last 3 bytes
-            out += "\xFD";
-            SAppend(out, valPtr, 3);
-        } else {
-            // Take all bytes
-            out += "\xFE";
-            SAppend(out, valPtr, sizeof(val));
-        }
-        return out;
-    }
-
-    /**
-     * Creates a MySQL length-encoded string
-     * See: https://dev.mysql.com/doc/internals/en/string.html#packet-Protocol::LengthEncodedString
-     *
-     * @param str The string to be length-encoded
-     * @return    The length-encoded string
-     */
-    static string lenEncStr(const string& str) {
-        // Add the length, and then the string
-        return lenEncInt(str.size()) + str;
-    }
-
-    /**
-     * Creates the packet sent from the server to new connections
-     * See: https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
-     */
-    static string serializeHandshake() {
-        // Just hard code the values for now
-        MySQLPacket handshake;
-        handshake.payload += lenEncInt(10);      // protocol version
-        handshake.payload += (string) "bedrock"; // server version
-        handshake.payload += lenEncInt(0);       // NULL
-        uint32_t connectionID = 1;
-        SAppend(handshake.payload, &connectionID, 4); // connection_id
-        handshake.payload += (string) "xxxxxxxx";     // auth_plugin_data_part_1
-        handshake.payload += lenEncInt(0);            // filler
-        return handshake.serialize();
-    }
-
-    /**
-     * Creates the packet used to respond to a COM_QUERY request
-     * See: https://dev.mysql.com/doc/internals/en/com-query-response.html#packet-Protocol::ColumnDefinition320
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @param result     The results of the query we were asked to execte
-     * @return           A series of MySQL packets ready to be sent to the client
-     */
-    static string serializeQueryResponse(int sequenceID, const SQResult& result) {
-        // Add the response
-        string sendBuffer;
-
-        // First the column count
-        MySQLPacket columnCount;
-        columnCount.sequenceID = ++sequenceID;
-        columnCount.payload = lenEncInt(result.headers.size());
-        sendBuffer += columnCount.serialize();
-
-        // Add all the columns
-        SFOREACHCONST(vector<string>, result.headers, headerIt) {
-            // Now a column description
-            MySQLPacket column;
-            column.sequenceID = ++sequenceID;
-            column.payload += lenEncStr("unknown"); // table name
-            column.payload += lenEncStr(*headerIt); // column name
-            column.payload += lenEncInt(3);         // length of column length field
-            uint32_t colLength = 1024;
-            SAppend(column.payload, &colLength, 3); // column length (3 bytes)
-            column.payload += lenEncInt(1);         // length of type field
-            column.payload += lenEncInt(0);         // type (int or static string)
-            column.payload += lenEncInt(2);         // length of flags + decimals
-            SAppend(column.payload, "\00\00", 2);   // flags + decimals
-            sendBuffer += column.serialize();
-        }
-
-        // EOF packet to signal no more columns
-        MySQLPacket eofPacket;
-        eofPacket.sequenceID = ++sequenceID;
-        SAppend(eofPacket.payload, "\xFE", 1); // EOF
-        sendBuffer += eofPacket.serialize();
-
-        // Add all the rows
-        SFOREACHCONST(vector<vector<string>>, result.rows, rowIt) {
-            // Now the row
-            MySQLPacket rowPacket;
-            rowPacket.sequenceID = ++sequenceID;
-            SFOREACHCONST(vector<string>, *rowIt, cellIt) { rowPacket.payload += lenEncStr(*cellIt); }
-            SAppend(rowPacket.payload, "\xFE", 1); // EOF
-            sendBuffer += rowPacket.serialize();
-        }
-
-        // Finish with another EOF packet
-        eofPacket.sequenceID = ++sequenceID;
-        sendBuffer += eofPacket.serialize();
-
-        // Done!
-        return sendBuffer;
-    }
-
-    /**
-     * Creatse a standard OK packet
-     * See: https://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @return           The OK packet to be sent to the client
-     */
-    static string serializeOK(int sequenceID) {
-        // Just fill out the packet
-        MySQLPacket ok;
-        ok.sequenceID = sequenceID + 1;
-        ok.payload += lenEncInt(0); // OK
-        ok.payload += lenEncInt(0); // Affected rows
-        ok.payload += lenEncInt(0); // Last insert ID
-        ok.payload += "OK";         // Message
-        return ok.serialize();
-    }
-
-    /**
-     * Sends ERR
-     * See: https://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html#cs-packet-err-error-code
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @param code       The error code to show the user
-     * @param message    The error message to show the user
-     * @return           The ERR packet to be sent to the client
-     */
-    static string serializeERR(int sequenceID, uint16_t code, const string& message) {
-        // Fill it with our custom error message
-        MySQLPacket err;
-        err.sequenceID = sequenceID + 1;
-        err.payload += "\xFF";                     // Header of the ERR packet
-        SAppend(err.payload, &code, sizeof(code)); // Error code
-        err.payload += message;                    // Error message
-        return err.serialize();
-    }
-};
+#include "MySQL.h"
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
-/**
- * Declare the class we're going to implement below
- */
-class BedrockPlugin_MySQL : public BedrockPlugin {
-  public:
-    // Indicate which functions we are implementing
-    virtual string getName() { return "MySQL"; }
-    virtual void initialize(const SData& args) { _args = args; }
-    virtual string getPort() { return _args.isSet("-mysql.host") ? _args["-mysql.host"] : "localhost:3306"; }
-    virtual void onPortAccept(STCPManager::Socket* s);
-    virtual bool onPortRecv(STCPManager::Socket* s, SData& request);
-    virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s);
+MySQLPacket::MySQLPacket() {
+    // Initialize
+    sequenceID = 0;
+}
 
-  private:
-    // Attributes
-    SData _args;
-};
+string MySQLPacket::serialize() {
+    // Wrap in a 3-byte header
+    uint32_t payloadLength = payload.size();
+    string header;
+    header.resize(4);
+    memcpy(&header[0], &payloadLength, 3);
+    header[3] = sequenceID;
+    return header + payload;
+}
 
-// Register for auto-discovery at boot
-BREGISTER_PLUGIN(BedrockPlugin_MySQL);
+int MySQLPacket::deserialize(const string& packet) {
+    // Does it have a header?
+    if (packet.size() < 4) {
+        return 0;
+    }
 
-// ==========================================================================
+    // Has a header, parse it out
+    uint32_t payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
+    sequenceID = (uint8_t)packet[3];
+
+    // Do we have enough data for the full payload?
+    if (packet.size() < (4 + payloadLength)) {
+        return 0;
+    }
+
+    // Have the full payload, parse it out
+    payload.resize(payloadLength);
+    memcpy(&payload[0], &packet[4], payloadLength);
+
+    // Indicate that we've consumed this full packet
+    return 4 + payloadLength;
+}
+
+string MySQLPacket::lenEncInt(uint64_t val) {
+    // Encode based on the length.
+    // **NOTE: The below assume this is running on a "little-endian"
+    //         machine, which means the least significant byte comes first
+    string out;
+    void* valPtr = &val;
+    if (val < 251) {
+        // Take the last byte
+        SAppend(out, valPtr, 1);
+    } else if (val < 1 << 16) {
+        // Take the last 2 bytes
+        out += "\xFC";
+        SAppend(out, valPtr, 2);
+    } else if (val < 1 << 24) {
+        // Take the last 3 bytes
+        out += "\xFD";
+        SAppend(out, valPtr, 3);
+    } else {
+        // Take all bytes
+        out += "\xFE";
+        SAppend(out, valPtr, sizeof(val));
+    }
+    return out;
+}
+
+string MySQLPacket::lenEncStr(const string& str) {
+    // Add the length, and then the string
+    return lenEncInt(str.size()) + str;
+}
+
+string MySQLPacket::serializeHandshake() {
+    // Just hard code the values for now
+    MySQLPacket handshake;
+    handshake.payload += lenEncInt(10);      // protocol version
+    handshake.payload += (string) "bedrock"; // server version
+    handshake.payload += lenEncInt(0);       // NULL
+    uint32_t connectionID = 1;
+    SAppend(handshake.payload, &connectionID, 4); // connection_id
+    handshake.payload += (string) "xxxxxxxx";     // auth_plugin_data_part_1
+    handshake.payload += lenEncInt(0);            // filler
+    return handshake.serialize();
+}
+
+string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& result) {
+    // Add the response
+    string sendBuffer;
+
+    // First the column count
+    MySQLPacket columnCount;
+    columnCount.sequenceID = ++sequenceID;
+    columnCount.payload = lenEncInt(result.headers.size());
+    sendBuffer += columnCount.serialize();
+
+    // Add all the columns
+    SFOREACHCONST(vector<string>, result.headers, headerIt) {
+        // Now a column description
+        MySQLPacket column;
+        column.sequenceID = ++sequenceID;
+        column.payload += lenEncStr("unknown"); // table name
+        column.payload += lenEncStr(*headerIt); // column name
+        column.payload += lenEncInt(3);         // length of column length field
+        uint32_t colLength = 1024;
+        SAppend(column.payload, &colLength, 3); // column length (3 bytes)
+        column.payload += lenEncInt(1);         // length of type field
+        column.payload += lenEncInt(0);         // type (int or static string)
+        column.payload += lenEncInt(2);         // length of flags + decimals
+        SAppend(column.payload, "\00\00", 2);   // flags + decimals
+        sendBuffer += column.serialize();
+    }
+
+    // EOF packet to signal no more columns
+    MySQLPacket eofPacket;
+    eofPacket.sequenceID = ++sequenceID;
+    SAppend(eofPacket.payload, "\xFE", 1); // EOF
+    sendBuffer += eofPacket.serialize();
+
+    // Add all the rows
+    SFOREACHCONST(vector<vector<string>>, result.rows, rowIt) {
+        // Now the row
+        MySQLPacket rowPacket;
+        rowPacket.sequenceID = ++sequenceID;
+        SFOREACHCONST(vector<string>, *rowIt, cellIt) { rowPacket.payload += lenEncStr(*cellIt); }
+        SAppend(rowPacket.payload, "\xFE", 1); // EOF
+        sendBuffer += rowPacket.serialize();
+    }
+
+    // Finish with another EOF packet
+    eofPacket.sequenceID = ++sequenceID;
+    sendBuffer += eofPacket.serialize();
+
+    // Done!
+    return sendBuffer;
+}
+
+string MySQLPacket::serializeOK(int sequenceID) {
+    // Just fill out the packet
+    MySQLPacket ok;
+    ok.sequenceID = sequenceID + 1;
+    ok.payload += lenEncInt(0); // OK
+    ok.payload += lenEncInt(0); // Affected rows
+    ok.payload += lenEncInt(0); // Last insert ID
+    ok.payload += "OK";         // Message
+    return ok.serialize();
+}
+
+string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& message) {
+    // Fill it with our custom error message
+    MySQLPacket err;
+    err.sequenceID = sequenceID + 1;
+    err.payload += "\xFF";                     // Header of the ERR packet
+    SAppend(err.payload, &code, sizeof(code)); // Error code
+    err.payload += message;                    // Error message
+    return err.serialize();
+}
+
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
     // Send Protocol::HandshakeV10
     SINFO("Accepted MySQL request from '" << s->addr << "'");
     s->send(MySQLPacket::serializeHandshake());
 }
 
-// ==========================================================================
 bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     // Get any new MySQL requests
     int packetSize = 0;
@@ -346,7 +254,6 @@ bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     return true;
 }
 
-// ==========================================================================
 bool BedrockPlugin_MySQL::onPortRequestComplete(const SData& response, STCPManager::Socket* s) {
     // Only one request supported: Query.
     SASSERT(SIEquals(response["request.methodLine"], "Query"));
