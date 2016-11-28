@@ -294,7 +294,6 @@ BedrockServer::BedrockServer(const SData& args)
         const string& pluginName = SToLower(*pluginNameIt);
         BedrockPlugin* plugin = registeredPluginMap[pluginName];
         if (!plugin)
-            // TODO: Fix these names when we load plugins from shared libs.
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
         plugin->enable(true);
