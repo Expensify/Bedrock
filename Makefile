@@ -40,10 +40,16 @@ test: test/test
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
 # Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
+# Currently disabled on OS X.
+UNAME_S := $(shell uname -s)
+ifneq ($(UNAME_S),Darwin)
+PRECOMPILE_D =libstuff/libstuff.d
+PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
 -include  libstuff/libstuff.d
+endif
 endif
 
 clean:
@@ -116,14 +122,14 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 # This is the same as making the object files, both dependencies and object files are built together. The only
 # difference is that here, the fie passed as `-MF` is the target, and the output file is a modified version of that,
 # where for the object file rule, the reverse is true.
-$(INTERMEDIATEDIR)/%.d: %.cpp libstuff/libstuff.d
+$(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ -include libstuff/libstuff.h -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -include libstuff/libstuff.h -o $@ -c $<
+	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
 
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 $(INTERMEDIATEDIR)/%.o: %.c
