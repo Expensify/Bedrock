@@ -287,9 +287,14 @@ endif
 # The `include` flag forces libstuff.h to be included as the *first* line of every CPP file. This is important with
 # precompiled headers, as they aren't used if we've already included anything else, so anywhere that any other
 # header precedes libstuff.h, we'll lose the benefits of our precompiled header.
+
+ifneq ($(UNAME_S),Darwin)
+	PCHINCLUDE =-include libstuff/libstuff.h
+endif
+
 $(ODIR)/current/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -include libstuff/libstuff.h -o $@ -c $<
+	$(GXX) $(CFLAGS) $(CXXFLAGS) $(PCHINCLUDE) -o $@ -c $<
 
 $(ODIR)/current/%.o: %.c
 	@mkdir -p $(dir $@)
