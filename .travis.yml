@@ -4,7 +4,7 @@ env:
 addons:
     apt:
         sources:
-            - ubuntu-toolchain-r-test
+            - ubuntu-toolchain-r
         packages:
             - gcc-6
             - g++-6
