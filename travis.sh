@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+export GXX=g++-6
+export CC=gcc-6
+
+${CC} --version
+${GXX} --version
+
 travis_time_start() {
   travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
   travis_start_time=$(travis_nanoseconds)
