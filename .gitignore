@@ -1,7 +1,12 @@
 .d-*
 .o-*
 Makefile
+!test/Makefile
+test/test
 bedrock
 bin-*
 libstuff/libstuff.a
 sqlitecluster/sqlitecluster
+
+libstuff/libstuff.d
+libstuff/libstuff.h.gch

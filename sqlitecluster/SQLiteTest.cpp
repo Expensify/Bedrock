@@ -46,7 +46,7 @@ struct SQLiteTestWebServer : public STCPServer {
                     s->sendBuffer += SData("HTTP 200 OK").serialize();
                     shutdownSocket(s, SHUT_RD);
                 } else
-                    nextActivity = SMin(nextActivity, timeout);
+                    nextActivity = min(nextActivity, timeout);
             } else if (s->state == STCP_CLOSED) {
                 // Close this socket
                 SDEBUG("Done with socket from '" << s->addr << "'");
@@ -86,7 +86,7 @@ struct SQLiteTestNode : public SQLiteNode {
 
     // Construct the base class
     SQLiteTestNode(const string& filename, const string& host, int priority)
-        : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRand64() % STIME_US_PER_S * 5,
+        : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRandom::rand64() % STIME_US_PER_S * 5,
                      "testversion", 100) {
         // Nothing to initialize
         commandTimeout = 0;
@@ -184,7 +184,7 @@ struct SQLiteTestNode : public SQLiteNode {
         // If a timeout is set, use that
         bool result = SQLiteNode::update(nextActivity);
         if (commandTimeout)
-            nextActivity = SMin(nextActivity, commandTimeout);
+            nextActivity = min(nextActivity, commandTimeout);
         return result;
     }
 };
@@ -228,7 +228,7 @@ struct SQLiteTester {
     ~SQLiteTester() {
         for (size_t c = 0; c < _nodeArray.size(); ++c)
             if (_nodeArray[c])
-                SDELETE(_nodeArray[c]);
+                delete _nodeArray[c];
     }
 
     // ---------------------------------------------------------------------
@@ -353,8 +353,10 @@ struct SQLiteTester {
             }
 
             // Hard kill it, if not graceful
-            if (!graceful)
-                SDELETE(_nodeArray[c]);
+            if (!graceful) {
+                delete _nodeArray[c];
+                _nodeArray[c] = 0;
+            }
         } else {
             // Add a new peer
             SHMMM(">>>>>>>>>>>>>>>>>>> Adding server #" << c << ">>>>>>>>>>>>>>>>>>>>>");
@@ -385,17 +387,18 @@ struct SQLiteTester {
                 if (_nodeArray[c]->shutdownComplete()) {
                     // Graceful shutdown has completed
                     SINFO("<<<<<<<<<<<<<<<< Graceful shutdown complete #" << c << "<<<<<<<<<<<<<");
-                    SDELETE(_nodeArray[c]);
+                    delete _nodeArray[c];
+                    _nodeArray[c] = 0;
                 } else {
                     // Alive, process
-                    maxS = SMax(maxS, _nodeArray[c]->preSelect(fdm));
-                    maxS = SMax(maxS, _nodeArray[c]->httpsClient.preSelect(fdm));
+                    maxS = max(maxS, _nodeArray[c]->preSelect(fdm));
+                    maxS = max(maxS, _nodeArray[c]->httpsClient.preSelect(fdm));
                 }
             }
 
         // Wait for activity or timeout, and measure how long it took
         uint64_t now = STimeNow();
-        uint64_t timeout = SMax(_nextActivity, now) - now;
+        uint64_t timeout = max(_nextActivity, now) - now;
         uint64_t before = STimeNow();
         int activeSockets = S_poll(fdm, timeout);
         uint64_t elapsed = STimeNow() - before;
@@ -1017,8 +1020,8 @@ void SQLiteTest(const SData& args) {
                 uint64_t now = STimeNow();
                 if (!numAlive || now - lastBlink > STIME_US_PER_S * 20) {
                     // Time for another blink
-                    uint64_t blinker = SRand15() % tester._nodeArray.size();
-                    tester.toggle(blinker, SRand15() % 2); // Randomly choose dirty or clean
+                    uint64_t blinker = SRandom::rand64() % tester._nodeArray.size();
+                    tester.toggle(blinker, SRandom::rand64() % 2); // Randomly choose dirty or clean
                     lastBlink = now;
                     ++numBlinks;
                 }

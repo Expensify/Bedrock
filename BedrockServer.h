@@ -1,11 +1,9 @@
-/// bedrock/BedrockServer.h
-/// =================
-/// Manages connections to a single instance of the bedrock server.
-///
-#ifndef _BEDROCKSERVER_H
-#define _BEDROCKSERVER_H
+// Manages connections to a single instance of the bedrock server.
+#pragma once
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
+#include "BedrockPlugin.h"
+#include "PollTimer.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -22,6 +20,9 @@ class BedrockServer : public STCPServer {
         MessageQueue();
         ~MessageQueue();
 
+        // Explicitly delete copy constructor so it can't accidentally get called.
+        MessageQueue(const MessageQueue& other) = delete;
+
         // Wait for something to be put onto the queue
         int preSelect(fd_map& fdm);
         void postSelect(fd_map& fdm, int bytesToRead = 1);
@@ -35,14 +36,14 @@ class BedrockServer : public STCPServer {
       private:
         // Private state
         list<SData> _queue;
-        void* _queueMutex;
-        int _pipeFD[2];
+        recursive_mutex _queueMutex;
+        int _pipeFD[2] = {-1, -1};
     };
 
     // All the data required for a thread to create an BedrockNode
     // and coordinate with other threads.
     struct Thread {
-        Thread(const string& name_,                         // Thraed name
+        Thread(const string& name_,                         // Thread name
                SData args_,                                 // Command line args passed in.
                SSynchronized<SQLCState>& replicationState_, // Shared var for communicating replication thread's status.
                SSynchronized<uint64_t>& replicationCommitCount_, // Shared var for communicating replication thread's
@@ -84,6 +85,7 @@ class BedrockServer : public STCPServer {
         void* thread;
         SSynchronized<bool> ready;
         BedrockServer* server;
+        bool finished = false;
     };
 
     // Constructor / Destructor
@@ -116,6 +118,9 @@ class BedrockServer : public STCPServer {
     // read loop on the write thread.
     list<list<SHTTPSManager*>> httpsManagers;
 
+    // Keeps track of the time we spend idle.
+    PollTimer pollTimer;
+
   private: // Internal Bedrock
     // Attributes
     SData _args;
@@ -132,8 +137,6 @@ class BedrockServer : public STCPServer {
     MessageQueue _processedResponses;
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
+    map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
 };
-
-// BedrockServer.h
-#endif

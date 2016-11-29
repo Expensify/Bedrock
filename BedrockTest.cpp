@@ -1,8 +1,8 @@
-/// bedrock/BedrockTest.cpp
 #include <libstuff/libstuff.h>
+#include "BedrockPlugin.h"
 #include "BedrockTest.h"
 
-using Plugin = BedrockNode::Plugin;
+using Plugin = BedrockPlugin;
 
 BedrockTester::BedrockTester() {
     // Initialize
@@ -29,9 +29,10 @@ void BedrockTester::onResponse(const string& host, const SData& request, const S
 void BedrockTester::loop(uint64_t& nextActivity) {
     // Do one iteration of the select loop
     fd_map fdm;
-    SMax(preSelect(fdm), server->preSelect(fdm));
+    preSelect(fdm);
+    server->preSelect(fdm);
     uint64_t now = STimeNow();
-    S_poll(fdm, SMax(nextActivity, now) - now);
+    S_poll(fdm, max(nextActivity, now) - now);
     nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
     postSelect(fdm);
     server->postSelect(fdm, nextActivity);
@@ -45,12 +46,14 @@ void BedrockTester::startServer(SData args) {
             args[_NAME_] = _VAL_;                                                                                      \
     } while (false)
     SETDEFAULT("-db", "test.db");
-    SETDEFAULT("-serverHost", "localhost:9988");
+    SETDEFAULT("-serverHost", "localhost:8888");
     SETDEFAULT("-nodeName", "bedrock");
-    SETDEFAULT("-nodeHost", "localhost:8899");
+    SETDEFAULT("-nodeHost", "localhost:9999");
     SETDEFAULT("-plugins", "DB");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-readThreads", "1");
+    SETDEFAULT("-cacheSize", "1000000");
+    SETDEFAULT("-maxJournalSize", "1000000");
 
     // Process some flags that main.cpp would normally handle
     if (args.isSet("-clean")) {
@@ -81,14 +84,16 @@ void BedrockTester::stopServer() {
     SSendSignal(SIGTERM);
     while (!server->shutdownComplete())
         loop(nextActivity);
-    SDELETE(server);
+    delete server;
+    server = 0;
 }
 
 void BedrockTester::waitForResponses() {
     // Keep going so long as there are active connections
     uint64_t nextActivity = STimeNow();
-    while (!activeConnectionList.empty())
+    while (!activeConnectionList.empty()) {
         loop(nextActivity);
+    }
 }
 
 void BedrockTester::sendQuery(const string& query, int numToSend, int numActiveConnections) {
@@ -130,12 +135,6 @@ void BedrockTest(SData& trueArgs) {
     if (trueArgs.nameValueMap.size() == 1) {
         // Do a full test
         trueArgs["-all"] = "true";
-    }
-
-    // Start with libstuff itself
-    if (trueArgs.isSet("-all")) {
-        // Libstuff
-        STestLibStuff();
     }
 
     // What do we test?
@@ -224,6 +223,7 @@ void BedrockTest(SData& trueArgs) {
     });
 
     // All done!
-    SDELETE(tester);
+    delete tester;
+    tester = 0;
     SINFO("Finished BedrockTest");
 }

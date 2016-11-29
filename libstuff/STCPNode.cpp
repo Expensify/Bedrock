@@ -21,7 +21,7 @@ STCPNode::~STCPNode() {
         Peer* peer = *peerIt;
         if (peer->s)
             closeSocket(peer->s);
-        SDELETE(peer);
+        delete peer;
     }
     peerList.clear();
 }
@@ -33,7 +33,7 @@ void STCPNode::addPeer(const string& peerName, const string& host, const STable&
     SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), "
                           << SComposeJSONObject(params));
     Peer* peer = new Peer(peerName, host, params);
-    peer->nextReconnect = STimeNow() + SRand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
+    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
     peerList.push_back(peer);
 }
 
@@ -189,7 +189,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
             case STCP_CLOSED: {
                 // Done; clean up and try to reconnect
-                uint64_t delay = SRand64() % (STIME_US_PER_S * 5);
+                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 if (peer->s->connectFailure)
                     PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                           << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
@@ -202,7 +202,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 closeSocket(peer->s);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
-                nextActivity = SMin(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect);
                 break;
             }
 
@@ -234,7 +234,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 }
             } else {
                 // Waiting to reconnect -- notify the caller
-                nextActivity = SMin(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect);
             }
         }
     }

@@ -8,8 +8,6 @@
 // --------------------------------------------------------------------------
 BedrockServer::MessageQueue::MessageQueue() {
     // Initialize
-    _queueMutex = SMutexOpen();
-
     // Open up a pipe for communication and set the nonblocking reads.
     SASSERT(0 == pipe(_pipeFD));
     int flags = fcntl(_pipeFD[0], F_GETFL, 0);
@@ -18,8 +16,12 @@ BedrockServer::MessageQueue::MessageQueue() {
 
 // --------------------------------------------------------------------------
 BedrockServer::MessageQueue::~MessageQueue() {
-    // Clean up
-    SMutexClose(_queueMutex);
+    if (_pipeFD[0] != -1) {
+        close(_pipeFD[0]);
+    }
+    if (_pipeFD[1] != -1) {
+        close(_pipeFD[0]);
+    }
 }
 
 // --------------------------------------------------------------------------

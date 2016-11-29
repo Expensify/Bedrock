@@ -3,7 +3,6 @@
 // --------------------------------------------------------------------------
 STCPServer::STCPServer(const string& host) {
     // Initialize
-    port = -1;
     if (!host.empty()) {
         openPort(host);
     }
@@ -11,75 +10,81 @@ STCPServer::STCPServer(const string& host) {
 
 // --------------------------------------------------------------------------
 STCPServer::~STCPServer() {
-    // Close the port
-    if (port >= 0) {
-        ::closesocket(port);
-    }
+    // Close all ports
+    closePorts();
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::openPort(const string& host) {
+STCPServer::Port* STCPServer::openPort(const string& host) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
-    SASSERT(port < 0);
-    SASSERT((port = S_socket(host, true, true, false)) >= 0);
+    Port port;
+    port.host = host;
+    port.s = S_socket(host, true, true, false);
+    SASSERT(port.s >= 0);
+    list<Port>::iterator portIt = portList.insert(portList.end(), port);
+    return &*portIt;
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::closePort() {
-    // Close the port
-    if (port >= 0) {
-        ::closesocket(port);
-        port = -1;
+void STCPServer::closePorts() {
+    // Are there any ports to close?
+    if (!portList.empty()) {
+        // Loop across and close all ports
+        SFOREACH (list<Port>, portList, portIt) {
+            // Close this port
+            ::close(portIt->s);
+        }
+        portList.clear();
     } else {
-        SWARN("Port already closed.");
+        SWARN("Ports already closed.");
     }
 }
 
 // --------------------------------------------------------------------------
-STCPManager::Socket* STCPServer::acceptSocket() {
-    // Ignore if no socket
-    if (port < 0) {
-        return 0;
-    }
+STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    portOut = 0;
+    Socket* socket = 0;
 
-    // Try to accept on the port and wrap in a socket
-    sockaddr_in addr;
-    int s = S_accept(port, addr, false);
-    if (s <= 0) {
-        return 0;
-    }
+    // See if we can accept on any port
+    for_each(portList.begin(), portList.end(), [&](Port& port) {
+        // Try to accept on the port and wrap in a socket
+        sockaddr_in addr;
+        int s = S_accept(port.s, addr, false);
+        if (s > 0) {
+            // Received a socket, wrap
+            SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
+            socket = new Socket;
+            socket->s = s;
+            socket->addr = addr;
+            socket->state = STCP_CONNECTED;
+            socket->connectFailure = false;
+            socket->openTime = STimeNow();
+            socket->ssl = 0;
+            socket->data = 0; // Used by caller, not libstuff
+            socketList.push_back(socket);
 
-    // Received a socket, wrap
-    SDEBUG("Accepting socket from '" << addr << "'");
-    Socket* socket = new Socket;
-    socket->s = s;
-    socket->addr = addr;
-    socket->state = STCP_CONNECTED;
-    socket->connectFailure = false;
-    socket->openTime = STimeNow();
-    socket->ssl = 0;
-    socket->data = 0; // Used by caller, not libstuff
-    socketList.push_back(socket);
+            // Try to read immediately
+            S_recvappend(socket->s, socket->recvBuffer);
 
-    // Try to read immediately
-    S_recvappend(socket->s, socket->recvBuffer);
+            // Record what port it was accepted on
+            portOut = &port;
+        }
+    });
+
     return socket;
 }
 
 // --------------------------------------------------------------------------
 int STCPServer::preSelect(fd_map& fdm) {
     // Do the base class
-    int maxS = STCPManager::preSelect(fdm);
+    STCPManager::preSelect(fdm);
 
-    // If no port, stop there
-    if (port < 0) {
-        return maxS;
-    }
-
-    // Add the port
-    SFDset(fdm, port, SREADEVTS);
-    return (SMax(port, maxS));
+    // Add the ports
+    for_each(portList.begin(), portList.end(), [&](Port port) { SFDset(fdm, port.s, SREADEVTS); });
+    // Done!
+    return 0;
 }
 
 // --------------------------------------------------------------------------

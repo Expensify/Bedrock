@@ -5,7 +5,7 @@ class SHTTPSManager : public STCPManager {
     // Transaction
     struct Transaction {
         // Constructor/Destructor
-        Transaction() {
+        Transaction(SHTTPSManager& owner_) : owner(owner_) {
             s = 0;
             created = STimeNow();
             finished = 0;
@@ -21,8 +21,7 @@ class SHTTPSManager : public STCPManager {
         SData fullResponse;
         int response;
         STable values;
-        SHTTPSManager* owner;                   // pointer to the object that owns this transaction. Can be null.
-        vector<vector<string>> transactionList; // **FIXME: move this into values.
+        SHTTPSManager& owner;
     };
 
     // Constructor/Destructor

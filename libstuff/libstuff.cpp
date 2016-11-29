@@ -65,9 +65,6 @@ extern void _SInitializeSignals();
 pthread_key_t _g_SThread_TLSKey = 0;
 bool _g_SThread_TLSKey_Initialized = false;
 void SInitialize() {
-    // Seed the random generator
-    srand((unsigned int)STimeNow());
-
     // Initialize signal handling
     _SInitializeSignals();
 
@@ -84,6 +81,15 @@ void SInitialize() {
     }
 }
 
+SThreadLocalStorage* SThreadGetLocalStorage() {
+    return (SThreadLocalStorage*)pthread_getspecific(_g_SThread_TLSKey);
+}
+
+// Thread-local log prefix
+void SLogSetThreadPrefix(const string& logPrefix) {
+    SThreadLocalStorage* tls = SThreadGetLocalStorage();
+    tls->logPrefix = logPrefix;
+}
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -101,6 +107,7 @@ string SToHex(uint64_t value, int digits) {
     }
     return working;
 }
+
 string SToHex(const string& value) {
     // Fill from front to back
     string working;
@@ -133,98 +140,28 @@ uint64_t SFromHex(const string& value) {
     }
     return binValue;
 }
+
 string SStrFromHex(const string& buffer) {
-    // Convert from front to back
-    string working;
-    for (size_t c = 0; c < buffer.size(); c += 2) {
-        // Generate one byte from each pair of characters
-        unsigned char a = (unsigned char)buffer[c + 0];
-        unsigned char b = (unsigned char)buffer[c + 1];
-        if (a < '0')
-            a = 0; // Invalid
-        else if (a <= '9')
-            a = a - '0';
-        else if (a < 'A')
-            a = 0; // Invalid
-        else if (a <= 'F')
-            a = a - 'A' + 10;
-        else if (a < 'a')
-            a = 0; // Invalid
-        else if (a <= 'f')
-            a = a - 'a' + 10;
-        else
-            a = 0; // Invalid
-        a <<= 4;
-        if (b < '0')
-            b = 0; // Invalid
-        else if (b <= '9')
-            b = b - '0';
-        else if (b < 'A')
-            b = 0; // Invalid
-        else if (b <= 'F')
-            b = b - 'A' + 10;
-        else if (b < 'a')
-            b = 0; // Invalid
-        else if (b <= 'f')
-            b = b - 'a' + 10;
-        else
-            b = 0; // Invalid
-        unsigned char out = a | b;
-        working += (char)out;
+    string retVal;
+    for(size_t i = 0; i < buffer.length(); i += 2) {
+        retVal.push_back((char)strtol(buffer.substr(i, 2).c_str(), 0, 16));
     }
-    return working;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base26" (case insensitive letters).
-string SToBase26(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 26;
-        value /= 26;
-
-        // Convert to a character
-        out += 'A' + c;
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-// Converts a number to "base36", meaning numbers and letters (case insensitive).
-string SToBase36(uint64_t value) {
-    // Keep going until there's nothing, with at least one digit
-    string out;
-    do {
-        // Pluck off the next digit
-        uint64_t c = value % 36;
-        value /= 36;
-
-        // Convert to a character
-        if (c < 10)
-            out += '0' + c;
-        else
-            out += 'A' + (c - 10);
-    } while (value > 0);
-    return out;
-}
-
-// --------------------------------------------------------------------------
-string SClampSize(const string& in, int digits, char fill) {
-    // If bigger, just return the substring
-    if ((int)in.size() >= digits)
-        return in.substr(0, digits);
-
-    // Otherwise, fill
-    string out(digits - (int)in.size(), fill);
-    return out + in;
+    return retVal;
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // String stuff
 /////////////////////////////////////////////////////////////////////////////
-// --------------------------------------------------------------------------
+string SToLower(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::tolower);
+    return value;
+}
+
+string SToUpper(string value) {
+    transform(value.begin(), value.end(), value.begin(), ::toupper);
+    return value;
+}
+
 bool SIContains(const string& lhs, const string& rhs) {
     // Case insensitive contains
     return SContains(SToLower(lhs), SToLower(rhs));
@@ -497,42 +434,13 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 }
 
 // --------------------------------------------------------------------------
-bool SParseIntegerList(const char* ptr, list<int64_t>& valueList, char separator) {
-    // Clear the input
-    valueList.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the list
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty()) {
-                valueList.push_back(SToInt64(component));
-            }
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty()) {
-        valueList.push_back(SToInt(component));
-    }
-
-    // Return if we were able to find anything
-    return !valueList.empty();
+list<int64_t> SParseIntegerList(const string& value, char separator) {
+    list<int64_t> valueList;
+    list<string> strings = SParseList(value, separator);
+    for_each(strings.begin(), strings.end(), [&](string str){
+        valueList.push_back(SToInt64(str));
+    });
+    return valueList;
 }
 
 // --------------------------------------------------------------------------
@@ -573,54 +481,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-// **FIXME: What's the proper STL way to do this, without just duplicating
-//          all the list/vector code?
-bool SParseVector(const char* ptr, vector<string>& valueVector, char separator) {
-    // STL way:
-    //
-    // valueVector.clear();
-    // stringstream inputStream( string(ptr) )
-    // for( string component; getline( inputStream, component, separator ); )
-    //     valueVector.push_back( STrim(component) );
-    // return !valueVector.empty();
-    //
-
-    // Clear the input
-    valueVector.clear();
-
-    // Walk across the string and break into comma/whitespace delimited substrings
-    string component;
-    while (*ptr) {
-        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
-        }
-
-        // Is this a delimiter?  If so, let's add a new component to the vector
-        else if (*ptr == separator) {
-            // Only add if the component is non-empty
-            if (!component.empty())
-                valueVector.push_back(component);
-            component.clear();
-        }
-
-        // Otherwise, add to the working component
-        else {
-            component += *ptr;
-        }
-
-        // Finally, go to the next character
-        ++ptr;
-    }
-
-    // Reached the end of the string; if we are working on a component, add it
-    if (!component.empty())
-        valueVector.push_back(component);
-
-    // Return if we were able to find anything
-    return (!component.empty());
-}
-
-// --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
     SASSERT((int)lhs.size() >= num);
     // If nothing, early out
@@ -649,10 +509,14 @@ SData SParseCommandLine(int argc, char* argv[]) {
         bool isName = SStartsWith(argv[c], "-");
         if (name.empty()) {
             // We're not already processing a name, either start or add
-            if (isName)
+            if (isName) {
                 name = argv[c];
-            else
-                SAppendToList(results.methodLine, argv[c]);
+            } else {
+                list<string> valueList;
+                SParseList(results.methodLine, valueList);
+                valueList.push_back(argv[c]);
+                results.methodLine = SComposeList(valueList);
+            }
         } else {
             // Processing a name, do we have a value or another name?
             if (isName) {
@@ -1081,23 +945,23 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    SFOREACHTABLE(nameValueMap, mapIt) {
-        if (SIEquals("Set-Cookie", mapIt->first)) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
             // says cookies can be comma- delimited.  But it doesn't appear to
             // work in Firefox.
             list<string> cookieList;
-            SParseList(mapIt->second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
+            SParseList(item.second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
             SFOREACH (list<string>, cookieList, cookieIt) { buffer += "Set-Cookie: " + *cookieIt + "\r\n"; }
-        } else if (SIEquals("Content-Length", mapIt->first)) {
+        } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
-        } else if (SIEquals("Content-Encoding", mapIt->first) && SIEquals("gzip", mapIt->second)) {
+        } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
             tryGzip = !content.empty();
         } else {
-            buffer += mapIt->first + ": " + SEscape(mapIt->second, "\r\n\t") + "\r\n";
+            buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
         }
-    }
+    });
 
     const string gzipContent = tryGzip ? SGZip(content) : "";
     const bool gzipSuccess = !gzipContent.empty();
@@ -1119,20 +983,20 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 string SComposePOST(const STable& nameValueMap) {
     // Accumulate and convert
     ostringstream out;
-    SFOREACHTABLE(nameValueMap, nameValueIt) {
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
         // Output the name and value, if any.  If the value is actually a
         // separated list of values, re-add the name each time
-        if (nameValueIt->second.empty()) {
+        if (item.second.empty()) {
             // No value, just add without
-            out << SEncodeURIComponent(nameValueIt->first) << "=&";
+            out << SEncodeURIComponent(item.first) << "=&";
         } else {
             // Add as many times as there are values
             list<string> valueList;
-            SParseList(nameValueIt->second, valueList, S_COOKIE_SEPARATOR);
+            SParseList(item.second, valueList, S_COOKIE_SEPARATOR);
             SFOREACH (list<string>, valueList, valueIt)
-                out << SEncodeURIComponent(nameValueIt->first) << "=" << SEncodeURIComponent(*valueIt) << "&";
+                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
         }
-    }
+    });
     string outStr = out.str();
     SConsumeBack(outStr, 1); // Trim off trailing '&'
     return outStr;
@@ -1259,8 +1123,9 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString) {
     if (nameValueMap.empty())
         return "{}";
     string working = "{";
-    SFOREACHTABLE(nameValueMap, mapIt)
-    working += "\"" + mapIt->first + "\":" + SToJSON(mapIt->second, forceString) + ",";
+    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+        working += "\"" + item.first + "\":" + SToJSON(item.second, forceString) + ",";
+    });
     working.resize(working.size() - 1);
     working += "}";
     return working;
@@ -1673,7 +1538,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
                                 << "': " << message << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s > 0)
-            closesocket(s);
+            close(s);
         return -1;
     }
 }
@@ -1685,7 +1550,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
     SASSERT(recvBufferSize > 0);
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     ssize_t numRecv = recvfrom(s, recvBuffer, recvBufferSize - 1, 0, (sockaddr*)&fromAddr, &fromAddrLen);
     recvBuffer[numRecv] = 0;
 
@@ -1737,7 +1602,7 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
-    SZERO(fromAddr);
+    memset(&fromAddr, 0, sizeof(fromAddr));
     int s = (int)accept(port, (sockaddr*)&fromAddr, &fromAddrLen);
 
     // Process the result
@@ -1950,8 +1815,7 @@ string SGetHostName() {
 // --------------------------------------------------------------------------
 string SGetPeerName(int s) {
     // Just call the function that does this
-    sockaddr_in addr;
-    SZERO(addr);
+    sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*)&addr, &socklen);
     if (result == 0) {
@@ -1959,18 +1823,6 @@ string SGetPeerName(int s) {
     } else {
         return "(errno#" + SToStr(S_errno) + ")";
     }
-}
-
-// --------------------------------------------------------------------------
-string SAESGenerate() {
-    // Generate a 256Bit random key.
-    // **FIXME: This shouldn't be used; just create using GPG -- more random
-    string key;
-    key.resize(SAES_KEY_SIZE);
-    for (int i = 0; i < SAES_KEY_SIZE; i++) {
-        key[i] = SRand15() & 0xFF;
-    }
-    return key;
 }
 
 // --------------------------------------------------------------------------
@@ -2057,6 +1909,13 @@ bool SFileLoad(const string& path, string& buffer) {
     // Done
     fclose(fp);
     return true; // Success
+}
+
+// --------------------------------------------------------------------------
+string SFileLoad(const string& path) {
+    string buffer;
+    SFileLoad(path, buffer);
+    return buffer;
 }
 
 // --------------------------------------------------------------------------
@@ -2261,44 +2120,6 @@ void SThreadSleep(uint64_t duration) {
     select(0, &readfds, &writefds, &exceptfds, &tv);
 }
 
-// --------------------------------------------------------------------------
-void* SMutexOpen() {
-    // Enable re-entrant locking
-    pthread_mutexattr_t attr;
-    SASSERT(!pthread_mutexattr_init(&attr));
-    SASSERT(!pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP));
-
-    // Create a new mutex and initialize it
-    pthread_mutex_t* pmutex = new pthread_mutex_t;
-    SASSERT(!pthread_mutex_init(pmutex, &attr));
-    SASSERT(!pthread_mutexattr_destroy(&attr));
-    return (void*)pmutex;
-}
-
-// --------------------------------------------------------------------------
-void SMutexLock(void* mutex) {
-    SASSERT(mutex);
-    // Lock this section
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_lock(pmutex));
-}
-
-// --------------------------------------------------------------------------
-void SMutexUnlock(void* mutex) {
-    SASSERT(mutex);
-    // Unlock this mutex
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_unlock(pmutex));
-}
-
-// --------------------------------------------------------------------------
-void SMutexClose(void* mutex) {
-    SASSERT(mutex);
-    pthread_mutex_t* pmutex = (pthread_mutex_t*)mutex;
-    SASSERT(!pthread_mutex_destroy(pmutex));
-    SDELETE(pmutex);
-}
-
 /////////////////////////////////////////////////////////////////////////////
 // SQLite Stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -2444,537 +2265,5 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
         SINFO("'" << tableName << "' already exists, verifying. ");
         SASSERT(result[0][4] == sql);
         return false; // Table already exists with correct definition
-    }
-}
-
-/////////////////////////////////////////////////////////////////////////////
-//                        Testing Stuff
-/////////////////////////////////////////////////////////////////////////////
-// --------------------------------------------------------------------------
-// Runs a basic set of tests on libstuff
-int STestLibStuff() {
-    STestGroup group = STestGroup();
-    STestGroup* testGroup = &group;
-
-    // Just test JSONDecoding a big object
-    const string& samplePolicy = SFileLoad("samplePolicy.json");
-    if (!samplePolicy.empty()) {
-        STestTimer test("Testing SJSONDecode on a large object", testGroup);
-        STable obj = SParseJSONObject(samplePolicy);
-        STable units = SParseJSONObject(obj["units"]);
-        STable distance = SParseJSONObject(units["distance"]);
-        STESTEQUALS(obj["name"], "Name Test");
-        STESTEQUALS(distance["km"], "null");
-        STESTEQUALS(distance["defaultUnit"], "mi");
-    } else {
-        cout << "[WARNING] Unable to load samplePolicy.json" << endl;
-    }
-
-    {
-        STestTimer test("Testing random junk", testGroup);
-        list<string> binFormatList = SParseList(".swf, .gif, .jpeg, .jpg, .png");
-        const string& lowerMethod = SToLower("GET /osrvimages/line_square.gif HTTP/1.1");
-        bool textFormat = true;
-        SFOREACH (list<string>, binFormatList, binFormatIt)
-            if (SContains(lowerMethod, *binFormatIt)) {
-                // Found a type we're logging
-                textFormat = false;
-                break;
-            }
-        STESTASSERT(!textFormat);
-    }
-
-    {
-        STestTimer test("Testing SMaskPan()", testGroup);
-        STESTEQUALS(SMaskPAN("12345"), "XXXXX");
-        STESTEQUALS(SMaskPAN("1234567"), "XXX4567");
-        STESTEQUALS(SMaskPAN("12345678"), "XXXX5678");
-        STESTEQUALS(SMaskPAN("12345678a"), "XXXXX678X");
-        STESTEQUALS(SMaskPAN("1234567890123"), "XXXXXXXXX0123");
-        STESTEQUALS(SMaskPAN("12345678901234"), "123456XXXX1234");
-        STESTEQUALS(SMaskPAN("12345678901234567"), "123456XXXXXXX4567");
-        STESTEQUALS(SMaskPAN("123456789012345678901"), "XXXXXXXXXXXXXXXXXXXXX");
-    }
-
-    {
-        STestTimer test("Testing AES encrypt/decrypt", testGroup);
-        for (int c = 0; c < SAES_BLOCK_SIZE; ++c) {
-            // Try 100 variations
-            srand(c);
-            string iv = SAESGenerate().substr(0, SAES_BLOCK_SIZE);
-            const string key = SAESGenerate();
-            string clearText = SToHex(SAESGenerate());
-            clearText = clearText.substr(0, (SAES_BLOCK_SIZE * 2) - c);
-            const string encrypted = SAESEncrypt(clearText, iv, key);
-            const string decrypted = SAESDecrypt(encrypted, iv, key);
-            STESTEQUALS(clearText, decrypted);
-        }
-    }
-
-    {
-        STestTimer test("Testing HMAC-SHA1", testGroup);
-        STESTEQUALS(SToHex(SHMACSHA1("", "")), "FBDB1D1B18AA6C08324B7D64B71FB76370690E1D");
-        STESTEQUALS(SToHex(SHMACSHA1("key", "The quick brown fox jumps over the lazy dog")),
-                    "DE7C9B85B8B78AA6BC8A7A36F70A90701C9DB4D9");
-    }
-
-    {
-        STestTimer test("Testing JSON encode/decode", testGroup);
-        // Floating point value tests
-        STESTEQUALS(SToJSON("{\"imAFloat\":1.2}"), "{\"imAFloat\":1.2}");
-        STESTEQUALS(SToJSON("{\"imAFloat\":-0.23456789}"), "{\"imAFloat\":-0.23456789}");
-        STESTEQUALS(SToJSON("{\"imAFloat\":-123456789.23456789}"), "{\"imAFloat\":-123456789.23456789}");
-
-        // Scientific notation tests
-        STESTEQUALS(SToJSON("{\"science\":1.5e-8}"), "{\"science\":1.5e-8}");
-        STESTEQUALS(SToJSON("{\"science\":-1.5e-30}"), "{\"science\":-1.5e-30}");
-        STESTEQUALS(SToJSON("{\"science\":1e58}"), "{\"science\":1e58}");
-        STESTEQUALS(SToJSON("{\"science\":9e+61}"), "{\"science\":9e+61}");
-        STESTEQUALS(SToJSON("{\"science\":1E+99}"), "{\"science\":1E+99}");
-
-        STable innerObject0, innerObject1, innerObject0Verify, innerObject1Verify;
-        innerObject0["utf8"] = "{\"foo\":\"\\u00b7\"}";
-        innerObject0["singleQuoteTest"] = "These are 'single quotes'.";
-        innerObject0["doubleQuoteTest"] = "These are \"double quotes\".";
-        innerObject0["wackyTest"] = "`1234567890-=~!@#$%^&*()_+[]\\{}|.;':\",./<>\\n?";
-        innerObject0["badJSON"] = "{\"name\":\"bb\",\"type\":\"text\"}],\"approverTable\":false,\"ccList\":[],"
-                                  "\"approver\":\"blah@company.com\"}";
-        innerObject0["ofxTest"] = "{\"ofx\":\"<OFX>\\n<SIGNONMSGSRSV1>\\n<SONRS>\\n<STATUS><CODE>15501\\n<SEVERITY>"
-                                  "ERROR\\n<MESSAGE>The profile currently in "
-                                  "use.\\n<\\/"
-                                  "STATUS>\\n<DTSERVER>20110304033419.851[0:GMT]\\n<LANGUAGE>ENG\\n<FI>\\n<ORG>BB&amp;"
-                                  "T\\n<FID>BB&amp;T\\n<\\/FI>\\n<\\/SONRS>\\n<\\/"
-                                  "SIGNONMSGSRSV1>\\n<SIGNUPMSGSRSV1>\\n<ACCTINFOTRNRS>\\n<TRNUID>315B1FB9-913C-991F-"
-                                  "1BD7-6537CAA54C26\\n<STATUS>\\n<CODE>15500\\n<SEVERITY>ERROR\\n<\\/"
-                                  "STATUS>\\n<CLTCOOKIE>4\\n<\\/ACCTINFOTRNRS>\\n<\\/SIGNUPMSGSRSV1>\\n<\\/OFX>\"}";
-
-        // Verify we can undo our own encoding (Objects)
-        innerObject0Verify = SParseJSONObject(SComposeJSONObject(innerObject0));
-        SFOREACHMAP (string, string, innerObject0, mapIt)
-            STESTEQUALS(innerObject0[mapIt->first], innerObject0Verify[mapIt->first]);
-
-        // Verify we can undo our own encoding (Arrays)
-        innerObject1 = innerObject0;
-        list<string> innerObjectList;
-        innerObjectList.push_back(SComposeJSONObject(innerObject0));
-        innerObjectList.push_back(SComposeJSONObject(innerObject1));
-        list<string> innerObjectListVerify = SParseJSONArray(SComposeJSONArray(innerObjectList));
-        STESTASSERT(innerObjectListVerify.size() == 2);
-
-        // Verify we can undo our own encoding through 2 levels (Object)
-        innerObject0Verify = SParseJSONObject(innerObjectListVerify.front());
-        innerObject1Verify = SParseJSONObject(innerObjectListVerify.back());
-        SFOREACHMAP (string, string, innerObject0, mapIt)
-            STESTEQUALS(innerObject0[mapIt->first], innerObject0Verify[mapIt->first]);
-        SFOREACHMAP (string, string, innerObject1, mapIt)
-            STESTEQUALS(innerObject1[mapIt->first], innerObject1Verify[mapIt->first]);
-
-        // Verify we can parse/encode PHP objects
-        STESTEQUALS(innerObject0["ofxTest"], SComposeJSONObject(SParseJSONObject(innerObject0["ofxTest"])));
-
-        // Test parsing a crazy thing
-        STable ignore = SParseJSONObject(
-            SStrFromHex("7D6628F7AE67FBACE9DAF79312C48BA0B41AADD5BA1704E929B96B6F87708C0898868D55C0AAAE117CF20F1317D151"
-                        "348706C9EDFE8A0CDD13BFB476367DEA2761A102B26443C7D3A464DB49A37F1F816B8BEC4C55DBD9DAF0B70652D32A"
-                        "CBD224F9487E25398E740E99B24089A6343B6FD6C1BC6A89AF90F3DC69016A42066AAF430B1B584D236B8AD285828D"
-                        "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD"));
-    }
-
-    {
-        STestTimer test("Testing SEscape()/SUnescape()", testGroup);
-        STESTEQUALS(SEscape("a,b,c", ","), "a\\,b\\,c");
-        STESTEQUALS(SUnescape(SEscape("\r\n\\\"\\zqy", "q")), "\r\n\\\"\\zqy");
-        STESTEQUALS(SEscape("\x1a", "\x1a"), "\\u001a");
-        STESTEQUALS(SUnescape("\\u0041"), "A");            // 1 Byte
-        STESTEQUALS(SUnescape("\\u00b7"), "\xc2\xb7");     // 2 Byte
-        STESTEQUALS(SUnescape("\\uc2b7"), "\xec\x8a\xb7"); // 3 Byte
-        STESTEQUALS(SUnescape("\\u05c0"), "\xd7\x80");     // 2 Byte, bottom 0
-    }
-
-    {
-        STestTimer test("Testing Chunked encoding parsing", testGroup);
-        string methodLine, content, recvBuffer;
-        STable headers;
-        size_t processed;
-
-        recvBuffer = "some method line\r\n"
-                     "header1: value1\r"
-                     "header2: value2\n"
-                     "header3: value3\r\n"
-                     "\r\n"
-                     "ignored body";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS((int64_t)processed, (int)recvBuffer.size() - (int)strlen("ignored body"));
-        STESTEQUALS(methodLine, "some method line");
-        STESTEQUALS(headers["header1"], "value1");
-        STESTEQUALS(headers["header2"], "value2");
-        STESTEQUALS(headers["header3"], "value3");
-        STESTEQUALS(content, "");
-
-        recvBuffer = "some method line\r\n"
-                     "Content-Length: 100\r"
-                     "\r\n"
-                     "too short";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(processed, 0);
-        STESTEQUALS(methodLine, "");
-        STESTEQUALS(content, "");
-
-        recvBuffer = "some method line\r\n"
-                     "Content-Length: 5\r"
-                     "\r\n"
-                     "too short"; // only 'too s' read.
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "some method line");
-        STESTEQUALS(content, "too s");
-
-        recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "some method line");
-        STESTEQUALS(content, "abcde0123456789");
-
-        recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "6\r\n" // one too long.
-                     "abcde";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "");
-        STESTEQUALS(content, "");
-
-        recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n" // exact without end.
-                     "abcde";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "");
-        STESTEQUALS(content, "");
-
-        recvBuffer = "some method line\r\n"
-                     "header1: value1\r"
-                     "header2: value2\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "header2: value2a\n"
-                     "header3: value3\n"
-                     "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "some method line");
-        STESTEQUALS(headers["header1"], "value1");
-        STESTEQUALS(headers["header2"], "value2a");
-        STESTEQUALS(headers["header3"], "value3");
-        STESTEQUALS(content, "abcde0123456789");
-
-        recvBuffer = "some method line x\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "aa; ignored chunk header crap\r\n" // too long
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "");
-        STESTEQUALS(content, "");
-
-        recvBuffer = "some method line y\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "az; ignored chunk header crap\r\n" // invalid hex
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "some method line y");
-        STESTEQUALS(content, "abcde"); // partial fail.
-
-        recvBuffer = "some method line z\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n";
-        // "\r\n"; // missing last new line.
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        STESTEQUALS(methodLine, "");
-        STESTEQUALS(content, "");
-    }
-
-    {
-        STestTimer test("Testing days in month", testGroup);
-        STESTEQUALS(SDaysInMonth(2012, 2), 29);
-        STESTEQUALS(SDaysInMonth(2013, 2), 28);
-        STESTEQUALS(SDaysInMonth(2013, 4), 30);
-        STESTEQUALS(SDaysInMonth(2014, 1), 31);
-        STESTEQUALS(SDaysInMonth(2014, 7), 31);
-    }
-
-    {
-        STestTimer test("Test GZip empty string", testGroup);
-        srand(1);
-        string data = "";
-        STESTASSERT(SGZip(data).length() > 1);
-    }
-
-    {
-        STestTimer test("Test GZip 1 byte", testGroup);
-        srand(1);
-        string data = "";
-        data += (char)(rand() ^ 0xFF);
-        STESTASSERT(SGZip(data).length() > 1);
-    }
-
-    {
-        STestTimer test("Test GZip some random data", testGroup);
-        srand(1);
-        string data = "";
-        for (int i = 0; i < 10000000; i++) // 10MB
-        {
-            data += (char)(rand() ^ 0xFF);
-        }
-        STESTASSERT(SGZip(data).length() > 1);
-    }
-
-    {
-        STestTimer test("Test GZip some known data", testGroup);
-        string data = "this is a test";
-        STESTEQUALS(SToHex(SGZip(data)), "1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000");
-        // php -r 'echo
-        // "\"".gzdecode(hex2bin("1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000"))."\"\n";'
-        // "this is a test"
-    }
-
-    {
-        STestTimer test("Test SConstantTimeEquals", testGroup);
-        STESTASSERT(SConstantTimeEquals("", ""));
-        STESTASSERT(SConstantTimeEquals("a", "a"));
-        STESTASSERT(!SConstantTimeEquals("A", "a"));
-        STESTASSERT(SConstantTimeIEquals("A", "a"));
-        STESTASSERT(SConstantTimeEquals("1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000",
-                                        "1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000"));
-        STESTASSERT(!SConstantTimeEquals("", "secret"));
-        STESTASSERT(!SConstantTimeEquals("secret", ""));
-        STESTASSERT(!SConstantTimeEquals("secre", "secret"));
-        STESTASSERT(!SConstantTimeEquals("secret", "secre"));
-        STESTASSERT(!SConstantTimeEquals("1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000", "a"));
-    }
-
-    {
-        STestTimer test("Test SParseIntegerList", testGroup);
-        list<int64_t> before;
-        for (int i = -10; i < 300000; i++) {
-            before.push_back(i);
-        }
-        list<int64_t> after = SParseIntegerList(SComposeList(before));
-        STESTASSERT(before == after);
-    }
-
-    {
-        STestTimer test("Test SData", testGroup);
-        SData a("this is a methodline");
-        SData b("methodline");
-        STESTEQUALS(a.methodLine, "this is a methodline");
-        STESTEQUALS(b.methodLine, "methodline");
-        STESTEQUALS(a.getVerb(), "this");
-        STESTEQUALS(b.getVerb(), "methodline");
-    }
-    {
-        STestTimer test("Test File IO Functions", testGroup);
-        const string path = "./fileio.test";
-        const string contents = "test";
-        string readBuffer;
-
-        // File doesn't exist yet
-        STESTASSERT(!SFileExists(path));
-
-        // We can create a file
-        STESTASSERT(SFileSave(path, contents));
-
-        // The file exists
-        STESTASSERT(SFileExists(path));
-
-        // We can read its contents
-        STESTASSERT(SFileLoad(path, readBuffer));
-
-        // The contents did not change
-        STESTEQUALS(readBuffer, contents);
-
-        // The file length is correct
-        STESTEQUALS(SFileSize(path), contents.length());
-
-        // We can delete the file
-        STESTASSERT(SFileDelete(path));
-
-        // The file no longer exists
-        STESTASSERT(!SFileExists(path));
-
-        // The non-existent file's size is reported as zero
-        STESTEQUALS(SFileSize(path), 0);
-    }
-
-    {
-        STestTimer test("Test STimeNow", testGroup);
-        uint64_t prev = STimeNow();
-        uint64_t next;
-        int failures = 0;
-        for (int i = 0; i < 10000; i++) {
-            next = STimeNow();
-            if (next < prev) {
-                failures++;
-            }
-            prev = next;
-        }
-        STESTEQUALS(failures, 0);
-    }
-
-    {
-        STestTimer test("Test SCURRENT_TIMESTAMP", testGroup);
-        string prev = SCURRENT_TIMESTAMP();
-        string next;
-        int failures = 0;
-        for (int i = 0; i < 10000; i++) {
-            next = SCURRENT_TIMESTAMP();
-            if (next < prev) {
-                failures++;
-            }
-            prev = next;
-        }
-        STESTEQUALS(failures, 0);
-    }
-
-    {
-        STestTimer test("Test SQList", testGroup);
-
-        list<int> intList;
-        list<unsigned> uintList;
-        list<int64_t> int64List;
-        list<uint64_t> uint64List;
-        list<string> stringList;
-
-        vector<int> intVector;
-        vector<unsigned> uintVector;
-        vector<int64_t> int64Vector;
-        vector<uint64_t> uint64Vector;
-        vector<string> stringVector;
-
-        set<int> intSet;
-        set<unsigned> uintSet;
-        set<int64_t> int64Set;
-        set<uint64_t> uint64Set;
-        set<string> stringSet;
-
-        STESTEQUALS(SQList(intList), "");
-        STESTEQUALS(SQList(uintList), "");
-        STESTEQUALS(SQList(int64List), "");
-        STESTEQUALS(SQList(uint64List), "");
-        STESTEQUALS(SQList(stringList), "");
-
-        STESTEQUALS(SQList(intVector), "");
-        STESTEQUALS(SQList(uintVector), "");
-        STESTEQUALS(SQList(int64Vector), "");
-        STESTEQUALS(SQList(uint64Vector), "");
-        STESTEQUALS(SQList(stringVector), "");
-
-        STESTEQUALS(SQList(intSet), "");
-        STESTEQUALS(SQList(uintSet), "");
-        STESTEQUALS(SQList(int64Set), "");
-        STESTEQUALS(SQList(uint64Set), "");
-        STESTEQUALS(SQList(stringSet), "");
-
-        intList.push_back(1);
-        uintList.push_back(1);
-        int64List.push_back(-10000000000);
-        uint64List.push_back(10000000000);
-        stringList.push_back("1");
-
-        intVector.push_back(1);
-        uintVector.push_back(1);
-        int64Vector.push_back(-10000000000);
-        uint64Vector.push_back(10000000000);
-        stringVector.push_back("1");
-
-        intSet.insert(1);
-        uintSet.insert(1);
-        int64Set.insert(-10000000000);
-        uint64Set.insert(10000000000);
-        stringSet.insert("1");
-
-        STESTEQUALS(SQList(intList), "1");
-        STESTEQUALS(SQList(uintList), "1");
-        STESTEQUALS(SQList(int64List), "-10000000000");
-        STESTEQUALS(SQList(uint64List), "10000000000");
-        STESTEQUALS(SQList(stringList), "'1'");
-
-        STESTEQUALS(SQList(intVector), "1");
-        STESTEQUALS(SQList(uintVector), "1");
-        STESTEQUALS(SQList(int64Vector), "-10000000000");
-        STESTEQUALS(SQList(uint64Vector), "10000000000");
-        STESTEQUALS(SQList(stringVector), "'1'");
-
-        STESTEQUALS(SQList(intSet), "1");
-        STESTEQUALS(SQList(uintSet), "1");
-        STESTEQUALS(SQList(int64Set), "-10000000000");
-        STESTEQUALS(SQList(uint64Set), "10000000000");
-        STESTEQUALS(SQList(stringSet), "'1'");
-
-        intList.push_back(-1);
-        uintList.push_back(2);
-        int64List.push_back(10000000000);
-        uint64List.push_back(2);
-        stringList.push_back("potato");
-
-        intVector.push_back(-1);
-        uintVector.push_back(2);
-        int64Vector.push_back(10000000000);
-        uint64Vector.push_back(2);
-        stringVector.push_back("potato");
-
-        intSet.insert(-1);
-        uintSet.insert(2);
-        int64Set.insert(10000000000);
-        uint64Set.insert(2);
-        stringSet.insert("potato");
-
-        STESTEQUALS(SQList(intList), "1, -1");
-        STESTEQUALS(SQList(uintList), "1, 2");
-        STESTEQUALS(SQList(int64List), "-10000000000, 10000000000");
-        STESTEQUALS(SQList(uint64List), "10000000000, 2");
-        STESTEQUALS(SQList(stringList), "'1', 'potato'");
-
-        STESTEQUALS(SQList(intSet), "-1, 1");
-        STESTEQUALS(SQList(uintSet), "1, 2");
-        STESTEQUALS(SQList(int64Set), "-10000000000, 10000000000");
-        STESTEQUALS(SQList(uint64Set), "2, 10000000000");
-        STESTEQUALS(SQList(stringSet), "'1', 'potato'");
-
-        STESTEQUALS(SQList(intVector), "1, -1");
-        STESTEQUALS(SQList(uintVector), "1, 2");
-        STESTEQUALS(SQList(int64Vector), "-10000000000, 10000000000");
-        STESTEQUALS(SQList(uint64Vector), "10000000000, 2");
-        STESTEQUALS(SQList(stringVector), "'1', 'potato'");
-
-        STESTEQUALS(SQList(intVector), SQList(SComposeList(intList)));
-        STESTEQUALS(SQList(stringList), SQList(SComposeList(stringList), false));
-
-        return testGroup->success ? 0 : 1;
     }
 }

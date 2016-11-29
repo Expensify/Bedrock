@@ -2,11 +2,9 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "BedrockNode.h"
+#include "BedrockPlugin.h"
 #include "BedrockServer.h"
 #include <iomanip>
-
-// Global static values
-list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 
 // *jsonCode* Values
 // -----------------------
@@ -53,13 +51,11 @@ list<BedrockNode::Plugin*>* BedrockNode::Plugin::g_registeredPluginList = 0;
 // * 530 Unexpected response.
 // * 531 Expected but unusable response, retry later.
 // * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
-//
 
-// --------------------------------------------------------------------------
 BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
                  1024,                                                 // auto-checkpoint every 1024 pages
-                 STIME_US_PER_M * 2 + SRand64() % STIME_US_PER_S * 30, // Be patient first time
+                 STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
                  server_->getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
                  args.test("-readOnly"), args.calc("-maxJournalSize")),
       server(server_) {
@@ -67,7 +63,6 @@ BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
     SINFO("BedrockNode constructor");
 }
 
-// --------------------------------------------------------------------------
 BedrockNode::~BedrockNode() {
     // Note any orphaned commands; this list should ideally be empty
     list<string> commandList;
@@ -76,7 +71,6 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
-// --------------------------------------------------------------------------
 void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Update the parent and attributes
     SQLiteNode::postSelect(fdm, nextActivity);
@@ -84,8 +78,6 @@ void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
 bool BedrockNode::isReadOnly() { return _readOnly; }
 
-/// Read-Only Command Definitions
-/// ------------------------------
 bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
@@ -94,13 +86,12 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
     // Assume success; will throw failure if necessary
-    response.methodLine = "200 OK";
     try {
         // Loop across the plugins to see which wants to take this
         bool pluginPeeked = false;
-        SFOREACH (list<Plugin*>, *Plugin::g_registeredPluginList, pluginIt) {
+        SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
             // See if it peeks this
-            Plugin* plugin = *pluginIt;
+            BedrockPlugin* plugin = *pluginIt;
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
                 // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
@@ -116,6 +107,11 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             return false; // Not done
         }
 
+        // If no response was sent, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
+        }
+
         // Success.  If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
         if (!content.empty()) {
@@ -129,30 +125,17 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             }
         }
     } catch (const char* e) {
-        // Error -- roll back the database and return the error
-        const string& msg = "Error processing read-only command '" + request.methodLine + "' (" + e + "), ignoring: " +
-                            request.serialize();
-        if (SContains(e, "_ALERT_"))
-            SALERT(msg);
-        else if (SContains(e, "_WARN_"))
-            SWARN(msg);
-        else if (SContains(e, "_HMMM_"))
-            SHMMM(msg);
-        else if (SStartsWith(e, "50"))
-            SALERT(msg); // Alert on 500 level errors.
-        else
-            SINFO(msg);
-        response.methodLine = e;
+        handleCommandException(db, command, e, false);
+    } catch (const string e) {
+        handleCommandException(db, command, e, false);
+    } catch (...) {
+        handleCommandException(db, command, "", false);
     }
 
     // If we get here, it means the command is fully completed.
     return true;
 }
 
-// --------------------------------------------------------------------------
-///
-/// Read-Write Command Definitions
-/// -------------------------------
 void BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
@@ -170,8 +153,8 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
             SINFO("Upgrading database");
-            for_each(Plugin::g_registeredPluginList->begin(), Plugin::g_registeredPluginList->end(),
-                     [this, &db](Plugin* plugin) {
+            for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
+                     [this, &db](BedrockPlugin* plugin) {
                          // See if it processes this
                          if (plugin->enabled()) {
                              plugin->upgradeDatabase(this, db);
@@ -182,9 +165,9 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // --------------------------------------------------------------------------
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
-            SFOREACH (list<Plugin*>, *Plugin::g_registeredPluginList, pluginIt) {
+            SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
                 // See if it processes this
-                Plugin* plugin = *pluginIt;
+                BedrockPlugin* plugin = *pluginIt;
                 if (plugin->enabled() && plugin->processCommand(this, db, command)) {
                     // Processed it!
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
@@ -209,6 +192,11 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
         else if (!db.prepare())
             throw "501 Failed to prepare transaction";
 
+        // If no response was sent, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
+        }
+
         // Success, this command will be committed.
         SINFO("Responding '" << response.methodLine << "' to '" << request.methodLine << "'.");
 
@@ -223,57 +211,52 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                 response.content = newContent;
             }
         }
-
     } catch (const char* e) {
-        // Error -- roll back the database and return the error
-        db.rollback();
-        const string& msg =
-            "Error processing command '" + request.methodLine + "' (" + e + "), ignoring: " + request.serialize();
-        if (SContains(e, "_ALERT_"))
-            SALERT(msg);
-        else if (SContains(e, "_WARN_"))
-            SWARN(msg);
-        else if (SContains(e, "_HMMM_"))
-            SHMMM(msg);
-        else if (SStartsWith(e, "50"))
-            SALERT(msg); // Alert on 500 level errors.
-        else
-            SINFO(msg);
-        response.methodLine = e;
+        handleCommandException(db, command, e, true);
+    } catch (const string e) {
+        handleCommandException(db, command, e, true);
+    } catch (...) {
+        handleCommandException(db, command, "", true);
     }
 }
 
-// --------------------------------------------------------------------------
+void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing) {
+    // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
+    if (wasProcessing) {
+        db.rollback();
+    }
+
+    const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e + "), ignoring: " +
+                        command->request.serialize();
+
+    if (SContains(e, "_ALERT_")) {
+        SALERT(msg);
+    } else if (SContains(e, "_WARN_")) {
+        SWARN(msg);
+    } else if (SContains(e, "_HMMM_")) {
+        SHMMM(msg);
+    } else if (SStartsWith(e, "50")) {
+        SALERT(msg); // Alert on 500 level errors.
+    } else {
+        SINFO(msg);
+    }
+
+    // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
+    // we'll use the text of the error.
+    if (command->response.methodLine == "") {
+        command->response.methodLine = e;
+    }
+}
+
 // Notes that we failed to process something
 void BedrockNode::_abortCommand(SQLite& db, Command* command) {
     // Note the failure in the response
     command->response.methodLine = "500 ABORTED";
 }
 
-// --------------------------------------------------------------------------
 void BedrockNode::_cleanCommand(Command* command) {
     if (command->httpsRequest) {
-        if (command->httpsRequest->owner) {
-            command->httpsRequest->owner->closeTransaction(command->httpsRequest);
-        } else {
-            SERROR("No owner for this https request " << command->httpsRequest->fullResponse.methodLine);
-        }
+        command->httpsRequest->owner.closeTransaction(command->httpsRequest);
         command->httpsRequest = 0;
     }
-}
-
-// --------------------------------------------------------------------------
-BedrockNode::Plugin::Plugin() {
-    // Auto-register this instance into the global static list, initializing
-    // the list if that hasn't yet been done. This just makes it available for
-    // enabling via the command line: by default all plugins start out
-    // disabled.
-    //
-    // **NOTE: This code runs *before* main().  This means that libstuff
-    //         hasn't yet been initialized, so there is no logging.
-    if (!g_registeredPluginList) {
-        g_registeredPluginList = new list<BedrockNode::Plugin*>;
-    }
-    _enabled = false;
-    g_registeredPluginList->push_back(this);
 }

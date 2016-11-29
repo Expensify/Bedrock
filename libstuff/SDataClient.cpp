@@ -41,7 +41,7 @@ SDataClient::~SDataClient() {
         SWARN("Prematurely closing connection to '" << connection->host << "' while waiting for response to '"
                                                     << connection->request.methodLine << "'");
         closeSocket(connection->s);
-        SDELETE(connection);
+        delete connection;
     }
     activeConnectionList.clear();
     SFOREACH (list<Connection*>, idleConnectionList, connectionIt) {
@@ -49,7 +49,7 @@ SDataClient::~SDataClient() {
         Connection* connection = *connectionIt;
         SINFO("Closing connection to '" << connection->host << "'");
         closeSocket(connection->s);
-        SDELETE(connection);
+        delete connection;
     }
     idleConnectionList.clear();
 }
@@ -91,7 +91,7 @@ void SDataClient::postSelect(fd_map& fdm) {
 
             // Clean it up
             closeSocket(connection->s);
-            SDELETE(connection);
+            delete connection;
             activeConnectionList.erase(lastConnectionIt);
         }
     }
@@ -106,7 +106,7 @@ void SDataClient::postSelect(fd_map& fdm) {
             // Clean this up
             SDEBUG("Idle connection to '" << connection->host << "' died, closing.");
             closeSocket(connection->s);
-            SDELETE(connection);
+            delete connection;
             idleConnectionList.erase(lastConnectionIt);
         }
     }

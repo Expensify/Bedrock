@@ -7,7 +7,7 @@
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
 // Declare the class we're going to implement below
-class BedrockPlugin_Status : public BedrockNode::Plugin {
+class BedrockPlugin_Status : public BedrockPlugin {
   public:
     virtual string getName() { return "Status"; }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
@@ -85,7 +85,18 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         // - Status( )
         //
         //     Give us some data on this server.
-        //
+        list<string> plugins;
+        for_each(g_registeredPluginList->begin(), g_registeredPluginList->end(), [&](BedrockPlugin* plugin){
+            STable pluginData;
+            pluginData["name"] = plugin->getName();
+            STable pluginInfo = plugin->getInfo();
+            for_each(pluginInfo.begin(), pluginInfo.end(), [&](pair<string, string> row){
+                pluginData[row.first] = row.second;
+            });
+            plugins.push_back(SComposeJSONObject(pluginData));
+        });
+        content["plugins"] = SComposeJSONArray(plugins);
+
         content["state"] = SQLCStateNames[node->getState()];
         content["hash"] = node->getHash();
         content["commitCount"] = SToStr(node->getCommitCount());

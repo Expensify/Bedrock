@@ -57,7 +57,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
                        const string& synchronousCommands, bool readOnly, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize) {
-    SASSERT(readOnly || port > 0);
+    SASSERT(readOnly || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
@@ -148,8 +148,8 @@ bool SQLiteNode::shutdownComplete() {
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
                 string hasHTTPS = (command->httpsRequest) ? "true" : "false";
-                SINFO("Escalated command remaining at shutdown(" << name << "): "
-                      << command->request.methodLine << ". Created: " << command->creationTimestamp
+                SINFO("Escalated command remaining at shutdown("
+                      << name << "): " << command->request.methodLine << ". Created: " << command->creationTimestamp
                       << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
             });
         }
@@ -451,7 +451,7 @@ void SQLiteNode::closeCommand(Command* command) {
 
     // Finish the cleanup
     _processedCommandList.remove(command);
-    SDELETE(command);
+    delete command;
 }
 
 // --------------------------------------------------------------------------
@@ -596,11 +596,11 @@ void SQLiteNode::_finishCommand(Command* command) {
         escalate["ID"] = command->id;
         escalate.content = command->response.serialize();
         _sendToPeer(command->initiator, escalate);
-        SDELETE(command);
+        delete command;
     } else if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
         // Special command, just delete it.
         SINFO("Database upgrade complete");
-        SDELETE(command);
+        delete command;
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
         _processedCommandList.push_back(command);
@@ -1833,7 +1833,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
 
                 // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRand64() % STIME_US_PER_M * 5;
+                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
             }
         } catch (const char* e) {
             // Transaction failed
@@ -2306,7 +2306,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 SASSERTWARN(_state == SQLC_MASTERING || _state == SQLC_STANDINGDOWN);
                 SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
                 commandList->erase(commandIt);
-                SDELETE(command);
+                delete command;
             }
         }
     }
@@ -2338,7 +2338,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 SASSERT(peer->s);
                 _sendToPeer(peer, rollback);
             }
-        SDELETE(_currentCommand);
+        delete _currentCommand;
+        _currentCommand = 0;
     }
 }
 
@@ -2382,9 +2383,9 @@ void SQLiteNode::_changeState(SQLCState newState) {
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
         if (newState == SQLC_SEARCHING || newState == SQLC_STANDINGUP || newState == SQLC_SUBSCRIBING)
-            timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRand64() % STIME_US_PER_S * 5;
+            timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         else if (newState == SQLC_SYNCHRONIZING)
-            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRand64() % STIME_US_PER_M * 5;
+            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
         else
             timeout = 0;
         SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
@@ -2431,7 +2432,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
                         aborted["Reason"] = "Standing down";
                         _sendToPeer(command->initiator, aborted);
                         commandList->erase(commandIt);
-                        SDELETE(command);
+                        delete command;
                     }
                 }
             }
@@ -2491,7 +2492,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = _db.getCommitCount();
         if (!sendAll)
-            toIndex = SMin(toIndex, fromIndex + 100); // 100 transactions at a time
+            toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         if (!_db.getCommits(fromIndex, toIndex, result))
             throw "error getting commits";
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)

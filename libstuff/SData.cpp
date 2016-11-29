@@ -70,7 +70,7 @@ bool SData::isSet(const string& name) const {
 // --------------------------------------------------------------------------
 int SData::calc(const string& name) const {
     // Forcing 32 bitness here.
-    return (int)SMin<int64_t>(calc64(name), 0x7fffffffL);
+    return min((long)calc64(name), (long)0x7fffffffL);
 }
 
 // --------------------------------------------------------------------------

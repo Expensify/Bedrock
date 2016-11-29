@@ -4,6 +4,7 @@
 ///
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
+#include "BedrockPlugin.h"
 
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
@@ -89,7 +90,7 @@ void BedrockServer_WorkerThread(void* _data) {
             // Block until work is available.
             fd_map fdm;
             int maxS = queuedRequests.preSelect(fdm);
-            maxS = SMax(directMessages.preSelect(fdm), maxS);
+            maxS = max(directMessages.preSelect(fdm), maxS);
             S_poll(fdm, STIME_US_PER_S);
             queuedRequests.postSelect(fdm);
             directMessages.postSelect(fdm);
@@ -186,10 +187,12 @@ void BedrockServer_WorkerThread(void* _data) {
             });
 
             int maxS = node.preSelect(fdm);
-            maxS = SMax(queuedEscalatedRequests.preSelect(fdm), maxS);
-            maxS = SMax(directMessages.preSelect(fdm), maxS);
+            maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
+            maxS = max(directMessages.preSelect(fdm), maxS);
             const uint64_t now = STimeNow();
-            S_poll(fdm, SMax(nextActivity, now) - now);
+            data->server->pollTimer.startPoll();
+            S_poll(fdm, max(nextActivity, now) - now);
+            data->server->pollTimer.stopPoll();
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
@@ -238,13 +241,27 @@ void BedrockServer_WorkerThread(void* _data) {
             }
         }
 
+        // We're shutting down, do the final performance log.
+        data->server->pollTimer.log();
+
         // Update the state one last time when the writing replication thread exits.
-        data->replicationState.set(node.getState());
+        SQLCState state = node.getState();
+        if (state > SQLC_WAITING) {
+            // This is because the graceful shutdown timer fired and node.shutdownComplete() returned `true` above, but
+            // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
+            // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
+            SWARN("Write thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
+            state = SQLC_SEARCHING;
+        } else {
+            SINFO("Write thread exiting, setting state to: " << state);
+        }
+        data->replicationState.set(state);
         data->replicationCommitCount.set(node.getCommitCount());
     }
 
     // Done!
     SINFO("Thread exiting");
+    data->finished = true;
 }
 
 // --------------------------------------------------------------------------
@@ -260,10 +277,10 @@ BedrockServer::BedrockServer(const SData& args)
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : SVERSION;
 
     // Output the list of plugins compiled in
-    map<string, BedrockNode::Plugin*> registeredPluginMap;
-    SFOREACH (list<BedrockNode::Plugin*>, *BedrockNode::Plugin::g_registeredPluginList, pluginIt) {
+    map<string, BedrockPlugin*> registeredPluginMap;
+    SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
         // Add one more plugin
-        BedrockNode::Plugin* plugin = *pluginIt;
+        BedrockPlugin* plugin = *pluginIt;
         const string& pluginName = SToLower(plugin->getName());
         SINFO("Registering plugin '" << pluginName << "'");
         registeredPluginMap[pluginName] = plugin;
@@ -275,7 +292,7 @@ BedrockServer::BedrockServer(const SData& args)
     SFOREACH (list<string>, pluginNameList, pluginNameIt) {
         // Enable the named plugin
         const string& pluginName = SToLower(*pluginNameIt);
-        BedrockNode::Plugin* plugin = registeredPluginMap[pluginName];
+        BedrockPlugin* plugin = registeredPluginMap[pluginName];
         if (!plugin)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
@@ -302,7 +319,7 @@ BedrockServer::BedrockServer(const SData& args)
     }
 
     // Add as many read threads as requested
-    int readThreads = SMax(1, _args.calc("-readThreads"));
+    int readThreads = max(1, _args.calc("-readThreads"));
     SINFO("Starting " << readThreads << " read threads (" << args["-readThreads"] << ")");
     for (int c = 0; c < readThreads; ++c) {
         // Add this read thread
@@ -334,13 +351,13 @@ BedrockServer::~BedrockServer() {
     // Shut down the threads
     SINFO("Closing write thread '" << _writeThread->name << "'");
     SThreadClose(_writeThread->thread);
-    SDELETE(_writeThread);
+    delete _writeThread;
     SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
         // Close this thread
         Thread* readThread = *readThreadIt;
         SINFO("Closing read thread '" << readThread->name << "'");
         SThreadClose(readThread->thread);
-        SDELETE(readThread);
+        delete readThread;
     }
     _readThreadList.clear();
     SINFO("Threads closed.");
@@ -349,8 +366,47 @@ BedrockServer::~BedrockServer() {
 // --------------------------------------------------------------------------
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
-    return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
-           _queuedEscalatedRequests.empty() && _processedResponses.empty();
+    bool gs = _nodeGracefulShutdown.get();
+    bool rs = (_replicationState.get() <= SQLC_WAITING);
+    bool qr = _queuedRequests.empty();
+    bool qe = _queuedEscalatedRequests.empty();
+    bool pr = _processedResponses.empty();
+
+    // Original code - restore once shutdown issue has been diagnosed.
+    //return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
+    //       _queuedEscalatedRequests.empty() && _processedResponses.empty();
+
+    bool retVal = false;
+
+    // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
+    // or that nothing is.
+    if (gs) {
+        if (rs && qr && qe && pr) {
+            retVal = true;
+        } else {
+            SINFO("Conditions that failed and are blocking shutdown: " <<
+                  (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
+                  (qr ? "" : "_queuedRequests.empty(), ") <<
+                  (qe ? "" : "_queuedEscalatedRequests.empty(), ") <<
+                  (pr ? "" : "_processedResponses.empty(), ") <<
+                  "returning FALSE in shutdownComplete");
+        }
+
+        // Count how many threads we have that are still running.
+        int remainingThreads = 0;
+        if(!_writeThread->finished) {
+            remainingThreads++;
+        }
+        for_each(_readThreadList.begin(), _readThreadList.end(), [&](Thread* thread){
+            if (!thread->finished) {
+                remainingThreads++;
+            }
+        });
+
+        SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
+    }
+
+    return retVal;
 }
 
 // --------------------------------------------------------------------------
@@ -387,11 +443,25 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         suppressCommandPort(false);
     }
 
-    if (!_suppressCommandPort && port < 0 && (state == SQLC_MASTERING || state == SQLC_SLAVING) &&
+    if (!_suppressCommandPort && portList.empty() && (state == SQLC_MASTERING || state == SQLC_SLAVING) &&
         !_nodeGracefulShutdown.get()) {
         // Open the port
         SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
         openPort(_args["-serverHost"]);
+
+        // Open any plugin ports on enabled plugins
+        for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
+                 [&](BedrockPlugin* plugin) {
+                     if (plugin->enabled()) {
+                         string portHost = plugin->getPort();
+                         if (!portHost.empty()) {
+                             // Open the port and associate it with the plugin
+                             SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                             Port* port = openPort(portHost);
+                             _portPluginMap[port] = plugin;
+                         }
+                     }
+                 });
     }
 
     // **NOTE: We leave the port open between startup and shutdown, even if we enter a state where
@@ -438,17 +508,30 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 SINFO("Beginning graceful shutdown due to '"
                       << SGetSignalNames(sigmask) << "', closing command port on '" << _args["-serverHost"] << "'");
                 _nodeGracefulShutdown.set(true);
-                closePort();
+                closePorts();
             }
         }
     }
 
     // Accept any new connections
     Socket* s = 0;
-    while ((s = acceptSocket())) {
-        // Accepted a new socket, see if we can read anything on it
+    Port* acceptPort = 0;
+    while ((s = acceptSocket(acceptPort))) {
+        // Accepted a new socket
         // **NOTE: BedrockNode doesn't need to keep a new list; we'll just
         //         reuse the STCPManager::socketList
+
+        // Look up the plugin that owns this port (if any)
+        if (SContains(_portPluginMap, acceptPort)) {
+            BedrockPlugin* plugin = _portPluginMap[acceptPort];
+            // Allow the plugin to process this
+            SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
+            plugin->onPortAccept(s);
+
+            // Remember that this socket is owned by this plugin
+            SASSERT(!s->data);
+            s->data = plugin;
+        }
     }
 
     // Process any new activity from incoming sockets
@@ -506,36 +589,66 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 }
             }
         } else if (s->state == STCP_CONNECTED) {
-            // Get any new requests
-            int requestSize = 0;
-            SData request;
-            while ((requestSize = request.deserialize(s->recvBuffer))) {
-                // Set the priority if supplied by the message.
-                SAUTOPREFIX(request["requestID"]);
-                SConsumeFront(s->recvBuffer, requestSize);
+            // Is this socket owned by a plugin?
+            BedrockPlugin* plugin = (BedrockPlugin*)s->data;
+            if (plugin) {
+                // Let the plugin handle it
+                SData request;
+                bool keepAlive = plugin->onPortRecv(s, request);
 
-                // Add requestCount and queue it.
-                SINFO("Received '" << request.methodLine << "', processing.");
-                uint64_t requestCount = ++_requestCount;
-                request["requestCount"] = SToStr(requestCount);
-                if (request["unique"].empty() && request["creationTimestamp"].empty())
+                // Did it trigger an internal request?
+                if (!request.empty()) {
+                    // Queue the request, and note that it came from this plugin
+                    // such that we can pass it back to it when done
+                    SINFO("Plugin '" << plugin->getName() << "' queuing internal request '" << request.methodLine
+                                     << "'");
+                    uint64_t requestCount = ++_requestCount;
+                    request["plugin"] = plugin->getName();
+                    request["requestCount"] = SToStr(requestCount);
                     _queuedRequests.push(request);
-                else
-                    _queuedEscalatedRequests.push(request);
 
-                // Either shut down the socket or store it so we can eventually write out the response.
-                if (SIEquals(request["Connection"], "forget")) {
-                    // Respond immediately to make it clear we successfully
-                    // queued it, but don't add to the socket map as we don't
-                    // care about the answer
-                    SINFO("Firing and forgetting '" << request.methodLine << "'");
-                    SData response("202 Successfully queued");
-                    s->send(response.serialize());
-                } else {
-                    // Queue for later response
-                    SINFO("Recording '" << request.methodLine << "' as requestCount #" << requestCount
-                                        << " for later response.");
-                    _requestCountSocketMap[requestCount] = s;
+                    // Are we keeping this socket alive for the response?
+                    if (keepAlive) {
+                        // Remember which socket on which to send the response
+                        _requestCountSocketMap[requestCount] = s;
+                    }
+                }
+
+                // Do we keep this connection alive or shut it down?
+                if (!keepAlive) {
+                    // Begin shutting down the socket
+                    SINFO("Plugin '" << plugin->getName() << "' shutting down socket to '" << s->addr << "'");
+                    shutdownSocket(s, SHUT_WR);
+                }
+            } else {
+                // Get any new requests
+                int requestSize = 0;
+                SData request;
+                while ((requestSize = request.deserialize(s->recvBuffer))) {
+                    // Set the priority if supplied by the message.
+                    SConsumeFront(s->recvBuffer, requestSize);
+
+                    // Add requestCount and queue it.
+                    uint64_t requestCount = ++_requestCount;
+                    request["requestCount"] = SToStr(requestCount);
+                    if (request["unique"].empty() && request["creationTimestamp"].empty())
+                        _queuedRequests.push(request);
+                    else
+                        _queuedEscalatedRequests.push(request);
+
+                    // Either shut down the socket or store it so we can eventually write out the response.
+                    if (SIEquals(request["Connection"], "forget")) {
+                        // Respond immediately to make it clear we successfully
+                        // queued it, but don't add to the socket map as we don't
+                        // care about the answer
+                        SINFO("Firing and forgetting '" << request.methodLine << "'");
+                        SData response("202 Successfully queued");
+                        s->send(response.serialize());
+                    } else {
+                        // Queue for later response
+                        SINFO("Waiting for '" << request.methodLine << "' to complete.");
+                        _requestCountSocketMap[requestCount] = s;
+                    }
                 }
             }
         }
@@ -547,7 +660,6 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         SData response = _processedResponses.pop();
         if (response.empty())
             break;
-        SAUTOPREFIX(response["request.requestID"]);
 
         // Calculate how long it took to process this command
         uint64_t totalTime = STimeNow() - response.calc64("request.creationTimestamp");
@@ -591,37 +703,55 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         if (totalTime > 4000 * STIME_US_PER_MS && !SIEquals(response["request.Connection"], "wait"))
             SWARN("Slow command (high latency) " << commandStatus);
 
-        // If we have a socket, deliver the response
-        if (s) {
-            // Deliver the response and close the connection if requested.
-            // Also scrub the request.* headers in the response. Those were put
-            // there so when dealing with the Response SData we has some insight
-            // into the original request.
-            // **FIXME: This is a bit of a hack; find another way
-            bool closeSocket = SIEquals(response["request.Connection"], "close");
-            for (map<string, string>::iterator it = response.nameValueMap.begin(); it != response.nameValueMap.end();
-                 /* no inc. handled in loop body*/)
-                if (SStartsWith(it->first, "request."))
-                    response.nameValueMap.erase(it++); // Notice post inc.
-                else
-                    ++it;
-            s->send(response.serialize());
-            _requestCountSocketMap.erase(socketIt);
-            if (closeSocket)
+        // Was this command queued by plugin?
+        BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
+        if (plugin) {
+            // Let the plugin handle it
+            SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
+                             << response["request.methodLine"] << "'");
+            if (!plugin->onPortRequestComplete(response, s)) {
+                // Begin shutting down the socket
+                SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
                 shutdownSocket(s, SHUT_RD);
+            }
         } else {
-            // We have no socket.  This is fine if it's "Connection: forget",
-            // otherwise it could be a problem -- even a premature
-            // disconnect should clean it up before it gets here.
-            if (!SIEquals(response["request.Connection"], "forget"))
-                SWARN("Cannot deliver response for request '" << response["request.methodLine"] << "' #"
-                                                              << requestCount);
+            // No plugin, use default behavior.  If we have a socket, deliver the response
+            if (s) {
+                // Deliver the response and close the connection if requested.
+                // Also scrub the request.* headers in the response. Those were put
+                // there so when dealing with the Response SData we has some insight
+                // into the original request.
+                // **FIXME: This is a bit of a hack; find another way
+                bool closeSocket = SIEquals(response["request.Connection"], "close");
+                for (map<string, string>::iterator it = response.nameValueMap.begin();
+                     it != response.nameValueMap.end();
+                     /* no inc. handled in loop body*/)
+                    if (SStartsWith(it->first, "request."))
+                        response.nameValueMap.erase(it++); // Notice post inc.
+                    else
+                        ++it;
+                s->send(response.serialize());
+                if (closeSocket)
+                    shutdownSocket(s, SHUT_RD);
+            } else {
+                // We have no socket.  This is fine if it's "Connection: forget",
+                // otherwise it could be a problem -- even a premature
+                // disconnect should clean it up before it gets here.
+                if (!SIEquals(response["request.Connection"], "forget"))
+                    SWARN("Cannot deliver response for request '" << response["request.methodLine"] << "' #"
+                                                                  << requestCount);
+            }
+        }
+
+        // If there is a socket, it's no longer associated with this request
+        if (socketIt != _requestCountSocketMap.end()) {
+            _requestCountSocketMap.erase(socketIt);
         }
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for_each(BedrockNode::Plugin::g_registeredPluginList->begin(), BedrockNode::Plugin::g_registeredPluginList->end(),
-             [&](BedrockNode::Plugin* plugin) {
+    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
+             [&](BedrockPlugin* plugin) {
                  for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
                      if (timer->ding()) {
                          plugin->timerFired(timer);
@@ -644,11 +774,11 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
     // Process accordingly
     _suppressCommandPort = suppress;
     if (suppress) {
-        // Close the command port (if open) and suppress it such that it
+        // Close the command port, and all plugin's ports.
         // won't reopen.
         SHMMM("Suppressing command port");
-        if (port)
-            closePort();
+        if (!portList.empty())
+            closePorts();
     } else {
         // Clearing past suppression, but don't reopen.  (It's always safe
         // to close, but not always safe to open.)
