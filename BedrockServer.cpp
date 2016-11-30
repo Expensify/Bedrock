@@ -1,7 +1,4 @@
-/// bedrock/BedrockServer.cpp
-/// ===================
-/// Manages connections to a single instance of the bedrock server.
-///
+// Manages connections to a single instance of the bedrock server.
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
@@ -12,7 +9,7 @@ void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // responses.  The response needs to know a few things about the original
     // request, like the requestCount, connect (so it knows whether to shut
     // down the socket), etc so copy all the request details into the response
-    // so when the main thread is ready to write backa to the orignal socket,
+    // so when the main thread is ready to write back to the original socket,
     // it has some insight.
     SData& request = command->request;
     SData& response = command->response;
@@ -699,9 +696,14 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         if (processingTime > 2000 * STIME_US_PER_MS)
             SWARN("Slow command (bedrock blocking) " << commandStatus);
 
-        // Warn on high latency commands.  Lets not include ones that needed to send out other requests though.
-        if (totalTime > 4000 * STIME_US_PER_MS && !SIEquals(response["request.Connection"], "wait"))
+        // Warn on high latency commands.
+        // Let's not include ones that needed to send out other requests, or that specifically told us they're slow.
+        if (totalTime > 4000 * STIME_US_PER_MS
+            && !SIEquals(response["request.Connection"], "wait")
+            && !SIEquals(response["latency"],            "high"))
+        {
             SWARN("Slow command (high latency) " << commandStatus);
+        }
 
         // Was this command queued by plugin?
         BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
