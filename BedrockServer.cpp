@@ -698,7 +698,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
         // Warn on high latency commands.
         // Let's not include ones that needed to send out other requests, or that specifically told us they're slow.
-        if (totalTime > 400 * STIME_US_PER_MS
+        if (totalTime > 4000 * STIME_US_PER_MS
             && !SIEquals(response["request.Connection"], "wait")
             && !SIEquals(response["latency"],            "high"))
         {
