@@ -177,9 +177,11 @@ bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             SINFO("Processing query '" << query << "'");
 
             // See if it's asking for a global variable
-            string varName;
-            string regExp = "^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$";
-            if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &varName)) {
+            regex regExp = regex("^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$",
+                                 regex_constants::ECMAScript | regex_constants::icase);
+            smatch results;
+            if (regex_match(query, results, regExp)) {
+                string varName = results[1];
                 // Loop across and look for it
                 SQResult result;
                 result.headers.push_back(varName);
