@@ -5,7 +5,14 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
 #include "BedrockServer.h"
+#include "BedrockPlugin.h"
+#include "plugins/Cache.h"
+#include "plugins/DB.h"
+#include "plugins/Jobs.h"
+#include "plugins/Status.h"
+#include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
+#include <dlfcn.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -64,6 +71,63 @@ void BackupDB(const string& dbPath) {
         SASSERT(SFileCopy(dbShmPath, BACKUP_DIR + string(basename((char*)dbShmPath.c_str()))));
         SINFO("Finished " << dbFile << "-shm database backup.");
     }
+}
+
+list<string> loadPlugins(list<string> plugins) {
+
+    // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
+    // Those are stored here. TODO: It would probably make more sense for this to be a set, to avoid duplicates.
+    list <string> postProcessedNames;
+
+    // Instantiate all of our built-in plugins.
+    map<string, BedrockPlugin*> standardPluginMap = {
+        {"DB",     new BedrockPlugin_DB()},
+        {"STATUS", new BedrockPlugin_Status()},
+        {"JOBS",   new BedrockPlugin_Jobs()},
+        {"CACHE",  new BedrockPlugin_Cache()},
+        {"MYSQL",  new BedrockPlugin_MySQL()}
+    };
+    for_each(plugins.begin(), plugins.end(), [&](string pluginName) {
+        // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
+        if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
+            postProcessedNames.push_back(pluginName);
+            return;
+        }
+
+        // Any non-standard plugin is loaded from a shared library. If a name is passed without a trailing '.so', we
+        // will add it, and look for a file with that name. A file should be passed with either a complete absolute
+        // path, or the file should exist in a place that dlopen() can find it (like, /usr/lib).
+
+        // We look for the 'base name' of the plugin. I.e., the filename excluding a path or extension. We'll look for
+        // a symbol based on this name to call to instantiate our plugin.
+        size_t slash = pluginName.rfind('/');
+        size_t dot = pluginName.find('.', slash);
+        string name = pluginName.substr(slash + 1, dot - slash - 1);
+        string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
+
+        // Save the base name of the plugin.
+        postProcessedNames.push_back(name);
+
+        // Add the file extension if it's missing.
+        if (!SEndsWith(pluginName, ".so")) {
+            pluginName += ".so";
+        }
+
+        // Open the library.
+        void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
+        if(!lib) {
+            cout << dlerror() << endl;
+        } else {
+            void* sym = dlsym(lib, symbolName.c_str());
+            if (!sym) {
+                cout << "Couldn't find symbol " << symbolName << endl;
+            } else {
+                // Call the plugin registration function with the same name.
+                ((void(*)()) sym)();
+            }
+        }
+    });
+    return postProcessedNames;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -200,6 +264,8 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
+
+    args["-plugins"] = SComposeList(loadPlugins(SParseList(args["-plugins"])));
 
     // Reset the database if requested
     if (args.isSet("-clean")) {
