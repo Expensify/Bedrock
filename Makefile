@@ -106,7 +106,7 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 
 # We use the same library paths and required libraries for both binaries.
 LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lbedrock -lstuff -ldl -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
 # The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
 # times in parallel.

@@ -12,6 +12,7 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 #include <poll.h>
 #include <time.h>
 #include <libgen.h>   // for basename()
@@ -41,7 +42,6 @@ void SInitialize();
 #include <stdlib.h>
 #include <mutex>
 #include <cctype>
-#include <regex>
 using namespace std;
 
 // Useful STL macros
@@ -415,7 +415,10 @@ bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 // Perform a full regex match. The '^' and '$' symbols are implicit.
-bool SREMatch(const string& regExp, const string& s);
+inline bool SREMatch(const string& regExp, const string& s) { return pcrecpp::RE(regExp).FullMatch(s); }
+inline bool SREMatch(const string& regExp, const string& s, string& match) {
+    return pcrecpp::RE(regExp).FullMatch(s, &match);
+}
 
 // Case testing and conversion
 string SToLower(string value);

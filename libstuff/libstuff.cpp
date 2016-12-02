@@ -2267,7 +2267,3 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
         return false; // Table already exists with correct definition
     }
 }
-
-bool SREMatch(const string& regExp, const string& s) {
-    return regex_match(s, regex(regExp));
-}
