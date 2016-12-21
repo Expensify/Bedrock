@@ -37,7 +37,7 @@ void STCPServer::closePorts() {
         }
         portList.clear();
     } else {
-        SWARN("Ports already closed.");
+        SHMMM("Ports already closed.");
     }
 }
 
