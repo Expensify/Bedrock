@@ -8,4 +8,8 @@ class BedrockPlugin_Status : public BedrockPlugin {
   public:
     virtual string getName() { return "Status"; }
     virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
+    void initialize(const SData& args);
+
+  private:
+    const SData* _args = 0;
 };

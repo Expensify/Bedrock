@@ -271,7 +271,7 @@ BedrockServer::BedrockServer(const SData& args)
     _suppressCommandPort = false;
     _suppressCommandPortManualOverride = false;
 
-    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : SVERSION;
+    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
     // Output the list of plugins compiled in
     map<string, BedrockPlugin*> registeredPluginMap;
@@ -294,7 +294,6 @@ BedrockServer::BedrockServer(const SData& args)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
         plugin->enable(true);
-        plugin->initialize(args);
 
         // Add the plugin's SHTTPSManagers to our list.
         // As this is a list of lists, push_back will push a *copy* of the list onto our local list, meaning that the

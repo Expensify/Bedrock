@@ -87,7 +87,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         content["state"] = SQLCStateNames[node->getState()];
         content["hash"] = node->getHash();
         content["commitCount"] = SToStr(node->getCommitCount());
-        content["version"] = SVERSION;
+        content["version"] = _args ? (*_args)["version"] : "";
         content["priority"] = SToStr(node->getPriority());
         list<string> peerList;
         SFOREACH (list<BedrockNode::Peer*>, node->peerList, it) {
@@ -105,4 +105,12 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
 
     // Didn't recognize this command
     return false;
+}
+
+// Because we don't have 'node' here.
+#undef SLOGPREFIX
+#define SLOGPREFIX "{:" << getName() << "} "
+void BedrockPlugin_Status::initialize(const SData& args) {
+    SWARN("[TYLER] Initializing status.");
+    _args = &args;
 }
