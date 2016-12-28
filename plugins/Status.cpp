@@ -111,6 +111,5 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
 #undef SLOGPREFIX
 #define SLOGPREFIX "{:" << getName() << "} "
 void BedrockPlugin_Status::initialize(const SData& args) {
-    SWARN("[TYLER] Initializing status.");
     _args = &args;
 }
