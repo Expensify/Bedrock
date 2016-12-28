@@ -139,7 +139,7 @@ list<string> loadPlugins(SData& args) {
         auto info = plugin->getInfo();
         auto iterator = info.find("version");
         if (iterator != info.end()) {
-            versions.push_back(iterator->second);
+            versions.push_back(plugin->getName() + "_" + iterator->second);
         }
     }
     sort(versions.begin(), versions.end());
