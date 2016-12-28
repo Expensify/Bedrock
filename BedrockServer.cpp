@@ -123,7 +123,8 @@ void BedrockServer_WorkerThread(void* _data) {
             // Open this command -- it'll be peeked immediately
             const int64_t creationTimestamp = request.calc64("creationTimestamp");
             SINFO("Dispatching request '" << request.methodLine << "' (Connection: " << request["Connection"]
-                                          << ", creationTimestamp: " << creationTimestamp << ")");
+                                          << ", creationTimestamp: " << creationTimestamp
+                                          << ", priority: " << priority << ")");
 
             node.openCommand(request, priority, false, creationTimestamp);
 
