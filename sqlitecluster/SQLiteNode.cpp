@@ -23,7 +23,7 @@
 ///
 /// **FIXME**: Add test to measure how long it takes for master to stabalize
 ///
-/// **FIXME**: Add 'nextActivity' to update()
+/// **FIXME**: Add 'nextActivity' to update() (added to master's command processing)
 ///
 /// **FIXME**: If master dies before sending ESCALATE_RESPONSE (or if slave dies
 ///            before receiving it), then a command might have been committed to
@@ -1406,6 +1406,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 SASSERT(!_db.insideTransaction());
                                 _finishCommand(_currentCommand);
                                 _currentCommand = 0;
+                            }
+
+                            // If we've spent enough time processing commands, then it's time to peek/read
+                            // new commands from the socket.  https://github.com/Expensify/Expensify/issues/42345
+                            if (STimeNow() > nextActivity) {
+                                SINFO("Timeout reached while processing commands.  Exceeded by "
+                                    << (STimeNow() - nextActivity) << "ms");
+                                return false; // stop doing everything
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
