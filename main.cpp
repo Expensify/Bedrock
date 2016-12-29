@@ -73,7 +73,9 @@ void BackupDB(const string& dbPath) {
     }
 }
 
-list<string> loadPlugins(list<string> plugins) {
+
+list<string> loadPlugins(SData& args) {
+    list<string> plugins = SParseList(args["-plugins"]);
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
     // Those are stored here. TODO: It would probably make more sense for this to be a set, to avoid duplicates.
@@ -87,11 +89,12 @@ list<string> loadPlugins(list<string> plugins) {
         {"CACHE",  new BedrockPlugin_Cache()},
         {"MYSQL",  new BedrockPlugin_MySQL()}
     };
-    for_each(plugins.begin(), plugins.end(), [&](string pluginName) {
+
+    for (string pluginName : plugins) {
         // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
         if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
             postProcessedNames.push_back(pluginName);
-            return;
+            continue;
         }
 
         // Any non-standard plugin is loaded from a shared library. If a name is passed without a trailing '.so', we
@@ -126,7 +129,22 @@ list<string> loadPlugins(list<string> plugins) {
                 ((void(*)()) sym)();
             }
         }
-    });
+    }
+
+    // Initialize our version string.
+    vector<string> versions = {SVERSION};
+    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+        // We need to call initialize to let the plugin set its version info.
+        plugin->initialize(args);
+        auto info = plugin->getInfo();
+        auto iterator = info.find("version");
+        if (iterator != info.end()) {
+            versions.push_back(plugin->getName() + "_" + iterator->second);
+        }
+    }
+    sort(versions.begin(), versions.end());
+    args["version"] = SComposeList(versions, ":");
+
     return postProcessedNames;
 }
 
@@ -265,7 +283,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
 
-    args["-plugins"] = SComposeList(loadPlugins(SParseList(args["-plugins"])));
+    args["-plugins"] = SComposeList(loadPlugins(args));
 
     // Reset the database if requested
     if (args.isSet("-clean")) {
