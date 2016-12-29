@@ -23,7 +23,7 @@
 ///
 /// **FIXME**: Add test to measure how long it takes for master to stabalize
 ///
-/// **FIXME**: Add 'nextActivity' to update()
+/// **FIXME**: Add 'nextActivity' to update() [TYLER: Partially addressed?]
 ///
 /// **FIXME**: If master dies before sending ESCALATE_RESPONSE (or if slave dies
 ///            before receiving it), then a command might have been committed to
@@ -1397,6 +1397,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
                                 // we need to wait for quorum.  This keeps all the quorum logic in the same place.
+                                if (STimeNow() > nextActivity) {
+                                    SINFO("Timeout reached while processing (transaction) commands. Exceeded by "
+                                          << (STimeNow() - nextActivity) << "us");
+                                    return false;
+                                }
                                 return true;
                             } else {
                                 // Doesn't need to commit anything; done processing.
@@ -1409,6 +1414,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
+                            if (STimeNow() > nextActivity) {
+                                SINFO("Timeout reached while processing commands. Exceeded by "
+                                      << (STimeNow() - nextActivity) << "us");
+                                return false;
+                            }
                         }
                     }
 
