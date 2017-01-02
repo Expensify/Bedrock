@@ -185,6 +185,7 @@ int main(int argc, char* argv[]) {
         cout << "-?, -h, -help               Outputs instructions and exits" << endl;
         cout << "-version                    Outputs version and exits" << endl;
         cout << "-v                          Enables verbose logging" << endl;
+        cout << "-q                          Enables quiet logging" << endl;
         cout << "-clean                      Recreate a new database from scratch" << endl;
         cout << "-versionOverride <version>  Pretends to be a different version when talking to peers" << endl;
         cout << "-db             <filename>  Use a database with the given name (default 'bedrock.db')" << endl;
@@ -238,6 +239,9 @@ int main(int argc, char* argv[]) {
         // Verbose logging
         SINFO("Enabling verbose logging");
         SLogLevel(LOG_DEBUG);
+    } else if (args.isSet("-q")) {
+        // Quiet logging
+        SLogLevel(LOG_WARNING);
     }
     if (args.isSet("-test")) {
         // Run the test
