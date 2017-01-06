@@ -164,11 +164,12 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                             pong["Timestamp"] = message["Timestamp"];
                             peer->s->send(pong.serialize());
                         } else if (SIEquals(message.methodLine, "PONG")) {
-                            // Recevied the PONG; update our latency
-                            // estimate for this peer
-                            peer->latency = STimeNow() - message.calc64("Timestamp");
-                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency / STIME_US_PER_MS
-                                                              << "ms latency)");
+                            // Recevied the PONG; update our latency estimate for this peer.
+                            // We set a lower bound on this at 1, because even though it should be pretty impossible
+                            // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
+                            // peers.
+                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
+                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
                             _onMESSAGE(peer, message);

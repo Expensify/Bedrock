@@ -680,7 +680,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Wait until all connected (or failed) and logged in
             Peer* peer = *peerIt;
             bool permaSlave = peer->test("Permaslave");
-            bool loggedIn = peer->test("LoggedIn");
+
+            // We're only logged in of we've gotten a LOGIN message *and* a latency estimate.
+            bool loggedIn = peer->test("LoggedIn") && (peer->latency > 0);
 
             // Count how many full peers (non-permaslaves) we have
             numFullPeers += !permaSlave;
@@ -708,9 +710,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 // **NOTE: It takes a moment to measure peer latency,
                 //         so 0 means it's not yet set
                 bool peerIsSlaving = SIEquals((*peer)["State"], "SLAVING");
-                bool peerLatencyKnown = (peer->latency > 0);
                 bool peerIsFresherThanUs = (peer->calcU64("CommitCount") > _db.getCommitCount());
-                if (peerIsSlaving && peerLatencyKnown && peerIsFresherThanUs &&
+                if (peerIsSlaving && peerIsFresherThanUs &&
                     (!nearestSlave || peer->latency < nearestSlave->latency)) {
                     // Found a closer slave that has data we don't
                     nearestSlave = peer;
