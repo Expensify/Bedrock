@@ -203,6 +203,15 @@ class SQLiteNode : public STCPNode {
     void setQuroumCheckpoint(const int quroumCheckpoint) { _quorumCheckpoint = quroumCheckpoint; };
     int getQuorumCheckpoint() { return _quorumCheckpoint; };
 
+    // The peer we should sync from is recalculated every time we call this. If no other peer is logged in, or no
+    // logged in peer has a higher commitCount that we do, this will return null.
+    Peer* updateSyncPeer();
+
+    // Sorts peer/latency pairs by latency. Used internally by updateSyncPeer().
+    // Returns true if lhs is "closer" than rhs. Closer is the one with the lowest latency. Latency of 0 is higher than
+    // any other latency. If two peers have equal latency, the one with a higher CommitCount is closer.
+    static bool peerClosenessSort(const Peer* lhs, const Peer* rhs);
+
   protected:
     bool _readOnly;
     SQLite _db;

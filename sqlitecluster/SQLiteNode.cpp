@@ -675,14 +675,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
         Peer* freshestPeer = 0;
-        Peer* nearestSlave = 0;
         SFOREACH (list<Peer*>, peerList, peerIt) {
             // Wait until all connected (or failed) and logged in
             Peer* peer = *peerIt;
             bool permaSlave = peer->test("Permaslave");
-
-            // We're only logged in of we've gotten a LOGIN message *and* a latency estimate.
-            bool loggedIn = peer->test("LoggedIn") && (peer->latency > 0);
+            bool loggedIn = peer->test("LoggedIn");
 
             // Count how many full peers (non-permaslaves) we have
             numFullPeers += !permaSlave;
@@ -690,31 +687,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Count how many full peers are logged in
             numLoggedInFullPeers += (!permaSlave) && loggedIn;
 
-            // Find the freshest peer and fastest slave
+            // Find the freshest peer
             if (loggedIn) {
                 // The freshest peer is the one that has the most commits.
                 if (!freshestPeer || peer->calcU64("CommitCount") > freshestPeer->calcU64("CommitCount")) {
                     freshestPeer = peer;
-                }
-
-                // Additionally, if the remote peer is a slave AND
-                // higher commit count than us, is it nearer
-                // (latency-wise to us) than any other?  If so, we want
-                // to synchronize from it *even if* it's not the
-                // freshest.  (We'll get the rest from the master when
-                // we begin slaving, but by actively seeking out the
-                // fastest slave, we remove extraneous load from the
-                // master while also accelerating the synchronization
-                // by avoiding going over any WAN connections.)
-                //
-                // **NOTE: It takes a moment to measure peer latency,
-                //         so 0 means it's not yet set
-                bool peerIsSlaving = SIEquals((*peer)["State"], "SLAVING");
-                bool peerIsFresherThanUs = (peer->calcU64("CommitCount") > _db.getCommitCount());
-                if (peerIsSlaving && peerIsFresherThanUs &&
-                    (!nearestSlave || peer->latency < nearestSlave->latency)) {
-                    // Found a closer slave that has data we don't
-                    nearestSlave = peer;
                 }
             }
         }
@@ -759,24 +736,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // It has a higher commit count than us, synchronize.
         SASSERT(freshestPeerCommitCount > _db.getCommitCount());
         SASSERTWARN(!_syncPeer);
-        if (nearestSlave) {
-            // Always sync from the nearest slave (if available), even if
-            // it's not the freshest.  We'll catch up the difference when
-            // we slave from the master.
-            SINFO("SYNCHRONIZING from nearest slave '" << nearestSlave->name << " ("
-                                                       << nearestSlave->latency / STIME_US_PER_MS << "ms latency)");
-            _syncPeer = nearestSlave;
-        } else {
-            // No slave nearby, so let's just go to the freshest peer.  (We
-            // only go with the nearest peer if it's slaving, otherwise it
-            // might be out of sync with the master.  But if there is no
-            // master we go with the freshest, as we assume it's probably
-            // going to be the master.)
-            SINFO("SYNCHRONIZING from freshest peer '" << freshestPeer->name << " ("
-                                                       << freshestPeer->latency / STIME_US_PER_MS << "ms latency)");
-            _syncPeer = freshestPeer;
-        }
-        _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+        _sendToPeer(updateSyncPeer(), SData("SYNCHRONIZE"));
         _changeState(SQLC_SYNCHRONIZING);
         return true; // Re-update
     }
@@ -1841,7 +1801,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Synchronization underway, at commitCount #"
                       << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
                       << peerCommitCount - _db.getCommitCount() << " to go.");
-                _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+                _sendToPeer(updateSyncPeer(), SData("SYNCHRONIZE"));
 
                 // Also, extend our timeout so long as we're still alive
                 _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
@@ -2579,6 +2539,77 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
     // Did we get all our commits?
     if (commitsRemaining)
         throw "commits remaining at end";
+}
+
+bool SQLiteNode::peerClosenessSort(const Peer* lhs, const Peer* rhs)
+{
+    // Null pointers are never fast/close.
+    if (!lhs) {
+        return false;
+    }
+    if (!rhs) {
+        return true;
+    }
+
+    // If two peers have the same latency, then the one with the higher CommitCount is closest. This case is most
+    // likely in the event that we have no latency data for either peer.
+    if (lhs->latency == rhs->latency) {
+        return SToInt((*lhs)["CommitCount"]) > SToInt((*rhs)["CommitCount"]);
+    }
+
+    // If only one peer has 0 latency, the other is faster/closer.
+    if (!lhs->latency) {
+        return false;
+    }
+    if (!rhs->latency) {
+        return true;
+    }
+
+    // Both peers have latency data, and neither are 0.
+    return lhs->latency < rhs->latency;
+}
+
+SQLiteNode::Peer* SQLiteNode::updateSyncPeer()
+{
+    // Sets are stored in sorted order. This set uses peerClosenessSort as its comparator function.
+    set<Peer*, decltype(&peerClosenessSort)> latencies {peerClosenessSort};
+
+    uint64_t commitCount = _db.getCommitCount();
+    for (auto peer : peerList) {
+        // If any of these conditions are true, then we can't use this peer.
+        if (peer->test("Permaslave") ||                 // Peer is a permaslave
+            !peer->test("LoggedIn") ||                  // Peer is not logged in.
+            !SIEquals((*peer)["State"], "SLAVING") ||   // Peer is not slaving.
+            peer->calcU64("CommitCount") <= commitCount // Peer does not have a greater commit count than us.
+            ) {
+            continue;
+        }
+
+        // We insert in sorted order (see peerClosenessSort for details).
+        latencies.insert(peer);
+    }
+    
+    // The front one is the lowest.
+    Peer* newSyncPeer = latencies.empty() ? 0 : *latencies.begin();
+
+    // Log that we've changed peers.
+    if (_syncPeer != newSyncPeer) {
+        string from, to;
+        for (Peer* p : {_syncPeer, newSyncPeer}) {
+            string* dest = (p == _syncPeer) ? &from : &to;
+            if (p) {
+                *dest = p->name + " (CommitCount=" + (*p)["CommitCount"] + ", latency=" + to_string(p->latency) + "us)";
+            } else {
+                *dest = "(NONE)";
+            }
+        }
+        SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ".");
+
+        // And save the new sync peer internally.
+        _syncPeer = newSyncPeer;
+    }
+
+    return newSyncPeer;
 }
 
 // --------------------------------------------------------------------------
