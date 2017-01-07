@@ -736,7 +736,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // It has a higher commit count than us, synchronize.
         SASSERT(freshestPeerCommitCount > _db.getCommitCount());
         SASSERTWARN(!_syncPeer);
-        _sendToPeer(_updateSyncPeer(), SData("SYNCHRONIZE"));
+        _updateSyncPeer();
+        if (_syncPeer) {
+            _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+        } else {
+            SWARN("Updated to NULL _syncPeer when about to send SYNCHRONIZE. Going to WAITING.");
+            _changeState(SQLC_WAITING);
+            return true; // Re-update
+        }
         _changeState(SQLC_SYNCHRONIZING);
         return true; // Re-update
     }
@@ -1801,7 +1808,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Synchronization underway, at commitCount #"
                       << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
                       << peerCommitCount - _db.getCommitCount() << " to go.");
-                _sendToPeer(_updateSyncPeer(), SData("SYNCHRONIZE"));
+                _updateSyncPeer();
+                if (_syncPeer) {
+                    _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+                } else {
+                    SWARN("No usable _syncPeer but syncing not finished. Going to SEARCHING.");
+                    _changeState(SQLC_SEARCHING);
+                }
 
                 // Also, extend our timeout so long as we're still alive
                 _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
@@ -2541,17 +2554,13 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         throw "commits remaining at end";
 }
 
-SQLiteNode::Peer* SQLiteNode::_updateSyncPeer()
+void SQLiteNode::_updateSyncPeer()
 {
     Peer* newSyncPeer = 0;
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : peerList) {
-        // If any of these conditions are true, then we can't use this peer.
-        if (peer->test("Permaslave") ||                 // Peer is a permaslave
-            !peer->test("LoggedIn") ||                  // Peer is not logged in.
-            !SIEquals((*peer)["State"], "SLAVING") ||   // Peer is not slaving.
-            peer->calcU64("CommitCount") <= commitCount // Peer does not have a greater commit count than us.
-            ) {
+        // If either of these conditions are true, then we can't use this peer.
+        if (!peer->test("LoggedIn") || peer->calcU64("CommitCount") <= commitCount) {
             continue;
         }
 
@@ -2580,21 +2589,24 @@ SQLiteNode::Peer* SQLiteNode::_updateSyncPeer()
     // Log that we've changed peers.
     if (_syncPeer != newSyncPeer) {
         string from, to;
-        for (Peer* p : {_syncPeer, newSyncPeer}) {
-            string* dest = (p == _syncPeer) ? &from : &to;
-            if (p) {
-                *dest = p->name + " (CommitCount=" + (*p)["CommitCount"] + ", latency=" + to_string(p->latency) + "us)";
-            } else {
-                *dest = "(NONE)";
-            }
+        if (_syncPeer) {
+            from = _syncPeer->name + " (commit count=" + (*_syncPeer)["CommitCount"] + "), latency="
+                                   + to_string(_syncPeer->latency) + "us";
+        } else {
+            from = "(NONE)";
         }
+        if (newSyncPeer) {
+            to = newSyncPeer->name + " (commit count=" + (*newSyncPeer)["CommitCount"] + "), latency="
+                                   + to_string(newSyncPeer->latency) + "us";
+        } else {
+            to = "(NONE)";
+        }
+
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ".");
 
         // And save the new sync peer internally.
         _syncPeer = newSyncPeer;
     }
-
-    return newSyncPeer;
 }
 
 // --------------------------------------------------------------------------

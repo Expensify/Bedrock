@@ -210,7 +210,8 @@ class SQLiteNode : public STCPNode {
 
     // The peer we should sync from is recalculated every time we call this. If no other peer is logged in, or no
     // logged in peer has a higher commitCount that we do, this will return null.
-    Peer* _updateSyncPeer();
+    void _updateSyncPeer();
+    Peer* _syncPeer;
 
   private: // Internal API
     // Attributes
@@ -223,7 +224,6 @@ class SQLiteNode : public STCPNode {
     SQLCState _state;
     map<string, Command*> _escalatedCommandMap; // commandID -> Command* map
     list<Command*> _processedCommandList;
-    Peer* _syncPeer;
     Peer* _masterPeer;
     uint64_t _stateTimeout;
     int _commandCount;

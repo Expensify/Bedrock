@@ -11,7 +11,8 @@ struct TestSQLiteNode : public SQLiteNode {
     void _abortCommand(SQLite&, SQLiteNode::Command*) {}
     void _cleanCommand(SQLiteNode::Command*) {}
 
-    Peer* updateSyncPeer() {return _updateSyncPeer();}
+    void updateSyncPeer() {_updateSyncPeer();}
+    Peer* getSyncPeer() {return _syncPeer;}
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
@@ -38,7 +39,6 @@ struct SQLiteNodeTest : tpunit::TestFixture {
             int peerNum = peer->name[4] - 48;
             (*peer)["LoggedIn"] = "true";
             (*peer)["CommitCount"] = to_string(10000000 + peerNum);
-            (*peer)["State"] = "SLAVING";
 
             // 0, 100, 200, 300.
             peer->latency = (peerNum - 1) * 100;
@@ -48,7 +48,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        ASSERT_EQUAL(testNode.updateSyncPeer(), fastest);
+        testNode.updateSyncPeer();
+        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
 
         // See what happens when another peer becomes faster.
         for (auto peer : testNode.peerList) {
@@ -58,7 +59,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        ASSERT_EQUAL(testNode.updateSyncPeer(), fastest);
+        testNode.updateSyncPeer();
+        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
 
         // And see what happens if our fastest peer logs out.
         for (auto peer : testNode.peerList) {
@@ -72,7 +74,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        ASSERT_EQUAL(testNode.updateSyncPeer(), fastest);
+        testNode.updateSyncPeer();
+        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
 
         // And then if our previously 0 latency peer gets (fast) latency data.
         for (auto peer : testNode.peerList) {
@@ -82,7 +85,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        ASSERT_EQUAL(testNode.updateSyncPeer(), fastest);
+        testNode.updateSyncPeer();
+        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
 
         // Now none of our peers have latency data, but one has more commits.
         for (auto peer : testNode.peerList) {
@@ -93,7 +97,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        ASSERT_EQUAL(testNode.updateSyncPeer(), fastest);
+        testNode.updateSyncPeer();
+        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
     }
 
 } __SQLiteNodeTest;
