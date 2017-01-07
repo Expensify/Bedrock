@@ -208,6 +208,11 @@ class SQLiteNode : public STCPNode {
     SQLite _db;
     map<int, list<Command*>> _queuedCommandMap; // priority  -> list<Command*> map
 
+    // The peer we should sync from is recalculated every time we call this. If no other peer is logged in, or no
+    // logged in peer has a higher commitCount that we do, this will return null.
+    void _updateSyncPeer();
+    Peer* _syncPeer;
+
   private: // Internal API
     // Attributes
     // Escalated commands are a map for faster lookup times.  In circumstances
@@ -219,7 +224,6 @@ class SQLiteNode : public STCPNode {
     SQLCState _state;
     map<string, Command*> _escalatedCommandMap; // commandID -> Command* map
     list<Command*> _processedCommandList;
-    Peer* _syncPeer;
     Peer* _masterPeer;
     uint64_t _stateTimeout;
     int _commandCount;
