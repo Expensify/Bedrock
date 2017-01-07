@@ -736,7 +736,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // It has a higher commit count than us, synchronize.
         SASSERT(freshestPeerCommitCount > _db.getCommitCount());
         SASSERTWARN(!_syncPeer);
-        _sendToPeer(updateSyncPeer(), SData("SYNCHRONIZE"));
+        _sendToPeer(_updateSyncPeer(), SData("SYNCHRONIZE"));
         _changeState(SQLC_SYNCHRONIZING);
         return true; // Re-update
     }
@@ -1801,7 +1801,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Synchronization underway, at commitCount #"
                       << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
                       << peerCommitCount - _db.getCommitCount() << " to go.");
-                _sendToPeer(updateSyncPeer(), SData("SYNCHRONIZE"));
+                _sendToPeer(_updateSyncPeer(), SData("SYNCHRONIZE"));
 
                 // Also, extend our timeout so long as we're still alive
                 _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
@@ -2541,39 +2541,9 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         throw "commits remaining at end";
 }
 
-bool SQLiteNode::peerClosenessSort(const Peer* lhs, const Peer* rhs)
+SQLiteNode::Peer* SQLiteNode::_updateSyncPeer()
 {
-    // Null pointers are never fast/close.
-    if (!lhs) {
-        return false;
-    }
-    if (!rhs) {
-        return true;
-    }
-
-    // If two peers have the same latency, then the one with the higher CommitCount is closest. This case is most
-    // likely in the event that we have no latency data for either peer.
-    if (lhs->latency == rhs->latency) {
-        return SToInt((*lhs)["CommitCount"]) > SToInt((*rhs)["CommitCount"]);
-    }
-
-    // If only one peer has 0 latency, the other is faster/closer.
-    if (!lhs->latency) {
-        return false;
-    }
-    if (!rhs->latency) {
-        return true;
-    }
-
-    // Both peers have latency data, and neither are 0.
-    return lhs->latency < rhs->latency;
-}
-
-SQLiteNode::Peer* SQLiteNode::updateSyncPeer()
-{
-    // Sets are stored in sorted order. This set uses peerClosenessSort as its comparator function.
-    set<Peer*, decltype(&peerClosenessSort)> latencies {peerClosenessSort};
-
+    Peer* newSyncPeer = 0;
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : peerList) {
         // If any of these conditions are true, then we can't use this peer.
@@ -2585,13 +2555,28 @@ SQLiteNode::Peer* SQLiteNode::updateSyncPeer()
             continue;
         }
 
-        // We insert in sorted order (see peerClosenessSort for details).
-        latencies.insert(peer);
+        // Any peer that makes it to here is a usable peer, so it's by default better than nothing.
+        if (!newSyncPeer) {
+            newSyncPeer = peer;
+        }
+        // If the previous best peer and this one have the same latency (meaning they're probably both 0), the best one
+        // is the one with the highest commit count.
+        else if (newSyncPeer->latency == peer->latency) {
+            if (peer->calc64("CommitCount") > newSyncPeer->calc64("CommitCount")) {
+                newSyncPeer = peer;
+            }
+        }
+        // If the existing best has no latency, then this peer is faster (because we just checked if they're equal and
+        // 0 is the slowest latency value).
+        else if (newSyncPeer->latency == 0) {
+            newSyncPeer = peer;
+        }
+        // Finally, if this peer is faster than the best, but not 0 itself, it's the new best.
+        else if (peer->latency != 0 && peer->latency < newSyncPeer->latency) {
+            newSyncPeer = peer;
+        }
     }
     
-    // The front one is the lowest.
-    Peer* newSyncPeer = latencies.empty() ? 0 : *latencies.begin();
-
     // Log that we've changed peers.
     if (_syncPeer != newSyncPeer) {
         string from, to;

@@ -10,6 +10,8 @@ struct TestSQLiteNode : public SQLiteNode {
     void _processCommand(SQLite&, SQLiteNode::Command*) {}
     void _abortCommand(SQLite&, SQLiteNode::Command*) {}
     void _cleanCommand(SQLiteNode::Command*) {}
+
+    Peer* updateSyncPeer() {return _updateSyncPeer();}
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
