@@ -81,6 +81,33 @@ string MySQLPacket::serializeHandshake() {
     SAppend(handshake.payload, &connectionID, 4); // connection_id
     handshake.payload += (string) "xxxxxxxx";     // auth_plugin_data_part_1
     handshake.payload += lenEncInt(0);            // filler
+
+    static const unsigned CLIENT_LONG_PASSWORD = 0x00000001;
+    static const unsigned CLIENT_PLUGIN_AUTH   = 0x00080000;
+    const unsigned capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PLUGIN_AUTH;
+
+    const unsigned short capability_flags_1 = (const unsigned short)(capability_flags);
+    const unsigned short capability_flags_2 = (const unsigned short)(capability_flags >> 16);
+    SAppend(handshake.payload, &capability_flags_1, 2); // capability_flags_1 (low 2 bytes)
+
+    const unsigned char latin1_swedish_ci = 0x08;
+    SAppend(handshake.payload, &latin1_swedish_ci, 1); // character_set
+
+    const unsigned short SERVER_STATUS_AUTOCOMMIT = 0x0002;
+    SAppend(handshake.payload, &SERVER_STATUS_AUTOCOMMIT, 2); // status_flags
+
+    SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
+
+    const unsigned char auth_plugin_data[] = {
+        0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x40, 0x42, 0x68, 0x66, 0x48,
+        0x74, 0x2f, 0x2d, 0x34, 0x5e, 0x5a, 0x2c, 0x00 };
+
+    SAppend(handshake.payload, auth_plugin_data, sizeof(auth_plugin_data));
+
+    handshake.payload += (string) "mysql_native_password"; // auth_plugin_name
+    handshake.payload += lenEncInt(0);                     // filler
+
     return handshake.serialize();
 }
 
