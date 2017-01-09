@@ -72,6 +72,9 @@ string MySQLPacket::lenEncStr(const string& str) {
 }
 
 string MySQLPacket::serializeHandshake() {
+    // Protocol described here:
+    // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
+
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
@@ -82,23 +85,28 @@ string MySQLPacket::serializeHandshake() {
     handshake.payload += (string) "xxxxxxxx";     // auth_plugin_data_part_1
     handshake.payload += lenEncInt(0);            // filler
 
-    static const unsigned CLIENT_LONG_PASSWORD = 0x00000001;
-    static const unsigned CLIENT_PLUGIN_AUTH   = 0x00080000;
-    const unsigned capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PLUGIN_AUTH;
+    uint32_t CLIENT_LONG_PASSWORD = 0x00000001;
+    uint32_t CLIENT_PLUGIN_AUTH   = 0x00080000;
+    uint32_t capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PLUGIN_AUTH;
 
-    const unsigned short capability_flags_1 = (const unsigned short)(capability_flags);
-    const unsigned short capability_flags_2 = (const unsigned short)(capability_flags >> 16);
+    uint16_t capability_flags_1 = (const unsigned short)(capability_flags);
+    uint16_t capability_flags_2 = (const unsigned short)(capability_flags >> 16);
     SAppend(handshake.payload, &capability_flags_1, 2); // capability_flags_1 (low 2 bytes)
 
-    const unsigned char latin1_swedish_ci = 0x08;
+    uint8_t latin1_swedish_ci = 0x08;
     SAppend(handshake.payload, &latin1_swedish_ci, 1); // character_set
 
-    const unsigned short SERVER_STATUS_AUTOCOMMIT = 0x0002;
+    uint16_t SERVER_STATUS_AUTOCOMMIT = 0x0002;
     SAppend(handshake.payload, &SERVER_STATUS_AUTOCOMMIT, 2); // status_flags
 
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
-    const unsigned char auth_plugin_data[] = {
+    // Random challenge bytes client expects for mysql_native_password authentication.
+    // Hardcoded for now as proper authentication is not yet supported by Bedrock.
+    // Specific bytes are taken from example handshake packed provided by Oracle:
+    // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
+    // (Initial Handshake Packet)
+    uint8_t auth_plugin_data[] = {
         0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x40, 0x42, 0x68, 0x66, 0x48,
         0x74, 0x2f, 0x2d, 0x34, 0x5e, 0x5a, 0x2c, 0x00 };
