@@ -9,6 +9,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testJSONDecode),
                                     TEST(LibStuff::testJSON),
                                     TEST(LibStuff::testEscapeUnescape),
+                                    TEST(LibStuff::testTrim),
                                     TEST(LibStuff::testChunkedEncoding),
                                     TEST(LibStuff::testDaysInMonth),
                                     TEST(LibStuff::testGZip),
@@ -136,6 +137,15 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SUnescape("\\u00b7"), "\xc2\xb7");     // 2 Byte
         ASSERT_EQUAL(SUnescape("\\uc2b7"), "\xec\x8a\xb7"); // 3 Byte
         ASSERT_EQUAL(SUnescape("\\u05c0"), "\xd7\x80");     // 2 Byte, bottom 0
+    }
+
+    void testTrim() {
+        ASSERT_EQUAL("", STrim(""));
+        ASSERT_EQUAL("", STrim(" \t\n\r"));
+        ASSERT_EQUAL("FooBar", STrim("FooBar"));
+        ASSERT_EQUAL("FooBar", STrim(" FooBar"));
+        ASSERT_EQUAL("FooBar", STrim("FooBar "));
+        ASSERT_EQUAL("FooBar", STrim(" FooBar "));
     }
 
     void testChunkedEncoding() {

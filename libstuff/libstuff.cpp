@@ -170,16 +170,16 @@ bool SIContains(const string& lhs, const string& rhs) {
 // --------------------------------------------------------------------------
 string STrim(const string& lhs) {
     // Just trim off the front and back whitespace
-    size_t front = 0;
-    while (front < lhs.size() && isspace(lhs[front]))
-        ++front;
-    size_t back = lhs.size() - 1;
-    while (back != string::npos && isspace(lhs[back]))
-        --back;
-    if (front <= back)
-        return lhs.substr(front, back - front + 1);
-    else
-        return "";
+    if(!lhs.empty()) {
+        const char* front(lhs.data());
+        const char* back(&lhs.back());
+        while(*front && isspace(*front))
+            ++front;
+        while(back > front && isspace(*back))
+            --back;
+        return string(front, ++back);
+    }
+    return "";
 }
 
 // --------------------------------------------------------------------------
