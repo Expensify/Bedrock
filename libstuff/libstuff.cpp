@@ -186,16 +186,17 @@ string STrim(const string& lhs) {
 string SCollapse(const string& lhs) {
     // Collapse all whitespace into a single space
     string out;
+    out.reserve(lhs.size());
     bool inWhite = false;
-    for (size_t c = 0; c < lhs.size(); ++c)
-        if (isspace(lhs[c])) {
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isspace(*c)) {
             // Only add if not already whitespace
             if (!inWhite)
-                out += lhs[c];
+                out += *c;
             inWhite = true;
         } else {
             // Not whitespace,a dd
-            out += lhs[c];
+            out += *c;
             inWhite = false;
         }
     return out;

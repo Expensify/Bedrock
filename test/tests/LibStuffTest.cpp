@@ -10,6 +10,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testJSON),
                                     TEST(LibStuff::testEscapeUnescape),
                                     TEST(LibStuff::testTrim),
+                                    TEST(LibStuff::testCollapse),
                                     TEST(LibStuff::testChunkedEncoding),
                                     TEST(LibStuff::testDaysInMonth),
                                     TEST(LibStuff::testGZip),
@@ -146,6 +147,15 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL("FooBar", STrim(" FooBar"));
         ASSERT_EQUAL("FooBar", STrim("FooBar "));
         ASSERT_EQUAL("FooBar", STrim(" FooBar "));
+    }
+
+    void testCollapse() {
+        ASSERT_EQUAL("", SCollapse(""));
+        ASSERT_EQUAL(" ", SCollapse("   "));
+        ASSERT_EQUAL("\t", SCollapse("\t  "));
+        ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem ipsum"));
+        ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem \r\t\nipsum"));
+        ASSERT_EQUAL(" Lorem ipsum ", SCollapse("  Lorem \r\t\nipsum \r\n"));
     }
 
     void testChunkedEncoding() {
