@@ -1,7 +1,8 @@
 // --------------------------------------------------------------------------
 // libstuff.h
 // --------------------------------------------------------------------------
-#pragma once
+#ifndef LIBSTUFF_H
+#define LIBSTUFF_H
 
 // Include relevant headers
 #include <stdio.h>
@@ -814,3 +815,5 @@ struct STestTimer {
 
 // Other libstuff headers.
 #include "SRandom.h"
+
+#endif	// LIBSTUFF_H
