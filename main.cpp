@@ -78,7 +78,7 @@ set<string> loadPlugins(SData& args) {
     list<string> plugins = SParseList(args["-plugins"]);
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
-    // Those are stored here. TODO: It would probably make more sense for this to be a set, to avoid duplicates.
+    // Those are stored here.
     set <string> postProcessedNames;
 
     // Instantiate all of our built-in plugins.
