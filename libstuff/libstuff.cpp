@@ -111,6 +111,7 @@ string SToHex(uint64_t value, int digits) {
 string SToHex(const string& value) {
     // Fill from front to back
     string working;
+    working.reserve(value.size() * 2);
     for (size_t c = 0; c < value.size(); ++c) {
         // Add two digits per byte
         unsigned char digit = (unsigned char)value[c];
@@ -143,7 +144,8 @@ uint64_t SFromHex(const string& value) {
 
 string SStrFromHex(const string& buffer) {
     string retVal;
-    for(size_t i = 0; i < buffer.length(); i += 2) {
+    retVal.reserve(buffer.size() / 2);
+    for(size_t i = 0; i < buffer.size(); i += 2) {
         retVal.push_back((char)strtol(buffer.substr(i, 2).c_str(), 0, 16));
     }
     return retVal;
@@ -170,32 +172,33 @@ bool SIContains(const string& lhs, const string& rhs) {
 // --------------------------------------------------------------------------
 string STrim(const string& lhs) {
     // Just trim off the front and back whitespace
-    size_t front = 0;
-    while (front < lhs.size() && isspace(lhs[front]))
-        ++front;
-    size_t back = lhs.size() - 1;
-    while (back != string::npos && isspace(lhs[back]))
-        --back;
-    if (front <= back)
-        return lhs.substr(front, back - front + 1);
-    else
-        return "";
+    if(!lhs.empty()) {
+        const char* front(lhs.data());
+        const char* back(&lhs.back());
+        while(*front && isspace(*front))
+            ++front;
+        while(back > front && isspace(*back))
+            --back;
+        return string(front, ++back);
+    }
+    return "";
 }
 
 // --------------------------------------------------------------------------
 string SCollapse(const string& lhs) {
     // Collapse all whitespace into a single space
     string out;
+    out.reserve(lhs.size());
     bool inWhite = false;
-    for (size_t c = 0; c < lhs.size(); ++c)
-        if (isspace(lhs[c])) {
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isspace(*c)) {
             // Only add if not already whitespace
             if (!inWhite)
-                out += lhs[c];
+                out += *c;
             inWhite = true;
         } else {
             // Not whitespace,a dd
-            out += lhs[c];
+            out += *c;
             inWhite = false;
         }
     return out;
@@ -205,9 +208,10 @@ string SCollapse(const string& lhs) {
 string SStrip(const string& lhs) {
     // Strip out all non-printable characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c)
-        if (isprint(lhs[c]))
-            working += lhs[c];
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isprint(*c))
+            working += *c;
     return working;
 }
 
@@ -215,12 +219,13 @@ string SStrip(const string& lhs) {
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe) {
     // Strip out all unsafe characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c) {
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c) {
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(lhs[c]) != string::npos);
+        bool inSet = (chars.find(*c) != string::npos);
         if (inSet == charsAreSafe)
-            working += lhs[c];
+            working += *c;
     }
     return working;
 }
@@ -357,6 +362,7 @@ string SReplace(const string& value, const string& find, const string& replace) 
 
     // Keep going until we find no more
     string out;
+    out.reserve(value.size());
     size_t skip = 0;
     while (true) {
         // Look for the next match
@@ -378,9 +384,10 @@ string SReplace(const string& value, const string& find, const string& replace) 
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar) {
     // Loop across the string and replace any invalid character
     string out;
-    for (size_t c = 0; c < value.size(); ++c)
-        if (safeChars.find(value[c]) != string::npos)
-            out += value[c];
+    out.reserve(value.size());
+    for (const char* c(value.data()); *c; ++c)
+        if (safeChars.find(*c) != string::npos)
+            out += *c;
         else
             out += replaceChar;
     return out;
@@ -390,9 +397,10 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar) {
     // Loop across the string and replace any invalid character
     string out;
-    for (size_t c = 0; c < value.size(); ++c)
-        if (unsafeChars.find(value[c]) == string::npos)
-            out += value[c];
+    out.reserve(value.size());
+    for (const char* c(value.data()); *c; ++c)
+        if (unsafeChars.find(*c) == string::npos)
+            out += *c;
         else
             out += replaceChar;
     return out;

@@ -9,6 +9,9 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testJSONDecode),
                                     TEST(LibStuff::testJSON),
                                     TEST(LibStuff::testEscapeUnescape),
+                                    TEST(LibStuff::testTrim),
+                                    TEST(LibStuff::testCollapse),
+                                    TEST(LibStuff::testStrip),
                                     TEST(LibStuff::testChunkedEncoding),
                                     TEST(LibStuff::testDaysInMonth),
                                     TEST(LibStuff::testGZip),
@@ -136,6 +139,35 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SUnescape("\\u00b7"), "\xc2\xb7");     // 2 Byte
         ASSERT_EQUAL(SUnescape("\\uc2b7"), "\xec\x8a\xb7"); // 3 Byte
         ASSERT_EQUAL(SUnescape("\\u05c0"), "\xd7\x80");     // 2 Byte, bottom 0
+    }
+
+    void testTrim() {
+        ASSERT_EQUAL("", STrim(""));
+        ASSERT_EQUAL("", STrim(" \t\n\r"));
+        ASSERT_EQUAL("FooBar", STrim("FooBar"));
+        ASSERT_EQUAL("FooBar", STrim(" FooBar"));
+        ASSERT_EQUAL("FooBar", STrim("FooBar "));
+        ASSERT_EQUAL("FooBar", STrim(" FooBar "));
+    }
+
+    void testCollapse() {
+        ASSERT_EQUAL("", SCollapse(""));
+        ASSERT_EQUAL(" ", SCollapse("   "));
+        ASSERT_EQUAL("\t", SCollapse("\t  "));
+        ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem ipsum"));
+        ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem \r\t\nipsum"));
+        ASSERT_EQUAL(" Lorem ipsum ", SCollapse("  Lorem \r\t\nipsum \r\n"));
+    }
+
+    void testStrip() {
+        // simple SStrip
+        ASSERT_EQUAL("", SStrip(""));
+        ASSERT_EQUAL("   ", SStrip("   "));
+        ASSERT_EQUAL("", SStrip("\t\n\r\x0b\x1f"));
+
+        // SStrip(lhr, chars, charsAreSafe)
+        ASSERT_EQUAL("FooBr", SStrip("Foo Bar", " a", false));
+        ASSERT_EQUAL(" a", SStrip("Foo Bar", " a", true));
     }
 
     void testChunkedEncoding() {
