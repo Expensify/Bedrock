@@ -74,12 +74,12 @@ void BackupDB(const string& dbPath) {
 }
 
 
-list<string> loadPlugins(SData& args) {
+set<string> loadPlugins(SData& args) {
     list<string> plugins = SParseList(args["-plugins"]);
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
-    // Those are stored here. TODO: It would probably make more sense for this to be a set, to avoid duplicates.
-    list <string> postProcessedNames;
+    // Those are stored here.
+    set <string> postProcessedNames;
 
     // Instantiate all of our built-in plugins.
     map<string, BedrockPlugin*> standardPluginMap = {
@@ -93,7 +93,7 @@ list<string> loadPlugins(SData& args) {
     for (string pluginName : plugins) {
         // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
         if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
-            postProcessedNames.push_back(pluginName);
+            postProcessedNames.insert(SToUpper(pluginName));
             continue;
         }
 
@@ -109,7 +109,11 @@ list<string> loadPlugins(SData& args) {
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
 
         // Save the base name of the plugin.
-        postProcessedNames.push_back(name);
+        if(postProcessedNames.find(SToUpper(name)) != postProcessedNames.end()) {
+            SWARN("Duplicate entry for plugin " << name << ", skipping.");
+            continue;
+        }
+        postProcessedNames.insert(SToUpper(name));
 
         // Add the file extension if it's missing.
         if (!SEndsWith(pluginName, ".so")) {
@@ -135,11 +139,14 @@ list<string> loadPlugins(SData& args) {
     vector<string> versions = {SVERSION};
     for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
         // We need to call initialize to let the plugin set its version info.
-        plugin->initialize(args);
-        auto info = plugin->getInfo();
-        auto iterator = info.find("version");
-        if (iterator != info.end()) {
-            versions.push_back(plugin->getName() + "_" + iterator->second);
+        // We only do this for plugins that were actually requested to load.
+        if (postProcessedNames.find(SToUpper(plugin->getName())) != postProcessedNames.end()) {
+            plugin->initialize(args);
+            auto info = plugin->getInfo();
+            auto iterator = info.find("version");
+            if (iterator != info.end()) {
+                versions.push_back(plugin->getName() + "_" + iterator->second);
+            }
         }
     }
     sort(versions.begin(), versions.end());
