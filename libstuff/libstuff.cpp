@@ -217,12 +217,13 @@ string SStrip(const string& lhs) {
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe) {
     // Strip out all unsafe characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c) {
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c) {
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(lhs[c]) != string::npos);
+        bool inSet = (chars.find(*c) != string::npos);
         if (inSet == charsAreSafe)
-            working += lhs[c];
+            working += *c;
     }
     return working;
 }

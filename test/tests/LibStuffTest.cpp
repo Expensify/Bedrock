@@ -160,9 +160,14 @@ struct LibStuff : tpunit::TestFixture {
     }
 
     void testStrip() {
+        // simple SStrip
         ASSERT_EQUAL("", SStrip(""));
         ASSERT_EQUAL("   ", SStrip("   "));
         ASSERT_EQUAL("", SStrip("\t\n\r\x0b\x1f"));
+
+        // SStrip(lhr, chars, charsAreSafe)
+        ASSERT_EQUAL("FooBr", SStrip("Foo Bar", " a", false));
+        ASSERT_EQUAL(" a", SStrip("Foo Bar", " a", true));
     }
 
     void testChunkedEncoding() {
