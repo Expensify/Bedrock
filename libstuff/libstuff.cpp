@@ -206,9 +206,10 @@ string SCollapse(const string& lhs) {
 string SStrip(const string& lhs) {
     // Strip out all non-printable characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c)
-        if (isprint(lhs[c]))
-            working += lhs[c];
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isprint(*c))
+            working += *c;
     return working;
 }
 
