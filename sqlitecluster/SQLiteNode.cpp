@@ -141,7 +141,7 @@ bool SQLiteNode::shutdownComplete() {
         // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
         // so we can try and diagnose what's happening.
         if (_escalatedCommandMap.size()) {
-            for_each(_escalatedCommandMap.begin(), _escalatedCommandMap.end(), [&](std::pair<string, Command*> cmd) {
+            for (std::pair<string, Command*> cmd : _escalatedCommandMap) {
                 string name = cmd.first;
                 Command* command = cmd.second;
                 int64_t created = command->creationTimestamp;
@@ -151,7 +151,7 @@ bool SQLiteNode::shutdownComplete() {
                 SINFO("Escalated command remaining at shutdown("
                       << name << "): " << command->request.methodLine << ". Created: " << command->creationTimestamp
                       << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
-            });
+            }
         }
         return false;
     }

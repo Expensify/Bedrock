@@ -445,9 +445,9 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 list<int64_t> SParseIntegerList(const string& value, char separator) {
     list<int64_t> valueList;
     list<string> strings = SParseList(value, separator);
-    for_each(strings.begin(), strings.end(), [&](string str){
+    for (string str : strings) {
         valueList.push_back(SToInt64(str));
-    });
+    }
     return valueList;
 }
 
@@ -953,7 +953,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
@@ -969,7 +969,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
         } else {
             buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
         }
-    });
+    }
 
     const string gzipContent = tryGzip ? SGZip(content) : "";
     const bool gzipSuccess = !gzipContent.empty();
@@ -991,7 +991,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 string SComposePOST(const STable& nameValueMap) {
     // Accumulate and convert
     ostringstream out;
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         // Output the name and value, if any.  If the value is actually a
         // separated list of values, re-add the name each time
         if (item.second.empty()) {
@@ -1004,7 +1004,7 @@ string SComposePOST(const STable& nameValueMap) {
             SFOREACH (list<string>, valueList, valueIt)
                 out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
         }
-    });
+    }
     string outStr = out.str();
     SConsumeBack(outStr, 1); // Trim off trailing '&'
     return outStr;
@@ -1131,9 +1131,9 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString) {
     if (nameValueMap.empty())
         return "{}";
     string working = "{";
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         working += "\"" + item.first + "\":" + SToJSON(item.second, forceString) + ",";
-    });
+    }
     working.resize(working.size() - 1);
     working += "}";
     return working;
@@ -1794,14 +1794,18 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Build a vector we can use to pass data to poll().
     vector<pollfd> pollvec;
-    for_each(fdm.begin(), fdm.end(), [&](pair<int, pollfd> pfd) { pollvec.push_back(pfd.second); });
+    for (pair<int, pollfd> pfd : fdm) {
+        pollvec.push_back(pfd.second);
+    }
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
-    for_each(pollvec.begin(), pollvec.end(), [&](pollfd pfd) { fdm[pfd.fd].revents = pfd.revents; });
+    for (pollfd pfd : pollvec) {
+        fdm[pfd.fd].revents = pfd.revents;
+    }
 
     if (returnValue == -1) {
         SWARN("Poll failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), ignoring");

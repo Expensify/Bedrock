@@ -179,10 +179,11 @@ void BedrockServer_WorkerThread(void* _data) {
             fd_map fdm;
 
             // Handle any HTTPS requests from our plugins.
-            for_each(httpsManagers.begin(), httpsManagers.end(), [&](list<SHTTPSManager*> managerList) {
-                for_each(managerList.begin(), managerList.end(),
-                         [&](SHTTPSManager* manager) { manager->preSelect(fdm); });
-            });
+            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
+                for (SHTTPSManager* manager : managerList) {
+                    manager->preSelect(fdm);
+                }
+            }
 
             int maxS = node.preSelect(fdm);
             maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
@@ -194,10 +195,11 @@ void BedrockServer_WorkerThread(void* _data) {
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
-            for_each(httpsManagers.begin(), httpsManagers.end(), [&](list<SHTTPSManager*> managerList) {
-                for_each(managerList.begin(), managerList.end(),
-                         [&](SHTTPSManager* manager) { manager->postSelect(fdm, nextActivity); });
-            });
+            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
+                for (SHTTPSManager* manager : managerList) {
+                    manager->postSelect(fdm, nextActivity);
+                }
+            }
 
             node.postSelect(fdm, nextActivity);
             queuedEscalatedRequests.postSelect(fdm);
@@ -394,11 +396,11 @@ bool BedrockServer::shutdownComplete() {
         if(!_writeThread->finished) {
             remainingThreads++;
         }
-        for_each(_readThreadList.begin(), _readThreadList.end(), [&](Thread* thread){
+        for (Thread* thread : _readThreadList) {
             if (!thread->finished) {
                 remainingThreads++;
             }
-        });
+        }
 
         SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
     }
@@ -447,18 +449,17 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         openPort(_args["-serverHost"]);
 
         // Open any plugin ports on enabled plugins
-        for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
-                 [&](BedrockPlugin* plugin) {
-                     if (plugin->enabled()) {
-                         string portHost = plugin->getPort();
-                         if (!portHost.empty()) {
-                             // Open the port and associate it with the plugin
-                             SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
-                             Port* port = openPort(portHost);
-                             _portPluginMap[port] = plugin;
-                         }
-                     }
-                 });
+        for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+            if (plugin->enabled()) {
+                string portHost = plugin->getPort();
+                if (!portHost.empty()) {
+                    // Open the port and associate it with the plugin
+                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                    Port* port = openPort(portHost);
+                    _portPluginMap[port] = plugin;
+                }
+            }
+        }
     }
 
     // **NOTE: We leave the port open between startup and shutdown, even if we enter a state where
@@ -752,14 +753,13 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
-             [&](BedrockPlugin* plugin) {
-                 for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
-                     if (timer->ding()) {
-                         plugin->timerFired(timer);
-                     }
-                 });
-             });
+    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+        for (SStopwatch* timer : plugin->timers) {
+            if (timer->ding()) {
+                plugin->timerFired(timer);
+            }
+        }
+    }
 }
 
 // --------------------------------------------------------------------------

@@ -73,15 +73,15 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         //
         //     Give us some data on this server.
         list<string> plugins;
-        for_each(g_registeredPluginList->begin(), g_registeredPluginList->end(), [&](BedrockPlugin* plugin){
+        for (BedrockPlugin* plugin : *g_registeredPluginList) {
             STable pluginData;
             pluginData["name"] = plugin->getName();
             STable pluginInfo = plugin->getInfo();
-            for_each(pluginInfo.begin(), pluginInfo.end(), [&](pair<string, string> row){
+            for (pair<string, string> row : pluginInfo) {
                 pluginData[row.first] = row.second;
-            });
+            }
             plugins.push_back(SComposeJSONObject(pluginData));
-        });
+        }
         content["plugins"] = SComposeJSONArray(plugins);
 
         content["state"] = SQLCStateNames[node->getState()];

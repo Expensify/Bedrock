@@ -548,10 +548,10 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
         return "";
     }
     string working;
-    for_each(valueList.begin(), valueList.end(), [&](decltype(typename T::value_type()) value) {
+    for(auto value : valueList) {
         working += SToStr(value);
         working += separator;
-    });
+    }
     return working.substr(0, working.size() - separator.size());
 }
 
