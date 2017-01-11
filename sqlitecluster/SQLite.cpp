@@ -148,6 +148,25 @@ bool SQLite::beginTransaction() {
 }
 
 // --------------------------------------------------------------------------
+bool SQLite::beginConcurrentTransaction() {
+    SASSERT(!_readOnly);
+    SASSERT(!_insideTransaction);
+    SASSERT(_uncommittedHash.empty());
+    SASSERT(_uncommittedQuery.empty());
+    // Begin the next transaction
+    SDEBUG("Beginning transaction #" << _commitCount + 1);
+    uint64_t before = STimeNow();
+    _insideTransaction = SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _beginElapsed = STimeNow() - before;
+    _readElapsed = 0;
+    _writeElapsed = 0;
+    _prepareElapsed = 0;
+    _commitElapsed = 0;
+    _rollbackElapsed = 0;
+    return _insideTransaction;
+}
+
+// --------------------------------------------------------------------------
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
     SASSERT(!SEndsWith(sql, ";")); // sqlite trims semicolon, so let's not supply it else we get confused later
     // First, see if it's there

@@ -23,6 +23,9 @@ class SQLite {
     // Begins a new transaction.  Returns true on success.
     bool beginTransaction();
 
+    // Begins a new concurrent transaction.  Returns true on success.
+    bool beginConcurrentTransaction();
+
     // Verifies a table exists and has a particular definition.  If the database
     // is left with the right schema, it returns true.  If it had to create a
     // new table (ie, the table was missing), it also sets created to true.  If

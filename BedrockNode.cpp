@@ -143,12 +143,10 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     STable& content = command->jsonContent;
     SDEBUG("Received '" << request.methodLine << "'");
     try {
-        // Process the message
-        if (!db.beginTransaction())
-            throw "501 Failed to begin transaction";
-
-        // --------------------------------------------------------------------------
         if (SIEquals(request.methodLine, "UpgradeDatabase")) {
+            if (!db.beginTransaction()) {
+                throw "501 Failed to begin transaction";
+            }
             // Loop across the plugins to give each an opportunity to upgrade the
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
@@ -162,6 +160,9 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                      });
             SINFO("Finished upgrading database");
         } else {
+            if (!db.beginConcurrentTransaction()) {
+                throw "501 Failed to begin concurrent transaction";
+            }
             // --------------------------------------------------------------------------
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
