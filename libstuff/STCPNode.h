@@ -24,17 +24,13 @@ struct STCPNode : public STCPServer {
         int failedConnections;
 
         // Helper methods
-        Peer(const string& name_, const string& host_, const STable& params_) {
-            reset();
-            name = name_;
-            host = host_;
-            params = params_;
-            failedConnections = 0;
+        Peer(const string& name_, const string& host_, const STable& params_)
+            : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), failedConnections(0) {
         }
         bool connected() { return (s && s->state == STCP_CONNECTED); }
         void reset() {
             clear();
-            s = 0;
+            s = nullptr;
             latency = 0;
         }
     };

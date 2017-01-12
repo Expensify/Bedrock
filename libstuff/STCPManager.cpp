@@ -230,7 +230,7 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     socket->lastSendTime = STimeNow();
     socket->lastRecvTime = STimeNow();
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
-    socket->data = 0; // Used by caller, not libstuff
+    socket->data = nullptr; // Used by caller, not libstuff
     SASSERT(!x509 || socket->ssl);
     memset(&socket->addr, 0, sizeof(socket->addr));
     socketList.push_back(socket);

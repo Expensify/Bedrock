@@ -11,5 +11,5 @@ class BedrockPlugin_Status : public BedrockPlugin {
     void initialize(const SData& args);
 
   private:
-    const SData* _args = 0;
+    const SData* _args = nullptr;
 };

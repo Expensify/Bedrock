@@ -131,7 +131,7 @@ void BedrockServer_WorkerThread(void* _data) {
             node.openCommand(request, priority, false, creationTimestamp);
 
             // Now pull that same command off the internal queue and put it on the appropriate external (threaded) queue
-            BedrockNode::Command* command = 0;
+            BedrockNode::Command* command = nullptr;
             if ((command = node.getProcessedCommand())) {
                 // If it was fully processed in openCommand(), that means it was peeked successfully.
                 SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
@@ -231,7 +231,7 @@ void BedrockServer_WorkerThread(void* _data) {
                 ;
 
             // Put everything the replication node has finished on the threaded queue.
-            BedrockNode::Command* command = 0;
+            BedrockNode::Command* command = nullptr;
             while ((command = node.getProcessedCommand())) {
                 SAUTOPREFIX(command->request["requestID"]);
                 SINFO("Putting escalated command '" << command->id << "' on processed list.");
@@ -268,13 +268,9 @@ void BedrockServer_WorkerThread(void* _data) {
 
 // --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), _replicationState(SQLC_SEARCHING), _replicationCommitCount(0), _nodeGracefulShutdown(false),
-      _masterVersion("") {
-    // Initialize
-    _args = args;
-    _requestCount = 0;
-    _suppressCommandPort = false;
-    _suppressCommandPortManualOverride = false;
+    : STCPServer(""), _args(args), _requestCount(0), _writeThread(nullptr), _replicationState(SQLC_SEARCHING),
+      _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
+      _suppressCommandPortManualOverride(false) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -511,8 +507,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Accept any new connections
-    Socket* s = 0;
-    Port* acceptPort = 0;
+    Socket* s = nullptr;
+    Port* acceptPort = nullptr;
     while ((s = acceptSocket(acceptPort))) {
         // Accepted a new socket
         // **NOTE: BedrockNode doesn't need to keep a new list; we'll just
