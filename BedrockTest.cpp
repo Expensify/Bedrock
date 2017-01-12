@@ -16,9 +16,9 @@ void BedrockTester::onResponse(const string& host, const SData& request, const S
         SData correctResponse("200 OK"); // Default
         correctResponse.deserialize(request["BedrockTester.correctResponse"]);
         SASSERTEQUALS(SToInt(response.methodLine), SToInt(correctResponse.methodLine));
-        for_each(
-            correctResponse.nameValueMap.begin(), correctResponse.nameValueMap.end(),
-            [&correctResponse](pair<string, string> item) { SASSERTEQUALS(item.second, correctResponse[item.first]); });
+        for (pair<string, string> item : correctResponse.nameValueMap) {
+            SASSERTEQUALS(item.second, correctResponse[item.first]);
+        }
         SASSERTEQUALS(response.content, correctResponse.content);
     } else {
         // No correct response given -- just test for 200
@@ -206,7 +206,7 @@ void BedrockTest(SData& trueArgs) {
     }
 
     // Test each of the plugins
-    for_each(Plugin::g_registeredPluginList->begin(), Plugin::g_registeredPluginList->end(), [&](Plugin* plugin) {
+    for (Plugin* plugin : *Plugin::g_registeredPluginList) {
         // Do we need to clean up?
         if (tester->server) {
             // Stop the server to provide a clean test environment for the next plugin
@@ -220,7 +220,7 @@ void BedrockTest(SData& trueArgs) {
             SINFO("Testing plugin '" << plugin->getName() << "'...");
             plugin->test(tester);
         }
-    });
+    }
 
     // All done!
     delete tester;

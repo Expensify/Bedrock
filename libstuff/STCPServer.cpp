@@ -31,9 +31,9 @@ void STCPServer::closePorts() {
     // Are there any ports to close?
     if (!portList.empty()) {
         // Loop across and close all ports
-        SFOREACH (list<Port>, portList, portIt) {
+        for (Port& port : portList) {
             // Close this port
-            ::close(portIt->s);
+            ::close(port.s);
         }
         portList.clear();
     } else {
@@ -48,7 +48,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     Socket* socket = 0;
 
     // See if we can accept on any port
-    for_each(portList.begin(), portList.end(), [&](Port& port) {
+    for (Port& port : portList) {
         // Try to accept on the port and wrap in a socket
         sockaddr_in addr;
         int s = S_accept(port.s, addr, false);
@@ -71,7 +71,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             // Record what port it was accepted on
             portOut = &port;
         }
-    });
+    }
 
     return socket;
 }
@@ -82,7 +82,9 @@ int STCPServer::preSelect(fd_map& fdm) {
     STCPManager::preSelect(fdm);
 
     // Add the ports
-    for_each(portList.begin(), portList.end(), [&](Port port) { SFDset(fdm, port.s, SREADEVTS); });
+    for (Port port : portList) {
+        SFDset(fdm, port.s, SREADEVTS);
+    }
     // Done!
     return 0;
 }
