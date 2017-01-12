@@ -2089,6 +2089,7 @@ void* _SThreadFunc(void* voidTLS) {
 
     // Execute the thread function
     tls->proc(tls->procData);
+    delete tls;
     return 0; // Ignore return value
 }
 
