@@ -76,9 +76,9 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
     // Initialize
     _priority = priority;
     _state = SQLC_SEARCHING;
-    _currentCommand = 0;
-    _syncPeer = 0;
-    _masterPeer = 0;
+    _currentCommand = nullptr;
+    _syncPeer = nullptr;
+    _masterPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
     _commandCount = 0;
     _version = version;
@@ -445,7 +445,7 @@ void SQLiteNode::closeCommand(Command* command) {
         _abortCommand(_db, command);
         if (_db.insideTransaction())
             _db.rollback();
-        _currentCommand = 0;
+        _currentCommand = nullptr;
     }
 
     // Are we closing a command for which we're still awaiting a response from the master?
@@ -688,7 +688,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // How many peers have we logged in to?
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        Peer* freshestPeer = 0;
+        Peer* freshestPeer = nullptr;
         SFOREACH (list<Peer*>, peerList, peerIt) {
             // Wait until all connected (or failed) and logged in
             Peer* peer = *peerIt;
@@ -776,7 +776,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Give up on synchronization; reconnect that peer and go searching
             SHMMM("Timed out while waiting for SYNCHRONIZE_RESPONSE, searching.");
             _reconnectPeer(_syncPeer);
-            _syncPeer = 0;
+            _syncPeer = nullptr;
             _changeState(SQLC_SEARCHING);
             return true; // Re-update
         }
@@ -832,9 +832,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // Loop across peers and find the highest priority and master
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        Peer* highestPriorityPeer = 0;
-        Peer* freshestPeer = 0;
-        Peer* currentMaster = 0;
+        Peer* highestPriorityPeer = nullptr;
+        Peer* freshestPeer = nullptr;
+        Peer* currentMaster = nullptr;
         SFOREACH (list<Peer*>, peerList, peerIt) {
             // Make sure we're a full peer
             Peer* peer = *peerIt;
@@ -1174,7 +1174,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             if (commandFinished) {
                 // Either way, we're done with this command
                 _finishCommand(_currentCommand);
-                _currentCommand = 0;
+                _currentCommand = nullptr;
 
                 // If we havne't received majority approval, increment how
                 // many commits we've had without a "checkpoint"
@@ -1392,7 +1392,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                                                       << "), nothing to commit.");
                                 SASSERT(!_db.insideTransaction());
                                 _finishCommand(_currentCommand);
-                                _currentCommand = 0;
+                                _currentCommand = nullptr;
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
@@ -1451,7 +1451,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Give up
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to master and re-SEARCHING.");
             _reconnectPeer(_masterPeer);
-            _masterPeer = 0;
+            _masterPeer = nullptr;
             _changeState(SQLC_SEARCHING);
             return true; // Re-update
         }
@@ -1808,14 +1808,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 // All done
                 SINFO("Synchronization complete, at commitCount #" << _db.getCommitCount() << " ("
                                                                    << _db.getCommittedHash() << "), WAITING");
-                _syncPeer = 0;
+                _syncPeer = nullptr;
                 _changeState(SQLC_WAITING);
             } else if (_db.getCommitCount() > peerCommitCount) {
                 // How did this happen?  Something is screwed up.
                 SWARN("We have more data (" << _db.getCommitCount() << ") than our sync peer '" << _syncPeer->name
                                             << "' (" << peerCommitCount << "), reconnecting and SEARCHING.");
                 _reconnectPeer(_syncPeer);
-                _syncPeer = 0;
+                _syncPeer = nullptr;
                 _changeState(SQLC_SEARCHING);
             } else {
                 // Otherwise, more to go
@@ -1837,7 +1837,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Transaction failed
             SWARN("Synchronization failed '" << e << "', reconnecting and re-SEARCHING.");
             _reconnectPeer(_syncPeer);
-            _syncPeer = 0;
+            _syncPeer = nullptr;
             _changeState(SQLC_SEARCHING);
             throw e;
         }
@@ -2235,7 +2235,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // transaction response and re-SEARCH
         PHMMM("Lost our MASTER, re-SEARCHING.");
         SASSERTWARN(_state == SQLC_SUBSCRIBING || _state == SQLC_SLAVING);
-        _masterPeer = 0;
+        _masterPeer = nullptr;
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
             // approve or deny, but we'll never get its response.  Roll it
@@ -2280,7 +2280,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // Synchronization failed
         PHMMM("Lost our synchronization peer, re-SEARCHING.");
         SASSERTWARN(_state == SQLC_SYNCHRONIZING);
-        _syncPeer = 0;
+        _syncPeer = nullptr;
         _changeState(SQLC_SEARCHING);
     }
 
@@ -2337,7 +2337,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 _sendToPeer(peer, rollback);
             }
         delete _currentCommand;
-        _currentCommand = 0;
+        _currentCommand = nullptr;
     }
 }
 
@@ -2397,14 +2397,14 @@ void SQLiteNode::_changeState(SQLCState newState) {
                 // Abort this command
                 SWARN("No longer mastering, aborting current command");
                 closeCommand(_currentCommand);
-                _currentCommand = 0;
+                _currentCommand = nullptr;
             }
         }
 
         // Clear some state if we can
         if (newState < SQLC_SUBSCRIBING) {
             // We're no longer SUBSCRIBING or SLAVING, so we have no master
-            _masterPeer = 0;
+            _masterPeer = nullptr;
         }
 
         // Additional logic for some new states
@@ -2570,7 +2570,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 
 void SQLiteNode::_updateSyncPeer()
 {
-    Peer* newSyncPeer = 0;
+    Peer* newSyncPeer = nullptr;
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : peerList) {
         // If either of these conditions are true, then we can't use this peer.

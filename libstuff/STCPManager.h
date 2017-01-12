@@ -34,7 +34,7 @@ struct STCPManager {
     void postSelect(fd_map& fdm);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = 0);
+    Socket* openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
     void shutdownSocket(Socket* socket, int how = SHUT_RDWR);

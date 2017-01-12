@@ -20,8 +20,8 @@ class BedrockTester {
     uint64_t nextActivity;
     bool passing;
     int serverPID = 0;
-    SQLite* db = 0;
-    SQLite* writableDB = 0;
+    SQLite* db = nullptr;
+    SQLite* writableDB = nullptr;
 
     // Constructor
     BedrockTester(string filename = "");

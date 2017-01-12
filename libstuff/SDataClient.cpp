@@ -3,7 +3,7 @@
 // --------------------------------------------------------------------------
 void SDataClient::sendRequest(const string& host, const SData& request) {
     // First see if we already have an idle connection open to that host
-    Connection* connection = 0;
+    Connection* connection = nullptr;
     for (auto connectionIt = (idleConnectionList).begin(); connectionIt != (idleConnectionList).end(); ++connectionIt) {
         // See if it's to that host
         Connection* c = *connectionIt;
@@ -63,9 +63,9 @@ void SDataClient::postSelect(fd_map& fdm) {
         // See if we got a response on this active connection
         Connection* connection = *connectionIt;
         list<Connection*>::iterator lastConnectionIt = connectionIt++;
-        int responseSize = 0;
         SData response;
-        if ((responseSize = response.deserialize(connection->s->recvBuffer))) {
+        int responseSize = response.deserialize(connection->s->recvBuffer);
+        if (responseSize) {
             // Got a response; clear the request so we can reuse this
             // connection.
             SINFO("Request '" << connection->request.methodLine << "' received response '" << response.methodLine

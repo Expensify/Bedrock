@@ -45,7 +45,7 @@ void STCPServer::closePorts() {
 STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     portOut = 0;
-    Socket* socket = 0;
+    Socket* socket = nullptr;
 
     // See if we can accept on any port
     for (Port& port : portList) {
@@ -61,8 +61,8 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             socket->state = STCP_CONNECTED;
             socket->connectFailure = false;
             socket->openTime = STimeNow();
-            socket->ssl = 0;
-            socket->data = 0; // Used by caller, not libstuff
+            socket->ssl = nullptr;
+            socket->data = nullptr; // Used by caller, not libstuff
             socketList.push_back(socket);
 
             // Try to read immediately
