@@ -31,9 +31,9 @@ void STCPServer::closePorts() {
     // Are there any ports to close?
     if (!portList.empty()) {
         // Loop across and close all ports
-        SFOREACH (list<Port>, portList, portIt) {
+        for (Port& port : portList) {
             // Close this port
-            ::close(portIt->s);
+            ::close(port.s);
         }
         portList.clear();
     } else {

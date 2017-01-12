@@ -89,9 +89,8 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     try {
         // Loop across the plugins to see which wants to take this
         bool pluginPeeked = false;
-        SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
+        for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
             // See if it peeks this
-            BedrockPlugin* plugin = *pluginIt;
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
                 // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
@@ -164,9 +163,8 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
             // --------------------------------------------------------------------------
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
-            SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
+            for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
                 // See if it processes this
-                BedrockPlugin* plugin = *pluginIt;
                 if (plugin->enabled() && plugin->processCommand(this, db, command)) {
                     // Processed it!
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");

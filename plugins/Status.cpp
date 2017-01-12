@@ -90,10 +90,10 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         content["version"] = _args ? (*_args)["version"] : "";
         content["priority"] = SToStr(node->getPriority());
         list<string> peerList;
-        SFOREACH (list<BedrockNode::Peer*>, node->peerList, it) {
-            STable peer = (*it)->nameValueMap;
-            peer["host"] = (*it)->host;
-            peerList.push_back(SComposeJSONObject(peer));
+        for (BedrockNode::Peer* peer : node->peerList) {
+            STable peerTable = peer->nameValueMap;
+            peerTable["host"] = peer->host;
+            peerList.push_back(SComposeJSONObject(peerTable));
         }
         content["peerList"] = SComposeJSONArray(peerList);
         content["queuedCommandList"] = SComposeJSONArray(node->getQueuedCommandList());

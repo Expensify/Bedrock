@@ -13,7 +13,9 @@ void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // it has some insight.
     SData& request = command->request;
     SData& response = command->response;
-    SFOREACHMAP (string, string, request.nameValueMap, mapIt) { response["request." + mapIt->first] = mapIt->second; }
+    for (auto& row : request.nameValueMap) {
+        response["request." + row.first] = row.second;
+    }
 
     // Add a few others
     response["request.processingTime"] = SToStr(command->processingTime);
@@ -151,11 +153,11 @@ void BedrockServer_WorkerThread(void* _data) {
     } else {
         // Add peers
         list<string> parsedPeerList = SParseList(args["-peerList"]);
-        SFOREACH (list<string>, parsedPeerList, peerIt) {
+        for (const string& peer : parsedPeerList) {
             // Get the params from this peer, if any
             string host;
             STable params;
-            SASSERT(SParseURIPath(*peerIt, host, params));
+            SASSERT(SParseURIPath(peer, host, params));
             node.addPeer(SGetDomain(host), host, params);
         }
 
@@ -278,9 +280,8 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Output the list of plugins compiled in
     map<string, BedrockPlugin*> registeredPluginMap;
-    SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
+    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
         // Add one more plugin
-        BedrockPlugin* plugin = *pluginIt;
         const string& pluginName = SToLower(plugin->getName());
         SINFO("Registering plugin '" << pluginName << "'");
         registeredPluginMap[pluginName] = plugin;
@@ -289,9 +290,8 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Enable the requested plugins
     list<string> pluginNameList = SParseList(args["-plugins"]);
-    SFOREACH (list<string>, pluginNameList, pluginNameIt) {
+    for (string& pluginName : pluginNameList) {
         // Enable the named plugin
-        const string& pluginName = SToLower(*pluginNameIt);
         BedrockPlugin* plugin = registeredPluginMap[pluginName];
         if (!plugin)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
@@ -351,9 +351,8 @@ BedrockServer::~BedrockServer() {
     SINFO("Closing write thread '" << _writeThread->name << "'");
     SThreadClose(_writeThread->thread);
     delete _writeThread;
-    SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
+    for (Thread* readThread : _readThreadList) {
         // Close this thread
-        Thread* readThread = *readThreadIt;
         SINFO("Closing read thread '" << readThread->name << "'");
         SThreadClose(readThread->thread);
         delete readThread;
@@ -577,9 +576,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
                         SData cancelRequest("CANCEL_REQUEST");
                         cancelRequest["requestCount"] = SToStr(requestCount);
-                        SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
+                        for (Thread* readThread : _readThreadList) {
                             // Send it the cancel command
-                            Thread* readThread = *readThreadIt;
                             readThread->directMessages.push(cancelRequest);
                         }
                         _writeThread->directMessages.push(cancelRequest);

@@ -44,20 +44,6 @@ void SInitialize();
 #include <cctype>
 using namespace std;
 
-// Useful STL macros
-// _CT_ : Container type
-// _C_  : Container
-// _I_  : Iterator
-#define SFOREACH(_CT_, _C_, _I_) for (_CT_::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHREVERSE(_CT_, _C_, _I_) for (_CT_::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
-#define SFOREACHCONST(_CT_, _C_, _I_) for (_CT_::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHMAP(_CT0_, _CT1_, _C_, _I_)                                                                            \
-    for (map<_CT0_, _CT1_>::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHMAPREVERSE(_CT0_, _CT1_, _C_, _I_)                                                                     \
-    for (map<_CT0_, _CT1_>::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
-#define SFOREACHMAPCONST(_CT0_, _CT1_, _C_, _I_)                                                                       \
-    for (map<_CT0_, _CT1_>::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-
 // --------------------------------------------------------------------------
 // Assertion stuff
 // --------------------------------------------------------------------------
@@ -564,7 +550,9 @@ inline string SComposeJSONArray(const vector<string>& valueList) {
     if (valueList.empty())
         return "[]";
     string working = "[";
-    SFOREACHCONST(vector<string>, valueList, valueIt) working += SToJSON(*valueIt) + ",";
+    for (const string& value : valueList) {
+        working += SToJSON(value) + ",";
+    }
     working.resize(working.size() - 1);
     working += "]";
     return working;
@@ -573,7 +561,9 @@ inline string SComposeJSONArray(const list<string>& valueList) {
     if (valueList.empty())
         return "[]";
     string working = "[";
-    SFOREACHCONST(list<string>, valueList, valueIt) working += SToJSON(*valueIt) + ",";
+    for (const string& value : valueList) {
+        working += SToJSON(value) + ",";
+    }
     working.resize(working.size() - 1);
     working += "]";
     return working;

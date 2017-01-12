@@ -961,7 +961,9 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
             // work in Firefox.
             list<string> cookieList;
             SParseList(item.second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
-            SFOREACH (list<string>, cookieList, cookieIt) { buffer += "Set-Cookie: " + *cookieIt + "\r\n"; }
+            for (string& cookie : cookieList) {
+                buffer += "Set-Cookie: " + cookie + "\r\n";
+            }
         } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
         } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
@@ -1001,8 +1003,9 @@ string SComposePOST(const STable& nameValueMap) {
             // Add as many times as there are values
             list<string> valueList;
             SParseList(item.second, valueList, S_COOKIE_SEPARATOR);
-            SFOREACH (list<string>, valueList, valueIt)
-                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
+            for (string& value : valueList) {
+                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(value) << "&";
+            }
         }
     }
     string outStr = out.str();
@@ -2142,14 +2145,14 @@ string SQList(const string& val, bool integersOnly) {
     list<string> dirtyList;
     SParseList(val, dirtyList);
     list<string> cleanList;
-    SFOREACH (list<string>, dirtyList, dirtyIt) {
+    for (string& dirty : dirtyList) {
         // Make sure it's clean
         if (integersOnly) {
-            const string& clean = SToStr(SToInt64(*dirtyIt));
-            if (!clean.empty() && (clean == *dirtyIt))
+            const string& clean = SToStr(SToInt64(dirty));
+            if (!clean.empty() && (clean == dirty))
                 cleanList.push_back(clean);
         } else
-            cleanList.push_back(SQ(*dirtyIt));
+            cleanList.push_back(SQ(dirty));
     }
     return SComposeList(cleanList);
 }

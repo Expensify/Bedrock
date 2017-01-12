@@ -98,8 +98,8 @@ struct LibStuff : tpunit::TestFixture {
 
         // Verify we can undo our own encoding (Objects)
         innerObject0Verify = SParseJSONObject(SComposeJSONObject(innerObject0));
-        SFOREACHMAP (string, string, innerObject0, mapIt) {
-            ASSERT_EQUAL(innerObject0[mapIt->first], innerObject0Verify[mapIt->first]);
+        for (auto& item : innerObject0) {
+            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
         }
 
         // Verify we can undo our own encoding (Arrays)
@@ -113,11 +113,11 @@ struct LibStuff : tpunit::TestFixture {
         // Verify we can undo our own encoding through 2 levels (Object)
         innerObject0Verify = SParseJSONObject(innerObjectListVerify.front());
         innerObject1Verify = SParseJSONObject(innerObjectListVerify.back());
-        SFOREACHMAP (string, string, innerObject0, mapIt) {
-            ASSERT_EQUAL(innerObject0[mapIt->first], innerObject0Verify[mapIt->first]);
+        for (auto& item : innerObject0) {
+            ASSERT_EQUAL(innerObject0[item.first], innerObject0Verify[item.first]);
         }
-        SFOREACHMAP (string, string, innerObject1, mapIt) {
-            ASSERT_EQUAL(innerObject1[mapIt->first], innerObject1Verify[mapIt->first]);
+        for (auto& item : innerObject1) {
+            ASSERT_EQUAL(innerObject1[item.first], innerObject1Verify[item.first]);
         }
 
         // Verify we can parse/encode PHP objects

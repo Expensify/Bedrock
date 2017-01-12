@@ -13,12 +13,12 @@ STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvT
 // --------------------------------------------------------------------------
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
-    SFOREACH (list<Socket*>, acceptedSocketList, socketIt)
-        closeSocket(*socketIt);
+    for (Socket* socket : acceptedSocketList) {
+        closeSocket(socket);
+    }
     acceptedSocketList.clear();
-    SFOREACH (list<Peer*>, peerList, peerIt) {
+    for (Peer* peer : peerList) {
         // Shut down the peer
-        Peer* peer = *peerIt;
         if (peer->s)
             closeSocket(peer->s);
         delete peer;
@@ -74,10 +74,9 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we asssociate with a peer?
                     bool foundIt = false;
-                    SFOREACH (list<Peer*>, peerList, peerIt) {
+                    for (Peer* peer : peerList) {
                         // Just match any unconnected peer
                         // **FIXME: Autenticate and match by public key
-                        Peer* peer = *peerIt;
                         if (peer->name == message["Name"]) {
                             // Found it!  Are we already connected?
                             if (!peer->s) {
@@ -122,9 +121,8 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Try to establish connections with peers and process messages
-    SFOREACH (list<Peer*>, peerList, peerIt) {
+    for (Peer* peer : peerList) {
         // See if we're connected
-        Peer* peer = *peerIt;
         if (peer->s) {
             // We have a socket; process based on its state
             switch (peer->s->state) {
