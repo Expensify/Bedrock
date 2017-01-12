@@ -27,7 +27,7 @@ struct SQLiteTestWebServer : public STCPServer {
         STCPServer::postSelect(fdm);
 
         // Just accept everything
-        Socket* s = 0;
+        Socket* s = nullptr;
         while ((s = acceptSocket()))
             SDEBUG("Accepted socket from '" << s->addr << "'");
 
@@ -150,7 +150,7 @@ struct SQLiteTestNode : public SQLiteNode {
                 command->response.methodLine = "200 OK";
                 SASSERT(command->httpsRequest);
                 httpsClient.closeTransaction(command->httpsRequest);
-                command->httpsRequest = 0;
+                command->httpsRequest = nullptr;
             } else if (SIEquals(command->request.methodLine, "INCREMENT_EXTERNAL")) {
                 // Just increment the value
                 SASSERT(db.write("UPDATE test SET value=value+1;"));
@@ -158,7 +158,7 @@ struct SQLiteTestNode : public SQLiteNode {
                 command->response.methodLine = "200 OK";
                 SASSERT(command->httpsRequest);
                 httpsClient.closeTransaction(command->httpsRequest);
-                command->httpsRequest = 0;
+                command->httpsRequest = nullptr;
             } else
                 SERROR("Unrecognized request '" << command->request.methodLine << "'");
         }
@@ -176,7 +176,7 @@ struct SQLiteTestNode : public SQLiteNode {
         // Clean the secondary request, if any
         if (command->httpsRequest)
             httpsClient.closeTransaction(command->httpsRequest);
-        command->httpsRequest = 0;
+        command->httpsRequest = nullptr;
     }
 
     // Override the base update
@@ -355,7 +355,7 @@ struct SQLiteTester {
             // Hard kill it, if not graceful
             if (!graceful) {
                 delete _nodeArray[c];
-                _nodeArray[c] = 0;
+                _nodeArray[c] = nullptr;
             }
         } else {
             // Add a new peer
@@ -388,7 +388,7 @@ struct SQLiteTester {
                     // Graceful shutdown has completed
                     SINFO("<<<<<<<<<<<<<<<< Graceful shutdown complete #" << c << "<<<<<<<<<<<<<");
                     delete _nodeArray[c];
-                    _nodeArray[c] = 0;
+                    _nodeArray[c] = nullptr;
                 } else {
                     // Alive, process
                     maxS = max(maxS, _nodeArray[c]->preSelect(fdm));
@@ -445,7 +445,7 @@ struct SQLiteTester {
                 status += " | #" + SToStr(c) + " " + (string)SQLCStateNames[_nodeArray[c]->getState()];
 
                 // Clean up any completed commands
-                SQLiteNode::Command* sqlCommand = 0;
+                SQLiteNode::Command* sqlCommand = nullptr;
                 while (!_commandList.empty() && (sqlCommand = _nodeArray[c]->getProcessedCommand()))
                     for (auto commandIt = _commandList.begin(); commandIt != _commandList.end(); ++commandIt)
                         if (commandIt->command == sqlCommand) {

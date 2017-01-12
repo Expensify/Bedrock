@@ -2,7 +2,7 @@
 #include "BedrockPlugin.h"
 
 // Global static values
-list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = 0;
+list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = nullptr;
 
 BedrockPlugin::BedrockPlugin() : _enabled(false) {
     // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.

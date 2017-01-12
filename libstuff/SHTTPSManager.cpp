@@ -1,9 +1,8 @@
 #include "libstuff.h"
 
 // --------------------------------------------------------------------------
-SHTTPSManager::SHTTPSManager() {
-    // Generate the x509 certificate.
-    _x509 = SX509Open();
+SHTTPSManager::SHTTPSManager()
+    : _x509(SX509Open()) { // Generate the x509 certificate.
     SASSERT(_x509);
 }
 
@@ -35,7 +34,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     _completedTransactionList.remove(transaction);
     if (transaction->s)
         closeSocket(transaction->s);
-    transaction->s = 0;
+    transaction->s = nullptr;
     delete transaction;
 }
 

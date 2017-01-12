@@ -321,8 +321,7 @@ template <typename T> class SSynchronized {
     // Initialize with the default constructor for the value.
     SSynchronized() {}
     // Initialize with a specific value.
-    SSynchronized(const T& val) {
-        _synchronizedValue = val;
+    SSynchronized(const T& val) : _synchronizedValue(val) {
     }
 
     // Getter and setter

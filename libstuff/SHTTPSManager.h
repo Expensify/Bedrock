@@ -5,11 +5,8 @@ class SHTTPSManager : public STCPManager {
     // Transaction
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SHTTPSManager& owner_) : owner(owner_) {
-            s = 0;
-            created = STimeNow();
-            finished = 0;
-            response = 0;
+        Transaction(SHTTPSManager& owner_)
+          : s(nullptr), created(STimeNow()), finished(0), response(0), owner(owner_) {
         }
         ~Transaction() { SASSERT(!s); }
 

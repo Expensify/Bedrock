@@ -34,7 +34,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         testNode.addPeer("peer4", "host4.fake:8888", dummyParams);
 
         // Do a base test, with one peer with no latency.
-        SQLiteNode::Peer* fastest = 0;
+        SQLiteNode::Peer* fastest = nullptr;
         for (auto peer : testNode.peerList) {
             int peerNum = peer->name[4] - 48;
             (*peer)["LoggedIn"] = "true";

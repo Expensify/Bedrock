@@ -4,10 +4,8 @@
 #define SLOGPREFIX "{" << name << "} "
 
 // --------------------------------------------------------------------------
-STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_) : STCPServer(host) {
-    // Initialize
-    name = name_;
-    recvTimeout = recvTimeout_;
+STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
+    : STCPServer(host), name(name_), recvTimeout(recvTimeout_) {
 }
 
 // --------------------------------------------------------------------------
@@ -49,7 +47,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     STCPServer::postSelect(fdm);
 
     // Accept any new peers
-    Socket* socket = 0;
+    Socket* socket = nullptr;
     while ((socket = acceptSocket()))
         acceptedSocketList.push_back(socket);
 
@@ -67,8 +65,8 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
             // Still alive; try to login
             SData message;
-            int messageSize = 0;
-            if ((messageSize = message.deserialize(socket->recvBuffer))) {
+            int messageSize = message.deserialize(socket->recvBuffer);
+            if (messageSize) {
                 // What is it?
                 SConsumeFront(socket->recvBuffer, messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {

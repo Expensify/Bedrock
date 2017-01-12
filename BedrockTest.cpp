@@ -4,9 +4,7 @@
 
 using Plugin = BedrockPlugin;
 
-BedrockTester::BedrockTester() {
-    // Initialize
-    server = 0;
+BedrockTester::BedrockTester() : server(nullptr) {
 }
 
 void BedrockTester::onResponse(const string& host, const SData& request, const SData& response) {

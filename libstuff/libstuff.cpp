@@ -73,8 +73,8 @@ void SInitialize() {
         // Initialize thread local storage
         SASSERT(!pthread_key_create(&_g_SThread_TLSKey, NULL));
         SThreadLocalStorage* mainTLS = new SThreadLocalStorage;
-        mainTLS->proc = 0;
-        mainTLS->procData = 0;
+        mainTLS->proc = nullptr;
+        mainTLS->procData = nullptr;
         mainTLS->name = "main";
         pthread_setspecific(_g_SThread_TLSKey, mainTLS);
         _g_SThread_TLSKey_Initialized = true;
@@ -2089,6 +2089,7 @@ void* _SThreadFunc(void* voidTLS) {
 
     // Execute the thread function
     tls->proc(tls->procData);
+    delete tls;
     return 0; // Ignore return value
 }
 
@@ -2159,7 +2160,7 @@ string SQList(const string& val, bool integersOnly) {
 
 // --------------------------------------------------------------------------
 // Begins logging all queries to a logging database
-FILE* _g_sQueryLogFP = 0;
+FILE* _g_sQueryLogFP = nullptr;
 extern void SQueryLogOpen(const string& logFilename) {
     // Make sure it's not already open
     if (_g_sQueryLogFP) {
@@ -2190,7 +2191,7 @@ void SQueryLogClose() {
         // Clear the global variable and wait a second, in case it's being called right now
         SINFO("Closing query log...");
         FILE* fp = _g_sQueryLogFP;
-        _g_sQueryLogFP = 0;
+        _g_sQueryLogFP = nullptr;
         SThreadSleep(STIME_US_PER_S);
 
         // Close it
