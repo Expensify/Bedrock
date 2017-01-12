@@ -35,6 +35,20 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "/" << SQLCStateNames[_state] << "} "
 
+// Useful STL macros
+// _CT_ : Container type
+// _C_  : Container
+// _I_  : Iterator
+#define SFOREACH(_CT_, _C_, _I_) for (_CT_::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
+#define SFOREACHREVERSE(_CT_, _C_, _I_) for (_CT_::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
+#define SFOREACHCONST(_CT_, _C_, _I_) for (_CT_::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
+#define SFOREACHMAP(_CT0_, _CT1_, _C_, _I_)                                                                            \
+    for (map<_CT0_, _CT1_>::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
+#define SFOREACHMAPREVERSE(_CT0_, _CT1_, _C_, _I_)                                                                     \
+    for (map<_CT0_, _CT1_>::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
+#define SFOREACHMAPCONST(_CT0_, _CT1_, _C_, _I_)                                                                       \
+    for (map<_CT0_, _CT1_>::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
+
 // Convenience macro for iterating over a priorty queue that is map of priority -> ordered list. Abstracts away map and
 // list iteration into one loop.
 #define SFOREACHPRIORITYQUEUE(_CT_, _C_, _I_)                                                                          \
@@ -141,7 +155,7 @@ bool SQLiteNode::shutdownComplete() {
         // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
         // so we can try and diagnose what's happening.
         if (_escalatedCommandMap.size()) {
-            for_each(_escalatedCommandMap.begin(), _escalatedCommandMap.end(), [&](std::pair<string, Command*> cmd) {
+            for (std::pair<string, Command*> cmd : _escalatedCommandMap) {
                 string name = cmd.first;
                 Command* command = cmd.second;
                 int64_t created = command->creationTimestamp;
@@ -151,7 +165,7 @@ bool SQLiteNode::shutdownComplete() {
                 SINFO("Escalated command remaining at shutdown("
                       << name << "): " << command->request.methodLine << ". Created: " << command->creationTimestamp
                       << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
-            });
+            }
         }
         return false;
     }

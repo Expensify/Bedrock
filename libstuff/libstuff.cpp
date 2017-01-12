@@ -111,6 +111,7 @@ string SToHex(uint64_t value, int digits) {
 string SToHex(const string& value) {
     // Fill from front to back
     string working;
+    working.reserve(value.size() * 2);
     for (size_t c = 0; c < value.size(); ++c) {
         // Add two digits per byte
         unsigned char digit = (unsigned char)value[c];
@@ -143,7 +144,8 @@ uint64_t SFromHex(const string& value) {
 
 string SStrFromHex(const string& buffer) {
     string retVal;
-    for(size_t i = 0; i < buffer.length(); i += 2) {
+    retVal.reserve(buffer.size() / 2);
+    for(size_t i = 0; i < buffer.size(); i += 2) {
         retVal.push_back((char)strtol(buffer.substr(i, 2).c_str(), 0, 16));
     }
     return retVal;
@@ -170,32 +172,33 @@ bool SIContains(const string& lhs, const string& rhs) {
 // --------------------------------------------------------------------------
 string STrim(const string& lhs) {
     // Just trim off the front and back whitespace
-    size_t front = 0;
-    while (front < lhs.size() && isspace(lhs[front]))
-        ++front;
-    size_t back = lhs.size() - 1;
-    while (back != string::npos && isspace(lhs[back]))
-        --back;
-    if (front <= back)
-        return lhs.substr(front, back - front + 1);
-    else
-        return "";
+    if(!lhs.empty()) {
+        const char* front(lhs.data());
+        const char* back(&lhs.back());
+        while(*front && isspace(*front))
+            ++front;
+        while(back > front && isspace(*back))
+            --back;
+        return string(front, ++back);
+    }
+    return "";
 }
 
 // --------------------------------------------------------------------------
 string SCollapse(const string& lhs) {
     // Collapse all whitespace into a single space
     string out;
+    out.reserve(lhs.size());
     bool inWhite = false;
-    for (size_t c = 0; c < lhs.size(); ++c)
-        if (isspace(lhs[c])) {
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isspace(*c)) {
             // Only add if not already whitespace
             if (!inWhite)
-                out += lhs[c];
+                out += *c;
             inWhite = true;
         } else {
             // Not whitespace,a dd
-            out += lhs[c];
+            out += *c;
             inWhite = false;
         }
     return out;
@@ -205,9 +208,10 @@ string SCollapse(const string& lhs) {
 string SStrip(const string& lhs) {
     // Strip out all non-printable characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c)
-        if (isprint(lhs[c]))
-            working += lhs[c];
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c)
+        if (isprint(*c))
+            working += *c;
     return working;
 }
 
@@ -215,12 +219,13 @@ string SStrip(const string& lhs) {
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe) {
     // Strip out all unsafe characters
     string working;
-    for (int c = 0; c < (int)lhs.size(); ++c) {
+    working.reserve(lhs.size());
+    for (const char* c(lhs.data()); *c; ++c) {
         // If the characters are in the set and are safe, then add.
         // Otherwise, if the characters are unsafe but not in the set, still add.
-        bool inSet = (chars.find(lhs[c]) != string::npos);
+        bool inSet = (chars.find(*c) != string::npos);
         if (inSet == charsAreSafe)
-            working += lhs[c];
+            working += *c;
     }
     return working;
 }
@@ -357,6 +362,7 @@ string SReplace(const string& value, const string& find, const string& replace) 
 
     // Keep going until we find no more
     string out;
+    out.reserve(value.size());
     size_t skip = 0;
     while (true) {
         // Look for the next match
@@ -378,9 +384,10 @@ string SReplace(const string& value, const string& find, const string& replace) 
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar) {
     // Loop across the string and replace any invalid character
     string out;
-    for (size_t c = 0; c < value.size(); ++c)
-        if (safeChars.find(value[c]) != string::npos)
-            out += value[c];
+    out.reserve(value.size());
+    for (const char* c(value.data()); *c; ++c)
+        if (safeChars.find(*c) != string::npos)
+            out += *c;
         else
             out += replaceChar;
     return out;
@@ -390,9 +397,10 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar) {
     // Loop across the string and replace any invalid character
     string out;
-    for (size_t c = 0; c < value.size(); ++c)
-        if (unsafeChars.find(value[c]) == string::npos)
-            out += value[c];
+    out.reserve(value.size());
+    for (const char* c(value.data()); *c; ++c)
+        if (unsafeChars.find(*c) == string::npos)
+            out += *c;
         else
             out += replaceChar;
     return out;
@@ -437,9 +445,9 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 list<int64_t> SParseIntegerList(const string& value, char separator) {
     list<int64_t> valueList;
     list<string> strings = SParseList(value, separator);
-    for_each(strings.begin(), strings.end(), [&](string str){
+    for (string str : strings) {
         valueList.push_back(SToInt64(str));
-    });
+    }
     return valueList;
 }
 
@@ -945,7 +953,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
             // Technically, this shouldn't be necessary: RFC2109 section 4.2.2
@@ -953,7 +961,9 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
             // work in Firefox.
             list<string> cookieList;
             SParseList(item.second, cookieList, S_COOKIE_SEPARATOR); // A bit of a hack, yuck
-            SFOREACH (list<string>, cookieList, cookieIt) { buffer += "Set-Cookie: " + *cookieIt + "\r\n"; }
+            for (string& cookie : cookieList) {
+                buffer += "Set-Cookie: " + cookie + "\r\n";
+            }
         } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
         } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
@@ -961,7 +971,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
         } else {
             buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
         }
-    });
+    }
 
     const string gzipContent = tryGzip ? SGZip(content) : "";
     const bool gzipSuccess = !gzipContent.empty();
@@ -983,7 +993,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 string SComposePOST(const STable& nameValueMap) {
     // Accumulate and convert
     ostringstream out;
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         // Output the name and value, if any.  If the value is actually a
         // separated list of values, re-add the name each time
         if (item.second.empty()) {
@@ -993,10 +1003,11 @@ string SComposePOST(const STable& nameValueMap) {
             // Add as many times as there are values
             list<string> valueList;
             SParseList(item.second, valueList, S_COOKIE_SEPARATOR);
-            SFOREACH (list<string>, valueList, valueIt)
-                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(*valueIt) << "&";
+            for (string& value : valueList) {
+                out << SEncodeURIComponent(item.first) << "=" << SEncodeURIComponent(value) << "&";
+            }
         }
-    });
+    }
     string outStr = out.str();
     SConsumeBack(outStr, 1); // Trim off trailing '&'
     return outStr;
@@ -1123,9 +1134,9 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString) {
     if (nameValueMap.empty())
         return "{}";
     string working = "{";
-    for_each(nameValueMap.begin(), nameValueMap.end(), [&](pair<string, string> item) {
+    for (pair<string, string> item : nameValueMap) {
         working += "\"" + item.first + "\":" + SToJSON(item.second, forceString) + ",";
-    });
+    }
     working.resize(working.size() - 1);
     working += "}";
     return working;
@@ -1786,14 +1797,18 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Build a vector we can use to pass data to poll().
     vector<pollfd> pollvec;
-    for_each(fdm.begin(), fdm.end(), [&](pair<int, pollfd> pfd) { pollvec.push_back(pfd.second); });
+    for (pair<int, pollfd> pfd : fdm) {
+        pollvec.push_back(pfd.second);
+    }
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
-    for_each(pollvec.begin(), pollvec.end(), [&](pollfd pfd) { fdm[pfd.fd].revents = pfd.revents; });
+    for (pollfd pfd : pollvec) {
+        fdm[pfd.fd].revents = pfd.revents;
+    }
 
     if (returnValue == -1) {
         SWARN("Poll failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), ignoring");
@@ -2130,14 +2145,14 @@ string SQList(const string& val, bool integersOnly) {
     list<string> dirtyList;
     SParseList(val, dirtyList);
     list<string> cleanList;
-    SFOREACH (list<string>, dirtyList, dirtyIt) {
+    for (string& dirty : dirtyList) {
         // Make sure it's clean
         if (integersOnly) {
-            const string& clean = SToStr(SToInt64(*dirtyIt));
-            if (!clean.empty() && (clean == *dirtyIt))
+            const string& clean = SToStr(SToInt64(dirty));
+            if (!clean.empty() && (clean == dirty))
                 cleanList.push_back(clean);
         } else
-            cleanList.push_back(SQ(*dirtyIt));
+            cleanList.push_back(SQ(dirty));
     }
     return SComposeList(cleanList);
 }

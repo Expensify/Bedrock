@@ -407,12 +407,11 @@ struct SQLiteTester {
         int numNonHeldCommands = 0;
         int numHeldCommands = 0;
         int numOustandingExternalCommands = 0;
-        SFOREACH (list<Command>, _commandList, commandIt) {
+        for (auto& command : _commandList) {
             // See what they are
-            numNonHeldCommands += !(*commandIt).command->request.isSet("HeldBy");
-            numHeldCommands += (*commandIt).command->request.isSet("HeldBy");
-            numOustandingExternalCommands +=
-                (*commandIt).command->httpsRequest && !(*commandIt).command->httpsRequest->response;
+            numNonHeldCommands += !command.command->request.isSet("HeldBy");
+            numHeldCommands += command.command->request.isSet("HeldBy");
+            numOustandingExternalCommands += command.command->httpsRequest && !command.command->httpsRequest->response;
         }
         if (activeSockets == 0 && !numHeldCommands && timeout > STIME_US_PER_S * 9) {
             // This select shouldn't happen: we didn't have any activity and aren't waiting on any held commands, and
@@ -448,7 +447,7 @@ struct SQLiteTester {
                 // Clean up any completed commands
                 SQLiteNode::Command* sqlCommand = 0;
                 while (!_commandList.empty() && (sqlCommand = _nodeArray[c]->getProcessedCommand()))
-                    SFOREACH (list<Command>, _commandList, commandIt)
+                    for (auto commandIt = _commandList.begin(); commandIt != _commandList.end(); ++commandIt)
                         if (commandIt->command == sqlCommand) {
                             // Remove it
                             Command& command = *commandIt;

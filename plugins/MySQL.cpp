@@ -95,12 +95,12 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     sendBuffer += columnCount.serialize();
 
     // Add all the columns
-    SFOREACHCONST(vector<string>, result.headers, headerIt) {
+    for (const auto& header : result.headers) {
         // Now a column description
         MySQLPacket column;
         column.sequenceID = ++sequenceID;
         column.payload += lenEncStr("unknown"); // table name
-        column.payload += lenEncStr(*headerIt); // column name
+        column.payload += lenEncStr(header);    // column name
         column.payload += lenEncInt(3);         // length of column length field
         uint32_t colLength = 1024;
         SAppend(column.payload, &colLength, 3); // column length (3 bytes)
@@ -118,11 +118,13 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     sendBuffer += eofPacket.serialize();
 
     // Add all the rows
-    SFOREACHCONST(vector<vector<string>>, result.rows, rowIt) {
+    for (const auto& row : result.rows) {
         // Now the row
         MySQLPacket rowPacket;
         rowPacket.sequenceID = ++sequenceID;
-        SFOREACHCONST(vector<string>, *rowIt, cellIt) { rowPacket.payload += lenEncStr(*cellIt); }
+        for (const auto& cell : row) {
+            rowPacket.payload += lenEncStr(cell);
+        }
         SAppend(rowPacket.payload, "\xFE", 1); // EOF
         sendBuffer += rowPacket.serialize();
     }

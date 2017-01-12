@@ -10,9 +10,8 @@ STCPManager::~STCPManager() {
 int STCPManager::preSelect(fd_map& fdm) {
     // Add all the sockets
     int maxS = 0;
-    SFOREACH (list<Socket*>, socketList, socketIt) {
+    for (Socket* socket : socketList) {
         // Make sure it's not closed
-        Socket* socket = *socketIt;
         if (socket->state != STCP_CLOSED) {
             // Check and see if it looks like we're still valid.
             if (socket->s < 0) {
@@ -82,9 +81,8 @@ int STCPManager::preSelect(fd_map& fdm) {
 // --------------------------------------------------------------------------
 void STCPManager::postSelect(fd_map& fdm) {
     // Walk across the sockets
-    SFOREACH (list<Socket*>, socketList, socketIt) {
+    for (Socket* socket : socketList) {
         // Update this socket
-        Socket* socket = *socketIt;
         switch (socket->state) {
         case STCP_CONNECTING: {
             // See if it connected or failed

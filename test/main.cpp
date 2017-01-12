@@ -48,11 +48,15 @@ int main(int argc, char* argv[]) {
 
     if (args.isSet("-only")) {
         list<string> includeList = SParseList(args["-only"]);
-        for_each(includeList.begin(), includeList.end(), [&](string name) { include.insert(name); });
+        for (string name : includeList) {
+            include.insert(name);
+        }
     }
     if (args.isSet("-except")) {
         list<string> excludeList = SParseList(args["-except"]);
-        for_each(excludeList.begin(), excludeList.end(), [&](string name) { exclude.insert(name); });
+        for (string name : excludeList) {
+            exclude.insert(name);
+        }
     }
 
     // Set the defaults for the servers that each BedrockTester will start.

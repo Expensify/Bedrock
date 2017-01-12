@@ -643,9 +643,8 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 
     // Validate the sqlite date modifiers
     // See: https://www.sqlite.org/lang_datefunc.html
-    SFOREACH (list<string>, parts, partIt) {
+    for (const string& part : parts) {
         // Simple regexp validation
-        const string& part = *partIt;
         if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
             safeParts.push_back(SQ(part));
         } else if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {

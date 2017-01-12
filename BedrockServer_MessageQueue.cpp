@@ -70,7 +70,7 @@ bool BedrockServer::MessageQueue::empty() {
 bool BedrockServer::MessageQueue::cancel(const string& name, const string& value) {
     SAUTOLOCK(_queueMutex);
     // Loop across and see if we can find it; if so, cancel
-    SFOREACH (list<SData>, _queue, queueIt) {
+    for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
         if ((*queueIt)[name] == value) {
             // Found it
             _queue.erase(queueIt);

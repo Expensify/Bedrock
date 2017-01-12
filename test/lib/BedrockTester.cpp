@@ -116,7 +116,9 @@ list<string> BedrockTester::getServerArgs() {
 string BedrockTester::getCommandLine() {
     string cmd = getServerName();
     list<string> args = getServerArgs();
-    for_each(args.begin(), args.end(), [&](string arg) { cmd += " " + arg; });
+    for (string arg: args) {
+        cmd += " " + arg;
+    }
     return cmd;
 }
 
@@ -135,12 +137,12 @@ void BedrockTester::startServer() {
         // Convert our c++ strings to old-school C strings for exec.
         char* cargs[args.size() + 1];
         int count = 0;
-        for_each(args.begin(), args.end(), [&](string arg) {
+        for(string arg : args) {
             char* newstr = (char*)malloc(arg.size() + 1);
             strcpy(newstr, arg.c_str());
             cargs[count] = newstr;
             count++;
-        });
+        }
         cargs[count] = 0;
 
         // And then start the new server!

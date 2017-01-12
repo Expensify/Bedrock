@@ -13,7 +13,9 @@ void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // it has some insight.
     SData& request = command->request;
     SData& response = command->response;
-    SFOREACHMAP (string, string, request.nameValueMap, mapIt) { response["request." + mapIt->first] = mapIt->second; }
+    for (auto& row : request.nameValueMap) {
+        response["request." + row.first] = row.second;
+    }
 
     // Add a few others
     response["request.processingTime"] = SToStr(command->processingTime);
@@ -151,11 +153,11 @@ void BedrockServer_WorkerThread(void* _data) {
     } else {
         // Add peers
         list<string> parsedPeerList = SParseList(args["-peerList"]);
-        SFOREACH (list<string>, parsedPeerList, peerIt) {
+        for (const string& peer : parsedPeerList) {
             // Get the params from this peer, if any
             string host;
             STable params;
-            SASSERT(SParseURIPath(*peerIt, host, params));
+            SASSERT(SParseURIPath(peer, host, params));
             node.addPeer(SGetDomain(host), host, params);
         }
 
@@ -179,10 +181,11 @@ void BedrockServer_WorkerThread(void* _data) {
             fd_map fdm;
 
             // Handle any HTTPS requests from our plugins.
-            for_each(httpsManagers.begin(), httpsManagers.end(), [&](list<SHTTPSManager*> managerList) {
-                for_each(managerList.begin(), managerList.end(),
-                         [&](SHTTPSManager* manager) { manager->preSelect(fdm); });
-            });
+            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
+                for (SHTTPSManager* manager : managerList) {
+                    manager->preSelect(fdm);
+                }
+            }
 
             int maxS = node.preSelect(fdm);
             maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
@@ -194,10 +197,11 @@ void BedrockServer_WorkerThread(void* _data) {
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
-            for_each(httpsManagers.begin(), httpsManagers.end(), [&](list<SHTTPSManager*> managerList) {
-                for_each(managerList.begin(), managerList.end(),
-                         [&](SHTTPSManager* manager) { manager->postSelect(fdm, nextActivity); });
-            });
+            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
+                for (SHTTPSManager* manager : managerList) {
+                    manager->postSelect(fdm, nextActivity);
+                }
+            }
 
             node.postSelect(fdm, nextActivity);
             queuedEscalatedRequests.postSelect(fdm);
@@ -276,9 +280,8 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Output the list of plugins compiled in
     map<string, BedrockPlugin*> registeredPluginMap;
-    SFOREACH (list<BedrockPlugin*>, *BedrockPlugin::g_registeredPluginList, pluginIt) {
+    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
         // Add one more plugin
-        BedrockPlugin* plugin = *pluginIt;
         const string& pluginName = SToLower(plugin->getName());
         SINFO("Registering plugin '" << pluginName << "'");
         registeredPluginMap[pluginName] = plugin;
@@ -287,10 +290,9 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Enable the requested plugins
     list<string> pluginNameList = SParseList(args["-plugins"]);
-    SFOREACH (list<string>, pluginNameList, pluginNameIt) {
+    for (string& pluginName : pluginNameList) {
         // Enable the named plugin
-        const string& pluginName = SToLower(*pluginNameIt);
-        BedrockPlugin* plugin = registeredPluginMap[pluginName];
+        BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
@@ -349,9 +351,8 @@ BedrockServer::~BedrockServer() {
     SINFO("Closing write thread '" << _writeThread->name << "'");
     SThreadClose(_writeThread->thread);
     delete _writeThread;
-    SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
+    for (Thread* readThread : _readThreadList) {
         // Close this thread
-        Thread* readThread = *readThreadIt;
         SINFO("Closing read thread '" << readThread->name << "'");
         SThreadClose(readThread->thread);
         delete readThread;
@@ -394,11 +395,11 @@ bool BedrockServer::shutdownComplete() {
         if(!_writeThread->finished) {
             remainingThreads++;
         }
-        for_each(_readThreadList.begin(), _readThreadList.end(), [&](Thread* thread){
+        for (Thread* thread : _readThreadList) {
             if (!thread->finished) {
                 remainingThreads++;
             }
-        });
+        }
 
         SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
     }
@@ -447,18 +448,17 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         openPort(_args["-serverHost"]);
 
         // Open any plugin ports on enabled plugins
-        for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
-                 [&](BedrockPlugin* plugin) {
-                     if (plugin->enabled()) {
-                         string portHost = plugin->getPort();
-                         if (!portHost.empty()) {
-                             // Open the port and associate it with the plugin
-                             SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
-                             Port* port = openPort(portHost);
-                             _portPluginMap[port] = plugin;
-                         }
-                     }
-                 });
+        for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+            if (plugin->enabled()) {
+                string portHost = plugin->getPort();
+                if (!portHost.empty()) {
+                    // Open the port and associate it with the plugin
+                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                    Port* port = openPort(portHost);
+                    _portPluginMap[port] = plugin;
+                }
+            }
+        }
     }
 
     // **NOTE: We leave the port open between startup and shutdown, even if we enter a state where
@@ -576,9 +576,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
                         SData cancelRequest("CANCEL_REQUEST");
                         cancelRequest["requestCount"] = SToStr(requestCount);
-                        SFOREACH (list<Thread*>, _readThreadList, readThreadIt) {
+                        for (Thread* readThread : _readThreadList) {
                             // Send it the cancel command
-                            Thread* readThread = *readThreadIt;
                             readThread->directMessages.push(cancelRequest);
                         }
                         _writeThread->directMessages.push(cancelRequest);
@@ -752,14 +751,13 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for_each(BedrockPlugin::g_registeredPluginList->begin(), BedrockPlugin::g_registeredPluginList->end(),
-             [&](BedrockPlugin* plugin) {
-                 for_each(plugin->timers.begin(), plugin->timers.end(), [&](SStopwatch* timer) {
-                     if (timer->ding()) {
-                         plugin->timerFired(timer);
-                     }
-                 });
-             });
+    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+        for (SStopwatch* timer : plugin->timers) {
+            if (timer->ding()) {
+                plugin->timerFired(timer);
+            }
+        }
+    }
 }
 
 // --------------------------------------------------------------------------

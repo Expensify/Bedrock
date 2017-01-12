@@ -73,15 +73,15 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         //
         //     Give us some data on this server.
         list<string> plugins;
-        for_each(g_registeredPluginList->begin(), g_registeredPluginList->end(), [&](BedrockPlugin* plugin){
+        for (BedrockPlugin* plugin : *g_registeredPluginList) {
             STable pluginData;
             pluginData["name"] = plugin->getName();
             STable pluginInfo = plugin->getInfo();
-            for_each(pluginInfo.begin(), pluginInfo.end(), [&](pair<string, string> row){
+            for (pair<string, string> row : pluginInfo) {
                 pluginData[row.first] = row.second;
-            });
+            }
             plugins.push_back(SComposeJSONObject(pluginData));
-        });
+        }
         content["plugins"] = SComposeJSONArray(plugins);
 
         content["state"] = SQLCStateNames[node->getState()];
@@ -90,10 +90,10 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         content["version"] = _args ? (*_args)["version"] : "";
         content["priority"] = SToStr(node->getPriority());
         list<string> peerList;
-        SFOREACH (list<BedrockNode::Peer*>, node->peerList, it) {
-            STable peer = (*it)->nameValueMap;
-            peer["host"] = (*it)->host;
-            peerList.push_back(SComposeJSONObject(peer));
+        for (BedrockNode::Peer* peer : node->peerList) {
+            STable peerTable = peer->nameValueMap;
+            peerTable["host"] = peer->host;
+            peerList.push_back(SComposeJSONObject(peerTable));
         }
         content["peerList"] = SComposeJSONArray(peerList);
         content["queuedCommandList"] = SComposeJSONArray(node->getQueuedCommandList());

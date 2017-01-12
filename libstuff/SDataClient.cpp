@@ -4,7 +4,7 @@
 void SDataClient::sendRequest(const string& host, const SData& request) {
     // First see if we already have an idle connection open to that host
     Connection* connection = 0;
-    SFOREACH (list<Connection*>, idleConnectionList, connectionIt) {
+    for (auto connectionIt = (idleConnectionList).begin(); connectionIt != (idleConnectionList).end(); ++connectionIt) {
         // See if it's to that host
         Connection* c = *connectionIt;
         if (SIEquals(c->host, host)) {
@@ -35,18 +35,16 @@ void SDataClient::sendRequest(const string& host, const SData& request) {
 // --------------------------------------------------------------------------
 SDataClient::~SDataClient() {
     // Just clean up all the connections
-    SFOREACH (list<Connection*>, activeConnectionList, connectionIt) {
+    for (Connection* connection : activeConnectionList) {
         // Clean it up
-        Connection* connection = *connectionIt;
         SWARN("Prematurely closing connection to '" << connection->host << "' while waiting for response to '"
                                                     << connection->request.methodLine << "'");
         closeSocket(connection->s);
         delete connection;
     }
     activeConnectionList.clear();
-    SFOREACH (list<Connection*>, idleConnectionList, connectionIt) {
+    for (Connection* connection : idleConnectionList) {
         // Clean it up
-        Connection* connection = *connectionIt;
         SINFO("Closing connection to '" << connection->host << "'");
         closeSocket(connection->s);
         delete connection;
