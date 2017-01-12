@@ -292,7 +292,7 @@ BedrockServer::BedrockServer(const SData& args)
     list<string> pluginNameList = SParseList(args["-plugins"]);
     for (string& pluginName : pluginNameList) {
         // Enable the named plugin
-        BedrockPlugin* plugin = registeredPluginMap[pluginName];
+        BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         SINFO("Enabling plugin '" << pluginName << "'");
