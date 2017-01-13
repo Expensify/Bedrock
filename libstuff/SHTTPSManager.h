@@ -31,6 +31,7 @@ class SHTTPSManager : public STCPManager {
 
   public: // STCPServer API
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    int preSelect(fd_map& fdm);
 
   protected: // Child API
     // Methods
@@ -43,4 +44,8 @@ class SHTTPSManager : public STCPManager {
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
     SX509* _x509;
+
+    // We use this to kick `poll` to wake up when we send a request.
+    int _pipeFD[2] = {-1, -1};
+    bool pollKicked = false;
 };

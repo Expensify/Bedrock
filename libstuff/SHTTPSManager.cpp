@@ -4,6 +4,10 @@
 SHTTPSManager::SHTTPSManager()
     : _x509(SX509Open()) { // Generate the x509 certificate.
     SASSERT(_x509);
+
+    SASSERT(0 == pipe(_pipeFD));
+    int flags = fcntl(_pipeFD[0], F_GETFL, 0);
+    fcntl(_pipeFD[0], F_SETFL, flags | O_NONBLOCK);
 }
 
 // --------------------------------------------------------------------------
@@ -25,6 +29,13 @@ SHTTPSManager::~SHTTPSManager() {
 
     // Clean up certificate.
     SX509Close(_x509);
+
+    if (_pipeFD[0] != -1) {
+        close(_pipeFD[0]);
+    }
+    if (_pipeFD[1] != -1) {
+        close(_pipeFD[0]);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -38,10 +49,23 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     delete transaction;
 }
 
+int SHTTPSManager::preSelect(fd_map& fdm)
+{
+    SFDset(fdm, _pipeFD[0], SREADEVTS);
+    return STCPManager::preSelect(fdm);
+}
+
+
 // --------------------------------------------------------------------------
 void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Let the base class do its thing
     STCPManager::postSelect(fdm);
+
+    if (pollKicked) {
+        char readbuffer[1];
+        read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+        pollKicked = false;
+    }
 
     // Update each of the active requests
     uint64_t now = STimeNow();
@@ -135,5 +159,18 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     // If this transaction is added in the postSelect loop, it
     // would instantly timeout if pushed to the back.
     _activeTransactionList.push_front(transaction);
+
+    // We currently sit and do nothing at when we've written, but we're probably wrapped in a `poll` loop somewhere,
+    // and if it doesn't know it's supposed to return, we'll wait for it to timeout before we try and handle the
+    // response here.
+
+    // Write arbitrary buffer to the pipe so any subscribers will
+    // be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    if (!pollKicked) {
+        pollKicked = true;
+        SASSERT(write(_pipeFD[1], "A", 1));
+    }
+
     return transaction;
 }
