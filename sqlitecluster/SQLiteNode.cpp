@@ -2616,7 +2616,21 @@ void SQLiteNode::_updateSyncPeer()
             to = "(NONE)";
         }
 
-        SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ".");
+        // We see strange behavior when choosing peers. Peers are being chosen from distant data centers rather than
+        // peers on the same LAN. This is extra diagnostic info to try and see why we don't choose closer ones.
+        list<string> nonChosenPeers;
+        for (auto peer : peerList) {
+            if (peer == newSyncPeer || peer == _syncPeer) {
+                continue; // These ones we're already logging.
+            } else if (!peer->test("LoggedIn")) {
+                nonChosenPeers.push_back(peer->name + ":!loggedIn");
+            } else if (peer->calcU64("CommitCount") <= commitCount) {
+                nonChosenPeers.push_back(peer->name + ":commit=" + (*peer)["CommitCount"]);
+            } else {
+                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency) + "us");
+            }
+        }
+        SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));
 
         // And save the new sync peer internally.
         _syncPeer = newSyncPeer;
