@@ -91,9 +91,6 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         node.addPeer(SGetDomain(host), host, params);
     }
 
-    // Get any HTTPSManagers that plugins registered with the server.
-    list<list<SHTTPSManager*>>& httpsManagers = data.server->httpsManagers;
-
     // Main event loop for replication thread.
     uint64_t nextActivity = STimeNow();
     while (!node.shutdownComplete()) {
@@ -110,13 +107,6 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         // Wait and process
         fd_map fdm;
 
-        // Handle any HTTPS requests from our plugins.
-        for (list<SHTTPSManager*>& managerList : httpsManagers) {
-            for (SHTTPSManager* manager : managerList) {
-                manager->preSelect(fdm);
-            }
-        }
-
         int maxS = node.preSelect(fdm);
         maxS = max(data.queuedEscalatedRequests.preSelect(fdm), maxS);
         maxS = max(data.directMessages.preSelect(fdm), maxS);
@@ -125,13 +115,6 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         S_poll(fdm, max(nextActivity, now) - now);
         data.server->pollTimer.stopPoll();
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-
-        // Handle any HTTPS requests from our plugins.
-        for (list<SHTTPSManager*>& managerList : httpsManagers) { 
-            for (SHTTPSManager* manager : managerList) {
-                manager->postSelect(fdm, nextActivity);
-            }
-        }
 
         node.postSelect(fdm, nextActivity);
         data.queuedEscalatedRequests.postSelect(fdm);
@@ -434,6 +417,13 @@ int BedrockServer::preSelect(fd_map& fdm) {
     STCPServer::preSelect(fdm);
     _processedResponses.preSelect(fdm);
 
+    // Handle any HTTPS requests from our plugins.
+    for (list<SHTTPSManager*>& managerList : httpsManagers) {
+        for (SHTTPSManager* manager : managerList) {
+            manager->preSelect(fdm);
+        }
+    }
+
     // The return value here is obsolete.
     return 0;
 }
@@ -485,9 +475,9 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // **NOTE: We leave the port open between startup and shutdown, even if we enter a state where
     //         we can't process commands -- such as a non master/slave state.  The reason is we
     //         expect any state transitions between startup/shutdown to be due to temporary conditions
-    //         that will resolve themselves automatically in a short time.  During this periond we
-    //         prefer to receive commands and queue them up, even if we can't proesss them immediately,
-    //         on the assumption that we'll be able to process them before the browser times out.
+    //         that will resolve themselves automatically in a short time.  During this period we
+    //         prefer to receive commands and queue them up, even if we can't process them immediately,
+    //         on the assumption that we'll be able to process them before the caller times out.
 
     // Is the OS trying to communicate with us?
     uint64_t sigmask = SGetSignals();
@@ -583,16 +573,12 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << " in processedResponses; this *was* processed by the write thread, but too late now.");
                     } else {
                         // Doesn't seem to be in any of the queues, meaning it's actively being processed by one of the
-                        // threads.
-                        // Send a cancel command to all threads.  This will *probably* work, but it's possible that the
-                        // thread will
-                        // finish processing this command before it gets to processing our cancel request.  But that's
-                        // fine -- this
-                        // doesn't need to be airtight.  There will always be scenarios where the server processes a
-                        // command that
-                        // the client has abandoned (eg, if the socket dies while sending the response), so the client
-                        // already needs
-                        // to handle this scenario.  We just want to minimize it wherever possible.
+                        // threads. Send a cancel command to all threads.  This will *probably* work, but it's possible
+                        // that the thread will finish processing this command before it gets to processing our cancel
+                        // request.  But that's fine -- this doesn't need to be airtight.  There will always be
+                        // scenarios where the server processes a command that the client has abandoned (eg, if the
+                        // socket dies while sending the response), so the client already needs to handle this
+                        // scenario.  We just want to minimize it wherever possible.
                         SHMMM("Attempting to cancel abandoned request #"
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
                         SData cancelRequest("CANCEL_REQUEST");
@@ -780,6 +766,13 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             if (timer->ding()) {
                 plugin->timerFired(timer);
             }
+        }
+    }
+
+    // Handle any HTTPS requests from our plugins.
+    for (list<SHTTPSManager*>& managerList : httpsManagers) {
+        for (SHTTPSManager* manager : managerList) {
+            manager->postSelect(fdm, nextActivity);
         }
     }
 }
