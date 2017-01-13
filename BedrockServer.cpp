@@ -94,10 +94,12 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Add the write thread
     _writeThread = new Thread("write0", _args, _replicationState, _replicationCommitCount, _nodeGracefulShutdown,
-                              _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses, this);
+                              _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses);
     _writeThread->args["-readOnly"] = "false";
     SINFO("Lauching write thread '" << _writeThread->name << "'");
-    _writeThread->threadInstance = move(thread([=] { threadWriter(_writeThread); }));
+    _writeThread->threadInstance = move(thread([=] {
+        threadWriter(_writeThread);
+    }));
     while (!_writeThread->ready.get()) {    // TODO: use a semaphore?
         // Wait a bit longer
         SINFO("Waiting for '" << _writeThread->name << "' to be ready to continue.");
@@ -111,11 +113,13 @@ BedrockServer::BedrockServer(const SData& args)
         // Add this read thread
         Thread* readThread =
             new Thread("read" + SToStr(c), _args, _replicationState, _replicationCommitCount, _nodeGracefulShutdown,
-                       _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses, this);
+                       _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses);
         readThread->args.erase("-nodeHost");
         readThread->args["-readOnly"] = "true";
         SINFO("Launching read thread '" << readThread->name << "'");
-        readThread->threadInstance = move(thread([=] { threadReader(readThread); }));
+        readThread->threadInstance = move(thread([=] {
+            threadReader(readThread);
+        }));
         _readThreadList.push_back(readThread);
     }
 }
@@ -154,22 +158,19 @@ BedrockServer::~BedrockServer() {
 }
 
 // --------------------------------------------------------------------------
-void BedrockServer::threadWriter(Thread* context) {
+void BedrockServer::threadWriter(Thread* data) {
     // Initialize this thread
-    SInitialize(context->name);
+    SInitialize(data->name);
     SLogSetThreadPrefix("xxxxx ");
-    BedrockServer::Thread* data = context;
     const SData& args = data->args;
-    bool readOnly = args.test("-readOnly");
-    BedrockServer::MessageQueue& queuedRequests = data->queuedRequests;
     BedrockServer::MessageQueue& queuedEscalatedRequests = data->queuedEscalatedRequests;
     BedrockServer::MessageQueue& processedResponses = data->processedResponses;
     BedrockServer::MessageQueue& directMessages = data->directMessages;
-    SINFO("Starting " << (readOnly ? "read-only" : "read/write") << " worker thread for '" << data->name << "'");
+    SINFO("Starting read/write worker thread for '" << data->name << "'");
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << args.serialize());
-    BedrockNode node(args, data->server);
+    BedrockNode node(args, this);
     SINFO("Node created, ready for action.");
     data->ready.set(true);
 
@@ -182,9 +183,6 @@ void BedrockServer::threadWriter(Thread* context) {
         SASSERT(SParseURIPath(peer, host, params));
         node.addPeer(SGetDomain(host), host, params);
     }
-
-    // Get any HTTPSManagers that plugins registered with the server.
-    list<list<SHTTPSManager*>>& httpsManagers = data->server->httpsManagers;
 
     // Main event loop for replication thread.
     uint64_t nextActivity = STimeNow();
@@ -213,9 +211,9 @@ void BedrockServer::threadWriter(Thread* context) {
         maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
         maxS = max(directMessages.preSelect(fdm), maxS);
         const uint64_t now = STimeNow();
-        data->server->pollTimer.startPoll();
+        pollTimer.startPoll();
         S_poll(fdm, max(nextActivity, now) - now);
-        data->server->pollTimer.stopPoll();
+        pollTimer.stopPoll();
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
         // Handle any HTTPS requests from our plugins.
@@ -266,7 +264,7 @@ void BedrockServer::threadWriter(Thread* context) {
     }
 
     // We're shutting down, do the final performance log.
-    data->server->pollTimer.log();
+    pollTimer.log();
 
     // Update the state one last time when the writing replication thread exits.
     SQLCState state = node.getState();
@@ -288,22 +286,20 @@ void BedrockServer::threadWriter(Thread* context) {
 }
 
 // --------------------------------------------------------------------------
-void BedrockServer::threadReader(Thread* context) {
+void BedrockServer::threadReader(Thread* data) {
     // Initialize this thread
-    SInitialize(context->name);
+    SInitialize(data->name);
     SLogSetThreadPrefix("xxxxx ");
-    BedrockServer::Thread* data = context;
     const SData& args = data->args;
-    bool readOnly = args.test("-readOnly");
     BedrockServer::MessageQueue& queuedRequests = data->queuedRequests;
     BedrockServer::MessageQueue& queuedEscalatedRequests = data->queuedEscalatedRequests;
     BedrockServer::MessageQueue& processedResponses = data->processedResponses;
     BedrockServer::MessageQueue& directMessages = data->directMessages;
-    SINFO("Starting " << (readOnly ? "read-only" : "read/write") << " worker thread for '" << data->name << "'");
+    SINFO("Starting read-only worker thread for '" << data->name << "'");
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << args.serialize());
-    BedrockNode node(args, data->server);
+    BedrockNode node(args, this);
     SINFO("Node created, ready for action.");
     data->ready.set(true);
 
