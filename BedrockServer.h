@@ -82,15 +82,19 @@ class BedrockServer : public STCPServer {
         MessageQueue& queuedEscalatedRequests;
         MessageQueue& processedResponses;
         MessageQueue directMessages;
-        void* thread;
+        thread threadInstance;
         SSynchronized<bool> ready;
-        BedrockServer* server;
+        BedrockServer* server;  // FIXME: looks obsolete
         bool finished = false;
     };
 
     // Constructor / Destructor
     BedrockServer(const SData& args);
     virtual ~BedrockServer();
+
+    // Thread functions
+    void threadWriter(Thread* context);
+    void threadReader(Thread* context);
 
     // Accessors
     SQLCState getState() { return _replicationState.get(); }

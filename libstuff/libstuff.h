@@ -19,13 +19,12 @@
 #include <libgen.h>   // for basename()
 #include <sys/time.h> // for gettimeofday()
 #include <signal.h>
-#include <pthread.h>
 
 // --------------------------------------------------------------------------
 // Initialization / Shutdown
 // --------------------------------------------------------------------------
 // Initialize libstuff on every thread before calling any of its functions
-void SInitialize();
+void SInitialize(const string& name);
 
 // --------------------------------------------------------------------------
 // Standard Template Library stuff
@@ -275,15 +274,11 @@ void SLogStackTrace();
 // Thread stuff
 // --------------------------------------------------------------------------
 // Light wrapper around thread functions
-void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& threadName = "", size_t stackSize = 0);
-void SThreadClose(void* thread);
 void SThreadSleep(uint64_t delay);
 
 // Thread local storage
 struct SThreadLocalStorage {
     // Attributes
-    void (*proc)(void* procData);
-    void* procData;
     string name;
     string logPrefix;
     SData data;
