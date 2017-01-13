@@ -40,6 +40,63 @@ class BedrockServer : public STCPServer {
         int _pipeFD[2] = {-1, -1};
     };
 
+    class ThreadData {
+      public:
+        // Typical constructor.
+        ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
+                   SSynchronized<uint64_t>& replicationCommitCount_, SSynchronized<bool>& gracefulShutdown_,
+                   SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
+                   MessageQueue& queuedEscalatedRequests_, MessageQueue& processedResponses_, BedrockServer* server_) :
+            name(name_),
+            args(args_),
+            replicationState(replicationState_),
+            replicationCommitCount(replicationCommitCount_),
+            gracefulShutdown(gracefulShutdown_),
+            masterVersion(masterVersion_),
+            queuedRequests(queuedRequests_),
+            queuedEscalatedRequests(queuedEscalatedRequests_),
+            processedResponses(processedResponses_),
+            server(server_),
+            threadObject() {}
+
+        MessageQueue directMessages;
+
+        // Thread's name.
+        string name;
+
+        // Command line args passed in.
+        SData args;
+
+        // Shared var for communicating replication thread's status.
+        SSynchronized<SQLCState>& replicationState;
+
+        // Shared var for communicating replication thread's commit count (for sticky connections)
+        SSynchronized<uint64_t>& replicationCommitCount;
+
+        // Shared var for communicating shutdown status between threads.
+        SSynchronized<bool>& gracefulShutdown;
+
+        // Shared var for communicating the master version (for knowing if we should skip the slave peek).
+        SSynchronized<string>& masterVersion;
+
+        // Shared external queue between threads. Queued for read-only thread(s)
+        MessageQueue& queuedRequests;
+
+        // Shared external queue between threads. Queued for replication thread
+        MessageQueue& queuedEscalatedRequests;
+
+        // Shared external queue between threads. Finished commands ready to return to client.
+        MessageQueue& processedResponses;
+
+        // The server this thread is running in.
+        BedrockServer* server;
+
+        // The actual thread object associated with this data object. This is set after initialization.
+        thread threadObject;
+    };
+
+    static void BedrockServer_ReadThread(ThreadData& data);
+
     // All the data required for a thread to create an BedrockNode
     // and coordinate with other threads.
     struct Thread {
@@ -127,7 +184,7 @@ class BedrockServer : public STCPServer {
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
     Thread* _writeThread;
-    list<Thread*> _readThreadList;
+    list<ThreadData> _readThreadList;
     SSynchronized<SQLCState> _replicationState;
     SSynchronized<uint64_t> _replicationCommitCount;
     SSynchronized<bool> _nodeGracefulShutdown;

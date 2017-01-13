@@ -160,9 +160,8 @@ set<string> loadPlugins(SData& args) {
 extern void BedrockTest(SData& trueArgs);
 int main(int argc, char* argv[]) {
     // Start libstuff
-    SInitialize();
+    SInitialize("main");
     SLogLevel(LOG_INFO);
-    SLogSetThreadPrefix("xxxxx ");
 
     // Process the command line
     SData args = SParseCommandLine(argc, argv);

@@ -15,6 +15,7 @@ struct WriteTest : tpunit::TestFixture {
 
     void create() {
         SData status("Query");
+        // We can't create a table with BEGIN CONCURRENT.
         status["query"] = "CREATE TABLE foo (bar INTEGER);";
         tester->executeWait(status);
     }

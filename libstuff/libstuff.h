@@ -25,7 +25,7 @@
 // Initialization / Shutdown
 // --------------------------------------------------------------------------
 // Initialize libstuff on every thread before calling any of its functions
-void SInitialize();
+void SInitialize(string threadName = "");
 
 // --------------------------------------------------------------------------
 // Standard Template Library stuff
@@ -43,6 +43,7 @@ void SInitialize();
 #include <stdlib.h>
 #include <mutex>
 #include <cctype>
+#include <thread>
 using namespace std;
 
 // --------------------------------------------------------------------------
@@ -233,24 +234,23 @@ void SLogStackTrace();
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
     do {                                                                                                               \
-        SThreadLocalStorage* tls = SThreadGetLocalStorage();                                                           \
         if (_g_SLogMask & (1 << (_PRI_))) {                                                                            \
             ostringstream __out;                                                                                       \
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
-            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                  \
-                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                          \
+            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
+                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                              \
         }                                                                                                              \
     } while (false)
 
 #define SWHEREAMI                                                                                                      \
-    tls->logPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << tls->name \
+    SThreadLogPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << SThreadLogName \
                    << "] "
 
 #define SLOGPREFIX ""
 #define SLOG(_MSG_) SSYSLOG(LOG_DEBUG, SWHEREAMI << SLOGPREFIX << _MSG_)
-#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, SWHEREAMI << "[dbug] " << SLOGPREFIX << _MSG_)
 #define SINFO(_MSG_) SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << SLOGPREFIX << _MSG_)
+#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, SWHEREAMI << "[dbug] " << SLOGPREFIX << _MSG_)
 #define SHMMM(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[hmmm] " << SLOGPREFIX << _MSG_)
 #define SWARN(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[warn] " << SLOGPREFIX << _MSG_)
 #define SALERT(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[alrt] " << SLOGPREFIX << _MSG_)
@@ -287,16 +287,20 @@ struct SThreadLocalStorage {
     SData data;
 };
 
+// Each thread gets its own thread-local log prefix.
 SThreadLocalStorage* SThreadGetLocalStorage();
+extern thread_local string SThreadLogPrefix;
+extern thread_local string SThreadLogName;
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
+void SLogSetThreadName(const string& name);
 
 struct SAutoThreadPrefix {
     // Set on construction; reset on destruction
     SAutoThreadPrefix(const string& prefix) {
         // Retain the old prefix
-        oldPrefix = SThreadGetLocalStorage()->logPrefix;
+        oldPrefix = SThreadLogPrefix;
 
         // Only change if we have something
         if (!prefix.empty()) {

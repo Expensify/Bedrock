@@ -57,12 +57,95 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
     }
 }
 
+void BedrockServer::BedrockServer_ReadThread(BedrockServer::ThreadData& data)
+{
+    // This needs to be set because the constructor for BedrockNode depends on it.
+    data.args["-readOnly"] = "true";
+    data.args.erase("-nodeHost");
+    SInitialize(data.name);
+    SINFO("Starting read-only" << " worker thread for '" << data.name << "'");
+
+    // Create the actual node
+    SINFO("Starting BedrockNode: " << data.args.serialize());
+    BedrockNode node(data.args, data.server);
+    SINFO("Node created, ready for action.");
+
+    while (true) {
+        // Set the read-only node's state/master status coming from the replication thread.
+        // Only read-only nodes will allow an external party to set these properties.
+        node.setState(data.replicationState.get());
+        node.setMasterVersion(data.masterVersion.get());
+
+        // Block until work is available.
+        fd_map fdm;
+        int maxS = data.queuedRequests.preSelect(fdm);
+        maxS = max(data.directMessages.preSelect(fdm), maxS);
+        S_poll(fdm, STIME_US_PER_S);
+        data.queuedRequests.postSelect(fdm);
+        data.directMessages.postSelect(fdm);
+
+        // If we've been instructed to shutdown and there are no more requests waiting
+        // to be processed, then exit the loop. Main thread will join us and continue
+        // the shutdown process.
+        if (data.gracefulShutdown.get() && data.queuedRequests.empty())
+            break;
+
+        // Process any direct messages from the main thread to us
+        BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
+
+        // Now try to get a request to work on.  If None available (either select
+        // timed out or another thread 'stole' it, go to the top and wait again.
+        SData request = data.queuedRequests.pop();
+        if (request.empty())
+            continue;
+
+        // Set the priority if supplied by the message.
+        SAUTOPREFIX(request["requestID"]);
+        SDEBUG("Worker thread unblocked!");
+        int priority = SPRIORITY_NORMAL;
+        if (!request["priority"].empty()) {
+            // Make sure the priority is valid.
+            if (SWITHIN(SPRIORITY_MIN, request.calc("priority"), SPRIORITY_MAX))
+                priority = request.calc("priority");
+            else
+                SWARN("Invalid priority " << request["priority"] << ". Ignoring");
+        }
+
+        // Open this command -- it'll be peeked immediately
+        const int64_t creationTimestamp = request.calc64("creationTimestamp");
+        SINFO("Dispatching request '" << request.methodLine << "' (Connection: " << request["Connection"]
+                                      << ", creationTimestamp: " << creationTimestamp
+                                      << ", priority: " << priority << ")");
+
+        node.openCommand(request, priority, false, creationTimestamp);
+
+        // Now pull that same command off the internal queue and put it on the appropriate external (threaded) queue
+        BedrockNode::Command* command = nullptr;
+        if ((command = node.getProcessedCommand())) {
+            // If it was fully processed in openCommand(), that means it was peeked successfully.
+            SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
+            BedrockServer_PrepareResponse(command);
+            data.processedResponses.push(command->response);
+
+        } else if ((command = node.getQueuedCommand(priority))) {
+            // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
+            // the write thread.
+            SASSERT(!command->httpsRequest);
+            SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
+            data.queuedEscalatedRequests.push(request);
+        } else
+            SERROR("[dmb] Lost command after read-only peek. This should never happen");
+
+        // Close the command to remove it from any internal queues.
+        node.closeCommand(command);
+    }
+}
+
 // --------------------------------------------------------------------------
 void BedrockServer_WorkerThread(void* _data) {
     // Initialize this thread
-    SInitialize();
-    SLogSetThreadPrefix("xxxxx ");
     BedrockServer::Thread* data = (BedrockServer::Thread*)_data;
+    SInitialize(data->name);
     const SData& args = data->args;
     bool readOnly = args.test("-readOnly");
     BedrockServer::MessageQueue& queuedRequests = data->queuedRequests;
@@ -77,80 +160,7 @@ void BedrockServer_WorkerThread(void* _data) {
     SINFO("Node created, ready for action.");
     data->ready.set(true);
 
-    if (readOnly) {
-        for (;;) {
-            // Set the read-only node's state/master status coming from the replication thread.
-            // Only read-only nodes will allow an external party to set these properties.
-            SQLCState replicationState = data->replicationState.get();
-            const string masterVersion = data->masterVersion.get();
-            node.setState(replicationState);
-            node.setMasterVersion(masterVersion);
-
-            // Block until work is available.
-            fd_map fdm;
-            int maxS = queuedRequests.preSelect(fdm);
-            maxS = max(directMessages.preSelect(fdm), maxS);
-            S_poll(fdm, STIME_US_PER_S);
-            queuedRequests.postSelect(fdm);
-            directMessages.postSelect(fdm);
-
-            // If we've been instructed to shutdown and there are no more requests waiting
-            // to be processed, then exit the loop. Main thread will join us and continue
-            // the shutdown process.
-            bool shutdown = data->gracefulShutdown.get();
-            if (shutdown && queuedRequests.empty())
-                break;
-
-            // Process any direct messages from the main thread to us
-            BedrockServer_WorkerThread_ProcessDirectMessages(node, directMessages);
-
-            // Now try to get a request to work on.  If None available (either select
-            // timed out or another thread 'stole' it, go to the top and wait again.
-            SData request = queuedRequests.pop();
-            if (request.empty())
-                continue;
-
-            // Set the priority if supplied by the message.
-            SAUTOPREFIX(request["requestID"]);
-            SDEBUG("Worker thread unblocked!");
-            int priority = SPRIORITY_NORMAL;
-            if (!request["priority"].empty()) {
-                // Make sure the priority is valid.
-                if (SWITHIN(SPRIORITY_MIN, request.calc("priority"), SPRIORITY_MAX))
-                    priority = request.calc("priority");
-                else
-                    SWARN("Invalid priority " << request["priority"] << ". Ignoring");
-            }
-
-            // Open this command -- it'll be peeked immediately
-            const int64_t creationTimestamp = request.calc64("creationTimestamp");
-            SINFO("Dispatching request '" << request.methodLine << "' (Connection: " << request["Connection"]
-                                          << ", creationTimestamp: " << creationTimestamp
-                                          << ", priority: " << priority << ")");
-
-            node.openCommand(request, priority, false, creationTimestamp);
-
-            // Now pull that same command off the internal queue and put it on the appropriate external (threaded) queue
-            BedrockNode::Command* command = nullptr;
-            if ((command = node.getProcessedCommand())) {
-                // If it was fully processed in openCommand(), that means it was peeked successfully.
-                SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
-                BedrockServer_PrepareResponse(command);
-                processedResponses.push(command->response);
-
-            } else if ((command = node.getQueuedCommand(priority))) {
-                // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
-                // the write thread.
-                SASSERT(!command->httpsRequest);
-                SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
-                queuedEscalatedRequests.push(request);
-            } else
-                SERROR("[dmb] Lost command after read-only peek. This should never happen");
-
-            // Close the command to remove it from any internal queues.
-            node.closeCommand(command);
-        }
-    } else {
+    if (!readOnly) {
         // Add peers
         list<string> parsedPeerList = SParseList(args["-peerList"]);
         for (const string& peer : parsedPeerList) {
@@ -317,15 +327,24 @@ BedrockServer::BedrockServer(const SData& args)
     int readThreads = max(1, _args.calc("-readThreads"));
     SINFO("Starting " << readThreads << " read threads (" << args["-readThreads"] << ")");
     for (int c = 0; c < readThreads; ++c) {
-        // Add this read thread
-        Thread* readThread =
-            new Thread("read" + SToStr(c), _args, _replicationState, _replicationCommitCount, _nodeGracefulShutdown,
-                       _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses, this);
-        readThread->args.erase("-nodeHost");
-        readThread->args["-readOnly"] = "true";
-        SINFO("Launching read thread '" << readThread->name << "'");
-        readThread->thread = SThreadOpen(BedrockServer_WorkerThread, readThread, readThread->name);
-        _readThreadList.push_back(readThread);
+
+        // Construct our ThreadData object for this thread in place at the back of the list.
+        _readThreadList.emplace_back("read" + SToStr(c),
+                                     _args,
+                                     _replicationState,
+                                     _replicationCommitCount,
+                                     _nodeGracefulShutdown,
+                                     _masterVersion,
+                                     _queuedRequests,
+                                     _queuedEscalatedRequests,
+                                     _processedResponses,
+                                     this);
+
+        // We'll pass this object (by reference) as the object to our actual thread.
+        thread readThread(BedrockServer_ReadThread, ref(_readThreadList.back()));
+
+        // Now we give ownership of our thread to our ThreadData object.
+        _readThreadList.back().threadObject = move(readThread);
     }
 }
 
@@ -347,11 +366,10 @@ BedrockServer::~BedrockServer() {
     SINFO("Closing write thread '" << _writeThread->name << "'");
     SThreadClose(_writeThread->thread);
     delete _writeThread;
-    for (Thread* readThread : _readThreadList) {
+    for (auto& threadData : _readThreadList) {
         // Close this thread
-        SINFO("Closing read thread '" << readThread->name << "'");
-        SThreadClose(readThread->thread);
-        delete readThread;
+        SINFO("Closing read thread '" << threadData.name << "'");
+        threadData.threadObject.join();
     }
     _readThreadList.clear();
     SINFO("Threads closed.");
@@ -385,19 +403,6 @@ bool BedrockServer::shutdownComplete() {
                   (pr ? "" : "_processedResponses.empty(), ") <<
                   "returning FALSE in shutdownComplete");
         }
-
-        // Count how many threads we have that are still running.
-        int remainingThreads = 0;
-        if(!_writeThread->finished) {
-            remainingThreads++;
-        }
-        for (Thread* thread : _readThreadList) {
-            if (!thread->finished) {
-                remainingThreads++;
-            }
-        }
-
-        SINFO("Remaining threads: " << remainingThreads << ", shutdownComplete: " << (retVal ? "TRUE" : "FALSE"));
     }
 
     return retVal;
@@ -572,9 +577,9 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
                         SData cancelRequest("CANCEL_REQUEST");
                         cancelRequest["requestCount"] = SToStr(requestCount);
-                        for (Thread* readThread : _readThreadList) {
+                        for (auto& thread : _readThreadList) {
                             // Send it the cancel command
-                            readThread->directMessages.push(cancelRequest);
+                            thread.directMessages.push(cancelRequest);
                         }
                         _writeThread->directMessages.push(cancelRequest);
                     }

@@ -60,12 +60,18 @@
 // Initializes signal handling; only call in SInitialize()
 extern void _SInitializeSignals();
 
+thread_local string SThreadLogPrefix;
+thread_local string SThreadLogName;
+
 // Initializes every thread, including the main thread
 // **NOTE: _g_SThread_TLSKey can stay 0 when initialized, else we'd just look at it
 pthread_key_t _g_SThread_TLSKey = 0;
 bool _g_SThread_TLSKey_Initialized = false;
-void SInitialize() {
+
+void SInitialize(string threadName) {
     // Initialize signal handling
+    SLogSetThreadName(threadName);
+    SLogSetThreadPrefix("xxxxx ");
     _SInitializeSignals();
 
     // If this is our first thread, initialize thread local storage
@@ -87,9 +93,13 @@ SThreadLocalStorage* SThreadGetLocalStorage() {
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix) {
-    SThreadLocalStorage* tls = SThreadGetLocalStorage();
-    tls->logPrefix = logPrefix;
+    SThreadLogPrefix = logPrefix;
 }
+
+void SLogSetThreadName(const string& logName) {
+    SThreadLogName = logName;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -2071,23 +2081,11 @@ string SHMACSHA1(const string& key, const string& buffer) {
 /////////////////////////////////////////////////////////////////////////////
 // --------------------------------------------------------------------------
 void* _SThreadFunc(void* voidTLS) {
-    // Get this thread's call data and store fo future reference
-    // **NOTE: Logging won't work until the we set this
     SThreadLocalStorage* tls = (SThreadLocalStorage*)voidTLS;
     pthread_setspecific(_g_SThread_TLSKey, (void*)tls);
-
-    // If this thread wasn't given a name, name ourselves
     if (tls->name.empty()) {
-// Set threadID (for use when logging)
-#if defined(__linux__)
-        uint64_t threadID = pthread_self();
-#elif defined(__APPLE__)
-        uint64_t threadID = pthread_self()->__sig;
-#endif
-        tls->name = SToStr(threadID);
+        tls->name = "UNDEF";
     }
-
-    // Execute the thread function
     tls->proc(tls->procData);
     delete tls;
     return 0; // Ignore return value
