@@ -43,6 +43,8 @@ void SInitialize();
 #include <stdlib.h>
 #include <mutex>
 #include <cctype>
+#include <thread>
+
 using namespace std;
 
 // --------------------------------------------------------------------------

@@ -61,8 +61,7 @@
 extern void _SInitializeSignals();
 
 // Initializes every thread, including the main thread
-// **NOTE: _g_SThread_TLSKey can stay 0 when initialized, else we'd just look at it
-pthread_key_t _g_SThread_TLSKey = 0;
+thread_local SThreadLocalStorage _tls_context;
 bool _g_SThread_TLSKey_Initialized = false;
 void SInitialize() {
     // Initialize signal handling
@@ -71,18 +70,15 @@ void SInitialize() {
     // If this is our first thread, initialize thread local storage
     if (!_g_SThread_TLSKey_Initialized) {
         // Initialize thread local storage
-        SASSERT(!pthread_key_create(&_g_SThread_TLSKey, NULL));
-        SThreadLocalStorage* mainTLS = new SThreadLocalStorage;
-        mainTLS->proc = nullptr;
-        mainTLS->procData = nullptr;
-        mainTLS->name = "main";
-        pthread_setspecific(_g_SThread_TLSKey, mainTLS);
+        _tls_context.proc = nullptr;
+        _tls_context.procData = nullptr;
+        _tls_context.name = "main";
         _g_SThread_TLSKey_Initialized = true;
     }
 }
 
 SThreadLocalStorage* SThreadGetLocalStorage() {
-    return (SThreadLocalStorage*)pthread_getspecific(_g_SThread_TLSKey);
+    return &_tls_context;
 }
 
 // Thread-local log prefix
@@ -2073,8 +2069,10 @@ string SHMACSHA1(const string& key, const string& buffer) {
 void* _SThreadFunc(void* voidTLS) {
     // Get this thread's call data and store fo future reference
     // **NOTE: Logging won't work until the we set this
-    SThreadLocalStorage* tls = (SThreadLocalStorage*)voidTLS;
-    pthread_setspecific(_g_SThread_TLSKey, (void*)tls);
+    SThreadLocalStorage* tls = SThreadGetLocalStorage();
+    SThreadLocalStorage* newTls = (SThreadLocalStorage*)voidTLS;
+    *tls = *newTls;
+    delete newTls;
 
     // If this thread wasn't given a name, name ourselves
     if (tls->name.empty()) {
@@ -2089,7 +2087,6 @@ void* _SThreadFunc(void* voidTLS) {
 
     // Execute the thread function
     tls->proc(tls->procData);
-    delete tls;
     return 0; // Ignore return value
 }
 
@@ -2101,7 +2098,7 @@ void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& na
     SASSERT(!pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE));
 
     // Store all the context relative to this thread for future reference
-    SThreadLocalStorage* tls = new SThreadLocalStorage;
+    SThreadLocalStorage* tls = new SThreadLocalStorage();
     tls->proc = proc;
     tls->procData = procData;
     tls->name = name;
