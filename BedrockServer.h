@@ -4,6 +4,8 @@
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
 #include "PollTimer.h"
+#include <thread>
+#include <condition_variable>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -42,7 +44,6 @@ class BedrockServer : public STCPServer {
 
     class ThreadData {
       public:
-        // Typical constructor.
         ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
                    SSynchronized<uint64_t>& replicationCommitCount_, SSynchronized<bool>& gracefulShutdown_,
                    SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
@@ -95,56 +96,6 @@ class BedrockServer : public STCPServer {
         thread threadObject;
     };
 
-    static void BedrockServer_ReadThread(ThreadData& data);
-
-    // All the data required for a thread to create an BedrockNode
-    // and coordinate with other threads.
-    struct Thread {
-        Thread(const string& name_,                         // Thread name
-               SData args_,                                 // Command line args passed in.
-               SSynchronized<SQLCState>& replicationState_, // Shared var for communicating replication thread's status.
-               SSynchronized<uint64_t>& replicationCommitCount_, // Shared var for communicating replication thread's
-                                                                 // commit count (for sticky connections)
-               SSynchronized<bool>& gracefulShutdown_, // Shared var for communicating shutdown status between threads.
-               SSynchronized<string>& masterVersion_, // Shared var for communicating the master version (for knowing if
-                                                      // we should skip the slave peek).
-               MessageQueue& queuedRequests_, // Shared external queue between threads. Queued for read-only thread(s)
-               MessageQueue&
-                   queuedEscalatedRequests_, // Shared external queue between threads. Queued for replication thread
-               MessageQueue& processedResponses_, // Shared external queue between threads. Finished commands ready to
-                                                  // return to client.
-               BedrockServer* server_)            // The server spawning the thread.
-            : name(name_),
-              args(args_),
-              replicationState(replicationState_),
-              replicationCommitCount(replicationCommitCount_),
-              gracefulShutdown(gracefulShutdown_),
-              masterVersion(masterVersion_),
-              queuedRequests(queuedRequests_),
-              queuedEscalatedRequests(queuedEscalatedRequests_),
-              processedResponses(processedResponses_),
-              ready(false),
-              server(server_) {
-            // Initialized above
-        }
-
-        // Public attributes
-        string name;
-        SData args;
-        SSynchronized<SQLCState>& replicationState;
-        SSynchronized<uint64_t>& replicationCommitCount;
-        SSynchronized<bool>& gracefulShutdown;
-        SSynchronized<string>& masterVersion;
-        MessageQueue& queuedRequests;
-        MessageQueue& queuedEscalatedRequests;
-        MessageQueue& processedResponses;
-        MessageQueue directMessages;
-        void* thread;
-        SSynchronized<bool> ready;
-        BedrockServer* server;
-        bool finished = false;
-    };
-
     // Constructor / Destructor
     BedrockServer(const SData& args);
     virtual ~BedrockServer();
@@ -183,7 +134,7 @@ class BedrockServer : public STCPServer {
     SData _args;
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
-    Thread* _writeThread;
+    list<ThreadData> _writeThreadList;
     list<ThreadData> _readThreadList;
     SSynchronized<SQLCState> _replicationState;
     SSynchronized<uint64_t> _replicationCommitCount;
@@ -196,4 +147,11 @@ class BedrockServer : public STCPServer {
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
+
+    static void readWorker(ThreadData& data);
+    static void writeWorker(ThreadData& data);
+
+    static condition_variable _threadInitVar;
+    static mutex _threadInitMutex;
+    static int _threadsReady;
 };

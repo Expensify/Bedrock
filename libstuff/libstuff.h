@@ -19,7 +19,6 @@
 #include <libgen.h>   // for basename()
 #include <sys/time.h> // for gettimeofday()
 #include <signal.h>
-#include <pthread.h>
 
 // --------------------------------------------------------------------------
 // Initialization / Shutdown
@@ -272,23 +271,8 @@ void SLogStackTrace();
 // --------------------------------------------------------------------------
 // Thread stuff
 // --------------------------------------------------------------------------
-// Light wrapper around thread functions
-void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& threadName = "", size_t stackSize = 0);
-void SThreadClose(void* thread);
-void SThreadSleep(uint64_t delay);
-
-// Thread local storage
-struct SThreadLocalStorage {
-    // Attributes
-    void (*proc)(void* procData);
-    void* procData;
-    string name;
-    string logPrefix;
-    SData data;
-};
 
 // Each thread gets its own thread-local log prefix.
-SThreadLocalStorage* SThreadGetLocalStorage();
 extern thread_local string SThreadLogPrefix;
 extern thread_local string SThreadLogName;
 

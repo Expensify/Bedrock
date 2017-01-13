@@ -3,6 +3,11 @@
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
 
+// Definitions of static variables.
+condition_variable BedrockServer::_threadInitVar;
+mutex BedrockServer::_threadInitMutex;
+int BedrockServer::_threadsReady = 0;
+
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // The multi-threaded queues work on SDatas of either requests or
@@ -57,13 +62,142 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
     }
 }
 
-void BedrockServer::BedrockServer_ReadThread(BedrockServer::ThreadData& data)
+void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
+{
+    // This needs to be set because the constructor for BedrockNode depends on it.
+    data.args["-readOnly"] = "false";
+    SInitialize(data.name);
+    SINFO("Starting read/write worker thread for '" << data.name << "'");
+
+    // Create the actual node
+    SINFO("Starting BedrockNode: " << data.args.serialize());
+    BedrockNode node(data.args, data.server);
+    SINFO("Node created, ready for action.");
+
+    // Notify the parent thread that we're ready to go.
+    {
+        lock_guard<mutex> lock(_threadInitMutex);
+        _threadsReady++;
+    }
+    _threadInitVar.notify_all();
+
+    // Add peers
+    list<string> parsedPeerList = SParseList(data.args["-peerList"]);
+    for (const string& peer : parsedPeerList) {
+        // Get the params from this peer, if any
+        string host;
+        STable params;
+        SASSERT(SParseURIPath(peer, host, params));
+        node.addPeer(SGetDomain(host), host, params);
+    }
+
+    // Get any HTTPSManagers that plugins registered with the server.
+    list<list<SHTTPSManager*>>& httpsManagers = data.server->httpsManagers;
+
+    // Main event loop for replication thread.
+    uint64_t nextActivity = STimeNow();
+    while (!node.shutdownComplete()) {
+        // Update shared var so all threads have awareness of the current replication state
+        // and version as determined by the replication node.
+        data.replicationState.set(node.getState());
+        data.replicationCommitCount.set(node.getCommitCount());
+        data.masterVersion.set(node.getMasterVersion());
+
+        // If we've been instructed to shutdown and we haven't yet, do it.
+        if (data.gracefulShutdown.get())
+            node.beginShutdown();
+
+        // Wait and process
+        fd_map fdm;
+
+        // Handle any HTTPS requests from our plugins.
+        for (list<SHTTPSManager*>& managerList : httpsManagers) {
+            for (SHTTPSManager* manager : managerList) {
+                manager->preSelect(fdm);
+            }
+        }
+
+        int maxS = node.preSelect(fdm);
+        maxS = max(data.queuedEscalatedRequests.preSelect(fdm), maxS);
+        maxS = max(data.directMessages.preSelect(fdm), maxS);
+        const uint64_t now = STimeNow();
+        data.server->pollTimer.startPoll();
+        S_poll(fdm, max(nextActivity, now) - now);
+        data.server->pollTimer.stopPoll();
+        nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+
+        // Handle any HTTPS requests from our plugins.
+        for (list<SHTTPSManager*>& managerList : httpsManagers) { 
+            for (SHTTPSManager* manager : managerList) {
+                manager->postSelect(fdm, nextActivity);
+            }
+        }
+
+        node.postSelect(fdm, nextActivity);
+        data.queuedEscalatedRequests.postSelect(fdm);
+        data.directMessages.postSelect(fdm);
+
+        // Process any direct messages from the main thread to us
+        BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
+
+        // Check for available work.
+        while (true) {
+            // Try to get some work
+            const SData& request = data.queuedEscalatedRequests.pop();
+            if (request.empty())
+                break;
+
+            // Open the command -- no need to retain the pointer, the node
+            // will keep a list internally.
+            int priority = request.calc("priority");
+            bool unique = request.test("unique");
+            int64_t commandExecutionTime = request.calc64("commandExecuteTime");
+            node.openCommand(request, priority, unique, commandExecutionTime);
+        }
+
+        // Let the node process any new commands we've opened or existing
+        // commands outstanding
+        while (node.update(nextActivity)) {
+        }
+
+        // Put everything the replication node has finished on the threaded queue.
+        BedrockNode::Command* command = nullptr;
+        while ((command = node.getProcessedCommand())) {
+            SAUTOPREFIX(command->request["requestID"]);
+            SINFO("Putting escalated command '" << command->id << "' on processed list.");
+            BedrockServer_PrepareResponse(command);
+            data.processedResponses.push(command->response);
+
+            // Close the command to remove it from any internal queues.
+            node.closeCommand(command);
+        }
+    }
+
+    // We're shutting down, do the final performance log.
+    data.server->pollTimer.log();
+
+    // Update the state one last time when the writing replication thread exits.
+    SQLCState state = node.getState();
+    if (state > SQLC_WAITING) {
+        // This is because the graceful shutdown timer fired and node.shutdownComplete() returned `true` above, but
+        // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
+        // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
+        SWARN("Write thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
+        state = SQLC_SEARCHING;
+    } else {
+        SINFO("Write thread exiting, setting state to: " << state);
+    }
+    data.replicationState.set(state);
+    data.replicationCommitCount.set(node.getCommitCount());
+}
+
+void BedrockServer::readWorker(BedrockServer::ThreadData& data)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-readOnly"] = "true";
     data.args.erase("-nodeHost");
     SInitialize(data.name);
-    SINFO("Starting read-only" << " worker thread for '" << data.name << "'");
+    SINFO("Starting read-only worker thread for '" << data.name << "'");
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << data.args.serialize());
@@ -142,143 +276,8 @@ void BedrockServer::BedrockServer_ReadThread(BedrockServer::ThreadData& data)
 }
 
 // --------------------------------------------------------------------------
-void BedrockServer_WorkerThread(void* _data) {
-    // Initialize this thread
-    BedrockServer::Thread* data = (BedrockServer::Thread*)_data;
-    SInitialize(data->name);
-    const SData& args = data->args;
-    bool readOnly = args.test("-readOnly");
-    BedrockServer::MessageQueue& queuedRequests = data->queuedRequests;
-    BedrockServer::MessageQueue& queuedEscalatedRequests = data->queuedEscalatedRequests;
-    BedrockServer::MessageQueue& processedResponses = data->processedResponses;
-    BedrockServer::MessageQueue& directMessages = data->directMessages;
-    SINFO("Starting " << (readOnly ? "read-only" : "read/write") << " worker thread for '" << data->name << "'");
-
-    // Create the actual node
-    SINFO("Starting BedrockNode: " << args.serialize());
-    BedrockNode node(args, data->server);
-    SINFO("Node created, ready for action.");
-    data->ready.set(true);
-
-    if (!readOnly) {
-        // Add peers
-        list<string> parsedPeerList = SParseList(args["-peerList"]);
-        for (const string& peer : parsedPeerList) {
-            // Get the params from this peer, if any
-            string host;
-            STable params;
-            SASSERT(SParseURIPath(peer, host, params));
-            node.addPeer(SGetDomain(host), host, params);
-        }
-
-        // Get any HTTPSManagers that plugins registered with the server.
-        list<list<SHTTPSManager*>>& httpsManagers = data->server->httpsManagers;
-
-        // Main event loop for replication thread.
-        uint64_t nextActivity = STimeNow();
-        while (!node.shutdownComplete()) {
-            // Update shared var so all threads have awareness of the current replication state
-            // and version as determined by the replication node.
-            data->replicationState.set(node.getState());
-            data->replicationCommitCount.set(node.getCommitCount());
-            data->masterVersion.set(node.getMasterVersion());
-
-            // If we've been instructed to shutdown and we haven't yet, do it.
-            if (data->gracefulShutdown.get())
-                node.beginShutdown();
-
-            // Wait and process
-            fd_map fdm;
-
-            // Handle any HTTPS requests from our plugins.
-            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
-                for (SHTTPSManager* manager : managerList) {
-                    manager->preSelect(fdm);
-                }
-            }
-
-            int maxS = node.preSelect(fdm);
-            maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
-            maxS = max(directMessages.preSelect(fdm), maxS);
-            const uint64_t now = STimeNow();
-            data->server->pollTimer.startPoll();
-            S_poll(fdm, max(nextActivity, now) - now);
-            data->server->pollTimer.stopPoll();
-            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-
-            // Handle any HTTPS requests from our plugins.
-            for (list<SHTTPSManager*>& managerList : httpsManagers) { 
-                for (SHTTPSManager* manager : managerList) {
-                    manager->postSelect(fdm, nextActivity);
-                }
-            }
-
-            node.postSelect(fdm, nextActivity);
-            queuedEscalatedRequests.postSelect(fdm);
-            directMessages.postSelect(fdm);
-
-            // Process any direct messages from the main thread to us
-            BedrockServer_WorkerThread_ProcessDirectMessages(node, directMessages);
-
-            // Check for available work.
-            while (true) {
-                // Try to get some work
-                const SData& request = queuedEscalatedRequests.pop();
-                if (request.empty())
-                    break;
-
-                // Open the command -- no need to retain the pointer, the node
-                // will keep a list internally.
-                int priority = request.calc("priority");
-                bool unique = request.test("unique");
-                int64_t commandExecutionTime = request.calc64("commandExecuteTime");
-                node.openCommand(request, priority, unique, commandExecutionTime);
-            }
-
-            // Let the node process any new commands we've opened or existing
-            // commands outstanding
-            while (node.update(nextActivity))
-                ;
-
-            // Put everything the replication node has finished on the threaded queue.
-            BedrockNode::Command* command = nullptr;
-            while ((command = node.getProcessedCommand())) {
-                SAUTOPREFIX(command->request["requestID"]);
-                SINFO("Putting escalated command '" << command->id << "' on processed list.");
-                BedrockServer_PrepareResponse(command);
-                processedResponses.push(command->response);
-
-                // Close the command to remove it from any internal queues.
-                node.closeCommand(command);
-            }
-        }
-
-        // We're shutting down, do the final performance log.
-        data->server->pollTimer.log();
-
-        // Update the state one last time when the writing replication thread exits.
-        SQLCState state = node.getState();
-        if (state > SQLC_WAITING) {
-            // This is because the graceful shutdown timer fired and node.shutdownComplete() returned `true` above, but
-            // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
-            // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-            SWARN("Write thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
-            state = SQLC_SEARCHING;
-        } else {
-            SINFO("Write thread exiting, setting state to: " << state);
-        }
-        data->replicationState.set(state);
-        data->replicationCommitCount.set(node.getCommitCount());
-    }
-
-    // Done!
-    SINFO("Thread exiting");
-    data->finished = true;
-}
-
-// --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), _args(args), _requestCount(0), _writeThread(nullptr), _replicationState(SQLC_SEARCHING),
+    : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING),
       _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
       _suppressCommandPortManualOverride(false) {
 
@@ -299,8 +298,9 @@ BedrockServer::BedrockServer(const SData& args)
     for (string& pluginName : pluginNameList) {
         // Enable the named plugin
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
-        if (!plugin)
+        if (!plugin) {
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
+        }
         SINFO("Enabling plugin '" << pluginName << "'");
         plugin->enable(true);
 
@@ -311,23 +311,40 @@ BedrockServer::BedrockServer(const SData& args)
         httpsManagers.push_back(plugin->httpsManagers);
     }
 
-    // Add the write thread
-    _writeThread = new Thread("write0", _args, _replicationState, _replicationCommitCount, _nodeGracefulShutdown,
-                              _masterVersion, _queuedRequests, _queuedEscalatedRequests, _processedResponses, this);
-    _writeThread->args["-readOnly"] = "false";
-    SINFO("Lauching write thread '" << _writeThread->name << "'");
-    _writeThread->thread = SThreadOpen(BedrockServer_WorkerThread, _writeThread, _writeThread->name);
-    while (!_writeThread->ready.get()) {
-        // Wait a bit longer
-        SINFO("Waiting for '" << _writeThread->name << "' to be ready to continue.");
-        SThreadSleep(STIME_US_PER_S);
+    // TODO: Update to use multiple write threads.
+    int writeThreads = 1;
+    for (int c = 0; c < writeThreads; ++c) {
+        // Construct our ThreadData object for this thread in place at the back of the list.
+        _writeThreadList.emplace_back("write" + SToStr(c),
+                                      _args,
+                                      _replicationState,
+                                      _replicationCommitCount,
+                                      _nodeGracefulShutdown,
+                                      _masterVersion,
+                                      _queuedRequests,
+                                      _queuedEscalatedRequests,
+                                      _processedResponses,
+                                      this);
+
+        // We'll pass this object (by reference) as the object to our actual thread.
+        SINFO("Launching write thread '" << _writeThreadList.back().name << "'");
+        thread writeThread(writeWorker, ref(_writeThreadList.back()));
+
+        // Now we give ownership of our thread to our ThreadData object.
+        _writeThreadList.back().threadObject = move(writeThread);
+    }
+
+    SINFO("Waiting for write threads to be ready to continue.");
+    _threadsReady = 0;
+    while(_threadsReady < writeThreads) {
+        unique_lock<mutex> lock(_threadInitMutex);
+        _threadInitVar.wait(lock);
     }
 
     // Add as many read threads as requested
     int readThreads = max(1, _args.calc("-readThreads"));
     SINFO("Starting " << readThreads << " read threads (" << args["-readThreads"] << ")");
     for (int c = 0; c < readThreads; ++c) {
-
         // Construct our ThreadData object for this thread in place at the back of the list.
         _readThreadList.emplace_back("read" + SToStr(c),
                                      _args,
@@ -341,7 +358,8 @@ BedrockServer::BedrockServer(const SData& args)
                                      this);
 
         // We'll pass this object (by reference) as the object to our actual thread.
-        thread readThread(BedrockServer_ReadThread, ref(_readThreadList.back()));
+        SINFO("Launching read thread '" << _readThreadList.back().name << "'");
+        thread readThread(readWorker, ref(_readThreadList.back()));
 
         // Now we give ownership of our thread to our ThreadData object.
         _readThreadList.back().threadObject = move(readThread);
@@ -363,9 +381,11 @@ BedrockServer::~BedrockServer() {
     }
 
     // Shut down the threads
-    SINFO("Closing write thread '" << _writeThread->name << "'");
-    SThreadClose(_writeThread->thread);
-    delete _writeThread;
+    for (auto& threadData : _writeThreadList) {
+        SINFO("Closing write thread '" << threadData.name << "'");
+        threadData.threadObject.join();
+    }
+
     for (auto& threadData : _readThreadList) {
         // Close this thread
         SINFO("Closing read thread '" << threadData.name << "'");
@@ -581,7 +601,10 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                             // Send it the cancel command
                             thread.directMessages.push(cancelRequest);
                         }
-                        _writeThread->directMessages.push(cancelRequest);
+                        for (auto& thread : _writeThreadList) {
+                            // Send it the cancel command
+                            thread.directMessages.push(cancelRequest);
+                        }
                     }
                 }
             }

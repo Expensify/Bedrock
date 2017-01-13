@@ -27,7 +27,7 @@ void RetrySystem(const string& command) {
             // Didn't work
             SWARN("'" << command << "' failed with return code " << returnCode << ", waiting 5s and retrying "
                       << numRetries << " more times");
-            SThreadSleep(STIME_US_PER_S * 5);
+            this_thread::sleep_for(chrono::seconds(5));
         } else
 
         {
