@@ -41,8 +41,11 @@ SHTTPSManager::~SHTTPSManager() {
 // --------------------------------------------------------------------------
 void SHTTPSManager::closeTransaction(Transaction* transaction) {
     // Clean up the socket and done
-    _activeTransactionList.remove(transaction);
-    _completedTransactionList.remove(transaction);
+    {
+        SAUTOLOCK(_transactionListMutex);
+        _activeTransactionList.remove(transaction);
+        _completedTransactionList.remove(transaction);
+    }
     if (transaction->s)
         closeSocket(transaction->s);
     transaction->s = nullptr;
@@ -69,6 +72,7 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
     // Update each of the active requests
     uint64_t now = STimeNow();
+    SAUTOLOCK(_transactionListMutex);
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
@@ -128,6 +132,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
+    SAUTOLOCK(_transactionListMutex);
     _completedTransactionList.push_front(transaction);
     return transaction;
 }
@@ -157,7 +162,10 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     // There is a very good reason for push_front and not back.
     // If this transaction is added in the postSelect loop, it
     // would instantly timeout if pushed to the back.
-    _activeTransactionList.push_front(transaction);
+    {
+        SAUTOLOCK(_transactionListMutex);
+        _activeTransactionList.push_front(transaction);
+    }
 
     // We currently sit and do nothing at when we've written, but we're probably wrapped in a `poll` loop somewhere,
     // and if it doesn't know it's supposed to return, we'll wait for it to timeout before we try and handle the

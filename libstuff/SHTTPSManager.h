@@ -48,4 +48,7 @@ class SHTTPSManager : public STCPManager {
     // We use this to kick `poll` to wake up when we send a request.
     int _pipeFD[2] = {-1, -1};
     bool pollKicked = false;
+
+    // Multiple write threads can call these, so we syncronize access to them.
+    recursive_mutex _transactionListMutex;
 };
