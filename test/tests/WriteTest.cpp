@@ -2,22 +2,23 @@
 
 struct WriteTest : tpunit::TestFixture {
     WriteTest()
-        : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup), TEST(WriteTest::create), TEST(WriteTest::insert),
+        : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup),
+                              TEST(WriteTest::insert),
                               AFTER_CLASS(WriteTest::tearDown)) {
         NAME(Write);
     }
 
     BedrockTester* tester;
 
-    void setup() { tester = new BedrockTester(); }
+    list<string> queries = {
+        "CREATE TABLE foo (bar INTEGER);",
+    };
+    void setup() {
+        tester = new BedrockTester("", queries);
+    }
 
-    void tearDown() { delete tester; }
-
-    void create() {
-        SData status("Query");
-        // We can't create a table with BEGIN CONCURRENT.
-        status["query"] = "CREATE TABLE foo (bar INTEGER);";
-        tester->executeWait(status);
+    void tearDown() {
+        delete tester;
     }
 
     void insert() {
