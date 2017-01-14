@@ -134,9 +134,8 @@ SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
 
 // --------------------------------------------------------------------------
 SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const SData& request) {
-    // Open a connection, optionally using SSL (if the URL is HTTPS).  If that
-    // doesnt't work, then just return a completed transaction with an error
-    // response.
+    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
+    // completed transaction with an error response.
     string host, path;
     if (!SParseURI(url, host, path))
         return _createErrorTransaction();
@@ -164,8 +163,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     // and if it doesn't know it's supposed to return, we'll wait for it to timeout before we try and handle the
     // response here.
 
-    // Write arbitrary buffer to the pipe so any subscribers will
-    // be awoken.
+    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
     // **NOTE: 1 byte so write is atomic.
     if (!pollKicked) {
         pollKicked = true;
