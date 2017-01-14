@@ -74,6 +74,8 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     uint64_t now = STimeNow();
     SAUTOLOCK(_transactionListMutex);
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
+
+    bool interrupt = false;
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
@@ -88,6 +90,7 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             // 200OK or any content?
             active->finished = now;
             if (SContains(active->fullResponse.methodLine, " 200 ") || active->fullResponse.content.size()) {
+                interrupt = true;
                 // Pass the transaction down to the subclass.
                 if (_onRecv(active))
                     continue; // If true, then the transaction was closed in onRecv.
@@ -121,6 +124,10 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
         }
+    }
+
+    if (interrupt && notifyTarget) {
+        notifyTarget->notifyActivity();
     }
 }
 

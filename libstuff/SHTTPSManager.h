@@ -2,6 +2,13 @@
 
 class SHTTPSManager : public STCPManager {
   public: // External API
+
+    class Notifiable {
+    public:
+        virtual ~Notifiable() { }
+        virtual void notifyActivity() = 0;
+    };
+
     // Transaction
     struct Transaction {
         // Constructor/Destructor
@@ -32,6 +39,8 @@ class SHTTPSManager : public STCPManager {
   public: // STCPServer API
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
     int preSelect(fd_map& fdm);
+
+    SHTTPSManager::Notifiable* notifyTarget = 0;
 
   protected: // Child API
     // Methods

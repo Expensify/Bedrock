@@ -13,9 +13,23 @@
 /// ---------
 class BedrockServer : public STCPServer {
   public: // External Bedrock
+
+    // This lets an SHTTPSManager notify us when it's finished a request, so we can interrupt our write threads'
+    // poll loop so they'll pick up on the new activity.
+    class Notification : public SHTTPSManager::Notifiable {
+      public:
+        Notification(BedrockServer& server) : _server(server) {}
+        ~Notification() {}
+        void notifyActivity() {
+            _server.dummyQueue.push(SData("DUMMY"));
+        }
+
+      private:
+        BedrockServer& _server;
+    };
+
     // A synchronized queue of messages for enabling the main, read, and write
     // threads to communicate safely.
-    //
     class MessageQueue {
       public:
         // Constructor / Destructor
@@ -129,6 +143,9 @@ class BedrockServer : public STCPServer {
     // Keeps track of the time we spend idle.
     PollTimer pollTimer;
 
+    // Used only to interrupt poll because other work is available.
+    MessageQueue dummyQueue;
+
   private: // Internal Bedrock
     // Attributes
     SData _args;
@@ -149,9 +166,11 @@ class BedrockServer : public STCPServer {
     string _version;
 
     static void readWorker(ThreadData& data);
-    static void writeWorker(ThreadData& data);
+    static void writeWorker(ThreadData& data, MessageQueue& dummy);
 
     static condition_variable _threadInitVar;
     static mutex _threadInitMutex;
     static int _threadsReady;
+
+    Notification _notification;
 };

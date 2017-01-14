@@ -62,7 +62,7 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
     }
 }
 
-void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
+void BedrockServer::writeWorker(BedrockServer::ThreadData& data, MessageQueue& dummy)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-readOnly"] = "false";
@@ -110,15 +110,31 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         int maxS = node.preSelect(fdm);
         maxS = max(data.queuedEscalatedRequests.preSelect(fdm), maxS);
         maxS = max(data.directMessages.preSelect(fdm), maxS);
+        dummy.preSelect(fdm);
         const uint64_t now = STimeNow();
         data.server->pollTimer.startPoll();
+
+        // TODO: Where do HTTPS requests end up, how do they interrupt here?
         S_poll(fdm, max(nextActivity, now) - now);
         data.server->pollTimer.stopPoll();
-        nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+        nextActivity = STimeNow() + STIME_US_PER_S;
 
         node.postSelect(fdm, nextActivity);
         data.queuedEscalatedRequests.postSelect(fdm);
         data.directMessages.postSelect(fdm);
+        dummy.postSelect(fdm);
+
+        // Clear out the dummy queue.
+        // TODO: Do we also need this for read threads?
+        if (!dummy.empty()) {
+            while (true) {
+                const SData& request = dummy.pop();
+                if (request.empty()) {
+                    break;
+                }
+            }
+        }
+
 
         // Process any direct messages from the main thread to us
         BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
@@ -262,7 +278,7 @@ void BedrockServer::readWorker(BedrockServer::ThreadData& data)
 BedrockServer::BedrockServer(const SData& args)
     : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING),
       _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
-      _suppressCommandPortManualOverride(false) {
+      _suppressCommandPortManualOverride(false), _notification(*this) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -291,7 +307,12 @@ BedrockServer::BedrockServer(const SData& args)
         // As this is a list of lists, push_back will push a *copy* of the list onto our local list, meaning that the
         // plugin's list must be complete and final when `initialize` finishes. There is no facility to add more
         // httpsManagers at a later time.
+        for (auto manager : plugin->httpsManagers) {
+            manager->notifyTarget = &_notification;
+        }
         httpsManagers.push_back(plugin->httpsManagers);
+        // TODO: Each of these managers needs a way to interrupt our write thread's select loop. I.e., writing to one
+        // of our queues.
     }
 
     // TODO: Update to use multiple write threads.
@@ -311,7 +332,7 @@ BedrockServer::BedrockServer(const SData& args)
 
         // We'll pass this object (by reference) as the object to our actual thread.
         SINFO("Launching write thread '" << _writeThreadList.back().name << "'");
-        thread writeThread(writeWorker, ref(_writeThreadList.back()));
+        thread writeThread(writeWorker, ref(_writeThreadList.back()), ref(dummyQueue));
 
         // Now we give ownership of our thread to our ThreadData object.
         _writeThreadList.back().threadObject = move(writeThread);
@@ -773,6 +794,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     for (list<SHTTPSManager*>& managerList : httpsManagers) {
         for (SHTTPSManager* manager : managerList) {
             manager->postSelect(fdm, nextActivity);
+            // TODO: And write to some queue that interrupts our write loop.
         }
     }
 }
