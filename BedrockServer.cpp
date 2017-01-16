@@ -700,13 +700,18 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         // Was this command queued by plugin?
         BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
         if (plugin) {
-            // Let the plugin handle it
-            SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
-                             << response["request.methodLine"] << "'");
-            if (!plugin->onPortRequestComplete(response, s)) {
-                // Begin shutting down the socket
-                SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
-                shutdownSocket(s, SHUT_RD);
+            if (s) {
+                // Let the plugin handle it
+                SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
+                                 << response["request.methodLine"] << "'");
+                if (!plugin->onPortRequestComplete(response, s)) {
+                    // Begin shutting down the socket
+                    SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
+                    shutdownSocket(s, SHUT_RD);
+                }
+            } else {
+                SWARN("Cannot deliver response from plugin" << plugin->getName() << "' for request '"
+                                                            << response["request.methodLine"] << "' #" << requestCount);
             }
         } else {
             // No plugin, use default behavior.  If we have a socket, deliver the response
