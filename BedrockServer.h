@@ -3,7 +3,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
-#include "PollTimer.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -119,7 +118,7 @@ class BedrockServer : public STCPServer {
     list<list<SHTTPSManager*>> httpsManagers;
 
     // Keeps track of the time we spend idle.
-    PollTimer pollTimer;
+    SPerformanceTimer pollTimer;
 
   private: // Internal Bedrock
     // Attributes
