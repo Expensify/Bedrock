@@ -1,0 +1,40 @@
+# should probably be cleaned from comments and packaged as /lib/systemd/system/bedrock.service
+[Unit]
+Description=Expensify Bedrock Server
+Documentation=http://bedrockdb.com/
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/bedrock/bedrock.conf
+PIDFile=/var/run/bedrock.pid
+
+# Use type=simple and no -fork for now, because parent process
+# returns 1 after fork, and that makes systemd really unhappy
+# strace -e exit_group /usr/sbin/bedrock -fork -nodeName bedrock -db /var/lib/bedrock/bedrock.db -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority 200 -pidfile -cache 10001 -v  -quorumCheckpoint 100 -readThreads 4 -plugins status,db,jobs,cache,mysql
+# exit_group(1)                           = ?
+# +++ exited with 1 +++
+Type=simple
+
+# These are nice-to-have TODO's in the future, assuming all the tasks
+# of user creation and priv dropping are done
+# User=bedrock or User=${BEDROCK_USER}
+# Group=bedrock
+# WorkingDirectory=/var/lib/bedrock
+
+# Alternatively, we can ditch bedrock_prerequisites.service and do this:
+# It just makes sense to move all such tasks into separate service in
+# case there's more than one.
+ExecStartPre=/bin/sh -c 'mkdir -p "$(dirname "${BEDROCK_DB_PATH}")"'
+ExecStartPre=/bin/sh -c 'test -f "${BEDROCK_DB_PATH}" || touch "${BEDROCK_DB_PATH}"'
+
+# TODO: Why it is in /usr/sbin btw, and not /usr/bin ?
+ExecStart=/usr/sbin/bedrock \
+        -nodeName ${THISNODE} \
+        -db ${BEDROCK_DB_PATH} \
+        -serverHost ${SERVER_HOST} \
+        -nodeHost ${NODE_HOST} \
+        -priority ${PRIORITY} \
+        -cache ${CACHE_SIZE} \
+        ${VERBOSE} ${PEERS} $EXTRA_FLAGS
+ExecStop=/bin/kill -HUP $MAINPID
+KillMode=process
