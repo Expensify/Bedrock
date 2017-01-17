@@ -1,3 +1,4 @@
+#include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
 
 /// Introduction
