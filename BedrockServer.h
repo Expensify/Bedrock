@@ -54,9 +54,8 @@ class BedrockServer : public STCPServer {
                MessageQueue& queuedRequests_, // Shared external queue between threads. Queued for read-only thread(s)
                MessageQueue&
                    queuedEscalatedRequests_, // Shared external queue between threads. Queued for replication thread
-               MessageQueue& processedResponses_, // Shared external queue between threads. Finished commands ready to
+               MessageQueue& processedResponses_) // Shared external queue between threads. Finished commands ready to
                                                   // return to client.
-               BedrockServer* server_)            // The server spawning the thread.
             : name(name_),
               args(args_),
               replicationState(replicationState_),
@@ -66,8 +65,7 @@ class BedrockServer : public STCPServer {
               queuedRequests(queuedRequests_),
               queuedEscalatedRequests(queuedEscalatedRequests_),
               processedResponses(processedResponses_),
-              ready(false),
-              server(server_) {
+              ready(false) {
             // Initialized above
         }
 
@@ -82,15 +80,18 @@ class BedrockServer : public STCPServer {
         MessageQueue& queuedEscalatedRequests;
         MessageQueue& processedResponses;
         MessageQueue directMessages;
-        void* thread;
+        thread threadInstance;
         SSynchronized<bool> ready;
-        BedrockServer* server;
         bool finished = false;
     };
 
     // Constructor / Destructor
     BedrockServer(const SData& args);
     virtual ~BedrockServer();
+
+    // Thread functions
+    void threadWriter(Thread* data);
+    void threadReader(Thread* data);
 
     // Accessors
     SQLCState getState() { return _replicationState.get(); }

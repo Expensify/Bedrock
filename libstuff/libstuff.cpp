@@ -61,28 +61,18 @@
 extern void _SInitializeSignals();
 
 // Initializes every thread, including the main thread
-// **NOTE: _g_SThread_TLSKey can stay 0 when initialized, else we'd just look at it
-pthread_key_t _g_SThread_TLSKey = 0;
-bool _g_SThread_TLSKey_Initialized = false;
-void SInitialize() {
+thread_local SThreadLocalStorage _tls_context;
+void SInitialize(const string& name) {
     // Initialize signal handling
     _SInitializeSignals();
 
-    // If this is our first thread, initialize thread local storage
-    if (!_g_SThread_TLSKey_Initialized) {
-        // Initialize thread local storage
-        SASSERT(!pthread_key_create(&_g_SThread_TLSKey, NULL));
-        SThreadLocalStorage* mainTLS = new SThreadLocalStorage;
-        mainTLS->proc = nullptr;
-        mainTLS->procData = nullptr;
-        mainTLS->name = "main";
-        pthread_setspecific(_g_SThread_TLSKey, mainTLS);
-        _g_SThread_TLSKey_Initialized = true;
-    }
+    SThreadLocalStorage* tls = SThreadGetLocalStorage();
+    // If this thread wasn't given a name, name ourselves
+    tls->name = (name.empty() ? SToStr(this_thread::get_id()) : name);
 }
 
 SThreadLocalStorage* SThreadGetLocalStorage() {
-    return (SThreadLocalStorage*)pthread_getspecific(_g_SThread_TLSKey);
+    return &_tls_context;
 }
 
 // Thread-local log prefix
@@ -2070,63 +2060,8 @@ string SHMACSHA1(const string& key, const string& buffer) {
 // Thread stuff
 /////////////////////////////////////////////////////////////////////////////
 // --------------------------------------------------------------------------
-void* _SThreadFunc(void* voidTLS) {
-    // Get this thread's call data and store fo future reference
-    // **NOTE: Logging won't work until the we set this
-    SThreadLocalStorage* tls = (SThreadLocalStorage*)voidTLS;
-    pthread_setspecific(_g_SThread_TLSKey, (void*)tls);
-
-    // If this thread wasn't given a name, name ourselves
-    if (tls->name.empty()) {
-// Set threadID (for use when logging)
-#if defined(__linux__)
-        uint64_t threadID = pthread_self();
-#elif defined(__APPLE__)
-        uint64_t threadID = pthread_self()->__sig;
-#endif
-        tls->name = SToStr(threadID);
-    }
-
-    // Execute the thread function
-    tls->proc(tls->procData);
-    delete tls;
-    return 0; // Ignore return value
-}
-
-// --------------------------------------------------------------------------
-void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& name, size_t stackSize) {
-    // Explicitly define the thread as joinable
-    pthread_attr_t attr;
-    SASSERT(!pthread_attr_init(&attr));
-    SASSERT(!pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE));
-
-    // Store all the context relative to this thread for future reference
-    SThreadLocalStorage* tls = new SThreadLocalStorage;
-    tls->proc = proc;
-    tls->procData = procData;
-    tls->name = name;
-
-    // If a stack size was was provided, set it.
-    if (stackSize) {
-        SASSERT(!pthread_attr_setstacksize(&attr, stackSize));
-    }
-
-    // Create the thread
-    pthread_t pthread;
-    SASSERT(!pthread_create(&pthread, &attr, _SThreadFunc, tls));
-    SASSERT(!pthread_attr_destroy(&attr));
-    return (void*)pthread;
-}
-
-// --------------------------------------------------------------------------
-void SThreadClose(void* thread) {
-    // Wait for the thread to exit
-    pthread_t pthread = (pthread_t)thread;
-    SASSERT(!pthread_join(pthread, 0));
-}
-
-// --------------------------------------------------------------------------
 void SThreadSleep(uint64_t duration) {
+    // FIXME: change to http://en.cppreference.com/w/cpp/thread/sleep_for
     // Just re-use a blocking select (this wasn't working on Windows?)
     fd_set readfds, writefds, exceptfds;
     FD_ZERO(&readfds);
