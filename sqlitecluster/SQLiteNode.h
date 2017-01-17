@@ -1,5 +1,4 @@
 #pragma once
-#include <libstuff/libstuff.h>
 #include "SQLite.h"
 
 // Possible states of a node in a DB cluster
