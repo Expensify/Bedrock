@@ -1,4 +1,3 @@
-// SQLiteNode.h
 #pragma once
 #include "SQLite.h"
 
@@ -183,19 +182,8 @@ class SQLiteNode : public STCPNode {
     virtual void _cleanCommand(Command* command) = 0;
 
     // Wrappers for peek and process command to keep track of processing time.
-    bool _peekCommandWrapper(SQLite& db, Command* command) {
-        // Measure elapsed time and add to processing
-        uint64_t start = STimeNow();
-        bool result = _peekCommand(db, command);
-        command->processingTime += STimeNow() - start;
-        return result;
-    }
-    void _processCommandWrapper(SQLite& db, Command* command) {
-        // Measure elapsed time and add to processing
-        uint64_t start = STimeNow();
-        _processCommand(db, command);
-        command->processingTime += STimeNow() - start;
-    }
+    bool _peekCommandWrapper(SQLite& db, Command* command);
+    void _processCommandWrapper(SQLite& db, Command* command);
 
     // Force quorum among the replica after every N commits.  This prevents master from running ahead
     // too far. "Too far" is an arbitrary threshold that trades potential loss of consistency in the
@@ -253,4 +241,11 @@ class SQLiteNode : public STCPNode {
         return _majoritySubscribed(ignore, ignore);
     }
     bool _majoritySubscribed(int& numFullPeersOut, int& numFullSlavesOut);
+
+    // Measure how much time we spend in `process()` and `COMMIT` as a fraction of total time spent.
+    // Hopefully, we spend a lot of time in `process()` and relatively little in `COMMIT`, which would give us a good
+    // chance of paralleling `process()` without having to figure out the same for `COMMIT`, which we don't have a
+    // great solution for at the moment.
+    SPerformanceTimer _processTimer;
+    SPerformanceTimer _commitTimer;
 };
