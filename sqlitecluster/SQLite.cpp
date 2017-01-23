@@ -157,8 +157,7 @@ bool SQLite::beginConcurrentTransaction() {
     SDEBUG("Beginning transaction #" << _commitCount + 1);
     uint64_t before = STimeNow();
     // This breaks for a variety of tests we'll need to fix.
-    //_insideTransaction = SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
-    _insideTransaction = SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
+    _insideTransaction = SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;

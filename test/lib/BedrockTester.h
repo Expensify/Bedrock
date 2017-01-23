@@ -25,6 +25,7 @@ class BedrockTester {
 
     // Constructor
     BedrockTester(string filename = "");
+    BedrockTester(string filename, list<string> queries);
     ~BedrockTester();
 
     // Executes a command and waits for the response

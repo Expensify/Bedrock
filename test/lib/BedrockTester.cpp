@@ -37,6 +37,30 @@ BedrockTester::BedrockTester(string filename) : passing(true) {
     }
 }
 
+BedrockTester::BedrockTester(string filename, list<string> queries) : passing(true) {
+    nextActivity = 0;
+    if (filename.empty()) {
+        dbFile = BedrockTester::DB_FILE;
+    } else {
+        dbFile = filename;
+    }
+
+    createFile(dbFile);
+
+    // Create query goes here.
+    TestSQLite db(dbFile, 1000000, 1, false, 1000000);
+
+    for (string query : queries) {
+        db.beginTransaction();
+        db.write(query);
+        db.prepare();
+        db.commit();
+    }
+    if (startServers) {
+        startServer();
+    }
+}
+
 BedrockTester::~BedrockTester() {
     if (db) {
         delete db;

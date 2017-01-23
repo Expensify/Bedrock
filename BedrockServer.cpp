@@ -477,8 +477,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // **NOTE: We leave the port open between startup and shutdown, even if we enter a state where
     //         we can't process commands -- such as a non master/slave state.  The reason is we
     //         expect any state transitions between startup/shutdown to be due to temporary conditions
-    //         that will resolve themselves automatically in a short time.  During this periond we
-    //         prefer to receive commands and queue them up, even if we can't proesss them immediately,
+    //         that will resolve themselves automatically in a short time.  During this period we
+    //         prefer to receive commands and queue them up, even if we can't process them immediately,
     //         on the assumption that we'll be able to process them before the browser times out.
 
     // Is the OS trying to communicate with us?
