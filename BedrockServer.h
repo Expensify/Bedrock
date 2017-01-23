@@ -3,7 +3,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
-#include "PollTimer.h"
 #include <thread>
 #include <condition_variable>
 
@@ -127,14 +126,13 @@ class BedrockServer : public STCPServer {
     list<list<SHTTPSManager*>> httpsManagers;
 
     // Keeps track of the time we spend idle.
-    PollTimer pollTimer;
+    SPerformanceTimer pollTimer;
 
   private: // Internal Bedrock
     // Attributes
     SData _args;
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
-    list<ThreadData> _writeThreadList;
     list<ThreadData> _readThreadList;
     SSynchronized<SQLCState> _replicationState;
     SSynchronized<uint64_t> _replicationCommitCount;
@@ -147,11 +145,12 @@ class BedrockServer : public STCPServer {
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
+    ThreadData _writeThread;
 
     static void readWorker(ThreadData& data);
     static void writeWorker(ThreadData& data);
 
     static condition_variable _threadInitVar;
     static mutex _threadInitMutex;
-    static int _threadsReady;
+    static bool _threadReady;
 };

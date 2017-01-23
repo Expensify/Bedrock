@@ -792,5 +792,6 @@ struct STestTimer {
 
 // Other libstuff headers.
 #include "SRandom.h"
+#include "SPerformanceTimer.h"
 
 #endif	// LIBSTUFF_H

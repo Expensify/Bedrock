@@ -6,7 +6,7 @@
 // Definitions of static variables.
 condition_variable BedrockServer::_threadInitVar;
 mutex BedrockServer::_threadInitMutex;
-int BedrockServer::_threadsReady = 0;
+bool BedrockServer::_threadReady = false;
 
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
@@ -77,7 +77,7 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
     // Notify the parent thread that we're ready to go.
     {
         lock_guard<mutex> lock(_threadInitMutex);
-        _threadsReady++;
+        _threadReady = true;
     }
     _threadInitVar.notify_all();
 
@@ -121,9 +121,9 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         maxS = max(data.queuedEscalatedRequests.preSelect(fdm), maxS);
         maxS = max(data.directMessages.preSelect(fdm), maxS);
         const uint64_t now = STimeNow();
-        data.server->pollTimer.startPoll();
+        data.server->pollTimer.start();
         S_poll(fdm, max(nextActivity, now) - now);
-        data.server->pollTimer.stopPoll();
+        data.server->pollTimer.stop();
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
         // Handle any HTTPS requests from our plugins.
@@ -277,9 +277,19 @@ void BedrockServer::readWorker(BedrockServer::ThreadData& data)
 
 // --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING),
-      _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
-      _suppressCommandPortManualOverride(false) {
+    : STCPServer(""), pollTimer("poll()", true), _args(args), _requestCount(0),
+      _replicationState(SQLC_SEARCHING), _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""),
+      _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
+      _writeThread("sync",
+                   _args,
+                   _replicationState,
+                   _replicationCommitCount,
+                   _nodeGracefulShutdown,
+                   _masterVersion,
+                   _queuedRequests,
+                   _queuedEscalatedRequests,
+                   _processedResponses,
+                   this) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -311,32 +321,16 @@ BedrockServer::BedrockServer(const SData& args)
         httpsManagers.push_back(plugin->httpsManagers);
     }
 
-    // TODO: Update to use multiple write threads.
-    int writeThreads = 1;
-    for (int c = 0; c < writeThreads; ++c) {
-        // Construct our ThreadData object for this thread in place at the back of the list.
-        _writeThreadList.emplace_back("write" + SToStr(c),
-                                      _args,
-                                      _replicationState,
-                                      _replicationCommitCount,
-                                      _nodeGracefulShutdown,
-                                      _masterVersion,
-                                      _queuedRequests,
-                                      _queuedEscalatedRequests,
-                                      _processedResponses,
-                                      this);
+    // We'll pass the writeThread object (by reference) as the object to our actual thread.
+    SINFO("Launching sync thread '" << _writeThread.name << "'");
+    thread writeThread(writeWorker, ref(_writeThread));
 
-        // We'll pass this object (by reference) as the object to our actual thread.
-        SINFO("Launching write thread '" << _writeThreadList.back().name << "'");
-        thread writeThread(writeWorker, ref(_writeThreadList.back()));
+    // Now we give ownership of our thread to our ThreadData object.
+    _writeThread.threadObject = move(writeThread);
 
-        // Now we give ownership of our thread to our ThreadData object.
-        _writeThreadList.back().threadObject = move(writeThread);
-    }
-
-    SINFO("Waiting for write threads to be ready to continue.");
-    _threadsReady = 0;
-    while(_threadsReady < writeThreads) {
+    SINFO("Waiting for sync thread to be ready to continue.");
+    _threadReady = 0;
+    while (!_threadReady) {
         unique_lock<mutex> lock(_threadInitMutex);
         _threadInitVar.wait(lock);
     }
@@ -381,10 +375,8 @@ BedrockServer::~BedrockServer() {
     }
 
     // Shut down the threads
-    for (auto& threadData : _writeThreadList) {
-        SINFO("Closing write thread '" << threadData.name << "'");
-        threadData.threadObject.join();
-    }
+    SINFO("Closing write thread '" << _writeThread.name << "'");
+    _writeThread.threadObject.join();
 
     for (auto& threadData : _readThreadList) {
         // Close this thread
@@ -601,10 +593,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                             // Send it the cancel command
                             thread.directMessages.push(cancelRequest);
                         }
-                        for (auto& thread : _writeThreadList) {
-                            // Send it the cancel command
-                            thread.directMessages.push(cancelRequest);
-                        }
+                        // Send it the cancel command
+                        _writeThread.directMessages.push(cancelRequest);
                     }
                 }
             }
@@ -731,13 +721,18 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         // Was this command queued by plugin?
         BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
         if (plugin) {
-            // Let the plugin handle it
-            SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
-                             << response["request.methodLine"] << "'");
-            if (!plugin->onPortRequestComplete(response, s)) {
-                // Begin shutting down the socket
-                SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
-                shutdownSocket(s, SHUT_RD);
+            if (s) {
+                // Let the plugin handle it
+                SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
+                                 << response["request.methodLine"] << "'");
+                if (!plugin->onPortRequestComplete(response, s)) {
+                    // Begin shutting down the socket
+                    SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
+                    shutdownSocket(s, SHUT_RD);
+                }
+            } else {
+                SWARN("Cannot deliver response from plugin" << plugin->getName() << "' for request '"
+                                                            << response["request.methodLine"] << "' #" << requestCount);
             }
         } else {
             // No plugin, use default behavior.  If we have a socket, deliver the response
