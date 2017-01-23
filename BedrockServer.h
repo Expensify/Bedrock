@@ -122,7 +122,7 @@ class BedrockServer : public STCPServer {
     const string& getVersion();
 
     // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
-    // read loop on the write thread.
+    // read loop on the sync thread.
     list<list<SHTTPSManager*>> httpsManagers;
 
     // Keeps track of the time we spend idle.
@@ -133,7 +133,7 @@ class BedrockServer : public STCPServer {
     SData _args;
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
-    list<ThreadData> _readThreadList;
+    list<ThreadData> _workerThreadList;
     SSynchronized<SQLCState> _replicationState;
     SSynchronized<uint64_t> _replicationCommitCount;
     SSynchronized<bool> _nodeGracefulShutdown;
@@ -145,10 +145,10 @@ class BedrockServer : public STCPServer {
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
-    ThreadData _writeThread;
+    ThreadData _syncThread;
 
-    static void readWorker(ThreadData& data);
-    static void writeWorker(ThreadData& data);
+    static void worker(ThreadData& data);
+    static void syncWorker(ThreadData& data);
 
     static condition_variable _threadInitVar;
     static mutex _threadInitMutex;

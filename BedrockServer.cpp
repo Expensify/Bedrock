@@ -62,12 +62,12 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
     }
 }
 
-void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
+void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-readOnly"] = "false";
     SInitialize(data.name);
-    SINFO("Starting read/write worker thread for '" << data.name << "'");
+    SINFO("Starting sync thread for '" << data.name << "'");
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << data.args.serialize());
@@ -182,16 +182,16 @@ void BedrockServer::writeWorker(BedrockServer::ThreadData& data)
         // This is because the graceful shutdown timer fired and node.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Write thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
+        SWARN("Sync thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
         state = SQLC_SEARCHING;
     } else {
-        SINFO("Write thread exiting, setting state to: " << state);
+        SINFO("Sync thread exiting, setting state to: " << state);
     }
     data.replicationState.set(state);
     data.replicationCommitCount.set(node.getCommitCount());
 }
 
-void BedrockServer::readWorker(BedrockServer::ThreadData& data)
+void BedrockServer::worker(BedrockServer::ThreadData& data)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-readOnly"] = "true";
@@ -205,8 +205,8 @@ void BedrockServer::readWorker(BedrockServer::ThreadData& data)
     SINFO("Node created, ready for action.");
 
     while (true) {
-        // Set the read-only node's state/master status coming from the replication thread.
-        // Only read-only nodes will allow an external party to set these properties.
+        // Set the worker node's state/master status coming from the replication thread.
+        // Only worker nodes will allow an external party to set these properties.
         node.setState(data.replicationState.get());
         node.setMasterVersion(data.masterVersion.get());
 
@@ -263,12 +263,12 @@ void BedrockServer::readWorker(BedrockServer::ThreadData& data)
 
         } else if ((command = node.getQueuedCommand(priority))) {
             // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
-            // the write thread.
+            // the sync thread.
             SASSERT(!command->httpsRequest);
             SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
             data.queuedEscalatedRequests.push(request);
         } else
-            SERROR("[dmb] Lost command after read-only peek. This should never happen");
+            SERROR("[dmb] Lost command after worker peek. This should never happen");
 
         // Close the command to remove it from any internal queues.
         node.closeCommand(command);
@@ -280,7 +280,7 @@ BedrockServer::BedrockServer(const SData& args)
     : STCPServer(""), pollTimer("poll()", true), _args(args), _requestCount(0),
       _replicationState(SQLC_SEARCHING), _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""),
       _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-      _writeThread("sync",
+      _syncThread("sync",
                    _args,
                    _replicationState,
                    _replicationCommitCount,
@@ -321,12 +321,12 @@ BedrockServer::BedrockServer(const SData& args)
         httpsManagers.push_back(plugin->httpsManagers);
     }
 
-    // We'll pass the writeThread object (by reference) as the object to our actual thread.
-    SINFO("Launching sync thread '" << _writeThread.name << "'");
-    thread writeThread(writeWorker, ref(_writeThread));
+    // We'll pass the syncThread object (by reference) as the object to our actual thread.
+    SINFO("Launching sync thread '" << _syncThread.name << "'");
+    thread syncThread(syncWorker, ref(_syncThread));
 
     // Now we give ownership of our thread to our ThreadData object.
-    _writeThread.threadObject = move(writeThread);
+    _syncThread.threadObject = move(syncThread);
 
     SINFO("Waiting for sync thread to be ready to continue.");
     _threadReady = 0;
@@ -336,27 +336,27 @@ BedrockServer::BedrockServer(const SData& args)
     }
 
     // Add as many read threads as requested
-    int readThreads = max(1, _args.calc("-readThreads"));
-    SINFO("Starting " << readThreads << " read threads (" << args["-readThreads"] << ")");
-    for (int c = 0; c < readThreads; ++c) {
+    int workerThreads = max(1, _args.calc("-readThreads"));
+    SINFO("Starting " << workerThreads << " read threads (" << args["-readThreads"] << ")");
+    for (int c = 0; c < workerThreads; ++c) {
         // Construct our ThreadData object for this thread in place at the back of the list.
-        _readThreadList.emplace_back("read" + SToStr(c),
-                                     _args,
-                                     _replicationState,
-                                     _replicationCommitCount,
-                                     _nodeGracefulShutdown,
-                                     _masterVersion,
-                                     _queuedRequests,
-                                     _queuedEscalatedRequests,
-                                     _processedResponses,
-                                     this);
+        _workerThreadList.emplace_back("worker" + SToStr(c),
+                                       _args,
+                                       _replicationState,
+                                       _replicationCommitCount,
+                                       _nodeGracefulShutdown,
+                                       _masterVersion,
+                                       _queuedRequests,
+                                       _queuedEscalatedRequests,
+                                       _processedResponses,
+                                       this);
 
         // We'll pass this object (by reference) as the object to our actual thread.
-        SINFO("Launching read thread '" << _readThreadList.back().name << "'");
-        thread readThread(readWorker, ref(_readThreadList.back()));
+        SINFO("Launching read thread '" << _workerThreadList.back().name << "'");
+        thread workerThread(worker, ref(_workerThreadList.back()));
 
         // Now we give ownership of our thread to our ThreadData object.
-        _readThreadList.back().threadObject = move(readThread);
+        _workerThreadList.back().threadObject = move(workerThread);
     }
 }
 
@@ -375,15 +375,15 @@ BedrockServer::~BedrockServer() {
     }
 
     // Shut down the threads
-    SINFO("Closing write thread '" << _writeThread.name << "'");
-    _writeThread.threadObject.join();
+    SINFO("Closing sync thread '" << _syncThread.name << "'");
+    _syncThread.threadObject.join();
 
-    for (auto& threadData : _readThreadList) {
+    for (auto& threadData : _workerThreadList) {
         // Close this thread
-        SINFO("Closing read thread '" << threadData.name << "'");
+        SINFO("Closing worker thread '" << threadData.name << "'");
         threadData.threadObject.join();
     }
-    _readThreadList.clear();
+    _workerThreadList.clear();
     SINFO("Threads closed.");
 }
 
@@ -568,11 +568,11 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << requestCount << " in queuedRequests; was never processed by read thread.");
                     } else if (_queuedEscalatedRequests.cancel("requestCount", SToStr(requestCount))) {
                         SINFO("Cancelling abandoned request #"
-                              << requestCount << " in queuedEscalatedRequests; was never processed by write thread.");
+                              << requestCount << " in queuedEscalatedRequests; was never processed by sync thread.");
                     } else if (_processedResponses.cancel("request.requestCount", SToStr(requestCount))) {
                         SWARN("Can't cancel abandoned request #"
                               << requestCount
-                              << " in processedResponses; this *was* processed by the write thread, but too late now.");
+                              << " in processedResponses; this *was* processed by the sync thread, but too late now.");
                     } else {
                         // Doesn't seem to be in any of the queues, meaning it's actively being processed by one of the
                         // threads.
@@ -589,12 +589,12 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
                         SData cancelRequest("CANCEL_REQUEST");
                         cancelRequest["requestCount"] = SToStr(requestCount);
-                        for (auto& thread : _readThreadList) {
+                        for (auto& thread : _workerThreadList) {
                             // Send it the cancel command
                             thread.directMessages.push(cancelRequest);
                         }
                         // Send it the cancel command
-                        _writeThread.directMessages.push(cancelRequest);
+                        _syncThread.directMessages.push(cancelRequest);
                     }
                 }
             }
@@ -646,7 +646,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     else
                         _queuedEscalatedRequests.push(request);
 
-                    // Either shut down the socket or store it so we can eventually write out the response.
+                    // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget")) {
                         // Respond immediately to make it clear we successfully
                         // queued it, but don't add to the socket map as we don't
