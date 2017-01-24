@@ -191,9 +191,9 @@ void BedrockServer_WorkerThread(void* _data) {
             maxS = max(queuedEscalatedRequests.preSelect(fdm), maxS);
             maxS = max(directMessages.preSelect(fdm), maxS);
             const uint64_t now = STimeNow();
-            data->server->pollTimer.startPoll();
+            data->server->pollTimer.start();
             S_poll(fdm, max(nextActivity, now) - now);
-            data->server->pollTimer.stopPoll();
+            data->server->pollTimer.stop();
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
@@ -243,9 +243,6 @@ void BedrockServer_WorkerThread(void* _data) {
             }
         }
 
-        // We're shutting down, do the final performance log.
-        data->server->pollTimer.log();
-
         // Update the state one last time when the writing replication thread exits.
         SQLCState state = node.getState();
         if (state > SQLC_WAITING) {
@@ -268,9 +265,9 @@ void BedrockServer_WorkerThread(void* _data) {
 
 // --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), _args(args), _requestCount(0), _writeThread(nullptr), _replicationState(SQLC_SEARCHING),
-      _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
-      _suppressCommandPortManualOverride(false) {
+    : STCPServer(""), pollTimer("poll()", true), _args(args), _requestCount(0), _writeThread(nullptr),
+      _replicationState(SQLC_SEARCHING), _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""),
+      _suppressCommandPort(false), _suppressCommandPortManualOverride(false) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -703,13 +700,18 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         // Was this command queued by plugin?
         BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
         if (plugin) {
-            // Let the plugin handle it
-            SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
-                             << response["request.methodLine"] << "'");
-            if (!plugin->onPortRequestComplete(response, s)) {
-                // Begin shutting down the socket
-                SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
-                shutdownSocket(s, SHUT_RD);
+            if (s) {
+                // Let the plugin handle it
+                SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
+                                 << response["request.methodLine"] << "'");
+                if (!plugin->onPortRequestComplete(response, s)) {
+                    // Begin shutting down the socket
+                    SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
+                    shutdownSocket(s, SHUT_RD);
+                }
+            } else {
+                SWARN("Cannot deliver response from plugin" << plugin->getName() << "' for request '"
+                                                            << response["request.methodLine"] << "' #" << requestCount);
             }
         } else {
             // No plugin, use default behavior.  If we have a socket, deliver the response

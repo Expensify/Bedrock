@@ -1,5 +1,3 @@
-/// /svn/src/sqlitecluster/SQLiteNode.cpp
-/// =======================
 #include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
 
@@ -70,7 +68,9 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint,
                        const string& synchronousCommands, bool readOnly, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize) {
+      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize), _processTimer("process()"),
+      _commitTimer("COMMIT")
+    {
     SASSERT(readOnly || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
@@ -190,6 +190,23 @@ bool SQLiteNode::shutdownComplete() {
               << ", processed=" << _processedCommandList.size());
         return false;
     }
+}
+
+void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
+    // Measure elapsed time and add to processing
+    uint64_t start = STimeNow();
+    _processTimer.start();
+    _processCommand(db, command);
+    _processTimer.stop();
+    command->processingTime += STimeNow() - start;
+}
+
+bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
+    // Measure elapsed time and add to processing
+    uint64_t start = STimeNow();
+    bool result = _peekCommand(db, command);
+    command->processingTime += STimeNow() - start;
+    return result;
 }
 
 // --------------------------------------------------------------------------
@@ -1122,6 +1139,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                       << _currentCommand->request.methodLine << "' because initiatorSubscribed=" << initiatorSubscribed
                       << ", everybodyResponded=" << everybodyResponded << ", consistentEnough=" << consistentEnough);
                 _db.rollback();
+                _commitTimer.stop();
                 commandFinished = true;
 
                 // Notify everybody to rollback
@@ -1136,6 +1154,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 // Commit this distributed transaction.  Either we have quorum, or we don't need it.
                 uint64_t start = STimeNow();
                 _db.commit();
+                _commitTimer.stop();
                 _currentCommand->processingTime += STimeNow() - start;
                 commandFinished = true;
 
@@ -1357,6 +1376,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                             // Anything to commit?
                             if (_db.insideTransaction()) {
+                                _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());
                                 SINFO("Finished processing command '"
