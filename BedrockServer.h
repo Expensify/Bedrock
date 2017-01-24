@@ -30,6 +30,7 @@ class BedrockServer : public STCPServer {
 
         // Synchronized interface to add/remove work
         void push(const SData& rhs);
+        void push_front(const SData& rhs);
         SData pop();
         bool empty();
         bool cancel(const string& name, const string& value);
@@ -147,7 +148,7 @@ class BedrockServer : public STCPServer {
     string _version;
     ThreadData _syncThread;
 
-    static void worker(ThreadData& data);
+    static void worker(ThreadData& data, int threadId, int threadCount);
     static void syncWorker(ThreadData& data);
 
     static condition_variable _threadInitVar;

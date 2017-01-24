@@ -71,7 +71,10 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << data.args.serialize());
-    BedrockNode node(data.args, data.server);
+
+    // We let the sync thread create our journal tables here so that they exist when we start our workers.
+    int threads = max(1, data.args.calc("-readThreads"));
+    BedrockNode node(data.args, -1, threads, data.server);
     SINFO("Node created, ready for action.");
 
     // Notify the parent thread that we're ready to go.
@@ -191,7 +194,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     data.replicationCommitCount.set(node.getCommitCount());
 }
 
-void BedrockServer::worker(BedrockServer::ThreadData& data)
+void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int threadCount)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-readOnly"] = "true";
@@ -201,7 +204,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data)
 
     // Create the actual node
     SINFO("Starting BedrockNode: " << data.args.serialize());
-    BedrockNode node(data.args, data.server);
+    BedrockNode node(data.args, threadId, threadCount, data.server);
     SINFO("Node created, ready for action.");
 
     while (true) {
@@ -265,8 +268,24 @@ void BedrockServer::worker(BedrockServer::ThreadData& data)
             // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
             // the sync thread.
             SASSERT(!command->httpsRequest);
-            SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
-            data.queuedEscalatedRequests.push(request);
+
+            // TODO: I feel like there's a race condition here around being master. What happens if the node's state
+            // switches during process()?
+            // TODO: Currently has `0` to fall-through all the time.
+            if (0 && data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
+                SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
+
+                node.processCommand(command);
+                if (!node.commit()) {
+                    SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
+                    data.queuedRequests.push_front(request);
+                } else {
+                    SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+                }
+            } else {
+                SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
+                data.queuedEscalatedRequests.push(request);
+            }
         } else
             SERROR("[dmb] Lost command after worker peek. This should never happen");
 
@@ -353,7 +372,7 @@ BedrockServer::BedrockServer(const SData& args)
 
         // We'll pass this object (by reference) as the object to our actual thread.
         SINFO("Launching read thread '" << _workerThreadList.back().name << "'");
-        thread workerThread(worker, ref(_workerThreadList.back()));
+        thread workerThread(worker, ref(_workerThreadList.back()), c, workerThreads);
 
         // Now we give ownership of our thread to our ThreadData object.
         _workerThreadList.back().threadObject = move(workerThread);

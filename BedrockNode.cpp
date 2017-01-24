@@ -52,11 +52,11 @@
 // * 531 Expected but unusable response, retry later.
 // * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
 
-BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
+BedrockNode::BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
-                 1024,                                                 // auto-checkpoint every 1024 pages
+                 1024,                                                         // auto-checkpoint every 1024 pages
                  STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
+                 server_->getVersion(), threadId, threadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
                  args.test("-readOnly"), args.calc("-maxJournalSize")),
       server(server_) {
     // Initialize

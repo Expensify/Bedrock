@@ -2182,7 +2182,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
-    if (error != SQLITE_BUSY_SNAPSHOT) {
+    if (error == SQLITE_BUSY_SNAPSHOT) {
         SWARN("[concurrent] commit conflict.");
     }
     return error;
@@ -2190,19 +2190,23 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
 // --------------------------------------------------------------------------
 // Creates a table, if not there, or verifies it's defined correctly
-bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
+bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql, bool verifyOnly) {
     // First, see if it's there
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     if (result.empty()) {
         // Table doesn't already exist, create it
-        SINFO("Creating '" << tableName << "'");
-        SASSERT(!SQuery(db, "SQVerifyTable", sql));
+        if (!verifyOnly) {
+            SINFO("Creating '" << tableName << "'");
+            SASSERT(!SQuery(db, "SQVerifyTable", sql));
+        }
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
-        SINFO("'" << tableName << "' already exists, verifying. ");
-        SASSERT(result[0][4] == sql);
+        if (!verifyOnly) {
+            SINFO("'" << tableName << "' already exists, verifying. ");
+            SASSERT(result[0][4] == sql);
+        }
         return false; // Table already exists with correct definition
     }
 }

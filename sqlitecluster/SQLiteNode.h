@@ -76,8 +76,9 @@ class SQLiteNode : public STCPNode {
 
     // Constructor
     SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-               int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0,
-               const string& synchronousCommands = "", bool readOnly = false, int maxJournalSize = 1000000);
+               int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
+               int quorumCheckpoint = 0, const string& synchronousCommands = "", bool readOnly = false,
+               int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
     // Simple accessors
@@ -249,6 +250,12 @@ class SQLiteNode : public STCPNode {
         return _majoritySubscribed(ignore, ignore);
     }
     bool _majoritySubscribed(int& numFullPeersOut, int& numFullSlavesOut);
+
+    void _sendOutstandingTransactions();
+
+    // How many journal tables does our DB have?
+    // We always have 'journal', and then we have numbered tables 'journal00' through this number, inclusive.
+    static int _maximumJournalTable;
 
     // Measure how much time we spend in `process()` and `COMMIT` as a fraction of total time spent.
     // Hopefully, we spend a lot of time in `process()` and relatively little in `COMMIT`, which would give us a good

@@ -2,7 +2,6 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/TestHTTPS.h>
-#include <test/lib/TestSQLite.h>
 #include <test/lib/tpunit++.hpp>
 
 class BedrockTester {

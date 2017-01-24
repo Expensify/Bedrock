@@ -700,7 +700,7 @@ inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThr
     return SQuery(db, e, sql, ignore, warnThreshold);
 }
 
-bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
+bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql, bool verifyOnly = false);
 
 // --------------------------------------------------------------------------
 inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }

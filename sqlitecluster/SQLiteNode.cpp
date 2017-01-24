@@ -70,11 +70,12 @@ uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
 // --------------------------------------------------------------------------
 SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint,
-                       const string& synchronousCommands, bool readOnly, int maxJournalSize)
+                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
+                       int quorumCheckpoint, const string& synchronousCommands, bool readOnly, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize), _processTimer("process()"),
-      _commitTimer("COMMIT")
+      // TODO: Pass some useful values here to use in place of -1
+      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize, threadId, threadCount - 1),
+      _processTimer("process()"), _commitTimer("COMMIT")
     {
     SASSERT(readOnly || !portList.empty());
     SASSERT(priority >= 0);
@@ -212,6 +213,56 @@ bool SQLiteNode::commit() {
     }
     _haveUnsentTransactions = true;
     return true; // Commit succeeded.
+}
+
+void SQLiteNode::_sendOutstandingTransactions() {
+
+// This is just notes at this point, until the multi-table journal works.
+#if 0
+
+    _uncommittedHash = SToHex(SHashSHA1(_committedHash + _uncommittedQuery));
+    uint64_t before = STimeNow();
+    int result = SQuery(_db, "updating journal", "INSERT INTO journal VALUES ( NULL, " + SQ(_uncommittedQuery) + ", " +
+                        SQ(_uncommittedHash) + " )");
+
+    SASSERT(!_db.getUncommittedQuery().empty());
+    SINFO("Finished processing command '"
+          << _currentCommand->request.methodLine << "' (" << _currentCommand->id
+          << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
+          << " (" << _db.getUncommittedHash() << ")");
+    _currentCommand->replicationStartTimestamp = STimeNow();
+    _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
+    _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
+    _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
+    _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
+    _currentCommand->transaction["ID"] = _currentCommand->id;
+    _currentCommand->transaction.content = _db.getUncommittedQuery();
+    _sendToAllPeers(_currentCommand->transaction, true); // subscribed only
+    SFOREACH (list<Peer*>, peerList, peerIt) {
+        // Clear the response flag from the last transaction
+        Peer* peer = *peerIt;
+        (*peer)["TransactionResponse"].clear();
+    }
+
+    SData commit("COMMIT_TRANSACTION");
+    commit["ID"] = _currentCommand->id;
+    _sendToAllPeers(commit, true); // subscribed only
+    SAUTOLOCK(_commitMutex); // If we don't do this here, we could have a read thread add a new transaction while we're
+                             // sending them, and we could get out of sync (specifically, the value of
+                             // _haveUnsentTransactions becomes suspect).
+    if (_haveUnsentTransactions) {
+        SQResult rows = "SELECT query, hash journalID, "
+                        "FROM journal "
+                        "WHERE journalID > _lastSentTransactionID "
+                        "ORDER BY journalID asc;";
+        for (row : rows) {
+            sendToAllPeers("BEGIN_TRANSACTION", row);
+            sendToAllPeers("COMMIT");
+            _lastSentTransactionID = row[2];
+        }
+        _haveUnsentTransactions = false;
+    }
+#endif
 }
 
 void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {

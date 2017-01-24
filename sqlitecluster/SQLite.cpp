@@ -11,15 +11,15 @@
 #define DB_READ_OPEN_FLAGS SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
 
 bool SQLite::sqliteInitialized = false;
+recursive_mutex SQLite::_commitLock;
 
-// --------------------------------------------------------------------------
 void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
                                 << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
-// --------------------------------------------------------------------------
-SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize) {
+SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize,
+               int journalTable, int minJournalTables) {
     // Initialize
     SINFO("Opening " << (readOnly ? "Read Only" : "Writable") << " sqlite connection");
     SASSERT(!filename.empty());
@@ -53,6 +53,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     // does not need to wait on locks created in this thread.
     SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
 
+    // Set our journal table name.
+    _journalName = getJournalTableName(journalTable);
+
     // Open or create the database
     if (SFileExists(_filename)) {
         DBINFO("Opening database '" << _filename << "'");
@@ -63,12 +66,30 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
         // Open a read/write database
         SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
         _setPragmas(_db, autoCheckpoint);
-        if (SQVerifyTable(_db, "journal", "CREATE TABLE journal ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-            SHMMM("Created journal table.");
+        for (int i = -1; i <= minJournalTables; i++) {
+            if (SQVerifyTable(_db, getJournalTableName(i), "CREATE TABLE " + getJournalTableName(i) +
+                              " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
+                SHMMM("Created " << getJournalTableName(i) << " table.");
+            }
         }
     } else {
         // Open a read-only database
         SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_READ_OPEN_FLAGS, NULL));
+    }
+
+    // Figure out which journal tables actually exist. They must be sequential.
+    int currentJounalTable = -1;
+    while(true) {
+        string name = getJournalTableName(currentJounalTable);
+        // useless select, we don't want to create anything, just see if these tables exist.
+        bool exists = !SQVerifyTable(_db, name, "select 1", true);
+        if (exists) {
+            _allJournalNames.push_back(name);
+            currentJounalTable++;
+        } else {
+            // That's all of them.
+            break;
+        }
     }
 
     // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
@@ -79,63 +100,55 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     SQuery(_db, "increasing cache size",
            "PRAGMA cache_size = -" + SQ(cacheSize) + ";"); // -size means KB; +size means pages
 
-    // Look up the current state of the database.
+    // We just keep track of the number of rows in each journal, and delete if we have too many.
     SQResult result;
-    SASSERT(!SQuery(_db, "getting commit count", "SELECT maxID, (maxID-minID)+1 FROM (SELECT (SELECT MAX(id) FROM "
-                                                "journal) as maxID, (SELECT MIN(id) FROM journal) as minID)",
-                   result));
-    _commitCount = SToUInt64(result[0][0]);
-    _journalSize = SToUInt64(result[0][1]);
-    const string& query = "SELECT hash FROM journal WHERE id=" + SToStr(_commitCount);
-    SASSERT(!SQuery(_db, "getting DB hash", query.c_str(), result));
-    if (!result.empty()) {
-        _committedHash = result[0][0];
-    }
-    DBINFO("Database opened, commitCount=" << _commitCount << ", journalSize=" << _journalSize << " of "
-                                           << _maxJournalSize << " max (" << _committedHash << ")");
+    SASSERT(!SQuery(_db, "getting commit count", "SELECT COUNT(*) FROM " + _journalName + ";", result));
+    _journalSize = SToUInt64(result[0][0]);
 }
 
-// --------------------------------------------------------------------------
+string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
+    list<string> queries;
+    for (string& name : _allJournalNames) {
+        queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
+    }
+    string query = SComposeList(queries, " UNION ");
+    SINFO("[concurrent] Generated journal query: " << query);
+    return query;
+}
+
+string SQLite::getJournalTableName(int journalTableID)
+{
+    string name = "journal";
+    if (journalTableID >= 0 && journalTableID <= 9) {
+        name += "0";
+    }
+    if (journalTableID >= 0) {
+        name += to_string(journalTableID);
+    }
+    return name;
+}
+
 SQLite::~SQLite() {
     // Close the database -- first rollback any incomplete transaction
-    if (!_uncommittedQuery.empty())
+    if (!_uncommittedQuery.empty()) {
         rollback();
-
-    // Now verify its hash and commit count matches our expectations
-    DBINFO("Closing database '" << _filename << "', commitCount=" << _commitCount << "(" << _committedHash << ")");
-    SASSERTWARN(_uncommittedQuery.empty());
-    if (!_readOnly) {
-        // If we're the read/write thread, also confirm that the database
-        // is in the correct state.  First, confirm that our commit count
-        // matches the final commit count in the databae.
-        SQResult result;
-        SASSERT(!SQuery(_db, "verifying commit count", "SELECT MAX(id) FROM journal", result));
-        SASSERTEQUALS(_commitCount, SToUInt64(result[0][0]));
-
-        // Next confirm that the final hash matches what we think the
-        // incremental hash should be for that commit (if we have one).
-        if (!_committedHash.empty()) {
-            // Verify the hash is right
-            const string& query = (string) "SELECT hash FROM journal WHERE id=" + SToStr(_commitCount);
-            SASSERT(!SQuery(_db, "verifying DB hash", query.c_str(), result));
-            SASSERTWARN(!result.empty());
-            SASSERTWARN(_committedHash == result[0][0]);
-        }
     }
+
+    DBINFO("Closing database '" << _filename << ".");
+    SASSERTWARN(_uncommittedQuery.empty());
 
     // Close the DB.
     SASSERT(!sqlite3_close(_db));
     DBINFO("Database closed.");
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::beginTransaction() {
     SASSERT(!_readOnly);
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     // Begin the next transaction
-    SDEBUG("Beginning transaction #" << _commitCount + 1);
+    SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
     _beginElapsed = STimeNow() - before;
@@ -147,14 +160,13 @@ bool SQLite::beginTransaction() {
     return _insideTransaction;
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::beginConcurrentTransaction() {
     SASSERT(!_readOnly);
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     // Begin the next transaction
-    SDEBUG("Beginning concurrent transaction #" << _commitCount + 1);
+    SDEBUG("Beginning concurrent transaction");
     uint64_t before = STimeNow();
     // This breaks for a variety of tests we'll need to fix.
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
@@ -167,7 +179,6 @@ bool SQLite::beginConcurrentTransaction() {
     return _insideTransaction;
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
     SASSERT(!SEndsWith(sql, ";")); // sqlite trims semicolon, so let's not supply it else we get confused later
     // First, see if it's there
@@ -199,7 +210,6 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
     }
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::addColumn(const string& tableName, const string& column, const string& columnType) {
     // Add a column to the table if it does not exist.  Totally freak out on error.
     const string& sql =
@@ -214,7 +224,6 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
     return false;
 }
 
-// --------------------------------------------------------------------------
 string SQLite::read(const string& query) {
     // Execute the read-only query
     SQResult result;
@@ -225,7 +234,6 @@ string SQLite::read(const string& query) {
     return result[0][0];
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::read(const string& query, SQResult& result) {
     // Execute the read-only query
     SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
@@ -237,7 +245,6 @@ bool SQLite::read(const string& query, SQResult& result) {
     return queryResult;
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::write(const string& query) {
     SASSERT(!_readOnly);
     SASSERT(_insideTransaction);
@@ -276,28 +283,40 @@ bool SQLite::write(const string& query) {
     return true;
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::prepare() {
     SASSERT(_insideTransaction);
+
+    // We lock this here, so that we can guarantee the order in which commits show up in the database.
+    _commitLock.lock();
+
+    // Now that we've locked anybody else from committing, look up the state of the database.
+    string committedQuery, committedHash;
+    uint64_t commitCount = getCommitCount();
+    getCommit(commitCount, committedQuery, committedHash);
+
     // Queue up the journal entry
-    _uncommittedHash = SToHex(SHashSHA1(_committedHash + _uncommittedQuery));
+    _uncommittedHash = SToHex(SHashSHA1(committedHash + _uncommittedQuery));
     uint64_t before = STimeNow();
-    int result = SQuery(_db, "updating journal", "INSERT INTO journal VALUES ( NULL, " + SQ(_uncommittedQuery) + ", " +
-                        SQ(_uncommittedHash) + " )");
+
+    // Let the DB auto-increment this.
+    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
+    int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
-        SWARN("Unable to prepare transaction, rolling back: " << _uncommittedQuery);
+        SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
+        _commitLock.unlock();
         return false;
     }
 
     // Ready to commit
     SDEBUG("Prepared transaction");
+
+    // We're still holding _commitLock now, and will until the commit is complete.
     return true;
 }
 
-// --------------------------------------------------------------------------
 int SQLite::commit() {
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
@@ -309,8 +328,8 @@ int SQLite::commit() {
         // Delete the oldest entry
         truncating = true;
         uint64_t before = STimeNow();
-        SASSERT(!SQuery(_db, "Deleting oldest row",
-                       "DELETE FROM journal WHERE id=" + SToStr(_commitCount - _journalSize + 1)));
+        string query = "DELETE FROM" + _journalName + " WHERE id = MIN(id);";
+        SASSERT(!SQuery(_db, "Deleting oldest row", query));
         _writeElapsed += STimeNow() - before;
     }
 
@@ -318,23 +337,27 @@ int SQLite::commit() {
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
 
     if (result == SQLITE_OK) {
         _commitElapsed += STimeNow() - before;
         // Successful commit
-        ++_commitCount;
         _journalSize += !truncating; // Only increase if we didn't truncate by a row
-        _committedHash = _uncommittedHash;
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+
+        // Ok, someone else can commit now.
+        _commitLock.unlock();
     }
+
+    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding _commitLock, and it will need to be unlocked by
+    // calling rollback().
     return result;
 }
 
-// --------------------------------------------------------------------------
 void SQLite::rollback() {
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
@@ -347,6 +370,9 @@ void SQLite::rollback() {
             SALERT("[opszy] Freak out! Rolled back an actual query in " << (_rollbackElapsed / STIME_US_PER_MS)
                                                                         << "ms.");
         }
+
+        // Finally done with this.
+        _commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }
@@ -355,7 +381,6 @@ void SQLite::rollback() {
     _uncommittedQuery.clear();
 }
 
-// --------------------------------------------------------------------------
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
                                           uint64_t& commit, uint64_t& rollback) {
     // Just populate and return
@@ -368,40 +393,42 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
     return begin + read + write + prepare + commit + rollback;
 }
 
-// --------------------------------------------------------------------------
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
-    SASSERTWARN(SWITHIN(1, id, _commitCount));
     // Look up the query and hash for the given commit
     SDEBUG("Getting commit #" << id);
-    const string& sql = "SELECT query, hash FROM journal WHERE id=" + SToStr(id);
+
     SQResult result;
-    if (SQuery(_db, "getting commit", sql, result))
-        return false;
-    SASSERTWARN(result.size() == 1);
-    if (result.size() != 1)
-        return false;
-    SASSERTWARN(result[0].size() == 2);
-    if (result[0].size() != 2)
-        return false;
-    query = result[0][0];
-    hash = result[0][1];
+    getCommits(id, id, result);
+    if (!result.empty()) {
+        query = result[0][1];
+        hash = result[0][0];
+    } else {
+        query = "";
+        hash = "";
+    }
     SASSERTWARN(!query.empty());
     SASSERTWARN(!hash.empty());
     return (!query.empty() && !hash.empty());
 }
 
-// --------------------------------------------------------------------------
-bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
-    SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    SASSERTWARN(SWITHIN(fromIndex, toIndex, _commitCount));
-    // Look up all the queries within that range
-    SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
-    const string& sql = "SELECT hash, query FROM journal WHERE id >= " + SToStr(fromIndex) + " AND id <= " +
-                        SToStr(toIndex) + " ORDER BY id";
-    return !SQuery(_db, "getting commits", sql, result);
+string SQLite::getCommittedHash() { 
+    string committedQuery, committedHash;
+    uint64_t commitCount = getCommitCount();
+    getCommit(commitCount, committedQuery, committedHash);
+    return committedHash;
 }
 
-// --------------------------------------------------------------------------
+bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
+
+    SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
+
+    string query = _getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+                                    (toIndex ? " AND id <= " + SQ(toIndex) : "")});
+
+    SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
+    return !SQuery(_db, "getting commits", query, result);
+}
+
 int64_t SQLite::getLastInsertRowID() {
     // Make sure it *does* happen after an INSERT, but not with a IGNORE
     SASSERTWARN(SContains(_uncommittedQuery, "INSERT") || SContains(_uncommittedQuery, "REPLACE"));
@@ -410,17 +437,17 @@ int64_t SQLite::getLastInsertRowID() {
     return sqliteRowID;
 }
 
-// --------------------------------------------------------------------------
 uint64_t SQLite::getCommitCount() {
-    if (_readOnly) {
-        SQResult result;
-        SASSERT(!SQuery(_db, "getting commit count", "SELECT MAX(id) FROM journal", result));
-        return !result.empty() ? SToUInt64(result[0][0]) : 0;
-    } else
-        return _commitCount;
+    string query = _getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
+    query = "SELECT MAX(maxIDs) FROM (" + query + ") ORDER BY maxIDs desc";
+    SQResult result;
+    SASSERT(!SQuery(_db, "getting commit count", query, result));
+
+    uint64_t count = SToUInt64(result[0][0]);
+    SINFO("[concurrent] Got latest commit count: " << count);
+    return count;
 }
 
-// --------------------------------------------------------------------------
 void SQLite::_setPragmas(sqlite3* db, int autoCheckpoint) {
     // Occasionally a read-only thread will complain that the database is locked. This is only seems to
     // happen at startup when we open many sqlite3 connections at once.  SQLite will use an exponential

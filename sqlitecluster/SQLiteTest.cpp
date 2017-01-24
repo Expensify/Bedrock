@@ -87,7 +87,7 @@ struct SQLiteTestNode : public SQLiteNode {
     // Construct the base class
     SQLiteTestNode(const string& filename, const string& host, int priority)
         : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRandom::rand64() % STIME_US_PER_S * 5,
-                     "testversion", 100) {
+                     "testversion", -1, -1, 100) {
         // Nothing to initialize
         commandTimeout = 0;
     }

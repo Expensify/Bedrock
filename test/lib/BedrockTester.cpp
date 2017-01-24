@@ -48,7 +48,7 @@ BedrockTester::BedrockTester(string filename, list<string> queries) : passing(tr
     createFile(dbFile);
 
     // Create query goes here.
-    TestSQLite db(dbFile, 1000000, 1, false, 1000000);
+    SQLite db(dbFile, 1000000, 1, false, 1000000, -1, -1);
 
     for (string query : queries) {
         db.beginTransaction();
@@ -78,14 +78,14 @@ BedrockTester::~BedrockTester() {
 
 SQLite& BedrockTester::getSQLiteDB() {
     if (!db) {
-        db = new TestSQLite(dbFile, 1000000, false, true, 3000000);
+        db = new SQLite(dbFile, 1000000, false, true, 3000000, -1, -1);
     }
     return *db;
 }
 
 SQLite& BedrockTester::getWritableSQLiteDB() {
     if (!writableDB) {
-        writableDB = new TestSQLite(dbFile, 1000000, false, false, 3000000);
+        writableDB = new SQLite(dbFile, 1000000, false, false, 3000000, -1, -1);
     }
     return *writableDB;
 }
@@ -98,6 +98,7 @@ string BedrockTester::readDB(const string& query) { return getSQLiteDB().read(qu
 bool BedrockTester::readDB(const string& query, SQResult& result) { return getSQLiteDB().read(query, result); }
 
 bool BedrockTester::deleteFile(string name) {
+return true;
     string shm = name + "-shm";
     string wal = name + "-wal";
     bool retval = true;
@@ -124,14 +125,15 @@ string BedrockTester::getServerName() { return "../bedrock"; }
 
 list<string> BedrockTester::getServerArgs() {
     list<string> args = {
-        "-db",         BedrockTester::DB_FILE,
-        "-serverHost", SERVER_ADDR,
-        "-nodeName",   "bedrock_test",
-        "-nodeHost",   "localhost:9889",
-        "-priority",   "200",
-        "-plugins",    "status,db,cache",
-        "-v",          "-cache",
-        "10001",
+        "-db",          BedrockTester::DB_FILE,
+        "-serverHost",  SERVER_ADDR,
+        "-nodeName",    "bedrock_test",
+        "-nodeHost",    "localhost:9889",
+        "-priority",    "200",
+        "-plugins",     "status,db,cache",
+        "-readThreads", "2",
+        "-v",
+        "-cache",       "10001",
     };
 
     return args;

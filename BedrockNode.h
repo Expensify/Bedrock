@@ -8,7 +8,7 @@ struct BedrockTester; // Defined in BedrockTester.h, but can't include else circ
 class BedrockNode : public SQLiteNode {
   public:
     // Construct the base class
-    BedrockNode(const SData& args, BedrockServer* server_);
+    BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_);
     virtual ~BedrockNode();
 
     BedrockServer* server;

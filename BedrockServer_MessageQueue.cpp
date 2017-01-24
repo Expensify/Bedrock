@@ -35,6 +35,18 @@ int BedrockServer::MessageQueue::preSelect(fd_map& fdm) {
 }
 
 // --------------------------------------------------------------------------
+void BedrockServer::MessageQueue::push_front(const SData& rhs) {
+    SAUTOLOCK(_queueMutex);
+    // Just add to the beginning of the queue
+    _queue.push_front(rhs);
+
+    // Write arbitrary buffer to the pipe so any subscribers will
+    // be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    SASSERT(write(_pipeFD[1], "A", 1));
+}
+
+// --------------------------------------------------------------------------
 void BedrockServer::MessageQueue::push(const SData& rhs) {
     SAUTOLOCK(_queueMutex);
     // Just add to the queue
