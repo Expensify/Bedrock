@@ -63,6 +63,11 @@ const char* SQLCStateNames[] = {"SEARCHING", "SYNCHRONIZING", "WAITING",     "ST
                                 "MASTERING", "STANDINGDOWN",  "SUBSCRIBING", "SLAVING"};
 const char* SQLCConsistencyLevelNames[] = {"ASYNC", "ONE", "QUORUM"};
 
+// Initializations for static vars.
+recursive_mutex SQLiteNode::_commitMutex;
+bool SQLiteNode::_haveUnsentTransactions = false;
+uint64_t SQLiteNode::_lastSentTransactionID = 0;
+
 // --------------------------------------------------------------------------
 SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint,
@@ -190,6 +195,23 @@ bool SQLiteNode::shutdownComplete() {
               << ", processed=" << _processedCommandList.size());
         return false;
     }
+}
+
+void SQLiteNode::processCommand(Command* command) {
+    _processCommandWrapper(_db, command);
+}
+
+bool SQLiteNode::commit() {
+    SAUTOLOCK(_commitMutex);
+    _db.prepare();
+
+    int errorCode = _db.commit();
+    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+        _db.rollback();
+        return false; // Commit conflicted.
+    }
+    _haveUnsentTransactions = true;
+    return true; // Commit succeeded.
 }
 
 void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {

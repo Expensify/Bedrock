@@ -81,13 +81,13 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
 
     // Look up the current state of the database.
     SQResult result;
-    SASSERT(SQuery(_db, "getting commit count", "SELECT maxID, (maxID-minID)+1 FROM (SELECT (SELECT MAX(id) FROM "
+    SASSERT(!SQuery(_db, "getting commit count", "SELECT maxID, (maxID-minID)+1 FROM (SELECT (SELECT MAX(id) FROM "
                                                 "journal) as maxID, (SELECT MIN(id) FROM journal) as minID)",
                    result));
     _commitCount = SToUInt64(result[0][0]);
     _journalSize = SToUInt64(result[0][1]);
     const string& query = "SELECT hash FROM journal WHERE id=" + SToStr(_commitCount);
-    SASSERT(SQuery(_db, "getting DB hash", query.c_str(), result));
+    SASSERT(!SQuery(_db, "getting DB hash", query.c_str(), result));
     if (!result.empty()) {
         _committedHash = result[0][0];
     }
@@ -109,7 +109,7 @@ SQLite::~SQLite() {
         // is in the correct state.  First, confirm that our commit count
         // matches the final commit count in the databae.
         SQResult result;
-        SASSERT(SQuery(_db, "verifying commit count", "SELECT MAX(id) FROM journal", result));
+        SASSERT(!SQuery(_db, "verifying commit count", "SELECT MAX(id) FROM journal", result));
         SASSERTEQUALS(_commitCount, SToUInt64(result[0][0]));
 
         // Next confirm that the final hash matches what we think the
@@ -117,7 +117,7 @@ SQLite::~SQLite() {
         if (!_committedHash.empty()) {
             // Verify the hash is right
             const string& query = (string) "SELECT hash FROM journal WHERE id=" + SToStr(_commitCount);
-            SASSERT(SQuery(_db, "verifying DB hash", query.c_str(), result));
+            SASSERT(!SQuery(_db, "verifying DB hash", query.c_str(), result));
             SASSERTWARN(!result.empty());
             SASSERTWARN(_committedHash == result[0][0]);
         }
@@ -137,7 +137,7 @@ bool SQLite::beginTransaction() {
     // Begin the next transaction
     SDEBUG("Beginning transaction #" << _commitCount + 1);
     uint64_t before = STimeNow();
-    _insideTransaction = SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
+    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -154,10 +154,10 @@ bool SQLite::beginConcurrentTransaction() {
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     // Begin the next transaction
-    SDEBUG("Beginning transaction #" << _commitCount + 1);
+    SDEBUG("Beginning concurrent transaction #" << _commitCount + 1);
     uint64_t before = STimeNow();
     // This breaks for a variety of tests we'll need to fix.
-    _insideTransaction = SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -232,7 +232,7 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "UPDATE "));
     SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
     uint64_t before = STimeNow();
-    bool queryResult = SQuery(_db, "read only query", query, result);
+    bool queryResult = !SQuery(_db, "read only query", query, result);
     _readElapsed += STimeNow() - before;
     return queryResult;
 }
@@ -245,21 +245,21 @@ bool SQLite::write(const string& query) {
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
     // First, check our current state
     SQResult results;
-    SASSERT(SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
 
     // Try to execute the query
     uint64_t before = STimeNow();
-    bool result = SQuery(_db, "read/write transaction", query);
+    bool result = !SQuery(_db, "read/write transaction", query);
     _writeElapsed += STimeNow() - before;
     if (!result) {
         return false;
     }
 
     // See if the query changed anything
-    SASSERT(SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
@@ -282,10 +282,10 @@ bool SQLite::prepare() {
     // Queue up the journal entry
     _uncommittedHash = SToHex(SHashSHA1(_committedHash + _uncommittedQuery));
     uint64_t before = STimeNow();
-    bool result = SQuery(_db, "updating journal", "INSERT INTO journal VALUES ( NULL, " + SQ(_uncommittedQuery) + ", " +
-                                                      SQ(_uncommittedHash) + " )");
+    int result = SQuery(_db, "updating journal", "INSERT INTO journal VALUES ( NULL, " + SQ(_uncommittedQuery) + ", " +
+                        SQ(_uncommittedHash) + " )");
     _prepareElapsed += STimeNow() - before;
-    if (!result) {
+    if (result) {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, rolling back: " << _uncommittedQuery);
         rollback();
@@ -298,16 +298,18 @@ bool SQLite::prepare() {
 }
 
 // --------------------------------------------------------------------------
-void SQLite::commit() {
+int SQLite::commit() {
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
+
+    int result = 0;
     // Do we need to truncate as we go?
     bool truncating = false;
     if (_journalSize + 1 > _maxJournalSize) {
         // Delete the oldest entry
         truncating = true;
         uint64_t before = STimeNow();
-        SASSERT(SQuery(_db, "Deleting oldest row",
+        SASSERT(!SQuery(_db, "Deleting oldest row",
                        "DELETE FROM journal WHERE id=" + SToStr(_commitCount - _journalSize + 1)));
         _writeElapsed += STimeNow() - before;
     }
@@ -315,16 +317,21 @@ void SQLite::commit() {
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
-    SASSERT(SQuery(_db, "committing db transaction", "COMMIT"));
-    _commitElapsed += STimeNow() - before;
+    result = SQuery(_db, "committing db transaction", "COMMIT");
+    // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
 
-    // Successful commit
-    ++_commitCount;
-    _journalSize += !truncating; // Only increase if we didn't truncate by a row
-    _committedHash = _uncommittedHash;
-    _insideTransaction = false;
-    _uncommittedHash.clear();
-    _uncommittedQuery.clear();
+    if (result == SQLITE_OK) {
+        _commitElapsed += STimeNow() - before;
+        // Successful commit
+        ++_commitCount;
+        _journalSize += !truncating; // Only increase if we didn't truncate by a row
+        _committedHash = _uncommittedHash;
+        _insideTransaction = false;
+        _uncommittedHash.clear();
+        _uncommittedQuery.clear();
+    }
+    return result;
 }
 
 // --------------------------------------------------------------------------
@@ -334,7 +341,7 @@ void SQLite::rollback() {
         // Cancel this transaction
         SINFO("Rolling back transaction: " << _uncommittedQuery);
         uint64_t before = STimeNow();
-        SASSERT(SQuery(_db, "rolling back db transaction", "ROLLBACK"));
+        SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
         _rollbackElapsed += STimeNow() - before;
         if (!_uncommittedQuery.empty() && _rollbackElapsed > 1000 * STIME_US_PER_MS) {
             SALERT("[opszy] Freak out! Rolled back an actual query in " << (_rollbackElapsed / STIME_US_PER_MS)
@@ -368,7 +375,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     SDEBUG("Getting commit #" << id);
     const string& sql = "SELECT query, hash FROM journal WHERE id=" + SToStr(id);
     SQResult result;
-    if (!SQuery(_db, "getting commit", sql, result))
+    if (SQuery(_db, "getting commit", sql, result))
         return false;
     SASSERTWARN(result.size() == 1);
     if (result.size() != 1)
@@ -391,7 +398,7 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     const string& sql = "SELECT hash, query FROM journal WHERE id >= " + SToStr(fromIndex) + " AND id <= " +
                         SToStr(toIndex) + " ORDER BY id";
-    return SQuery(_db, "getting commits", sql, result);
+    return !SQuery(_db, "getting commits", sql, result);
 }
 
 // --------------------------------------------------------------------------
@@ -407,7 +414,7 @@ int64_t SQLite::getLastInsertRowID() {
 uint64_t SQLite::getCommitCount() {
     if (_readOnly) {
         SQResult result;
-        SASSERT(SQuery(_db, "getting commit count", "SELECT MAX(id) FROM journal", result));
+        SASSERT(!SQuery(_db, "getting commit count", "SELECT MAX(id) FROM journal", result));
         return !result.empty() ? SToUInt64(result[0][0]) : 0;
     } else
         return _commitCount;
@@ -418,23 +425,23 @@ void SQLite::_setPragmas(sqlite3* db, int autoCheckpoint) {
     // Occasionally a read-only thread will complain that the database is locked. This is only seems to
     // happen at startup when we open many sqlite3 connections at once.  SQLite will use an exponential
     // backoff to keep trying to query until 1000ms has passed. At that point SQLITE_BUSY is returned.
-    SASSERT(SQuery(db, "Setting busy timeout to 1000ms", "PRAGMA busy_timeout = 1000;"));
+    SASSERT(!SQuery(db, "Setting busy timeout to 1000ms", "PRAGMA busy_timeout = 1000;"));
 
     // WAL is what allows simultanous read/writing.
-    SASSERT(SQuery(db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
+    SASSERT(!SQuery(db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new
     // databases, so it must be called before creating any tables to be
     // effective.
-    SASSERT(SQuery(db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
+    SASSERT(!SQuery(db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
     // These other pragma only relate to read/write databases.
     if (!_readOnly) {
-        SASSERT(SQuery(db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
-        SASSERT(SQuery(db, "disabling change counting", "PRAGMA count_changes = OFF;"));
+        SASSERT(!SQuery(db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
+        SASSERT(!SQuery(db, "disabling change counting", "PRAGMA count_changes = OFF;"));
         SASSERT(autoCheckpoint >= 0);
         DBINFO("Enabling automatic checkpointing every " << SToStr(autoCheckpoint) << " pages.");
-        SASSERT(SQuery(db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
+        SASSERT(!SQuery(db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
     }
 }
 

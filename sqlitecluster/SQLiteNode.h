@@ -176,6 +176,7 @@ class SQLiteNode : public STCPNode {
     // _cleanCommand() is called when the command is closed; use it for any
     // final cleanup operations.
     //
+    void processCommand(Command* command);
     virtual bool _peekCommand(SQLite& db, Command* command) = 0;
     virtual void _processCommand(SQLite& db, Command* command) = 0;
     virtual void _abortCommand(SQLite& db, Command* command) = 0;
@@ -184,6 +185,8 @@ class SQLiteNode : public STCPNode {
     // Wrappers for peek and process command to keep track of processing time.
     bool _peekCommandWrapper(SQLite& db, Command* command);
     void _processCommandWrapper(SQLite& db, Command* command);
+
+    bool commit();
 
     // Force quorum among the replica after every N commits.  This prevents master from running ahead
     // too far. "Too far" is an arbitrary threshold that trades potential loss of consistency in the
@@ -200,6 +203,11 @@ class SQLiteNode : public STCPNode {
     // logged in peer has a higher commitCount that we do, this will return null.
     void _updateSyncPeer();
     Peer* _syncPeer;
+
+    // Synchronization variables.
+    static recursive_mutex _commitMutex;
+    static bool _haveUnsentTransactions;
+    static uint64_t _lastSentTransactionID;
 
   private: // Internal API
     // Attributes

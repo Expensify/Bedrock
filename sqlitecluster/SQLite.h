@@ -45,8 +45,8 @@ class SQLite {
     // are allowed until the next transaction has begun.
     bool prepare();
 
-    // Commits the current transaction to disk
-    void commit();
+    // Commits the current transaction to disk. Returns an SQLite result code.
+    int commit();
 
     // Cancels the current transaction and rolls it back
     void rollback();

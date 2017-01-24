@@ -5,6 +5,6 @@ TestSQLite::TestSQLite(const string& filename, int cacheSize, int autoCheckpoint
 
 TestSQLite::~TestSQLite() {
     SQResult result;
-    SASSERT(SQuery(_db, "verifying commit count", "SELECT MAX(id) FROM journal", result));
+    SASSERT(!SQuery(_db, "verifying commit count", "SELECT MAX(id) FROM journal", result));
     _commitCount = SToUInt64(result[0][0]);
 }

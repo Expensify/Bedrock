@@ -2139,7 +2139,7 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2176,11 +2176,16 @@ bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
-    // All done!
-    if (error == SQLITE_OK)
-        return true;
-    SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
-    return false;
+    // Only OK and commit conflicts are allowed without warning.
+    if (error != SQLITE_OK && error != SQLITE_BUSY_SNAPSHOT) {
+        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+    }
+
+    // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
+    if (error != SQLITE_BUSY_SNAPSHOT) {
+        SWARN("[concurrent] commit conflict.");
+    }
+    return error;
 }
 
 // --------------------------------------------------------------------------
@@ -2188,11 +2193,11 @@ bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERTQUERY(db, "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result);
+    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");
-        SASSERTQUERYIGNORE(db, sql);
+        SASSERT(!SQuery(db, "SQVerifyTable", sql));
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
