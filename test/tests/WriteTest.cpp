@@ -26,6 +26,7 @@ struct WriteTest : tpunit::TestFixture {
     void insert() {
         for (int i = 0; i < 50; i++) {
             SData status("Query");
+            status["writeConsistency"] = "ASYNC";
             status["query"] = "INSERT INTO foo VALUES ( RANDOM() );";
             tester->executeWait(status);
         }

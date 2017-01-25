@@ -269,10 +269,14 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // the sync thread.
             SASSERT(!command->httpsRequest);
 
+            SINFO("[concurrent] Unpeekable Command.");
+
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
-            // TODO: Currently has `0` to fall-through all the time.
-            if (0 && data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
+            if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency != SQLC_ASYNC) {
+                SINFO("[concurrent] Worker not processing command because not ASYNC.");
+            }
+            if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
                 node.processCommand(command);
