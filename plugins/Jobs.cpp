@@ -294,9 +294,9 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         const string& name = request["name"];
         string query =
-            "SELECT jobID, name, data FROM ( "
+            "SELECT jobID, name, data, parentJobID FROM ( "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority "
+                    "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=1000"
@@ -306,7 +306,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority "
+                    "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=500"
@@ -316,7 +316,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority "
+                    "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=0"
@@ -341,7 +341,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             //          way the worker will likely just loop, so it doesn't really matter.
             throw "404 No job found";
         }
-        SASSERT(result.size() == 1 && result[0].size() == 3);
+        SASSERT(result.size() == 1 && result[0].size() == 4);
 
         // Update the state of that job
         if (!db.write("UPDATE jobs "
@@ -353,6 +353,11 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         content["jobID"] = result[0][0];
         content["name"] = result[0][1];
         content["data"] = result[0][2];
+        int64_t parentJobID = SToInt64(result[0][3]);
+        if (parentJobID) {
+            // Has a parent job, add the parent data
+            content["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" +SQ(parentJobID)+ ";");
+        }
         return true; // Successfully processed
     }
 
