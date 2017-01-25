@@ -13,7 +13,7 @@ class BedrockNode : public SQLiteNode {
 
     BedrockServer* server;
 
-    bool isReadOnly();
+    bool isWorker();
 
     // STCPManager API: Socket management
     void postSelect(fd_map& fdm, uint64_t& nextActivity);

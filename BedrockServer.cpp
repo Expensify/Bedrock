@@ -65,7 +65,7 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
 void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
-    data.args["-readOnly"] = "false";
+    data.args["-worker"] = "false";
     SInitialize(data.name);
     SINFO("Starting sync thread for '" << data.name << "'");
 
@@ -197,7 +197,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int threadCount)
 {
     // This needs to be set because the constructor for BedrockNode depends on it.
-    data.args["-readOnly"] = "true";
+    data.args["-worker"] = "true";
     data.args.erase("-nodeHost");
     SInitialize(data.name);
     SINFO("Starting read-only worker thread for '" << data.name << "'");
@@ -279,13 +279,25 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
-                node.processCommand(command);
+                try {
+                    node.processCommand(command);
+                } catch (...) {
+                    SINFO("[concurrent] error processing command.");
+                    throw;
+                }
                 if (!node.commit()) {
                     SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
                     data.queuedRequests.push_front(request);
                 } else {
                     SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
                 }
+
+                // TODO: Question - is it possible that a single peer sends us two commands, that get finished and sent
+                // back in the wrong order, even though we keep the ordering in the database consistent among commands?
+                // I think this is already handled correctly, but worth investigating.
+                SINFO("[concurrent] preparing response to ASYNC command.");
+                BedrockServer_PrepareResponse(command);
+                data.processedResponses.push(command->response);
             } else {
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
                 data.queuedEscalatedRequests.push(request);

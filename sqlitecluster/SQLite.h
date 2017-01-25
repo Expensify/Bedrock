@@ -160,5 +160,5 @@ class SQLite {
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value.
-    static recursive_mutex _commitLock;
+    static mutex _commitLock;
 };

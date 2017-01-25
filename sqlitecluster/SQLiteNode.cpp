@@ -71,13 +71,13 @@ uint64_t SQLiteNode::_lastSentTransactionID = 0;
 // --------------------------------------------------------------------------
 SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
-                       int quorumCheckpoint, const string& synchronousCommands, bool readOnly, int maxJournalSize)
+                       int quorumCheckpoint, const string& synchronousCommands, bool worker, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       // TODO: Pass some useful values here to use in place of -1
-      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize, threadId, threadCount - 1),
+      _db(filename, cacheSize, autoCheckpoint, false, maxJournalSize, threadId, threadCount - 1),
       _processTimer("process()"), _commitTimer("COMMIT")
     {
-    SASSERT(readOnly || !portList.empty());
+    SASSERT(worker || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
@@ -92,7 +92,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
     _quorumCheckpoint = quorumCheckpoint;
     _synchronousCommands = SParseList(SToLower(synchronousCommands));
     _synchronousCommands.push_back("upgradedatabase");
-    _readOnly = readOnly;
+    _worker = worker;
 
     // Get this party started
     _changeState(SQLC_SEARCHING);
@@ -204,13 +204,17 @@ void SQLiteNode::processCommand(Command* command) {
 
 bool SQLiteNode::commit() {
     SAUTOLOCK(_commitMutex);
-    _db.prepare();
 
+    // No prepare() call here because it's handled in process
+
+    SINFO("[concurrent] Attempting commit.");
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+        SINFO("[concurrent] rollback commit - conflict.");
         _db.rollback();
         return false; // Commit conflicted.
     }
+    SINFO("[concurrent] commit successful.");
     _haveUnsentTransactions = true;
     return true; // Commit succeeded.
 }
@@ -351,8 +355,8 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
         //   peek, as we want the master's write thread's status
         //
         // - If we're a write thread on the master, we *do* peek.
-        forcePeekIt = !_readOnly;
-        peekIt = !_readOnly;
+        forcePeekIt = !_worker;
+        peekIt = !_worker;
     } else if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
                SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
         // Force peek these always -- even if read only -- because any read
@@ -514,7 +518,7 @@ void SQLiteNode::closeCommand(Command* command) {
     //    response if the connection fails.
     // 3) This is a read only node.  In this case, we close a command that
     //    we haven't processed in order to send it to the write thread.
-    if (!command->initiator && command->request["HeldBy"].empty() && !_readOnly) {
+    if (!command->initiator && command->request["HeldBy"].empty() && !_worker) {
         SASSERTWARN(!command->response.empty());
     }
 

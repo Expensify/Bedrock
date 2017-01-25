@@ -11,7 +11,7 @@
 #define DB_READ_OPEN_FLAGS SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
 
 bool SQLite::sqliteInitialized = false;
-recursive_mutex SQLite::_commitLock;
+mutex SQLite::_commitLock;
 
 void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
@@ -112,7 +112,6 @@ string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
     }
     string query = SComposeList(queries, " UNION ");
-    SINFO("[concurrent] Generated journal query: " << query);
     return query;
 }
 
@@ -166,7 +165,7 @@ bool SQLite::beginConcurrentTransaction() {
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     // Begin the next transaction
-    SDEBUG("Beginning concurrent transaction");
+    SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     // This breaks for a variety of tests we'll need to fix.
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
@@ -287,7 +286,9 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
+    SINFO("[concurrent] Starting prepare, acquiring _commitLock.");
     _commitLock.lock();
+    SINFO("[concurrent] _commitLock acquired.");
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -306,6 +307,7 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
+        SINFO("[concurrent] Prepare failed, releasing _commitLock.");
         _commitLock.unlock();
         return false;
     }
@@ -350,6 +352,7 @@ int SQLite::commit() {
         _uncommittedQuery.clear();
 
         // Ok, someone else can commit now.
+        SINFO("[concurrent] Commit successful, releasing _commitLock.");
         _commitLock.unlock();
     }
 
@@ -372,6 +375,7 @@ void SQLite::rollback() {
         }
 
         // Finally done with this.
+        SINFO("[concurrent] Rollback successful, releasing _commitLock.");
         _commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
@@ -444,7 +448,6 @@ uint64_t SQLite::getCommitCount() {
     SASSERT(!SQuery(_db, "getting commit count", query, result));
 
     uint64_t count = SToUInt64(result[0][0]);
-    SINFO("[concurrent] Got latest commit count: " << count);
     return count;
 }
 

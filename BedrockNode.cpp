@@ -57,7 +57,7 @@ BedrockNode::BedrockNode(const SData& args, int threadId, int threadCount, Bedro
                  1024,                                                         // auto-checkpoint every 1024 pages
                  STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
                  server_->getVersion(), threadId, threadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
-                 args.test("-readOnly"), args.calc("-maxJournalSize")),
+                 args.test("-worker"), args.calc("-maxJournalSize")),
       server(server_) {
     // Initialize
     SINFO("BedrockNode constructor");
@@ -76,7 +76,7 @@ void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     SQLiteNode::postSelect(fdm, nextActivity);
 }
 
-bool BedrockNode::isReadOnly() { return _readOnly; }
+bool BedrockNode::isWorker() { return _worker; }
 
 bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     // Classify the message

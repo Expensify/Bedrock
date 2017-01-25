@@ -97,11 +97,11 @@ class SQLiteNode : public STCPNode {
     // should accept commands, and if their version matches master so they can peek (otherwise skip peek and
     // escalate to master).
     void setState(SQLCState state) {
-        SASSERT(_readOnly);
+        SASSERT(_worker);
         _state = state;
     }
     void setMasterVersion(const string& version) {
-        SASSERT(_readOnly);
+        SASSERT(_worker);
         _masterVersion = version;
     }
 
@@ -196,7 +196,7 @@ class SQLiteNode : public STCPNode {
     int getQuorumCheckpoint() { return _quorumCheckpoint; };
 
   protected:
-    bool _readOnly;
+    bool _worker;
     SQLite _db;
     map<int, list<Command*>> _queuedCommandMap; // priority  -> list<Command*> map
 
