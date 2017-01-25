@@ -69,8 +69,9 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state='QUEUED' "
-                     "  AND " +
-                         SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "LIMIT 1;",
+                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                     "  AND name GLOB " + SQ(name) + " "
+                     "LIMIT 1;",
                      result)) {
             throw "502 Query failed";
         }
@@ -127,8 +128,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         SQResult result;
         if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data "
                      "FROM jobs "
-                     "WHERE jobID=" +
-                         SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -154,8 +154,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
         if (!db.read("SELECT jobID "
                      "FROM jobs "
-                     "WHERE name=" +
-                         SQ(request["name"]) + ";",
+                     "WHERE name=" + SQ(request["name"]) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -208,8 +207,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
             if (!db.read("SELECT jobID "
                          "FROM jobs "
-                         "WHERE name=" +
-                             SQ(request["name"]) + ";",
+                         "WHERE name=" + SQ(request["name"]) + ";",
                          result)) {
                 throw "502 Select failed";
             }
@@ -240,8 +238,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             SQResult result;
             if (!db.read("SELECT 1 "
                          "FROM jobs "
-                         "WHERE jobID = " +
-                             safeParentJobID + ";",
+                         "WHERE jobID = " + safeParentJobID + ";",
                          result)) {
                 throw "502 Select failed";
             }
@@ -261,8 +258,14 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // Create this new job
         db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
                  "VALUES( " +
-                 SCURRENT_TIMESTAMP() + ", " + SQ("QUEUED") + ", " + SQ(request["name"]) + ", " + safeFirstRun + ", " +
-                 SQ(SToUpper(request["repeat"])) + ", " + safeData + ", " + SQ(priority) + ", " + safeParentJobID +
+                    SCURRENT_TIMESTAMP() + ", " + 
+                    SQ("QUEUED") + ", " + 
+                    SQ(request["name"]) + ", " + 
+                    safeFirstRun + ", " +
+                    SQ(SToUpper(request["repeat"])) + ", " + 
+                    safeData + ", " + 
+                    SQ(priority) + ", " + 
+                    safeParentJobID +
                  " );");
 
         // Release workers waiting on this state
@@ -281,34 +284,49 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "GetJob")) {
-        // If we're here it's because peekCommand found some data;
-        // re-execute the query for real now.
+        // If we're here it's because peekCommand found some data; re-execute
+        // the query for real now.  However, this time we will order by
+        // priority.  We do this as three separate queries so we only have one
+        // unbounded column in each query.  Additionally, we wrap each inner
+        // query in a "SELECT *" such that we can have an "ORDER BY" and
+        // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
+        // works!
         SQResult result;
         const string& name = request["name"];
-
         string query =
             "SELECT jobID, name, data FROM ( "
-            "SELECT * FROM "
-            "(SELECT jobID, name, data, priority "
-            "FROM jobs "
-            "WHERE state='QUEUED' "
-            "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(1000) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + "UNION ALL " + "SELECT * FROM "
-                                                                         "(SELECT jobID, name, data, priority "
-                                                                         "FROM jobs "
-                                                                         "WHERE state='QUEUED' "
-                                                                         "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(500) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + "UNION ALL " + "SELECT * FROM "
-                                                                         "(SELECT jobID, name, data, priority "
-                                                                         "FROM jobs "
-                                                                         "WHERE state='QUEUED' "
-                                                                         "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(0) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + ") " + "ORDER BY priority DESC "
-                                                                 "LIMIT 1;";
-
+                "SELECT * FROM ("
+                    "SELECT jobID, name, data, priority "
+                    "FROM jobs "
+                    "WHERE state='QUEUED' "
+                    "  AND priority=1000"
+                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "  AND name GLOB " + SQ(name) + " "
+                    "ORDER BY nextRun ASC LIMIT 1 "
+                ") "
+            "UNION ALL "
+                "SELECT * FROM ("
+                    "SELECT jobID, name, data, priority "
+                    "FROM jobs "
+                    "WHERE state='QUEUED' "
+                    "  AND priority=500"
+                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "  AND name GLOB " + SQ(name) + " "
+                    "ORDER BY nextRun ASC LIMIT 1 "
+                ") "
+            "UNION ALL "
+                "SELECT * FROM ("
+                    "SELECT jobID, name, data, priority "
+                    "FROM jobs "
+                    "WHERE state='QUEUED' "
+                    "  AND priority=0"
+                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "  AND name GLOB " + SQ(name) + " "
+                    "ORDER BY nextRun ASC LIMIT 1 "
+                ") "
+            ") "
+            "ORDER BY priority DESC "
+            "LIMIT 1;";
         if (!db.read(query, result)) {
             throw "502 Query failed";
         }
@@ -355,8 +373,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         if (!db.read("SELECT 1 "
                      "FROM jobs "
-                     "WHERE jobID=" +
-                         SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -405,8 +422,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID "
                      "FROM jobs "
-                     "WHERE jobID=" +
-                         SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -511,8 +527,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat "
                      "FROM jobs "
-                     "WHERE jobID=" +
-                         SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -538,8 +553,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) +
-                      ";")) {
+        if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
             throw "502 Fail failed";
         }
 
@@ -563,8 +577,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         if (!db.read("SELECT state "
                      "FROM jobs "
-                     "WHERE jobID=" +
-                         SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -658,18 +671,17 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
     return "DATETIME( " + SComposeList(safeParts) + " )";
 }
 
-/**
- * Returns true if there are any children of this jobID in a RUNNING or QUEUED state.
- */
+// ==========================================================================
 bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
+    // Returns true if there are any children of this jobID in a RUNNING or QUEUED state.
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " +
-                     SQ(jobID) + " " + "AND state IN ('QUEUED', 'RUNNING', 'PAUSED') " + "LIMIT 1;",
+                 "WHERE parentJobID = " + SQ(jobID) + " " + 
+                 "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
+                 "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
     }
-
     return !result.empty();
 }
