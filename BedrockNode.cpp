@@ -244,6 +244,9 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
     if (command->response.methodLine == "") {
         command->response.methodLine = e;
     }
+
+    // Re-throw, this is how worker threads know that processing failed.
+    throw;
 }
 
 // Notes that we failed to process something

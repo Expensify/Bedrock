@@ -279,17 +279,24 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
+                bool error = false;
                 try {
+                    // TODO: Make this return success code/bool?
                     node.processCommand(command);
                 } catch (...) {
-                    SINFO("[concurrent] error processing command.");
-                    throw;
+                    error = true;
+                    SINFO("[concurrent] error processing command: " << request.methodLine);
                 }
-                if (!node.commit()) {
-                    SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
-                    data.queuedRequests.push_front(request);
-                } else {
-                    SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+
+                // If there was an error processing this, the transaction's been rolled back, but we still need to send
+                // a response to the caller. Otherwise, we can commit now.
+                if (!error) {
+                    if (!node.commit()) {
+                        SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
+                        data.queuedRequests.push_front(request);
+                    } else {
+                        SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+                    }
                 }
 
                 // TODO: Question - is it possible that a single peer sends us two commands, that get finished and sent

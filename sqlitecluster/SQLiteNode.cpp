@@ -205,12 +205,16 @@ void SQLiteNode::processCommand(Command* command) {
 bool SQLiteNode::commit() {
     SAUTOLOCK(_commitMutex);
 
+    if (_db.getUncommittedHash().empty()) {
+        SINFO("[concurrent] No outstanding transaction");
+        return true;
+    }
     // No prepare() call here because it's handled in process
 
     SINFO("[concurrent] Attempting commit.");
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[concurrent] rollback commit - conflict.");
+        SINFO("[concurrent] conflict - rolling back commit.");
         _db.rollback();
         return false; // Commit conflicted.
     }
@@ -1448,7 +1452,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SASSERTWARN(_currentCommand->transaction.empty());
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
-                            _processCommandWrapper(_db, _currentCommand);
+                            try {
+                                _processCommandWrapper(_db, _currentCommand);
+                            } catch (...) {
+                                // Only worker threads need to handle this case.
+                            }
                             SASSERT(!_currentCommand->response.empty()); // Must set a response
 
                             // Anything to commit?
