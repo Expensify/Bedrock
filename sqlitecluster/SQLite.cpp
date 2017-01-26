@@ -292,8 +292,8 @@ bool SQLite::prepare() {
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
-    uint64_t commitCount = getCommitCount();
-    getCommit(commitCount, committedQuery, committedHash);
+    uint64_t commitCount;
+    getLatestCommit(commitCount, committedQuery, committedHash);
 
     // Queue up the journal entry
     _uncommittedHash = SToHex(SHashSHA1(committedHash + _uncommittedQuery));
@@ -397,15 +397,57 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
     return begin + read + write + prepare + commit + rollback;
 }
 
-bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
-    // Look up the query and hash for the given commit
-    SDEBUG("Getting commit #" << id);
+bool SQLite::getLatestCommit(uint64_t& id, string& query, string& hash) {
+    /*
+    SELECT MAX(id) as id,  hash, query FROM (
+        SELECT MAX(id) as id, hash, query FROM journal
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal00
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal01
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal02
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal03
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal04
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal05
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal06
+        UNION
+        SELECT MAX(id) as id, hash, query FROM journal07
+    );
+    */
+    string q = getJournalQuery({"SELECT MAX(id) as id, query, hash FROM"}, true);
+    q = "SELECT MAX(id) as id, hash, query FROM (" + q + ");";
 
     SQResult result;
-    getCommits(id, id, result);
+    SASSERT(!SQuery(_db, "getting latest commit", q, result));
+
     if (!result.empty()) {
-        query = result[0][1];
-        hash = result[0][0];
+        id = SToUInt64(result[0][0]);
+        hash = result[0][1];
+        query = result[0][2];
+    } else {
+        id = 0;
+        hash = "";
+        query = "";
+    }
+    SASSERTWARN(!query.empty());
+    SASSERTWARN(!hash.empty());
+    return (!query.empty() && !hash.empty());
+}
+
+bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
+    // Look up the query and hash for the given commit
+    string q= getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)}); 
+    SQResult result;
+    SASSERT(!SQuery(_db, "getting commit", q, result));
+
+    if (!result.empty()) {
+        query = result[0][0];
+        hash = result[0][1];
     } else {
         query = "";
         hash = "";
@@ -418,7 +460,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 string SQLite::getCommittedHash() { 
     string committedQuery, committedHash;
     uint64_t commitCount = getCommitCount();
-    getCommit(commitCount, committedQuery, committedHash);
+    getLatestCommit(commitCount, committedQuery, committedHash);
     return committedHash;
 }
 

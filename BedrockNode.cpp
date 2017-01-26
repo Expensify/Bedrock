@@ -140,6 +140,17 @@ void BedrockNode::_setState(SQLCState state) {
     SQLiteNode::_setState(state);
 }
 
+void BedrockNode::setSyncNode(BedrockNode* node) {
+    _syncNode = node;
+}
+bool BedrockNode::dbReady() {
+    if (_syncNode) {
+        return _syncNode->_dbReady;
+    }
+
+    return _dbReady;
+}
+
 void BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;

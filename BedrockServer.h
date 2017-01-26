@@ -154,4 +154,6 @@ class BedrockServer : public STCPServer {
     static condition_variable _threadInitVar;
     static mutex _threadInitMutex;
     static bool _threadReady;
+
+    static BedrockNode* _syncNode;
 };

@@ -3,7 +3,8 @@
 struct WriteTest : tpunit::TestFixture {
     WriteTest()
         : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup),
-                              TEST(WriteTest::insert),
+                             // TEST(WriteTest::insert),
+                              TEST(WriteTest::parallelInsert),
                               AFTER_CLASS(WriteTest::tearDown)) {
         NAME(Write);
     }
@@ -13,6 +14,7 @@ struct WriteTest : tpunit::TestFixture {
 
     list<string> queries = {
         "CREATE TABLE foo (bar INTEGER);",
+        "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER);",
     };
 
     void setup() {
@@ -38,6 +40,21 @@ struct WriteTest : tpunit::TestFixture {
         string secondLine = response.substr(response.find('\n') + 1);
         int val = SToInt(secondLine);
         ASSERT_EQUAL(val, 50);
+    }
+
+    void parallelInsert() {
+        vector<SData> requests;
+        for (int i = 0; i < 100; i++) {
+            SData query("Query");
+            query["writeConsistency"] = "ASYNC";
+            query["query"] = "INSERT INTO stuff VALUES ( NULL, " + SQ(i) + " );";
+            requests.push_back(query);
+        }
+        auto results = tester->executeWaitMultiple(requests);
+
+        for (auto& row : results) {
+            cout << row.first << endl;
+        }
     }
 
 } __WriteTest;

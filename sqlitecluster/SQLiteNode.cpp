@@ -231,6 +231,8 @@ void SQLiteNode::_sendOutstandingTransactions() {
         return;
     }
 
+    SINFO("[concurrent] Sending outstanding transactions.");
+
     // Get the transactions we need to send.
     string query = _db.getJournalQuery({"SELECT id, hash, query FROM",
                                         "WHERE id > " + SQ(_lastSentTransactionID) + " "
@@ -248,7 +250,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         SData transaction("BEGIN_TRANSACTION");
 
         SINFO("[concurrent] replicating unsent transaction " << id << ".");
-        cout << "[concurrent] replicating unsent transaction " << id << "." << endl;
 
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = id;
@@ -775,8 +776,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (shutdownComplete())
             return false; // Don't re-update
 
-        // If no peers, we're the master
-        if (peerList.empty()) {
+        // If no peers, we're the master, unless we're shutting down.
+        if (!gracefulShutdown() && peerList.empty()) {
             // There are no peers, jump straight to mastering
             SHMMM("No peers configured, jumping to MASTERING");
             _changeState(SQLC_MASTERING);
@@ -1113,7 +1114,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // transactions while we wait for a synchronous command to complete, and because _commitMutex is recursive, we
         // shouldn't actually require this "if" wrapper here.
         if (!_currentCommand) {
-            SINFO("[concurrent] Sending outstanding transactions from update loop.");
             _sendOutstandingTransactions();
         }
 
@@ -1243,40 +1243,62 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             } else if (consistentEnough) {
                 // Commit this distributed transaction.  Either we have quorum, or we don't need it.
                 uint64_t start = STimeNow();
-                _db.commit();
+                int result = _db.commit();
+
+                if (result == SQLITE_BUSY_SNAPSHOT) {
+                    _db.rollback();
+                    _commitTimer.stop();
+                    commandFinished = true;
+
+                    // Notify everybody to rollback
+                    SData rollback("ROLLBACK_TRANSACTION");
+                    rollback["ID"] = _currentCommand->id;
+                    _sendToAllPeers(rollback, true); // subscribed only
+
+                    // Notify the caller that this command failed
+                    _currentCommand->response.clear();
+                    _currentCommand->response.methodLine = "500 Failed to get adequate consistency";
+                    // TODO: Requeue this command for the sync thread.
+                    cout << "Rolling back command when should re-queue." << endl;
+                } else {
+
+
+
+                    // Record how long it took
+                    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+                    uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
+                                                                         prepareElapsed, commitElapsed, rollbackElapsed);
+                    SINFO("Committed master transaction for '"
+                          << _currentCommand->request.methodLine << "' (" << _currentCommand->id << ") "
+                                                                                                    "#"
+                          << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
+                          << _commitsSinceCheckpoint << " commits since quorum "
+                                                        "(consistencyRequired="
+                          << SQLCConsistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
+                          << numFullPeers << " approved "
+                                             "("
+                          << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
+                          << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
+                          << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
+                          << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
+
+                    // Try to flush the send buffer here in order to
+                    // prevent the case of the master sending out the
+                    // commits but the next command taking for ever and
+                    // causing the other nodes to timeout.  Note that
+                    // no flush happens before we start processing the
+                    // next commands below.  That situation can result in
+                    // an out of sync db on the master due to the master
+                    // committing and the slaves rolling back on disconnect.
+                    SData commit("COMMIT_TRANSACTION");
+                    commit["ID"] = _currentCommand->id;
+                    _sendToAllPeers(commit, true); // subscribed only
+                }
+
+                // OK, this might fail.
                 _commitTimer.stop();
                 _currentCommand->processingTime += STimeNow() - start;
                 commandFinished = true;
-
-                // Record how long it took
-                uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-                uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
-                                                                     prepareElapsed, commitElapsed, rollbackElapsed);
-                SINFO("Committed master transaction for '"
-                      << _currentCommand->request.methodLine << "' (" << _currentCommand->id << ") "
-                                                                                                "#"
-                      << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
-                      << _commitsSinceCheckpoint << " commits since quorum "
-                                                    "(consistencyRequired="
-                      << SQLCConsistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
-                      << numFullPeers << " approved "
-                                         "("
-                      << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
-                      << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
-                      << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
-                      << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
-
-                // Try to flush the send buffer here in order to
-                // prevent the case of the master sending out the
-                // commits but the next command taking for ever and
-                // causing the other nodes to timeout.  Note that
-                // no flush happens before we start processing the
-                // next commands below.  That situation can result in
-                // an out of sync db on the master due to the master
-                // committing and the slaves rolling back on disconnect.
-                SData commit("COMMIT_TRANSACTION");
-                commit["ID"] = _currentCommand->id;
-                _sendToAllPeers(commit, true); // subscribed only
             }
 
             // Did we finish the command:
@@ -1481,6 +1503,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 // Clear anything outstanding before starting this one.
                                 _sendOutstandingTransactions();
 
+                                SINFO("[concurrent] committing: " << _currentCommand->request.methodLine << ", ID: " << _currentCommand->id);
                                 _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());

@@ -7,6 +7,7 @@
 condition_variable BedrockServer::_threadInitVar;
 mutex BedrockServer::_threadInitMutex;
 bool BedrockServer::_threadReady = false;
+BedrockNode* BedrockServer::_syncNode = 0;
 
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
@@ -75,6 +76,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     // We let the sync thread create our journal tables here so that they exist when we start our workers.
     int threads = max(1, data.args.calc("-readThreads"));
     BedrockNode node(data.args, -1, threads, data.server);
+    _syncNode = &node;
     SINFO("Node created, ready for action.");
 
     // Notify the parent thread that we're ready to go.
@@ -208,9 +210,12 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
     SINFO("Node created, ready for action.");
 
     while (true) {
+        node.setSyncNode(_syncNode);
         // Set the worker node's state/master status coming from the replication thread.
         // Only worker nodes will allow an external party to set these properties.
-        node.setState(data.replicationState.get());
+
+        SQLCState state = data.replicationState.get();
+        node.setState(state);
         node.setMasterVersion(data.masterVersion.get());
 
         // Block until work is available.
@@ -276,7 +281,8 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
-            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC) {
+            int previousConflicts = request.calc("commitConflictCount");
+            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC && previousConflicts < 3) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
                 bool error = false;
@@ -293,6 +299,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 if (!error) {
                     if (!node.commit()) {
                         SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
+                        request["commitConflictCount"] = to_string(request.calc("commitConflictCount") + 1);
                         data.queuedRequests.push_front(request);
                     } else {
                         SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
@@ -306,6 +313,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 BedrockServer_PrepareResponse(command);
                 data.processedResponses.push(command->response);
             } else {
+                SINFO("[concurrent] Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
                 data.queuedEscalatedRequests.push(request);
             }

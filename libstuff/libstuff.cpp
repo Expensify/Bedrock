@@ -2144,11 +2144,13 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
     int error = 0;
+    int extErr = 0;
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
-        if (error != SQLITE_BUSY) {
+        extErr = sqlite3_extended_errcode(db);
+        if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
         SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
@@ -2177,13 +2179,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     // Only OK and commit conflicts are allowed without warning.
-    if (error != SQLITE_OK && error != SQLITE_BUSY_SNAPSHOT) {
+    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
-    if (error == SQLITE_BUSY_SNAPSHOT) {
+    if (extErr == SQLITE_BUSY_SNAPSHOT) {
         SWARN("[concurrent] commit conflict.");
+        return extErr;
     }
     return error;
 }

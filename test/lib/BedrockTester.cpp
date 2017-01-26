@@ -131,7 +131,7 @@ list<string> BedrockTester::getServerArgs() {
         "-nodeHost",    "localhost:9889",
         "-priority",    "200",
         "-plugins",     "status,db,cache",
-        "-readThreads", "2",
+        "-readThreads", "8",
         "-v",
         "-cache",       "10001",
     };
@@ -208,7 +208,96 @@ void BedrockTester::stopServer(int pid) {
     serverPIDs.erase(pid);
 }
 
-void BedrockTester::stopServer() { stopServer(serverPID); }
+void BedrockTester::stopServer() {
+    stopServer(serverPID);
+}
+
+vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> requests, int connections) {
+
+    // Synchronize dequeuing requessts, and saving results.
+    recursive_mutex listLock;
+
+    // Our results go here.
+    vector<pair<string,string>> results;
+    results.resize(requests.size());
+
+    // This is the next index of `requests` that needs processing.
+    int currentIndex = 0;
+
+    // This is the list of threads that we'll use for each connection.
+    list <thread> threads;
+
+    // Spawn a thread for each connection.
+    for (int i = 0; i < connections; i++) {
+
+        threads.emplace_back([&](){
+
+            // Create a socket.
+            int socket = S_socket(SERVER_ADDR, true, false, true);
+
+            while (true) {
+
+                size_t myIndex = 0;
+                SData myRequest;
+                {
+                    SAUTOLOCK(listLock);
+
+                    myIndex = currentIndex;
+                    currentIndex++;
+
+                    if (myIndex >= requests.size()) {
+                        // No more requests to process.
+                        break;
+                    } else {
+                        myRequest = requests[myIndex];
+                    }
+                }
+
+                // We've released our lock so other threads can dequeue stuff now.
+
+                // Send some stuff on our socket.
+                string sendBuffer = myRequest.serialize();
+                // Send our data.
+                while (sendBuffer.size()) {
+                    bool result = S_sendconsume(socket, sendBuffer);
+                    if (!result) {
+                        break;
+                    }
+                }
+
+                // Receive some stuff on our socket.
+                string recvBuffer = "";
+
+                string methodLine, content;
+                STable headers;
+                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+                    bool result = S_recvappend(socket, recvBuffer);
+                    if (!result) {
+                        break;
+                    }
+                }
+
+                // Ok, done, let's lock again and insert this in the results.
+                {
+                    SAUTOLOCK(listLock);
+                    results[myIndex] = make_pair(methodLine, content);
+                }
+            }
+
+            close(socket);
+        });
+
+    }
+
+    // Wait for our threads to finish.
+    for (thread& t : threads) {
+        t.join();
+    }
+
+    // All done!
+    return results;
+}
+
 
 string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.

@@ -98,7 +98,7 @@ class SQLiteNode : public STCPNode {
     // escalate to master).
     void setState(SQLCState state) {
         SASSERT(_worker);
-        _state = state;
+        _setState(state);
     }
     void setMasterVersion(const string& version) {
         SASSERT(_worker);

@@ -67,6 +67,9 @@ class SQLite {
     // Return whether the last write changed anything
     bool lastWriteChanged() { return _lastWriteChanged; }
 
+    // Like getCommitCount, but return query and hash.
+    bool getLatestCommit(uint64_t& id, string& query, string& hash);
+
     // Returns the number of commits on this database.
     uint64_t getCommitCount();
 
