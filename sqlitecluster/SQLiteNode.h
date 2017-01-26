@@ -205,6 +205,11 @@ class SQLiteNode : public STCPNode {
     void _updateSyncPeer();
     Peer* _syncPeer;
 
+    // This lets child classes perform extra actions when our state changes
+    virtual void _setState(SQLCState state) {
+        _state = state;
+    }
+
     // Synchronization variables.
     static recursive_mutex _commitMutex;
     static bool _haveUnsentTransactions;

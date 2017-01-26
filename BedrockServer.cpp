@@ -224,8 +224,9 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // If we've been instructed to shutdown and there are no more requests waiting
         // to be processed, then exit the loop. Main thread will join us and continue
         // the shutdown process.
-        if (data.gracefulShutdown.get() && data.queuedRequests.empty())
+        if (data.gracefulShutdown.get() && data.queuedRequests.empty()) {
             break;
+        }
 
         // Process any direct messages from the main thread to us
         BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
@@ -233,8 +234,9 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // Now try to get a request to work on.  If None available (either select
         // timed out or another thread 'stole' it, go to the top and wait again.
         SData request = data.queuedRequests.pop();
-        if (request.empty())
+        if (request.empty()) {
             continue;
+        }
 
         // Set the priority if supplied by the message.
         SAUTOPREFIX(request["requestID"]);
@@ -242,10 +244,11 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         int priority = SPRIORITY_NORMAL;
         if (!request["priority"].empty()) {
             // Make sure the priority is valid.
-            if (SWITHIN(SPRIORITY_MIN, request.calc("priority"), SPRIORITY_MAX))
+            if (SWITHIN(SPRIORITY_MIN, request.calc("priority"), SPRIORITY_MAX)) {
                 priority = request.calc("priority");
-            else
+            } else {
                 SWARN("Invalid priority " << request["priority"] << ". Ignoring");
+            }
         }
 
         // Open this command -- it'll be peeked immediately
@@ -269,14 +272,11 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // the sync thread.
             SASSERT(!command->httpsRequest);
 
-            SINFO("[concurrent] Unpeekable Command.");
+            SINFO("[concurrent] Unpeekable Command: " << command->id);
 
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
-            if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency != SQLC_ASYNC) {
-                SINFO("[concurrent] Worker not processing command because not ASYNC.");
-            }
-            if (data.replicationState.get() == SQLC_MASTERING && command->writeConsistency == SQLC_ASYNC) {
+            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
                 bool error = false;
@@ -285,7 +285,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     node.processCommand(command);
                 } catch (...) {
                     error = true;
-                    SINFO("[concurrent] error processing command: " << request.methodLine);
+                    SINFO("[concurrent] error processing command: " << command->id);
                 }
 
                 // If there was an error processing this, the transaction's been rolled back, but we still need to send
@@ -309,8 +309,9 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
                 data.queuedEscalatedRequests.push(request);
             }
-        } else
+        } else {
             SERROR("[dmb] Lost command after worker peek. This should never happen");
+        }
 
         // Close the command to remove it from any internal queues.
         node.closeCommand(command);

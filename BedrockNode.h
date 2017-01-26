@@ -15,6 +15,8 @@ class BedrockNode : public SQLiteNode {
 
     bool isWorker();
 
+    bool dbReady() { return _dbReady; }
+
     // STCPManager API: Socket management
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
 
@@ -26,4 +28,10 @@ class BedrockNode : public SQLiteNode {
     virtual void _processCommand(SQLite& db, Command* command);
     virtual void _abortCommand(SQLite& db, Command* command);
     virtual void _cleanCommand(Command* command);
+
+  protected:
+    virtual void _setState(SQLCState state);
+
+  private:
+    bool _dbReady = false;
 };

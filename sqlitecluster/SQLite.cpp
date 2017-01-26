@@ -106,7 +106,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     _journalSize = SToUInt64(result[0][0]);
 }
 
-string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
+string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
     list<string> queries;
     for (string& name : _allJournalNames) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
@@ -426,7 +426,7 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
 
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
 
-    string query = _getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
 
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
@@ -442,7 +442,7 @@ int64_t SQLite::getLastInsertRowID() {
 }
 
 uint64_t SQLite::getCommitCount() {
-    string query = _getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
+    string query = getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
     query = "SELECT MAX(maxIDs) FROM (" + query + ") ORDER BY maxIDs desc";
     SQResult result;
     SASSERT(!SQuery(_db, "getting commit count", query, result));

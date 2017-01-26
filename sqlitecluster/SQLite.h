@@ -102,6 +102,27 @@ class SQLite {
     // This is the callback function we use to log SQLite's internal errors.
     static void sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
+    // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
+    // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
+    // named 'journal', 'journal00, and 'journal00', and queryParts of {"SELECT * FROM", "WHERE id > 1"}, we'll create
+    // the following subqueries from query parts:
+    //
+    // "SELECT * FROM journal WHERE id > 1"
+    // "SELECT * FROM journal00 WHERE id > 1"
+    // "SELECT * FROM journal01 WHERE id > 1"
+    //
+    // And then we'll join then using UNION into:
+    // "SELECT * FROM journal WHERE id > 1
+    //  UNION
+    //  SELECT * FROM journal00 WHERE id > 1
+    //  UNION
+    //  SELECT * FROM journal01 WHERE id > 1;"
+    //
+    //  Note that this wont work if you have a query like "SELECT * FROM journal", with no trailing WHERE clause, as we
+    //  only insert the table name *between* adjacent entries in queryParts. We provide the 'append' flag to get around
+    //  this limitation.
+    string getJournalQuery(const list<string>& queryParts, bool append = false);
+
   protected: // Internal API
     sqlite3* _db;
 
@@ -136,27 +157,6 @@ class SQLite {
     static bool sqliteInitialized;
 
     static string getJournalTableName(int journalTableID);
-
-    // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
-    // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
-    // named 'journal', 'journal00, and 'journal00', and queryParts of {"SELECT * FROM", "WHERE id > 1"}, we'll create
-    // the following subqueries from query parts:
-    //
-    // "SELECT * FROM journal WHERE id > 1"
-    // "SELECT * FROM journal00 WHERE id > 1"
-    // "SELECT * FROM journal01 WHERE id > 1"
-    //
-    // And then we'll join then using UNION into:
-    // "SELECT * FROM journal WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal00 WHERE id > 1
-    //  UNION
-    //  SELECT * FROM journal01 WHERE id > 1;"
-    //
-    //  Note that this wont work if you have a query like "SELECT * FROM journal", with no trailing WHERE clause, as we
-    //  only insert the table name *between* adjacent entries in queryParts. We provide the 'append' flag to get around
-    //  this limitation.
-    string _getJournalQuery(const list<string>& queryParts, bool append = false);
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value.

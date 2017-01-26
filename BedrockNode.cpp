@@ -135,6 +135,11 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     return true;
 }
 
+void BedrockNode::_setState(SQLCState state) {
+    _dbReady = false;
+    SQLiteNode::_setState(state);
+}
+
 void BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
@@ -157,6 +162,7 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                  }
              }
             SINFO("Finished upgrading database");
+            _dbReady = true;
         } else {
             if (!db.beginConcurrentTransaction()) {
                 throw "501 Failed to begin concurrent transaction";
@@ -246,7 +252,9 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
     }
 
     // Re-throw, this is how worker threads know that processing failed.
-    throw;
+    if (wasProcessing) {
+        throw;
+    }
 }
 
 // Notes that we failed to process something

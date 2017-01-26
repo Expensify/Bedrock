@@ -81,7 +81,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
-    _state = SQLC_SEARCHING;
+    _setState(SQLC_SEARCHING);
     _currentCommand = nullptr;
     _syncPeer = nullptr;
     _masterPeer = nullptr;
@@ -224,53 +224,53 @@ bool SQLiteNode::commit() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
+    SAUTOLOCK(_commitMutex);
 
-// This is just notes at this point, until the multi-table journal works.
-#if 0
-
-    _uncommittedHash = SToHex(SHashSHA1(_committedHash + _uncommittedQuery));
-    uint64_t before = STimeNow();
-    int result = SQuery(_db, "updating journal", "INSERT INTO journal VALUES ( NULL, " + SQ(_uncommittedQuery) + ", " +
-                        SQ(_uncommittedHash) + " )");
-
-    SASSERT(!_db.getUncommittedQuery().empty());
-    SINFO("Finished processing command '"
-          << _currentCommand->request.methodLine << "' (" << _currentCommand->id
-          << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
-          << " (" << _db.getUncommittedHash() << ")");
-    _currentCommand->replicationStartTimestamp = STimeNow();
-    _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
-    _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
-    _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
-    _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
-    _currentCommand->transaction["ID"] = _currentCommand->id;
-    _currentCommand->transaction.content = _db.getUncommittedQuery();
-    _sendToAllPeers(_currentCommand->transaction, true); // subscribed only
-    SFOREACH (list<Peer*>, peerList, peerIt) {
-        // Clear the response flag from the last transaction
-        Peer* peer = *peerIt;
-        (*peer)["TransactionResponse"].clear();
+    // Make sure we have something to do.
+    if (!_haveUnsentTransactions) {
+        return;
     }
 
-    SData commit("COMMIT_TRANSACTION");
-    commit["ID"] = _currentCommand->id;
-    _sendToAllPeers(commit, true); // subscribed only
-    SAUTOLOCK(_commitMutex); // If we don't do this here, we could have a read thread add a new transaction while we're
-                             // sending them, and we could get out of sync (specifically, the value of
-                             // _haveUnsentTransactions becomes suspect).
-    if (_haveUnsentTransactions) {
-        SQResult rows = "SELECT query, hash journalID, "
-                        "FROM journal "
-                        "WHERE journalID > _lastSentTransactionID "
-                        "ORDER BY journalID asc;";
-        for (row : rows) {
-            sendToAllPeers("BEGIN_TRANSACTION", row);
-            sendToAllPeers("COMMIT");
-            _lastSentTransactionID = row[2];
+    // Get the transactions we need to send.
+    string query = _db.getJournalQuery({"SELECT id, hash, query FROM",
+                                        "WHERE id > " + SQ(_lastSentTransactionID) + " "
+                                        "ORDER BY id ASC;"});
+
+    SQResult transactions;
+    _db.read(query, transactions);
+    int count = transactions.size();
+    for (int i = 0; i < count; i++) {
+
+        string id = transactions[i][0];
+        string hash = transactions[i][1];
+        string query = transactions[i][2];
+
+        SData transaction("BEGIN_TRANSACTION");
+
+        SINFO("[concurrent] replicating unsent transaction " << id << ".");
+        cout << "[concurrent] replicating unsent transaction " << id << "." << endl;
+
+        transaction["Command"] = "ASYNC";
+        transaction["NewCount"] = id;
+        transaction["NewHash"] = hash;
+        transaction["ID"] = "ASYNC_" + id;
+        transaction.content = query;
+
+        _sendToAllPeers(transaction, true); // subscribed only
+        SFOREACH (list<Peer*>, peerList, peerIt) {
+            // Clear the response flag from the last transaction
+            Peer* peer = *peerIt;
+            (*peer)["TransactionResponse"].clear();
         }
-        _haveUnsentTransactions = false;
+
+        SData commit("COMMIT_TRANSACTION");
+        commit["ID"] = "ASYNC_" + id;
+        _sendToAllPeers(commit, true); // subscribed only
+
+        _lastSentTransactionID = SToUInt64(id);
     }
-#endif
+
+    _haveUnsentTransactions = false;
 }
 
 void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
@@ -1108,6 +1108,15 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
 
+        // If there are outstanding transactions to send, then we'll do that, but only if we're not waiting on a
+        // synchronous command to complete. However, it should be impossible for there to be any outstanding
+        // transactions while we wait for a synchronous command to complete, and because _commitMutex is recursive, we
+        // shouldn't actually require this "if" wrapper here.
+        if (!_currentCommand) {
+            SINFO("[concurrent] Sending outstanding transactions from update loop.");
+            _sendOutstandingTransactions();
+        }
+
         // Are we waiting for approval of a distributed transaction?
         if (_currentCommand && !_currentCommand->transaction.empty()) {
             // Loop across all peers configured to see how many are:
@@ -1276,7 +1285,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 _finishCommand(_currentCommand);
                 _currentCommand = nullptr;
 
-                // If we havne't received majority approval, increment how
+                // If we haven't received majority approval, increment how
                 // many commits we've had without a "checkpoint"
                 if (majorityApproved) {
                     // Safe!
@@ -1286,6 +1295,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // We're going further out on a limb...
                     _commitsSinceCheckpoint++;
                 }
+
+                // Done with this.
+                _commitMutex.unlock();
             } else {
                 // Still waiting
                 SINFO("Waiting to commit: '"
@@ -1461,6 +1473,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                             // Anything to commit?
                             if (_db.insideTransaction()) {
+
+                                // We're about to send a transaction here, grab our commit mutex and send anything
+                                // outstanding. This remains locked until we've finished this transaction.
+                                _commitMutex.lock();
+
+                                // Clear anything outstanding before starting this one.
+                                _sendOutstandingTransactions();
+
                                 _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());
@@ -2514,6 +2534,12 @@ void SQLiteNode::_changeState(SQLCState newState) {
 
         // Additional logic for some new states
         if (newState == SQLC_MASTERING) {
+            // Seed our last sent transaction.
+            SAUTOLOCK(_commitMutex);
+            {
+                _haveUnsentTransactions = false;
+                _lastSentTransactionID = _db.getCommitCount();
+            }
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it
             openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
@@ -2555,7 +2581,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
         // we're "LoggedIn" (else we might change state after sending LOGIN,
         // but before we receive theirs, and they'll miss it).
         // Broadcast the new state
-        _state = newState;
+        _setState(newState);
         SData state("STATE");
         state["State"] = SQLCStateNames[_state];
         state["Priority"] = SToStr(_priority);
