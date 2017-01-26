@@ -373,7 +373,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         if (!db.write("UPDATE jobs "
                       "SET data=" +
                       SQ(request["data"]) + " " +
-                      (request.isSet("repeat") ? ", data=" + SQ(SToUpper(request["repeat"])) : "") +
+                      (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                           "WHERE jobID=" +
                       SQ(request.calc64("jobID")) + ";")) {
             throw "502 Update failed";
