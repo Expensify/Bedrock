@@ -340,16 +340,21 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "UpdateJob")) {
-        // - UpdateJob( jobID, data )
+        // - UpdateJob( jobID, data, [repeat] )
         //
         //     Atomically updates the data associated with a job.
         //
         //     Parameters:
         //     - jobID - ID of the job to delete
         //     - data  - A JSON object describing work to be done
+        //     - repeat - A description of how to repeat (optional)
         //
         verifyAttributeInt64(request, "jobID", 1);
         verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
+
+        // If a repeat is provided, validate it
+        if (request.isSet("repeat") && !_validateRepeat(request["repeat"]))
+            throw "402 Malformed repeat";
 
         // Verify there is a job like this
         SQResult result;
@@ -368,6 +373,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         if (!db.write("UPDATE jobs "
                       "SET data=" +
                       SQ(request["data"]) + " "
+                      (request.isSet("repat") ? ", repeat=" + SQ(SToUpper(request["repeat"]))) : "") +
                                             "WHERE jobID=" +
                       SQ(request.calc64("jobID")) + ";")) {
             throw "502 Update failed";
