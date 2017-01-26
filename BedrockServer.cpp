@@ -282,7 +282,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
             int previousConflicts = request.calc("commitConflictCount");
-            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC && previousConflicts < 3) {
+            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC && previousConflicts < 2) {
                 SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
 
                 bool error = false;
