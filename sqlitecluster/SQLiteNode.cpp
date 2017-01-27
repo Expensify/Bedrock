@@ -716,13 +716,9 @@ void SQLiteNode::_finishCommand(Command* command) {
         delete command;
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
+        // TODO: Probably not for retried commands.
         _processedCommandList.push_back(command);
     }
-}
-
-void SQLiteNode::_conflictHandler(SQLiteNode::Command* command) {
-    command->response.clear();
-    command->response.methodLine = "500 commit conflict";
 }
 
 // --------------------------------------------------------------------------
@@ -1260,9 +1256,26 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     rollback["ID"] = _currentCommand->id;
                     _sendToAllPeers(rollback, true); // subscribed only
 
-                    // Let any child class handle this case.
-                    _conflictHandler(_currentCommand);
+                    // We're done with this, we'll re-open it, and then return from `update` indicating we need to run
+                    // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
+                    // caller.
+                    _commitMutex.unlock();
+                    if (!_currentCommand->request["debugID"].empty()) {
+                        cout << "Sync thread conflict committing: " << _currentCommand->request["debugID"] << endl;
+                    }
+
+                    // Let's re-open this command. Will that work? I don't really know.
+                    openCommand(_currentCommand->request, _currentCommand->priority,
+                                _currentCommand->request.test("unique"),
+                                _currentCommand->request.calc64("commandExecuteTime"));
+
+                    _currentCommand = nullptr;
+                    return true;
                 } else {
+
+                    if (!_currentCommand->request["debugID"].empty()) {
+                        cout << "Sync thread successfully committed: " << _currentCommand->request["debugID"] << endl;
+                    }
 
                     // Record how long it took
                     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;

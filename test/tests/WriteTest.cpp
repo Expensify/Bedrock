@@ -44,9 +44,12 @@ struct WriteTest : tpunit::TestFixture {
 
     void parallelInsert() {
         vector<SData> requests;
-        for (int i = 0; i < 100; i++) {
+        int numCommands = 50;
+        cout << "Testing with " << numCommands << " commands." << endl;
+        for (int i = 0; i < numCommands; i++) {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
+            query["debugID"] = "parallelCommand#" + to_string(i);
             query["query"] = "INSERT INTO stuff VALUES ( NULL, " + SQ(i) + " );";
             requests.push_back(query);
         }
@@ -63,7 +66,7 @@ struct WriteTest : tpunit::TestFixture {
             }
         }
 
-        cout << "Succeeded: " << success << ", Failed: " << failure << endl;
+        ASSERT_EQUAL(success, numCommands);
     }
 
 } __WriteTest;

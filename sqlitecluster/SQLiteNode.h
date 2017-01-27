@@ -210,9 +210,6 @@ class SQLiteNode : public STCPNode {
         _state = state;
     }
 
-    // Let child classes attempt to resolve commit conflicts. Default implementation sets 500 response.
-    virtual void _conflictHandler(Command* command);
-
     // Synchronization variables.
     static recursive_mutex _commitMutex;
     static bool _haveUnsentTransactions;
