@@ -720,6 +720,11 @@ void SQLiteNode::_finishCommand(Command* command) {
     }
 }
 
+void SQLiteNode::_conflictHandler(SQLiteNode::Command* command) {
+    command->response.clear();
+    command->response.methodLine = "500 commit conflict";
+}
+
 // --------------------------------------------------------------------------
 /// State Machine
 /// -------------
@@ -757,7 +762,7 @@ void SQLiteNode::_finishCommand(Command* command) {
 bool SQLiteNode::update(uint64_t& nextActivity) {
     // Process the database state machine
     switch (_state) {
-    /// - SEARCHING: Wait for a a period and try to connect to all known
+    /// - SEARCHING: Wait for a period and try to connect to all known
     ///     peers.  After a timeout, give up and go ahead with whoever
     ///     we were able to successfully connect to -- if anyone.  The
     ///     logic for this state is as follows:
@@ -777,7 +782,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             return false; // Don't re-update
 
         // If no peers, we're the master, unless we're shutting down.
-        if (!gracefulShutdown() && peerList.empty()) {
+        if (peerList.empty()) {
             // There are no peers, jump straight to mastering
             SHMMM("No peers configured, jumping to MASTERING");
             _changeState(SQLC_MASTERING);
@@ -1255,14 +1260,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     rollback["ID"] = _currentCommand->id;
                     _sendToAllPeers(rollback, true); // subscribed only
 
-                    // Notify the caller that this command failed
-                    _currentCommand->response.clear();
-                    _currentCommand->response.methodLine = "500 Failed to get adequate consistency";
-                    // TODO: Requeue this command for the sync thread.
-                    cout << "Rolling back command when should re-queue." << endl;
+                    // Let any child class handle this case.
+                    _conflictHandler(_currentCommand);
                 } else {
-
-
 
                     // Record how long it took
                     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
@@ -2565,7 +2565,9 @@ void SQLiteNode::_changeState(SQLCState newState) {
             }
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it
-            openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
+            if (!gracefulShutdown()) {
+                openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
+            }
         } else if (newState == SQLC_STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
             SFOREACHMAP (int, list<Command*>, _queuedCommandMap, it) {

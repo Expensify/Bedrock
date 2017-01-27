@@ -33,6 +33,7 @@ class BedrockNode : public SQLiteNode {
 
   protected:
     virtual void _setState(SQLCState state);
+    virtual void _conflictHandler(Command* command);
 
   private:
     // If we're the sync node, we keep track of whether our database is ready to use.

@@ -3,7 +3,7 @@
 struct WriteTest : tpunit::TestFixture {
     WriteTest()
         : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup),
-                             // TEST(WriteTest::insert),
+                              TEST(WriteTest::insert),
                               TEST(WriteTest::parallelInsert),
                               AFTER_CLASS(WriteTest::tearDown)) {
         NAME(Write);
@@ -52,9 +52,18 @@ struct WriteTest : tpunit::TestFixture {
         }
         auto results = tester->executeWaitMultiple(requests);
 
+        int success = 0;
+        int failure = 0;
+
         for (auto& row : results) {
-            cout << row.first << endl;
+            if (SToInt(row.first) == 200) {
+                success++;
+            } else {
+                failure++;
+            }
         }
+
+        cout << "Succeeded: " << success << ", Failed: " << failure << endl;
     }
 
 } __WriteTest;

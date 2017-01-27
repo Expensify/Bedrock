@@ -268,6 +268,12 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
     }
 }
 
+void BedrockNode::_conflictHandler(Command* command) {
+    command->response.clear();
+    command->response.methodLine = "501 conflict";
+    cout << "Bedrock conflict handler (should re-queue)." << endl;
+}
+
 // Notes that we failed to process something
 void BedrockNode::_abortCommand(SQLite& db, Command* command) {
     // Note the failure in the response

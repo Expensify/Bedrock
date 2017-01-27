@@ -9,6 +9,8 @@ mutex BedrockServer::_threadInitMutex;
 bool BedrockServer::_threadReady = false;
 BedrockNode* BedrockServer::_syncNode = 0;
 
+#define MAX_ASYNC_CONCURRENT_TRIES 3
+
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // The multi-threaded queues work on SDatas of either requests or
@@ -281,37 +283,47 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
-            int previousConflicts = request.calc("commitConflictCount");
-            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC && previousConflicts < 2) {
-                SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread.");
+            if (node.dbReady() && command->writeConsistency == SQLC_ASYNC) {
 
-                bool error = false;
-                try {
-                    // TODO: Make this return success code/bool?
-                    node.processCommand(command);
-                } catch (...) {
-                    error = true;
-                    SINFO("[concurrent] error processing command: " << command->id);
-                }
+                int tries = 0;
 
-                // If there was an error processing this, the transaction's been rolled back, but we still need to send
-                // a response to the caller. Otherwise, we can commit now.
-                if (!error) {
-                    if (!node.commit()) {
-                        SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
-                        request["commitConflictCount"] = to_string(request.calc("commitConflictCount") + 1);
-                        data.queuedRequests.push_front(request);
-                    } else {
-                        SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+                while (++tries < MAX_ASYNC_CONCURRENT_TRIES) {
+                    SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread. (try #" << tries << ").");
+
+                    bool error = false;
+                    try {
+                        // TODO: Make this return success code/bool?
+                        node.processCommand(command);
+                    } catch (...) {
+                        error = true;
+                        SINFO("[concurrent] error processing command: " << command->id);
                     }
+
+                    // If there was an error processing this, the transaction's been rolled back, but we still need to send
+                    // a response to the caller. Otherwise, we can commit now.
+                    if (!error) {
+                        if (!node.commit()) {
+                            SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
+
+                            // Try to process again.
+                            continue;
+                        } else {
+                            SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+                        }
+                    }
+
+                    SINFO("[concurrent] preparing response to ASYNC command.");
+                    BedrockServer_PrepareResponse(command);
+                    data.processedResponses.push(command->response);
+
+                    // Done, don't need to try again.
+                    break;
                 }
 
-                // TODO: Question - is it possible that a single peer sends us two commands, that get finished and sent
-                // back in the wrong order, even though we keep the ordering in the database consistent among commands?
-                // I think this is already handled correctly, but worth investigating.
-                SINFO("[concurrent] preparing response to ASYNC command.");
-                BedrockServer_PrepareResponse(command);
-                data.processedResponses.push(command->response);
+                if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
+                    SINFO("[concurrent] Too many conflicts, escalating command.");
+                    data.queuedEscalatedRequests.push(request);
+                }
             } else {
                 SINFO("[concurrent] Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");

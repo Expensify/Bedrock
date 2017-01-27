@@ -2147,7 +2147,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     int extErr = 0;
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
-        SDEBUG(sql);
+        //SDEBUG(sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
