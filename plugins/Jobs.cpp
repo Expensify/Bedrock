@@ -144,6 +144,57 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         content["repeat"] = result[0][6];
         content["data"] = result[0][7];
         return true; // Successfully processed
+    }
+
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "QueryJobByName")) {
+        // - QueryJobByName( name )
+        //
+        //     Returns all known information about a given job. If there are multiple jobs with this name, only the
+        //     first one is returned.
+        //
+        //     Parameters:
+        //     - name - Name of the job to query
+        //
+        //     Returns:
+        //     - 200 - OK
+        //         . created - creation time of this job
+        //         . jobID - unique ID of the job
+        //         . state - One of QUEUED, RUNNING, FINISHED
+        //         . name  - name of the actual job matched
+        //         . nextRun - timestamp of next scheduled run
+        //         . lastRun - timestamp it was last run
+        //         . repeat - recurring description
+        //         . data - JSON data associated with this job
+        //     - 404 - No jobs found
+        //
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+
+        // Get the list
+        SQResult result;
+        const string& name = request["name"];
+
+        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data "
+                     "FROM jobs "
+                     "WHERE state='QUEUED' "
+                     "AND name GLOB " + SQ(name) + " " + "LIMIT 1;",
+                     result)) {
+            throw "502 Query failed";
+        }
+
+        if (result.empty()) {
+            throw "404 No job with this name";
+        }
+
+        content["created"] = result[0][0];
+        content["jobID"] = result[0][1];
+        content["state"] = result[0][2];
+        content["name"] = result[0][3];
+        content["nextRun"] = result[0][4];
+        content["lastRun"] = result[0][5];
+        content["repeat"] = result[0][6];
+        content["data"] = result[0][7];
+        return true; // Successfully processed
     } else if (SIEquals(request.methodLine, "CreateJob")) {
         // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
         // master.
