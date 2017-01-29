@@ -44,24 +44,36 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
     STable& content = command->jsonContent;
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "GetJob")) {
+    if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
         // - GetJob( name )
+        // - GetJobs( name, numResults )
         //
-        //     Atomically dequeues exactly one job, if available.
+        //     Atomically dequeues one or more jobs, if available.
         //
         //     Parameters:
         //     - name - name pattern of jobs to match
+        //     - numResults - maximum number of jobs to dequeue
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
         //
         //     Returns:
         //     - 200 - OK
-        //         . jobID - unique ID of the job
-        //         . name  - name of the actual job matched
-        //         . data  - JSON data associated with this job
+        //         . GetJob
+        //           o jobID - unique ID of the job
+        //           o name  - name of the actual job matched
+        //           o data  - JSON data associated with this job
+        //         . GetJobs
+        //           o jobs - Array of JSON objects, each matching the result of GetJob
         //     - 303 - Timeout
         //     - 404 - No jobs found
         //
         verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+        if (SIEquals(request.methodLine, "GetJobs") != request.isSet("numResults")) {
+            if (SIEquals(request.methodLine, "GetJobs")) {
+                throw "402 Missing numResults";
+            } else {
+                throw "402 Cannot use numResults with GetJob; try GetJobs";
+            }
+        }
 
         // Get the list
         SQResult result;
@@ -175,7 +187,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
 bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
     // Pull out some helpful variables
     SData& request = command->request;
-    // SData&  response = command->response; -- Not used
+    SData& response = command->response;
     STable& content = command->jsonContent;
 
     // ----------------------------------------------------------------------
@@ -283,7 +295,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "GetJob")) {
+    else if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
         // If we're here it's because peekCommand found some data; re-execute
         // the query for real now.  However, this time we will order by
         // priority.  We do this as three separate queries so we only have one
@@ -293,7 +305,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // works!
         SQResult result;
         const string& name = request["name"];
-        string query =
+        string safeNumResults = SQ(max(request.calc("numResults"),1)); 
+        string selectQuery =
             "SELECT jobID, name, data, parentJobID FROM ( "
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID "
@@ -302,7 +315,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC LIMIT 1 "
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
@@ -312,7 +325,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC LIMIT 1 "
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
@@ -322,12 +335,12 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC LIMIT 1 "
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             ") "
             "ORDER BY priority DESC "
-            "LIMIT 1;";
-        if (!db.read(query, result)) {
+            "LIMIT " + safeNumResults + ";";
+        if (!db.read(selectQuery, result)) {
             throw "502 Query failed";
         }
 
@@ -341,22 +354,45 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             //          way the worker will likely just loop, so it doesn't really matter.
             throw "404 No job found";
         }
-        SASSERT(result.size() == 1 && result[0].size() == 4);
 
-        // Update the state of that job
-        if (!db.write("UPDATE jobs "
-                      "SET state='RUNNING', lastRun=" +
-                      SCURRENT_TIMESTAMP() + " WHERE jobID=" + result[0][0] + ";"))
+        // There should only be at most one result if GetJob
+        SASSERT(!SIEquals(request.methodLine, "GetJob") || result.size()<=1);
+
+        // Prepare to update the rows, while also creating all the expense objects
+        string updateQuery = "UPDATE jobs SET state='RUNNING', lastRun=" + SCURRENT_TIMESTAMP() + " WHERE jobID IN (";
+        list<string> jobList;
+        for (size_t c=0; c<result.size(); ++c) {
+            // Add to the set, with a comma separator if necessary
+            SASSERT(result[c].size() == 4);
+            updateQuery += (c ? ", " : "") + result[c][0];
+
+            // Add this object to our output
+            STable job;
+            job["jobID"] = result[c][0];
+            job["name"] = result[c][1];
+            job["data"] = result[c][2];
+            int64_t parentJobID = SToInt64(result[c][3]);
+            if (parentJobID) {
+                // Has a parent job, add the parent data
+                job["parentJobID"] = SToStr(parentJobID);;
+                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" +SQ(parentJobID)+ ";");
+            }
+            jobList.push_back(SComposeJSONObject(job));
+        }
+        updateQuery += ");";
+        if (!db.write(updateQuery)) {
             throw "502 Update failed";
+        }
 
-        // Construct the body
-        content["jobID"] = result[0][0];
-        content["name"] = result[0][1];
-        content["data"] = result[0][2];
-        int64_t parentJobID = SToInt64(result[0][3]);
-        if (parentJobID) {
-            // Has a parent job, add the parent data
-            content["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" +SQ(parentJobID)+ ";");
+        // Format the results as is appropriate for what was requested
+        if (SIEquals(request.methodLine, "GetJob")) {
+            // Single response
+            SASSERT(jobList.size() == 1);
+            response.content = jobList.front();
+        } else {
+            // Multiple responses
+            SASSERT(SIEquals(request.methodLine, "GetJobs"));
+            content["jobs"] = SComposeJSONArray(jobList);
         }
         return true; // Successfully processed
     }
