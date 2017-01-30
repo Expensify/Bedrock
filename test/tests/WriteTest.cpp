@@ -18,7 +18,7 @@ struct WriteTest : tpunit::TestFixture {
     };
 
     void setup() {
-        tester = new BedrockTester("", queries);
+        tester = new BedrockTester("", "", queries);
     }
 
     void tearDown() {

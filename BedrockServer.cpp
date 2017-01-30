@@ -95,7 +95,12 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         string host;
         STable params;
         SASSERT(SParseURIPath(peer, host, params));
-        node.addPeer(SGetDomain(host), host, params);
+
+        string name = SGetDomain(host);
+        if (params.find("nodeName") != params.end()) {
+            name = params["nodeName"];
+        }
+        node.addPeer(name, host, params);
     }
 
     // Get any HTTPSManagers that plugins registered with the server.
@@ -305,18 +310,10 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                         if (!node.commit()) {
                             SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
 
-                            if (!command->request["debugID"].empty()) {
-                                cout << data.name << " conflict committing: " << command->request["debugID"] << endl;
-                            }
-
                             // Try to process again.
                             continue;
                         } else {
                             SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
-
-                            if (!command->request["debugID"].empty()) {
-                                cout << data.name << " successfully committed: " << command->request["debugID"] << endl;
-                            }
                         }
                     }
 
@@ -329,10 +326,6 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 }
 
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
-
-                    if (!command->request["debugID"].empty()) {
-                        cout << data.name << " conflict limit reached, giving to sync thread: " << command->request["debugID"] << endl;
-                    }
                     SINFO("[concurrent] Too many conflicts, escalating command.");
                     data.queuedEscalatedRequests.push(request);
                 }

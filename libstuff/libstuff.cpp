@@ -1674,8 +1674,9 @@ bool S_recvappend(int s, string& recvBuffer) {
     }
 
     // See how we finished
-    if (numRecv == 0)
+    if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
+    }
     else {
         // Some kind of error -- what happened?
         switch (S_errno) {

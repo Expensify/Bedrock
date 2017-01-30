@@ -297,6 +297,7 @@ bool SQLite::prepare() {
 
     // Queue up the journal entry
     _uncommittedHash = SToHex(SHashSHA1(committedHash + _uncommittedQuery));
+    _uncommittedTransaction = true;
     uint64_t before = STimeNow();
 
     // Let the DB auto-increment this.
@@ -348,6 +349,7 @@ int SQLite::commit() {
         // Successful commit
         _journalSize += !truncating; // Only increase if we didn't truncate by a row
         _insideTransaction = false;
+        _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -381,6 +383,7 @@ void SQLite::rollback() {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }
     _insideTransaction = false;
+    _uncommittedTransaction = false;
     _uncommittedHash.clear();
     _uncommittedQuery.clear();
 }
@@ -397,7 +400,7 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
     return begin + read + write + prepare + commit + rollback;
 }
 
-bool SQLite::getLatestCommit(uint64_t& id, string& query, string& hash) {
+void SQLite::getLatestCommit(uint64_t& id, string& query, string& hash) {
     /*
     SELECT MAX(id) as id,  hash, query FROM (
         SELECT MAX(id) as id, hash, query FROM journal
@@ -434,9 +437,6 @@ bool SQLite::getLatestCommit(uint64_t& id, string& query, string& hash) {
         hash = "";
         query = "";
     }
-    SASSERTWARN(!query.empty());
-    SASSERTWARN(!hash.empty());
-    return (!query.empty() && !hash.empty());
 }
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
@@ -490,6 +490,9 @@ uint64_t SQLite::getCommitCount() {
     SASSERT(!SQuery(_db, "getting commit count", query, result));
 
     uint64_t count = SToUInt64(result[0][0]);
+    if (_uncommittedTransaction) {
+        count--;
+    }
     return count;
 }
 

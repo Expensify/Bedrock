@@ -1039,6 +1039,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         bool allResponded = true;
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
+        if (gracefulShutdown()) {
+            SINFO("Shutting down while standing up, setting state to SEARCHING");
+            _changeState(SQLC_SEARCHING);
+            return true; // Re-update
+        }
         SFOREACH (list<Peer*>, peerList, peerIt) {
             // Check this peer; if not logged in, tacit approval
             Peer* peer = *peerIt;
@@ -1260,9 +1265,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
                     // caller.
                     _commitMutex.unlock();
-                    if (!_currentCommand->request["debugID"].empty()) {
-                        cout << "Sync thread conflict committing: " << _currentCommand->request["debugID"] << endl;
-                    }
 
                     // Let's re-open this command. Will that work? I don't really know.
                     openCommand(_currentCommand->request, _currentCommand->priority,
@@ -1272,11 +1274,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     _currentCommand = nullptr;
                     return true;
                 } else {
-
-                    if (!_currentCommand->request["debugID"].empty()) {
-                        cout << "Sync thread successfully committed: " << _currentCommand->request["debugID"] << endl;
-                    }
-
                     // Record how long it took
                     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
                     uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
@@ -1853,9 +1850,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                         response["Response"] = "deny";
                         response["Reason"] = "I am mastering";
 
-                        // Hmm, why is a lower priority peer trying to stand up?  Is it possble we're not longer in
-                        // control
-                        // of the cluster?  Let's see how many nodes are subscribed.
+                        // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
+                        // control of the cluster? Let's see how many nodes are subscribed.
                         if (_majoritySubscribed()) {
                             // we have a majority of the cluster, so ignore this oddity.
                             PHMMM("Lower-priority peer is trying to stand up while we are "
@@ -1868,7 +1864,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             // away from us.  This can happen if the master
                             // hangs while processing a command: by the time it
                             // finishes, the cluster might have elected a new
-                            // master, forked, and be a thosuand commits in the
+                            // master, forked, and be a thousand commits in the
                             // future.  In this case, let's just reset
                             // everything anyway to be safe.
                             PWARN("Lower-priority peer is trying to stand up while we are "
@@ -2077,7 +2073,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!_db.getUncommittedHash().empty())
             throw "already in a transaction";
         if (_db.getCommitCount() + 1 != message.calcU64("NewCount"))
-            throw "commit count mismatch";
+            throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
         if (!_db.beginTransaction())
             throw "failed to begin transaction";
         try {
@@ -2087,6 +2083,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!_db.prepare())
                 throw "failed to prepare transaction";
         } catch (const char* e) {
+            // Transaction failed, clean up
+            SERROR("Can't begin master transaction (" << e << "); shutting down.");
+            // **FIXME: Remove the above line once we can automatically handle?
+            _db.rollback();
+            throw e;
+        } catch (const string& e) {
+            // TODO: Don't duplicate the above block.
             // Transaction failed, clean up
             SERROR("Can't begin master transaction (" << e << "); shutting down.");
             // **FIXME: Remove the above line once we can automatically handle?
@@ -2151,7 +2154,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 if (message["NewHash"] != _db.getUncommittedHash())
                     throw "new hash mismatch";
                 if (message.calcU64("NewCount") != _db.getCommitCount() + 1)
-                    throw "commit count mismatch";
+                    throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
                 if (peer->params["Permaslave"] == "true")
                     throw "permaslaves shouldn't approve";
                 uint64_t replicationElapsed = STimeNow() - _currentCommand->replicationStartTimestamp;
@@ -2188,7 +2191,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
         if (message.calcU64("CommitCount") != _db.getCommitCount() + 1)
-            throw "commit count mismatch";
+            throw "commit count mismatch. Expected: " + message["CommitCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
         if (message["Hash"] != _db.getUncommittedHash())
             throw "hash mismatch";
         _db.commit();
@@ -2541,12 +2544,19 @@ void SQLiteNode::_changeState(SQLCState newState) {
         // Depending on the state, set a timeout
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
-        if (newState == SQLC_SEARCHING || newState == SQLC_STANDINGUP || newState == SQLC_SUBSCRIBING)
+        if (newState == SQLC_STANDINGUP) {
+            // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
+            // for the other to respond, but neither sends a response. We want a short timeout on this state.
+            // TODO: Maybe it would be better to re-send the message indicating we're standing up when we see someone
+            // hasn't responded.
+            timeout = STIME_US_PER_S * 5 + SRandom::rand64() % STIME_US_PER_S * 5;
+        } else if (newState == SQLC_SEARCHING || newState == SQLC_SUBSCRIBING) {
             timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
-        else if (newState == SQLC_SYNCHRONIZING)
+        } else if (newState == SQLC_SYNCHRONIZING) {
             timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
-        else
+        } else {
             timeout = 0;
+        }
         SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
         _stateTimeout = STimeNow() + timeout;
 

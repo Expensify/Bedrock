@@ -68,7 +68,7 @@ class SQLite {
     bool lastWriteChanged() { return _lastWriteChanged; }
 
     // Like getCommitCount, but return query and hash.
-    bool getLatestCommit(uint64_t& id, string& query, string& hash);
+    void getLatestCommit(uint64_t& id, string& query, string& hash);
 
     // Returns the number of commits on this database.
     uint64_t getCommitCount();
@@ -137,6 +137,11 @@ class SQLite {
     bool _insideTransaction;
     string _uncommittedQuery;
     string _uncommittedHash;
+
+    // This is true when we have a transaction that we haven't committed, but does show up in the journal table. This
+    // lets us report an accurate commit count, because sometimes it's one less than the highest entry in the table.
+    // TODO: We might be able to re-use a different var for this purpose.
+    bool _uncommittedTransaction = false;
     bool _lastWriteChanged;
     bool _readOnly;
     uint64_t _beginElapsed;

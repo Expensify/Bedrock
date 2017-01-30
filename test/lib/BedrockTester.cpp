@@ -22,33 +22,33 @@ class BedrockTestException : public std::exception {
     virtual const char* what() const __NOEXCEPT { return message.c_str(); }
 };
 
-BedrockTester::BedrockTester(string filename) : passing(true) {
-    nextActivity = 0;
-
-    if (filename.empty()) {
-        dbFile = BedrockTester::DB_FILE;
-    } else {
-        dbFile = filename;
-    }
-
-    createFile(dbFile);
-    if (startServers) {
-        startServer();
-    }
+// Create temporary file. Returns its name or the empty string on failure.
+string BedrockTester::getTempFileName(string prefix) {
+    string templateStr = prefix + "bedrocktest_XXXXXX.db";
+    char buffer[templateStr.size() + 1];
+    strcpy(buffer, templateStr.c_str());
+    int filedes = mkstemps(buffer, 3);
+    close(filedes);
+    return buffer;
 }
 
-BedrockTester::BedrockTester(string filename, list<string> queries) : passing(true) {
+BedrockTester::BedrockTester(const string& filename, const string& serverAddress, const list<string>& queries, const map<string, string>& args, bool wait) {
     nextActivity = 0;
     if (filename.empty()) {
-        dbFile = BedrockTester::DB_FILE;
+        _dbFile = BedrockTester::DB_FILE;
     } else {
-        dbFile = filename;
+        _dbFile = filename;
     }
 
-    createFile(dbFile);
+    if (serverAddress.empty()) {
+        _serverAddr = BedrockTester::SERVER_ADDR;
+    } else {
+        _serverAddr = serverAddress;
+    }
 
-    // Create query goes here.
-    SQLite db(dbFile, 1000000, 1, false, 1000000, -1, -1);
+    createFile(_dbFile);
+
+    SQLite db(_dbFile, 1000000, 1, false, 1000000, -1, -1);
 
     for (string query : queries) {
         db.beginTransaction();
@@ -56,8 +56,9 @@ BedrockTester::BedrockTester(string filename, list<string> queries) : passing(tr
         db.prepare();
         db.commit();
     }
+
     if (startServers) {
-        startServer();
+        startServer(args, wait);
     }
 }
 
@@ -72,20 +73,20 @@ BedrockTester::~BedrockTester() {
     }
     if (serverPID) {
         stopServer();
-        deleteFile(dbFile);
+        deleteFile(_dbFile);
     }
 }
 
 SQLite& BedrockTester::getSQLiteDB() {
     if (!db) {
-        db = new SQLite(dbFile, 1000000, false, true, 3000000, -1, -1);
+        db = new SQLite(_dbFile, 1000000, false, true, 3000000, -1, -1);
     }
     return *db;
 }
 
 SQLite& BedrockTester::getWritableSQLiteDB() {
     if (!writableDB) {
-        writableDB = new SQLite(dbFile, 1000000, false, false, 3000000, -1, -1);
+        writableDB = new SQLite(_dbFile, 1000000, false, false, 3000000, -1, -1);
     }
     return *writableDB;
 }
@@ -121,22 +122,46 @@ bool BedrockTester::createFile(string name) {
     return true;
 }
 
-string BedrockTester::getServerName() { return "../bedrock"; }
+string BedrockTester::getServerName() {
+    list<string> locations = {
+        "../bedrock",
+        "../../bedrock",
+    };
+    for (auto location : locations) {
+        if (SFileExists(location)) {
+            return location;
+        }
+    }
+    return "";
+}
 
-list<string> BedrockTester::getServerArgs() {
-    list<string> args = {
-        "-db",          BedrockTester::DB_FILE,
-        "-serverHost",  SERVER_ADDR,
-        "-nodeName",    "bedrock_test",
-        "-nodeHost",    "localhost:9889",
-        "-priority",    "200",
-        "-plugins",     "status,db,cache",
-        "-readThreads", "8",
-        "-v",
-        "-cache",       "10001",
+list<string> BedrockTester::getServerArgs(map <string, string> args) {
+
+    map <string, string> defaults = {
+        {"-db",          _dbFile.empty() ? DB_FILE : _dbFile},
+        {"-serverHost",  _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
+        {"-nodeName",    "bedrock_test"},
+        {"-nodeHost",    "localhost:9889"},
+        {"-priority",    "200"},
+        {"-plugins",     "status,db,cache"},
+        {"-readThreads", "8"},
+        {"-v",           ""},
+        {"-cache",       "10001"},
     };
 
-    return args;
+    for (auto row : defaults) {
+        if (args.find(row.first) == args.end()) {
+            args[row.first] = row.second;
+        }
+    }
+
+    list<string> arglist;
+    for (auto arg : args) {
+        arglist.push_back(arg.first);
+        arglist.push_back(arg.second);
+    }
+
+    return arglist;
 }
 
 string BedrockTester::getCommandLine() {
@@ -148,12 +173,12 @@ string BedrockTester::getCommandLine() {
     return cmd;
 }
 
-void BedrockTester::startServer() {
+void BedrockTester::startServer(map<string, string> args_, bool wait) {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
         // We are the child!
-        list<string> args = getServerArgs();
+        list<string> args = getServerArgs(args_);
         // First arg is path to file.
         args.push_front(getServerName());
         if (_spoofInternalCommands) {
@@ -183,7 +208,7 @@ void BedrockTester::startServer() {
         // come up faster, not a change in how we wait for it, though it would be nice if we could do something
         // besides this 100ms polling.
         int count = 0;
-        while (1) {
+        while (wait) {
             count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
             if (count > 60 * 10) {
@@ -233,7 +258,7 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
         threads.emplace_back([&](){
 
             // Create a socket.
-            int socket = S_socket(SERVER_ADDR, true, false, true);
+            int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
 
             while (true) {
 
@@ -301,7 +326,7 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
 
 string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
-    int socket = S_socket(SERVER_ADDR, true, false, true);
+    int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
 
     string sendBuffer = request.serialize();
     // Send our data.

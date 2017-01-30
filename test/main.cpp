@@ -9,14 +9,6 @@
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
  */
 
-// Create temporary file. Returns its name or the empty string on failure.
-string getTempFileName() {
-    char buffer[24] = "bedrocktest_XXXXXX.db";
-    int filedes = mkstemps(buffer, 3);
-    close(filedes);
-    return buffer;
-}
-
 void cleanup() {
     if (BedrockTester::serverPIDs.size()) {
         cout << BedrockTester::serverPIDs.size() << " servers to stop." << endl;
@@ -60,14 +52,15 @@ int main(int argc, char* argv[]) {
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
-    BedrockTester::DB_FILE = getTempFileName();
+    BedrockTester::DB_FILE = BedrockTester::getTempFileName();
     cout << "Temp file for this run: " << BedrockTester::DB_FILE << endl;
     BedrockTester::SERVER_ADDR = "127.0.0.1:8989";
 
     if (args.isSet("-dontStartServer")) {
         BedrockTester::startServers = false;
         cout << "Not starting server, would have run:" << endl;
-        cout << BedrockTester::getCommandLine() << endl;
+        //cout << BedrockTester::getCommandLine() << endl;
+        cout << "TYLER BROKE THIS" << endl;
     }
 
     if (args.isSet("-wait")) {

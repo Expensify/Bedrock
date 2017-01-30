@@ -15,16 +15,13 @@ class BedrockTester {
     static bool deleteFile(string name);
     static bool startServers;
 
-    string dbFile;
     uint64_t nextActivity;
-    bool passing;
     int serverPID = 0;
     SQLite* db = nullptr;
     SQLite* writableDB = nullptr;
 
     // Constructor
-    BedrockTester(string filename = "");
-    BedrockTester(string filename, list<string> queries);
+    BedrockTester(const string& filename = "", const string& serverAddress = "", const list<string>& queries = {}, const map<string, string>& args = {}, bool wait = true);
     ~BedrockTester();
 
     // Executes a command and waits for the response
@@ -38,17 +35,23 @@ class BedrockTester {
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
     SQLite& getWritableSQLiteDB();
-    static string getCommandLine();
+    string getCommandLine();
+
+    static string getTempFileName(string prefix = "");
 
   private:
     // these exist to allow us to create and delete our database file.
     bool createFile(string name);
 
-    void startServer();
+    void startServer(map <string, string> args_ = {},  bool wait = true);
     void stopServer();
 
-    static string getServerName();
-    static list<string> getServerArgs();
+    string getServerName();
+    list<string> getServerArgs(map <string, string> args = {});
 
     bool _spoofInternalCommands;
+
+    // If these are set, they'll be used instead of the global defaults.
+    string _serverAddr;
+    string _dbFile;
 };

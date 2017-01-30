@@ -74,7 +74,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     bool foundIt = false;
                     for (Peer* peer : peerList) {
                         // Just match any unconnected peer
-                        // **FIXME: Autenticate and match by public key
+                        // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
                             // Found it!  Are we already connected?
                             if (!peer->s) {
@@ -172,6 +172,16 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 } catch (const char* e) {
+                    // Error -- reconnect
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e
+                                                       << "), reconnecting:" << message.serialize());
+                    SData reconnect("RECONNECT");
+                    reconnect["Reason"] = e;
+                    peer->s->send(reconnect.serialize());
+                    shutdownSocket(peer->s);
+                    break;
+                } catch (const string& e) {
+                    // TODO: Don't repeat the above block.
                     // Error -- reconnect
                     PWARN("Error processing message '" << message.methodLine << "' (" << e
                                                        << "), reconnecting:" << message.serialize());
