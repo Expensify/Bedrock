@@ -1,9 +1,9 @@
 #include "../BedrockClusterTester.h"
 
-struct ConflictSpamTest : tpunit::TestFixture {
-    ConflictSpamTest()
-        : tpunit::TestFixture("ConflictSpam",
-                              TEST(ConflictSpamTest::spam)) { }
+struct b_ConflictSpamTest : tpunit::TestFixture {
+    b_ConflictSpamTest()
+        : tpunit::TestFixture("b_ConflictSpam",
+                              TEST(b_ConflictSpamTest::spam)) { }
 
     /* What's a conflict spam test? The main point of this test is to make sure we have lots of conflicting commits
      * coming in to the whole cluster, so that we can make sure they all eventually get committed and replicated in a
@@ -58,4 +58,4 @@ struct ConflictSpamTest : tpunit::TestFixture {
             t.join();
         }
     }
-} __ConflictSpamTest;
+} __b_ConflictSpamTest;
