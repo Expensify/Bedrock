@@ -39,12 +39,12 @@ class BedrockTester {
 
     static string getTempFileName(string prefix = "");
 
+    void stopServer();
+    void startServer(map <string, string> args_ = {},  bool wait = true);
+
   private:
     // these exist to allow us to create and delete our database file.
     bool createFile(string name);
-
-    void startServer(map <string, string> args_ = {},  bool wait = true);
-    void stopServer();
 
     string getServerName();
     list<string> getServerArgs(map <string, string> args = {});

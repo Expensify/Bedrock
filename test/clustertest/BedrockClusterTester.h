@@ -7,9 +7,9 @@ class BedrockClusterTester {
     static list<BedrockClusterTester*> testers;
 
     enum ClusterSize {
-        SINGLE_NODE_CLUSTER = 1,
-        THREE_NODE_CLUSTER  = 3,
-        FIVE_NODE_CLUSTER   = 5,
+        one_NODE_CLUSTER   = 1,
+        THREE_NODE_CLUSTER = 3,
+        FIVE_NODE_CLUSTER  = 5,
     };
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
@@ -34,10 +34,17 @@ class BedrockClusterTester {
     // Returns the bedrock tester at the given index in the cluster.
     BedrockTester* getBedrockTester(size_t index);
 
+    // Starts a given node, given the same arguments given by the constructor.
+    void startNode(size_t nodeIndex);
+
+    // Stops a given node.
+    void stopNode(size_t nodeIndex);
+
   private:
     // A list of all our testers that make up our cluster.
     vector<BedrockTester> _cluster;
 
-    // The addresses of each of our nodes, so we can talk to them.
-    vector<string> _serverAddrs;
+    // The arguments we start each server with. We store them so we can bring them down and back up with the same
+    // settings.
+    vector<map<string, string>> _args;
 };

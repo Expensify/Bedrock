@@ -7,7 +7,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
     cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
-    _serverAddrs.reserve(size);
+    _args.reserve(size);
 
     int nodePortBase = 9500;
     // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
@@ -54,8 +54,8 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-peerList",   peerString},
         };
 
-        // Save this so we can talk to this node.
-        _serverAddrs.push_back(serverHost);
+        // save this map for later.
+        _args.push_back(args);
 
         // Not used, but needed so we can pass args.
         list<string> queries = {};
@@ -101,4 +101,14 @@ BedrockClusterTester::~BedrockClusterTester()
 BedrockTester* BedrockClusterTester::getBedrockTester(size_t index)
 {
     return &_cluster[index];
+}
+
+void BedrockClusterTester::stopNode(size_t nodeIndex)
+{
+    _cluster[nodeIndex].stopServer();
+}
+
+void BedrockClusterTester::startNode(size_t nodeIndex)
+{
+    _cluster[nodeIndex].startServer(_args[nodeIndex], true);
 }
