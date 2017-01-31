@@ -1,14 +1,12 @@
 #include "../BedrockClusterTester.h"
 
-struct MasteringTest : tpunit::TestFixture {
-    MasteringTest()
-        : tpunit::TestFixture(
-                              TEST(MasteringTest::clusterUp),
-                              TEST(MasteringTest::failover),
-                              TEST(MasteringTest::restoreMaster)
-                             ) {
-        NAME(Mastering);
-    }
+struct _MasteringTest : tpunit::TestFixture {
+    _MasteringTest()
+        : tpunit::TestFixture("_Mastering",
+                              TEST(_MasteringTest::clusterUp),
+                              TEST(_MasteringTest::failover),
+                              TEST(_MasteringTest::restoreMaster)
+                             ) { }
 
     BedrockClusterTester* tester;
 
@@ -109,4 +107,4 @@ struct MasteringTest : tpunit::TestFixture {
         ASSERT_EQUAL(responses[2], "SLAVING");
     }
 
-} __MasteringTest;
+} ___MasteringTest;

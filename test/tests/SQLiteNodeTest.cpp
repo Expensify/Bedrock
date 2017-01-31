@@ -16,11 +16,8 @@ struct TestSQLiteNode : public SQLiteNode {
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
-    SQLiteNodeTest() : tpunit::TestFixture(
-                                    TEST(SQLiteNodeTest::testFindSyncPeer))
-    {
-        NAME(SQLiteNode);
-    }
+    SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
+                                           TEST(SQLiteNodeTest::testFindSyncPeer)) { }
 
     void testFindSyncPeer() {
 

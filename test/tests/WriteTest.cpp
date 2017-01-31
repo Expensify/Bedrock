@@ -2,12 +2,11 @@
 
 struct WriteTest : tpunit::TestFixture {
     WriteTest()
-        : tpunit::TestFixture(BEFORE_CLASS(WriteTest::setup),
+        : tpunit::TestFixture("Write",
+                              BEFORE_CLASS(WriteTest::setup),
                               TEST(WriteTest::insert),
                               TEST(WriteTest::parallelInsert),
-                              AFTER_CLASS(WriteTest::tearDown)) {
-        NAME(Write);
-    }
+                              AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
 
