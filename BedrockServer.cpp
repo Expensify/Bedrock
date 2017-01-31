@@ -284,7 +284,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // the sync thread.
             SASSERT(!command->httpsRequest);
 
-            SINFO("[concurrent] Unpeekable Command: " << command->id);
+            SINFO("[concurrent] (" << node.name << ") Unpeekable Command: " << command->id << ": " << command->request.methodLine);
 
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
@@ -293,7 +293,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 int tries = 0;
 
                 while (++tries < MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[concurrent] processing ASYNC command " << command->id << " from worker thread. (try #" << tries << ").");
+                    SINFO("[concurrent] (" << node.name << ") processing ASYNC command " << command->id << ": " << command->request.methodLine << " from worker thread. (try #" << tries << ").");
 
                     bool error = false;
                     try {
@@ -301,23 +301,23 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                         node.processCommand(command);
                     } catch (...) {
                         error = true;
-                        SINFO("[concurrent] error processing command: " << command->id);
+                        SINFO("[concurrent] (" << node.name << ") error processing command: " << command->id << ": " << command->request.methodLine);
                     }
 
                     // If there was an error processing this, the transaction's been rolled back, but we still need to send
                     // a response to the caller. Otherwise, we can commit now.
                     if (!error) {
                         if (!node.commit()) {
-                            SINFO("[concurrent] ASYNC command " << command->id << " conflicted, re-queuing.");
+                            SINFO("[concurrent] (" << node.name << ") ASYNC command " << command->id << ": " << command->request.methodLine << " conflicted, re-queuing.");
 
                             // Try to process again.
                             continue;
                         } else {
-                            SINFO("[concurrent] ASYNC command " << command->id << " successfully processed.");
+                            SINFO("[concurrent] (" << node.name << ") ASYNC command " << command->id << ": " << command->request.methodLine << " successfully processed.");
                         }
                     }
 
-                    SINFO("[concurrent] preparing response to ASYNC command.");
+                    SINFO("[concurrent] (" << node.name << ") preparing response to ASYNC command." << ": " << command->request.methodLine);
                     BedrockServer_PrepareResponse(command);
                     data.processedResponses.push(command->response);
 
@@ -326,11 +326,11 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 }
 
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[concurrent] Too many conflicts, escalating command.");
+                    SINFO("[concurrent] (" << node.name << ") Too many conflicts, escalating command." << ": " << command->request.methodLine);
                     data.queuedEscalatedRequests.push(request);
                 }
             } else {
-                SINFO("[concurrent] Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
+                SINFO("[concurrent] (" << node.name << ") Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
                 data.queuedEscalatedRequests.push(request);
             }

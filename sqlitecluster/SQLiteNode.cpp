@@ -206,19 +206,19 @@ bool SQLiteNode::commit() {
     SAUTOLOCK(_commitMutex);
 
     if (_db.getUncommittedHash().empty()) {
-        SINFO("[concurrent] No outstanding transaction");
+        SINFO("[concurrent] (" << name << ") No outstanding transaction");
         return true;
     }
     // No prepare() call here because it's handled in process
 
-    SINFO("[concurrent] Attempting commit.");
+    SINFO("[concurrent] (" << name << ") Attempting commit.");
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[concurrent] conflict - rolling back commit.");
+        SINFO("[concurrent] (" << name << ") conflict - rolling back commit.");
         _db.rollback();
         return false; // Commit conflicted.
     }
-    SINFO("[concurrent] commit successful.");
+    SINFO("[concurrent] (" << name << ") commit successful.");
     _haveUnsentTransactions = true;
     return true; // Commit succeeded.
 }
@@ -231,7 +231,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         return;
     }
 
-    SINFO("[concurrent] Sending outstanding transactions.");
+    SINFO("[concurrent] (" << name << ") Sending outstanding transactions.");
 
     // Get the transactions we need to send.
     string query = _db.getJournalQuery({"SELECT id, hash, query FROM",
@@ -249,7 +249,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
 
         SData transaction("BEGIN_TRANSACTION");
 
-        SINFO("[concurrent] replicating unsent transaction " << id << ".");
+        SINFO("[concurrent] (" << name << ") replicating unsent transaction " << id << ".");
 
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = id;
@@ -1513,7 +1513,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 // Clear anything outstanding before starting this one.
                                 _sendOutstandingTransactions();
 
-                                SINFO("[concurrent] committing: " << _currentCommand->request.methodLine << ", ID: " << _currentCommand->id);
+                                SINFO("[concurrent] (" << name << ") committing: " << _currentCommand->request.methodLine << ", ID: " << _currentCommand->id);
                                 _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());
@@ -2543,6 +2543,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
     if (newState != oldState) {
         // Depending on the state, set a timeout
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
+        SINFO("[TYLER] (" << name << ") Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
         if (newState == SQLC_STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting

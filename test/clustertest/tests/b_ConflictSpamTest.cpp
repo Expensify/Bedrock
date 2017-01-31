@@ -23,7 +23,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             BedrockTester* brtester = tester->getBedrockTester(i);
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
-            query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ(i) + " );";
+            query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ("cmd:" + to_string(i) + " sent to node:" + to_string(i)) + " );";
 
             // Ok, send.
             string result = brtester->executeWait(query);
