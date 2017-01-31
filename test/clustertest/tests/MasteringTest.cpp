@@ -51,7 +51,7 @@ struct MasteringTest : tpunit::TestFixture {
 
         int count = 0;
         bool success = false;
-        while (count++ < 10) {
+        while (count++ < 50) {
             SData cmd("Status");
             string response = newMaster->executeWait(cmd);
             STable json = SParseJSONObject(response);
@@ -73,7 +73,7 @@ struct MasteringTest : tpunit::TestFixture {
         BedrockTester* newMaster = tester->getBedrockTester(0);
 
         int count = 0;
-        while (count++ < 10) {
+        while (count++ < 50) {
             SData cmd("Status");
             string response = newMaster->executeWait(cmd);
             STable json = SParseJSONObject(response);
