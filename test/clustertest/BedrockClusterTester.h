@@ -41,6 +41,10 @@ class BedrockClusterTester {
     void stopNode(size_t nodeIndex);
 
   private:
+
+    // The number of nodes in the cluster.
+    int _size;
+
     // A list of all our testers that make up our cluster.
     vector<BedrockTester> _cluster;
 

@@ -18,16 +18,42 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
     {
         tester = BedrockClusterTester::testers.front();
 
-        // Send a write command to each node in the cluster. See that we get a result back.
-        for (int i : {0, 1, 2}) {
-            BedrockTester* brtester = tester->getBedrockTester(i);
-            SData query("Query");
-            query["writeConsistency"] = "ASYNC";
-            query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ("cmd:" + to_string(i) + " sent to node:" + to_string(i)) + " );";
+        // Send a write command to each node in the cluster, twice.
+        for (int h = 0; h <= 1; h++) {
+            for (int i : {0, 1, 2}) {
+                int cmdID = h * 3 + i;
+                BedrockTester* brtester = tester->getBedrockTester(i);
+                SData query("Query");
+                query["writeConsistency"] = "ASYNC";
+                query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdID) + ", " + SQ("cmd:" + to_string(cmdID) + " sent to node:" + to_string(i)) + " );";
 
-            // Ok, send.
-            string result = brtester->executeWait(query);
+                // Ok, send.
+                string result = brtester->executeWait(query);
+            }
         }
+
+        // Now see if they all match. If they don't, give them a few seconds to sync.
+        int tries = 0;
+        bool success = false;
+        while (tries < 10) {
+            vector<string> results(3);
+            for (int i : {0, 1, 2}) {
+                BedrockTester* brtester = tester->getBedrockTester(i);
+                SData query("Query");
+                query["writeConsistency"] = "ASYNC";
+                query["query"] = "SELECT id, value FROM test ORDER BY id;";
+                string result = brtester->executeWait(query);
+                results[i] = result;
+            }
+
+            if (results[0] == results[1] && results[1] == results[2] && results[0].size()) {
+                success = true;
+                break;
+            }
+            sleep(1);
+        }
+
+        ASSERT_TRUE(success);
     }
 
     void spam()

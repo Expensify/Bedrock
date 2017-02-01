@@ -3,6 +3,7 @@
 list<BedrockClusterTester*> BedrockClusterTester::testers;
 
 BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size)
+: _size(size)
 {
     cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
@@ -19,7 +20,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         peers.push_back("127.0.0.1:" + to_string(nodePort));
     }
 
-    string nodeNamePrefix = "bedrock_cluster_test_node_";
+    string nodeNamePrefix = "brcluster_node_";
 
     for (size_t i = 0; i < size; i++) {
 
@@ -91,6 +92,11 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
 
 BedrockClusterTester::~BedrockClusterTester()
 {
+    // Shut them down in reverse order so they don't try and stand up as master in the middle of everything.
+    for (int i = _size - 1; i >= 0; i--) {
+        stopNode(i);
+    }
+
     _cluster.clear();
     // Remove ourselves from our global list.
     testers.remove_if([this](BedrockClusterTester* bct){

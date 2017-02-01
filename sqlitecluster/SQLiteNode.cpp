@@ -231,26 +231,24 @@ void SQLiteNode::_sendOutstandingTransactions() {
         return;
     }
 
-    SINFO("[concurrent] (" << name << ") Sending outstanding transactions.");
-
     // Get the transactions we need to send.
     string query = _db.getJournalQuery({"SELECT id, hash, query FROM",
-                                        "WHERE id > " + SQ(_lastSentTransactionID) + " "
-                                        "ORDER BY id ASC;"});
-
+                                        "WHERE id > " + SQ(_lastSentTransactionID)});
+    query += " ORDER BY id ASC;";
     SQResult transactions;
     _db.read(query, transactions);
     int count = transactions.size();
+    SINFO("[concurrent] (" << name << ") Sending " << count << " outstanding transactions. Last sent: " << _lastSentTransactionID);
+
     for (int i = 0; i < count; i++) {
 
         string id = transactions[i][0];
         string hash = transactions[i][1];
         string query = transactions[i][2];
 
-        SData transaction("BEGIN_TRANSACTION");
-
         SINFO("[concurrent] (" << name << ") replicating unsent transaction " << id << ".");
 
+        SData transaction("BEGIN_TRANSACTION");
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = id;
         transaction["NewHash"] = hash;
@@ -1301,6 +1299,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // next commands below.  That situation can result in
                     // an out of sync db on the master due to the master
                     // committing and the slaves rolling back on disconnect.
+                    _lastSentTransactionID = _db.getCommitCount();
+                    SINFO("Successfully committed: " << _currentCommand->id << ":"
+                          << _currentCommand->request.methodLine
+                          << ". Sending COMMIT_TRANSACTION to peers. Updated _lastSentTransactionID to "
+                          << _lastSentTransactionID);
                     SData commit("COMMIT_TRANSACTION");
                     commit["ID"] = _currentCommand->id;
                     _sendToAllPeers(commit, true); // subscribed only

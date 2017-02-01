@@ -31,21 +31,20 @@ int main(int argc, char* argv[]) {
     // Catch sigint.
     signal(SIGINT, sigclean);
 
-    // Create our cluster.
-    BedrockClusterTester tester(BedrockClusterTester::THREE_NODE_CLUSTER);
-
-    // Our cluster is up and has responded to status, we can run our tests!
     int retval = 0;
-    try {
-        retval = tpunit::Tests::run();
-    } catch (...) {
-        cout << "Unhandled exception running tests!" << endl;
-        retval = 1;
+    {
+        // Create our cluster.
+        BedrockClusterTester tester(BedrockClusterTester::THREE_NODE_CLUSTER);
+
+        // Our cluster is up and has responded to status, we can run our tests!
+        try {
+            retval = tpunit::Tests::run();
+        } catch (...) {
+            cout << "Unhandled exception running tests!" << endl;
+            retval = 1;
+        }
     }
-
-    // all done.
-    cleanup();
-
+    // Tester gets destroyed here. Everything's done.
     return retval;
 }
 
