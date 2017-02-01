@@ -3,9 +3,9 @@
 struct a_MasteringTest : tpunit::TestFixture {
     a_MasteringTest()
         : tpunit::TestFixture("a_Mastering",
-                              TEST(a_MasteringTest::clusterUp)//,
-                              //TEST(a_MasteringTest::failover),
-                              //TEST(a_MasteringTest::restoreMaster)
+                              TEST(a_MasteringTest::clusterUp),
+                              TEST(a_MasteringTest::failover),
+                              TEST(a_MasteringTest::restoreMaster)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -79,10 +79,10 @@ struct a_MasteringTest : tpunit::TestFixture {
 
                 // Ok, let's check the slaves.
                 string response1 = tester->getBedrockTester(1)->executeWait(cmd);
-                STable json1 = SParseJSONObject(response);
+                STable json1 = SParseJSONObject(response1);
                 if (json1["state"] == "SLAVING") {
                     string response2 = tester->getBedrockTester(2)->executeWait(cmd);
-                    STable json2 = SParseJSONObject(response);
+                    STable json2 = SParseJSONObject(response2);
                     if (json2["state"] == "SLAVING") {
                         break;
                     }
