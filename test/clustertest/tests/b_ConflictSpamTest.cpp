@@ -27,8 +27,6 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
             // Ok, send.
             string result = brtester->executeWait(query);
-
-            cout << result << endl;
         }
     }
 
