@@ -61,6 +61,9 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             socket->state = STCP_CONNECTED;
             socket->connectFailure = false;
             socket->openTime = STimeNow();
+            // Prevent default values from causing immediate timeouts.
+            socket->lastSendTime = STimeNow();
+            socket->lastRecvTime = STimeNow();
             socket->ssl = nullptr;
             socket->data = nullptr; // Used by caller, not libstuff
             socketList.push_back(socket);

@@ -107,12 +107,12 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             }
         } catch (const char* e) {
             // Died prematurely
-            if (socket->recvBuffer.empty() && socket->sendBuffer.empty())
+            if (socket->recvBuffer.empty() && socket->sendBuffer.empty()) {
                 SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e << "), empty buffers");
-            else
+            } else {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e << "), recv='"
-                                                          << socket->recvBuffer << "', send='" << socket->sendBuffer
-                                                          << "'");
+                      << socket->recvBuffer << "', send='" << socket->sendBuffer << "'");
+            }
             closeSocket(socket);
             acceptedSocketList.erase(socketIt);
         }
@@ -130,7 +130,8 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 SData message;
                 int messageSize = 0;
                 try {
-                    if (peer->s->lastRecvTime && peer->s->lastRecvTime + recvTimeout < STimeNow()) {
+                    // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
+                    if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
                         SWARN("Connection with peer '" << peer->name << "' timed out.");
                         throw "Timed Out!";
@@ -197,12 +198,13 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             case STCP_CLOSED: {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
-                if (peer->s->connectFailure)
+                if (peer->s->connectFailure) {
                     PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                           << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
-                else
+                } else {
                     PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                         << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                }
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)
                     peer->failedConnections++;

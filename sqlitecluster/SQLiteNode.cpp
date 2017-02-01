@@ -1711,7 +1711,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
     // Classify and process the message
     if (SIEquals(message.methodLine, "LOGIN")) {
-        /// - LOGIN: This is the first message sent to and recieved from a new
+        /// - LOGIN: This is the first message sent to and received from a new
         ///     peer.  It communicates the current state of the peer (hash
         ///     and commit count), as well as the peer's priority.  Peers
         ///     can connect in any state, so this message can be sent and
@@ -1840,8 +1840,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     if (peer->calc("Priority") > _priority) {
                         // Not good -- we're in the way.  Not sure how we got
                         // here, so just reconnect and start over.
-                        PWARN("Higher-priority peer is trying to stand up while we are "
-                              << SQLCStateNames[_state] << ", reconnecting and SEARCHING.");
+                        PWARN("Higher-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
+                              << ", reconnecting and SEARCHING.");
                         _reconnectAll();
                         _changeState(SQLC_SEARCHING);
                     } else {
@@ -1854,8 +1854,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                         // control of the cluster? Let's see how many nodes are subscribed.
                         if (_majoritySubscribed()) {
                             // we have a majority of the cluster, so ignore this oddity.
-                            PHMMM("Lower-priority peer is trying to stand up while we are "
-                                  << SQLCStateNames[_state]
+                            PHMMM("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
                                   << " with a majority of the cluster; denying and ignoring.");
                         } else {
                             // We don't have a majority of the cluster -- maybe
@@ -1867,8 +1866,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             // master, forked, and be a thousand commits in the
                             // future.  In this case, let's just reset
                             // everything anyway to be safe.
-                            PWARN("Lower-priority peer is trying to stand up while we are "
-                                  << SQLCStateNames[_state]
+                            PWARN("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
                                   << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
                             _reconnectAll();
                             _changeState(SQLC_SEARCHING);
@@ -1893,10 +1891,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // Send the response
-                if (SIEquals(response["Response"], "approve"))
+                if (SIEquals(response["Response"], "approve")) {
                     PINFO("Approving standup request");
-                else
+                } else {
                     PHMMM("Denying standup request because " << response["Reason"]);
+                }
                 _sendToPeer(peer, response);
             } else if (from == SQLC_STANDINGDOWN) {
                 ///     * STANDINGDOWN: When a peer stands down we double-check
