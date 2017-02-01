@@ -83,7 +83,6 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "'");
 
     // Assume success; will throw failure if necessary
     try {
@@ -93,7 +92,6 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             // See if it peeks this
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
                 // Peeked it!
-                SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
                 break;
             }
@@ -136,9 +134,6 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
 }
 
 void BedrockNode::_setState(SQLCState state) {
-    if (_dbReady) {
-        SINFO("[TYLER] (" << name << ") state change, setting _dbReady = false");
-    }
     _dbReady = false;
     SQLiteNode::_setState(state);
 }
@@ -148,11 +143,9 @@ void BedrockNode::setSyncNode(BedrockNode* node) {
 }
 bool BedrockNode::dbReady() {
     if (_syncNode) {
-        SINFO("[TYLER] (" << name << ") Returning _dbReady from other node: " << (_syncNode->_dbReady ? "true":"false"));
         return _syncNode->_dbReady;
     }
 
-    SINFO("[TYLER] (" << name << ") Returning _dbReady from this node: " << (_dbReady ? "true":"false"));
     return _dbReady;
 }
 
@@ -178,7 +171,6 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                  }
              }
             SINFO("Finished upgrading database");
-            SINFO("[TYLER] (" << name << ") DB upgrade complete, setting _dbReady = true");
             _dbReady = true;
         } else {
             if (!db.beginConcurrentTransaction()) {

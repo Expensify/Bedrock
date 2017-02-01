@@ -10,7 +10,6 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     SData& response = command->response;
     STable& content = command->jsonContent;
 
-    //
     // Admin Commands
     // --------------------
     //

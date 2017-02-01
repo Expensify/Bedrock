@@ -344,7 +344,7 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     bool forcePeekIt = false;
     if (SIEquals(request.methodLine, "Status")) {
         // If we're a slave, we never want to escalate this to the master, else
-        // it'll return the master's status (which will be super confusion).
+        // it'll return the master's status (which will be super confusing).
         // However, if we're a read only thread on a slave, then we *do* want
         // to escalate to the write thread -- because only the write thread
         // knows the peer status (which is the primary point of this command).
@@ -605,10 +605,11 @@ void SQLiteNode::_queueCommand(Command* command) {
         // The caller is requesting some amount of consistency
         int wc = SStateNameToInt(SQLCConsistencyLevelNames, command->request["writeConsistency"],
                                  SQLC_NUM_CONSISTENCY_LEVELS);
-        if (wc >= 0)
+        if (wc >= 0) {
             command->writeConsistency = (SQLCConsistencyLevel)wc;
-        else
+        } else {
             SWARN("Unknown write consistency supplied '" << command->request["writeConsistency"] << "'. Ignoring.");
+        }
         SINFO("'" << command->request.methodLine << "' has overridden default consistency with '"
                   << command->request["writeConsistency"] << "' ("
                   << SQLCConsistencyLevelNames[command->writeConsistency] << ")");
@@ -2542,7 +2543,6 @@ void SQLiteNode::_changeState(SQLCState newState) {
     if (newState != oldState) {
         // Depending on the state, set a timeout
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
-        SINFO("[TYLER] (" << name << ") Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
         if (newState == SQLC_STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
