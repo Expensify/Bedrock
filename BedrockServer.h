@@ -117,6 +117,9 @@ class BedrockServer : public STCPServer {
 
     // Add a new request to our message queue.
     void queueRequest(const SNodeData& request);
+    void queueRequest(const SData& request) {
+        queueRequest(SNodeData::fromSData(request));
+    }
 
     // Returns the version string of the server.
     const string& getVersion();
