@@ -71,6 +71,15 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
+bool BedrockNode::passToExternalQueue(SData command) {
+    if (server) {
+        SINFO("[TYLER] Bedrock Server enqueueing escalated request: " << command.methodLine << ":" << command["ID"]);
+        server->enqueueRequest(command);
+        return true;
+    }
+    return false;
+};
+
 void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Update the parent and attributes
     SQLiteNode::postSelect(fdm, nextActivity);

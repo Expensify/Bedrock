@@ -81,6 +81,10 @@ class SQLiteNode : public STCPNode {
                int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
+    // When the update loop goes to queue a command, it will either queue it internally, or pass it to an external
+    // queue, if the subclass has implemented such. 
+    virtual bool passToExternalQueue(SData command) { return false; };
+
     // Simple accessors
     SQLCState getState() { return _state; }
     int getPriority() { return _priority; }

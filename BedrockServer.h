@@ -128,6 +128,9 @@ class BedrockServer : public STCPServer {
     // Keeps track of the time we spend idle.
     SPerformanceTimer pollTimer;
 
+    // Called by a bedrockNode when it needs to make an escalated request available externally.
+    void enqueueRequest(SData request);
+
   private: // Internal Bedrock
     // Attributes
     SData _args;

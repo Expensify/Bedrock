@@ -81,6 +81,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     _syncNode = &node;
     SINFO("Node created, ready for action.");
 
+    SAUTOPREFIX(node.name);
     // Notify the parent thread that we're ready to go.
     {
         lock_guard<mutex> lock(_threadInitMutex);
@@ -159,12 +160,17 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             if (request.empty())
                 break;
 
+            SINFO("[TYLER] opening command for processing: " << request["ID"] << ":" << request.methodLine);
             // Open the command -- no need to retain the pointer, the node
             // will keep a list internally.
             int priority = request.calc("priority");
             bool unique = request.test("unique");
             int64_t commandExecutionTime = request.calc64("commandExecuteTime");
             node.openCommand(request, priority, unique, commandExecutionTime);
+
+            if (!request["__initiator"].empty()) {
+                SINFO("[TYLER] command " << request["ID"] << ":" << request.methodLine << " passed to external queue and handled by SYNC thread.");
+            }
         }
 
         // Let the node process any new commands we've opened or existing
@@ -175,7 +181,8 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Put everything the replication node has finished on the threaded queue.
         BedrockNode::Command* command = nullptr;
         while ((command = node.getProcessedCommand())) {
-            SAUTOPREFIX(command->request["requestID"]);
+            SINFO("[TYLER] processed: " << command->id << ": " << command->request.methodLine);
+            //SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
             data.processedResponses.push(command->response);
@@ -216,6 +223,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
     BedrockNode node(data.args, threadId, threadCount, data.server);
     SINFO("Node created, ready for action.");
 
+    SAUTOPREFIX(node.name);
     while (true) {
         node.setSyncNode(_syncNode);
         // Set the worker node's state/master status coming from the replication thread.
@@ -251,7 +259,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         }
 
         // Set the priority if supplied by the message.
-        SAUTOPREFIX(request["requestID"]);
+        //SAUTOPREFIX(request["requestID"]);
         SDEBUG("Worker thread unblocked!");
         int priority = SPRIORITY_NORMAL;
         if (!request["priority"].empty()) {
@@ -276,15 +284,20 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         if ((command = node.getProcessedCommand())) {
             // If it was fully processed in openCommand(), that means it was peeked successfully.
             SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
-            BedrockServer_PrepareResponse(command);
-            data.processedResponses.push(command->response);
 
+            if (!request["__initiator"].empty()) {
+                SINFO("[TYLER] Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
+                data.queuedEscalatedRequests.push(request);
+            } else {
+                BedrockServer_PrepareResponse(command);
+                data.processedResponses.push(command->response);
+            }
         } else if ((command = node.getQueuedCommand(priority))) {
             // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
             // the sync thread.
             SASSERT(!command->httpsRequest);
 
-            SINFO("[concurrent] (" << node.name << ") Unpeekable Command: " << command->id << ": " << command->request.methodLine);
+            SINFO("[concurrent] (" << node.name << ") Unpeekable Command: " << command->id << ":" << command->request.methodLine);
 
             // TODO: I feel like there's a race condition here around being master. What happens if the node's state
             // switches during process()?
@@ -293,7 +306,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 int tries = 0;
 
                 while (++tries < MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[concurrent] (" << node.name << ") processing ASYNC command " << command->id << ": " << command->request.methodLine << " from worker thread. (try #" << tries << ").");
+                    SINFO("[TYLER] processing ASYNC command " << command->id << ":" << command->request.methodLine << " from worker thread. (try #" << tries << ").");
 
                     bool error = false;
                     try {
@@ -301,36 +314,43 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                         node.processCommand(command);
                     } catch (...) {
                         error = true;
-                        SINFO("[concurrent] (" << node.name << ") error processing command: " << command->id << ": " << command->request.methodLine);
+                        SINFO("[TYLER] error processing command: " << command->id << ":" << command->request.methodLine);
                     }
 
                     // If there was an error processing this, the transaction's been rolled back, but we still need to send
                     // a response to the caller. Otherwise, we can commit now.
                     if (!error) {
                         if (!node.commit()) {
-                            SINFO("[concurrent] (" << node.name << ") ASYNC command " << command->id << ": " << command->request.methodLine << " conflicted, re-queuing.");
+                            SINFO("[TYLER] ASYNC command " << command->id << ":" << command->request.methodLine << " conflicted, re-queuing.");
 
                             // Try to process again.
                             continue;
                         } else {
-                            SINFO("[concurrent] (" << node.name << ") ASYNC command " << command->id << ": " << command->request.methodLine << " successfully processed.");
+                            SINFO("[TYLER] ASYNC command " << command->id << ":" << command->request.methodLine << " successfully processed.");
                         }
                     }
-
-                    SINFO("[concurrent] (" << node.name << ") preparing response to ASYNC command." << ": " << command->request.methodLine);
-                    BedrockServer_PrepareResponse(command);
-                    data.processedResponses.push(command->response);
+                    if (!request["__initiator"].empty()) {
+                        SINFO("[TYLER] Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
+                        // TODO: Well, shit, we have to give the sync thread a response, as well. Fake it for now to at
+                        // least see if it goes to the right place.
+                        request["hasResponse"] = "true";
+                        data.queuedEscalatedRequests.push(request);
+                    } else {
+                        SINFO("[TYLER] preparing response to ASYNC command." << ":" << command->request.methodLine);
+                        BedrockServer_PrepareResponse(command);
+                        data.processedResponses.push(command->response);
+                    }
 
                     // Done, don't need to try again.
                     break;
                 }
 
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[concurrent] (" << node.name << ") Too many conflicts, escalating command." << ": " << command->request.methodLine);
+                    SINFO("[TYLER] Too many conflicts, escalating command." << ":" << command->request.methodLine);
                     data.queuedEscalatedRequests.push(request);
                 }
             } else {
-                SINFO("[concurrent] (" << node.name << ") Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
+                SINFO("[TYLER] Couldn't process command in worker. dbReady? " << node.dbReady() << ", consistency? " << command->writeConsistency);
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
                 data.queuedEscalatedRequests.push(request);
             }
@@ -486,6 +506,10 @@ bool BedrockServer::shutdownComplete() {
     }
 
     return retVal;
+}
+
+void BedrockServer::enqueueRequest(SData request) {
+    _queuedRequests.push(request);
 }
 
 // --------------------------------------------------------------------------
@@ -880,6 +904,7 @@ void BedrockServer::queueRequest(const SData& request) {
     // We could potentially interrupt the select loop here (perhaps by writing to our own incoming server socket) if
     // we want these requests to trigger instantly.
     _queuedRequests.push(request);
+    SINFO("[TYLER] sent ESCALATEd request, which we requeued. " << request["ID"] << ":" << request.methodLine);
 }
 
 const string& BedrockServer::getVersion() { return _version; }

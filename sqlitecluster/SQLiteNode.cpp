@@ -311,6 +311,45 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     command->request = request;
     command->priority = priority;
 
+    // TODO: retrieving these values from a command is the other half of our hack for persisting these in an external
+    // queue.
+    if (!request["__messageID"].empty()) {
+        command->id = request["__messageID"];
+    }
+    if (!request["__priority"].empty()) {
+        command->priority = request.calc("__priority");
+    }
+    if (!request["__initiator"].empty()) {
+        SINFO("[TYLER] Trying to restore initiator for command: " << request.methodLine << ":" << request["ID"]
+              << ", was: " << request["__initiator"] << ", from " << peerList.size() << " peers.");
+        const string& name = request["__initiator"];
+        for (auto peer : peerList) {
+            // NOTE: This will never find anything on worker threads. They don't have access to the peers list. It
+            // doesn't actually matter, though, since they won't try to talk to the peers either. They just have to
+            // query the `__initiator` field (until we make this less messy).
+            if (peer->name == name) {
+                SINFO("[TYLER] Restoring initiator for command: " << request.methodLine << ":" << request["ID"] << ", to: " << name);
+                command->initiator = peer;
+            } else {
+                SINFO("[TYLER] Peer names doesn't match: " << peer->name);
+            }
+        }
+    }
+
+    // This is some bullshit.
+    if (request["hasResponse"] == "true") {
+        command->response.methodLine = "200 Mostly OK";
+    }
+
+    if (!command->response.empty()) {
+        SINFO("[TYLER] Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
+        // TODO: What if these get out of order? Can they? Maybe we need to hold a commit lock until we've finished
+        // this.
+        // This is probably inadequate, but is generally the right direction to be going.
+        _finishCommand(command);
+        return 0;
+    }
+
     // If we want to execute the command at a particular time.
     // **FIXME: This is not preserved if we escalate this command.
     //          That's fine for now given our use case for it, but
@@ -408,6 +447,7 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
         // peek the command, which means we're just going to queue it and
         // escalate it in our update loop.  Rather than waiting until then,
         // let's just skip the queue and escalate it right now.
+        SINFO("[TYLER] Escalating command.");
         _escalateCommand(command);
     } else {
         // Queue it.
@@ -1265,7 +1305,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // caller.
                     _commitMutex.unlock();
 
-                    // Let's re-open this command. Will that work? I don't really know.
+                    // Make sure the response is empty, and re-open the command.
+                    _currentCommand->response.empty();
                     openCommand(_currentCommand->request, _currentCommand->priority,
                                 _currentCommand->request.test("unique"),
                                 _currentCommand->request.calc64("commandExecuteTime"));
@@ -1501,6 +1542,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
                             try {
+                                SINFO("[TYLER] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
                                 _processCommandWrapper(_db, _currentCommand);
                             } catch (...) {
                                 // Only worker threads need to handle this case.
@@ -2265,12 +2307,27 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!message.isSet("ID"))
                 throw "missing ID";
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
-            Command* command = new Command;
-            command->initiator = peer;
-            command->id = message["ID"];
-            command->request = request;
-            command->priority = message.calc("priority");
-            _queueCommand(command);
+
+            // We'll add some fields to this request so that it can be reconstructed when we deserialize it later. This
+            // is a bit of a hack, so we may try and clean this up later.
+            request["__messageID"] = message["ID"];
+            request["__initiator"] = peer->name;
+
+            if (message.calc("priority")) {
+                request["__priority"] = message["priority"];
+            }
+            if (!passToExternalQueue(request)) {
+                Command* command = new Command;
+                command->initiator = peer;
+                command->id = message["ID"];
+                command->request = request;
+                command->priority = message.calc("priority");
+                SINFO("[TYLER] got ESCALATEd command: " << command->id << ":" << request.methodLine << ", queueing.");
+                _queueCommand(command);
+            } else {
+                SINFO("[TYLER] got ESCALATEd command: " << message["ID"] << ":" << request.methodLine
+                      << ", passing to external queue. initiator:" << request["__initiator"] << ".");
+            }
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
         /// - ESCALATE_CANCEL: Sent to the master by a slave.  Indicates that the

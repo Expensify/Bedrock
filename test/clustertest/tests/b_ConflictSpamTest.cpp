@@ -19,13 +19,16 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         tester = BedrockClusterTester::testers.front();
 
         // Send a write command to each node in the cluster, twice.
-        for (int h = 0; h <= 1; h++) {
+        for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
                 int cmdID = h * 3 + i;
                 BedrockTester* brtester = tester->getBedrockTester(i);
                 SData query("Query");
-                query["writeConsistency"] = "ASYNC";
-                query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdID) + ", " + SQ("cmd:" + to_string(cmdID) + " sent to node:" + to_string(i)) + " );";
+                // What if we throw in a few sync commands?
+                if (h != 2) {
+                    query["writeConsistency"] = "ASYNC";
+                }
+                query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdID) + ", " + SQ("cmd:" + to_string(cmdID) + ", " + query["writeConsistency"] + " sent to node:" + to_string(i)) + " );";
 
                 // Ok, send.
                 string result = brtester->executeWait(query);
