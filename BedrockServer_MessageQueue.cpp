@@ -35,7 +35,7 @@ int BedrockServer::MessageQueue::preSelect(fd_map& fdm) {
 }
 
 // --------------------------------------------------------------------------
-void BedrockServer::MessageQueue::push(const SData& rhs) {
+void BedrockServer::MessageQueue::push(const SNodeData& rhs) {
     SAUTOLOCK(_queueMutex);
     // Just add to the queue
     _queue.push_back(rhs);
@@ -47,10 +47,10 @@ void BedrockServer::MessageQueue::push(const SData& rhs) {
 }
 
 // --------------------------------------------------------------------------
-SData BedrockServer::MessageQueue::pop() {
+SNodeData BedrockServer::MessageQueue::pop() {
     SAUTOLOCK(_queueMutex);
     // Return the first if any, otherwise an empty object
-    SData item;
+    SNodeData item;
     if (!_queue.empty()) {
         // Take the first
         item = _queue.front();

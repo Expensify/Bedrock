@@ -31,7 +31,7 @@ class BedrockNode : public SQLiteNode {
     virtual void _abortCommand(SQLite& db, Command* command);
     virtual void _cleanCommand(Command* command);
 
-    virtual bool passToExternalQueue(SData command);
+    virtual bool passToExternalQueue(SNodeData command);
   
   protected:
     virtual void _setState(SQLCState state);

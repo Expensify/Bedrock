@@ -97,8 +97,8 @@ class BedrockPlugin_MySQL : public BedrockPlugin {
     virtual void initialize(const SData& args) { _args = args; }
     virtual string getPort() { return _args.isSet("-mysql.host") ? _args["-mysql.host"] : "localhost:3306"; }
     virtual void onPortAccept(STCPManager::Socket* s);
-    virtual bool onPortRecv(STCPManager::Socket* s, SData& request);
-    virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s);
+    virtual bool onPortRecv(STCPManager::Socket* s, SNodeData& request);
+    virtual bool onPortRequestComplete(const SNodeData& response, STCPManager::Socket* s);
 
   private:
     // Attributes

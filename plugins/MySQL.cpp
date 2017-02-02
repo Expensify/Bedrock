@@ -199,7 +199,7 @@ void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
     s->send(MySQLPacket::serializeHandshake());
 }
 
-bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
+bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SNodeData& request) {
     // Get any new MySQL requests
     int packetSize = 0;
     MySQLPacket packet;
@@ -291,7 +291,7 @@ bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     return true;
 }
 
-bool BedrockPlugin_MySQL::onPortRequestComplete(const SData& response, STCPManager::Socket* s) {
+bool BedrockPlugin_MySQL::onPortRequestComplete(const SNodeData& response, STCPManager::Socket* s) {
     // Only one request supported: Query.
     SASSERT(SIEquals(response["request.methodLine"], "Query"));
     SASSERT(response.isSet("request.sequenceID"));

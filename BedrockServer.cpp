@@ -156,7 +156,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Check for available work.
         while (true) {
             // Try to get some work
-            const SData& request = data.queuedEscalatedRequests.pop();
+            const SNodeData& request = data.queuedEscalatedRequests.pop();
             if (request.empty())
                 break;
 
@@ -185,7 +185,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             //SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
-            data.processedResponses.push(command->response);
+            data.processedResponses.push(SNodeData::fromSData(command->response));
 
             // Close the command to remove it from any internal queues.
             node.closeCommand(command);
@@ -253,7 +253,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
         // Now try to get a request to work on.  If None available (either select
         // timed out or another thread 'stole' it, go to the top and wait again.
-        SData request = data.queuedRequests.pop();
+        SNodeData request = data.queuedRequests.pop();
         if (request.empty()) {
             continue;
         }
@@ -290,7 +290,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 data.queuedEscalatedRequests.push(request);
             } else {
                 BedrockServer_PrepareResponse(command);
-                data.processedResponses.push(command->response);
+                data.processedResponses.push(SNodeData::fromSData(command->response));
             }
         } else if ((command = node.getQueuedCommand(priority))) {
             // Otherwise, it must be unpeekable -- make sure it didn't open any secondary request, and send to
@@ -338,7 +338,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     } else {
                         SINFO("[TYLER] preparing response to ASYNC command." << ":" << command->request.methodLine);
                         BedrockServer_PrepareResponse(command);
-                        data.processedResponses.push(command->response);
+                        data.processedResponses.push(SNodeData::fromSData(command->response));
                     }
 
                     // Done, don't need to try again.
@@ -508,7 +508,7 @@ bool BedrockServer::shutdownComplete() {
     return retVal;
 }
 
-void BedrockServer::enqueueRequest(SData request) {
+void BedrockServer::enqueueRequest(SNodeData request) {
     _queuedRequests.push(request);
 }
 
@@ -679,7 +679,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                         // to handle this scenario.  We just want to minimize it wherever possible.
                         SHMMM("Attempting to cancel abandoned request #"
                               << requestCount << " being processed by some thread; it might slip through the cracks.");
-                        SData cancelRequest("CANCEL_REQUEST");
+                        SNodeData cancelRequest("CANCEL_REQUEST");
                         cancelRequest["requestCount"] = SToStr(requestCount);
                         for (auto& thread : _workerThreadList) {
                             // Send it the cancel command
@@ -695,7 +695,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             BedrockPlugin* plugin = (BedrockPlugin*)s->data;
             if (plugin) {
                 // Let the plugin handle it
-                SData request;
+                SNodeData request;
                 bool keepAlive = plugin->onPortRecv(s, request);
 
                 // Did it trigger an internal request?
@@ -725,7 +725,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             } else {
                 // Get any new requests
                 int requestSize = 0;
-                SData request;
+                SNodeData request;
                 while ((requestSize = request.deserialize(s->recvBuffer))) {
                     // Set the priority if supplied by the message.
                     SConsumeFront(s->recvBuffer, requestSize);
@@ -759,7 +759,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Process any responses
     while (!_processedResponses.empty()) {
         // Try to get a processed response
-        SData response = _processedResponses.pop();
+        SNodeData response = _processedResponses.pop();
         if (response.empty())
             break;
 
@@ -898,7 +898,7 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
 }
 
 // --------------------------------------------------------------------------
-void BedrockServer::queueRequest(const SData& request) {
+void BedrockServer::queueRequest(const SNodeData& request) {
     // This adds a request to the queue, but it doesn't affect our `select` loop, so any messages queued here may not
     // trigger until the next time `select` finishes (which should be within 1 second).
     // We could potentially interrupt the select loop here (perhaps by writing to our own incoming server socket) if

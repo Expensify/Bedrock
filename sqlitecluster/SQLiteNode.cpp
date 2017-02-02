@@ -290,7 +290,7 @@ bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
 }
 
 // --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority, bool unique,
+SQLiteNode::Command* SQLiteNode::openCommand(const SNodeData& request, int priority, bool unique,
                                              int64_t commandExecuteTime) {
     SASSERT(!request.empty());
     SASSERT(priority <= SPRIORITY_MAX); // Else will trump UpgradeDatabase
@@ -2299,7 +2299,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _sendToPeer(peer, aborted);
         } else {
             // We're mastering, make sure the rest checks out
-            SData request;
+            SNodeData request;
             if (!request.deserialize(message.content))
                 throw "malformed request";
             if ((*peer)["Subscribed"] != "true")
@@ -2649,7 +2649,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it
             if (!gracefulShutdown()) {
-                openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
+                openCommand(SNodeData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
             }
         } else if (newState == SQLC_STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
