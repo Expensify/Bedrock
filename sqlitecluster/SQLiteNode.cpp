@@ -73,7 +73,6 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
                        int quorumCheckpoint, const string& synchronousCommands, bool worker, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      // TODO: Pass some useful values here to use in place of -1
       _db(filename, cacheSize, autoCheckpoint, false, maxJournalSize, threadId, threadCount - 1),
       _processTimer("process()"), _commitTimer("COMMIT")
     {
@@ -294,7 +293,7 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SNodeData& request, int prior
                                              int64_t commandExecuteTime) {
     SASSERT(!request.empty());
     SASSERT(priority <= SPRIORITY_MAX); // Else will trump UpgradeDatabase
-    // If unique, then make sure another one isnt on the queue already.
+    // If unique, then make sure another one isn't on the queue already.
     SAUTOPREFIX(request["requestID"]);
     if (unique)
         SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt)
@@ -343,9 +342,6 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SNodeData& request, int prior
 
     if (!command->response.empty()) {
         SINFO("[TYLER] Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
-        // TODO: What if these get out of order? Can they? Maybe we need to hold a commit lock until we've finished
-        // this.
-        // This is probably inadequate, but is generally the right direction to be going.
         _finishCommand(command);
         return 0;
     }
@@ -2361,7 +2357,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     if (SIEquals((*commandIt)->id, commandID)) {
                         // Cancel that command
                         Command* command = *commandIt;
-                        SINFO("Cancelling escalated command " << command->id << " (" << command->request.methodLine
+                        SINFO("Canceling escalated command " << command->id << " (" << command->request.methodLine
                                                               << ")");
                         closeCommand(command);
                         foundIt = true;
@@ -2378,9 +2374,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "missing ID";
         SData response;
         if (!response.deserialize(message.content))
-            throw "malformed contet";
+            throw "malformed content";
 
-        // Go find the the escalated command
+        // Go find the escalated command
         PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
         CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
@@ -2539,7 +2535,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   and instruct all other subscribed slaves to roll-back the transaction.
     ///
     // **FIXME: Perhaps log if any initiator dies within a timeout of sending
-    //          the response; th migh be in jeopardy of not being sent out.  Or..
+    //          the response; they might be in jeopardy of not being sent out.  Or..
     //          we'll know which had responses go out at the 56K layer -- perhaps
     //          in a crash verify it went out... Or just always verify?
     if (_currentCommand && _currentCommand->initiator == peer) {
@@ -2878,7 +2874,7 @@ void SQLiteNode::_updateSyncPeer()
 
 // --------------------------------------------------------------------------
 void SQLiteNode::_reconnectPeer(Peer* peer) {
-    // If we're connected, just kill the conection
+    // If we're connected, just kill the connection
     if (peer->s) {
         // Reset
         SWARN("Reconnecting to '" << peer->name << "'");
