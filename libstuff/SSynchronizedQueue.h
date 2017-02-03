@@ -1,21 +1,44 @@
-/// bedrock/BedrockServer_MessageQueue.cpp
-/// ===================
-/// Synchronized message queue used between Bedrock threads.
-///
-#include <libstuff/libstuff.h>
-#include "BedrockServer.h"
+#pragma once
 
-// --------------------------------------------------------------------------
-BedrockServer::MessageQueue::MessageQueue() {
+template <typename T>
+class SSynchronizedQueue {
+  public:
+    // Constructor / Destructor
+    SSynchronizedQueue();
+    ~SSynchronizedQueue();
+
+    // Explicitly delete copy constructor so it can't accidentally get called.
+    SSynchronizedQueue(const SSynchronizedQueue& other) = delete;
+
+    // Wait for something to be put onto the queue
+    int preSelect(fd_map& fdm);
+    void postSelect(fd_map& fdm, int bytesToRead = 1);
+
+    // Synchronized interface to add/remove work
+    void push(T rhs);
+    T pop();
+
+    bool empty();
+    bool cancel(const string& name, const string& value);
+
+  private:
+    // Private state
+    list<T> _queue;
+    recursive_mutex _queueMutex;
+    int _pipeFD[2] = {-1, -1};
+};
+
+template<typename T>
+SSynchronizedQueue<T>::SSynchronizedQueue() {
     // Initialize
-    // Open up a pipe for communication and set the nonblocking reads.
+    // Open up a pipe for communication and set the non-blocking reads.
     SASSERT(0 == pipe(_pipeFD));
     int flags = fcntl(_pipeFD[0], F_GETFL, 0);
     fcntl(_pipeFD[0], F_SETFL, flags | O_NONBLOCK);
 }
 
-// --------------------------------------------------------------------------
-BedrockServer::MessageQueue::~MessageQueue() {
+template<typename T>
+SSynchronizedQueue<T>::~SSynchronizedQueue() {
     if (_pipeFD[0] != -1) {
         close(_pipeFD[0]);
     }
@@ -24,8 +47,8 @@ BedrockServer::MessageQueue::~MessageQueue() {
     }
 }
 
-// --------------------------------------------------------------------------
-int BedrockServer::MessageQueue::preSelect(fd_map& fdm) {
+template<typename T>
+int SSynchronizedQueue<T>::preSelect(fd_map& fdm) {
     // Put the read-side of the pipe into the fd set.
     // **NOTE: This is *not* synchronized.  All threads use the same pipes.
     //         All threads use *different* fd_maps, though so we don't have
@@ -34,8 +57,8 @@ int BedrockServer::MessageQueue::preSelect(fd_map& fdm) {
     return _pipeFD[0];
 }
 
-// --------------------------------------------------------------------------
-void BedrockServer::MessageQueue::push(const SData& rhs) {
+template<typename T>
+void SSynchronizedQueue<T>::push(T rhs) {
     SAUTOLOCK(_queueMutex);
     // Just add to the queue
     _queue.push_back(rhs);
@@ -46,11 +69,11 @@ void BedrockServer::MessageQueue::push(const SData& rhs) {
     SASSERT(write(_pipeFD[1], "A", 1));
 }
 
-// --------------------------------------------------------------------------
-SData BedrockServer::MessageQueue::pop() {
+template<typename T>
+T SSynchronizedQueue<T>::pop() {
     SAUTOLOCK(_queueMutex);
-    // Return the first if any, otherwise an empty object
-    SData item;
+    // Return the first if any, otherwise a default object.
+    T item{};
     if (!_queue.empty()) {
         // Take the first
         item = _queue.front();
@@ -59,15 +82,15 @@ SData BedrockServer::MessageQueue::pop() {
     return item;
 }
 
-// --------------------------------------------------------------------------
-bool BedrockServer::MessageQueue::empty() {
+template<typename T>
+bool SSynchronizedQueue<T>::empty() {
     SAUTOLOCK(_queueMutex);
     // Just return the state of the queue
     return _queue.empty();
 }
 
-// --------------------------------------------------------------------------
-bool BedrockServer::MessageQueue::cancel(const string& name, const string& value) {
+template<typename T>
+bool SSynchronizedQueue<T>::cancel(const string& name, const string& value) {
     SAUTOLOCK(_queueMutex);
     // Loop across and see if we can find it; if so, cancel
     for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
@@ -82,8 +105,8 @@ bool BedrockServer::MessageQueue::cancel(const string& name, const string& value
     return false;
 }
 
-// --------------------------------------------------------------------------
-void BedrockServer::MessageQueue::postSelect(fd_map& fdm, int bytesToRead) {
+template<typename T>
+void SSynchronizedQueue<T>::postSelect(fd_map& fdm, int bytesToRead) {
     // Caller determines the bytes to read.  If a consumer can
     // only process one item then it will only read 1 byte.  If
     // the pipe has more data to read it will continue to "fire"
@@ -93,3 +116,4 @@ void BedrockServer::MessageQueue::postSelect(fd_map& fdm, int bytesToRead) {
         read(_pipeFD[0], readbuffer, sizeof(readbuffer));
     }
 }
+

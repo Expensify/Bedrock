@@ -41,6 +41,10 @@ class SQLiteNode : public STCPNode {
         uint64_t processingTime;
         SQLCConsistencyLevel writeConsistency;
 
+        // Keep track of some state as we go through everything that needs to be done here.
+        bool peeked;
+        bool processed;
+
         // **NOTE: httpsRequest is used to store a pointer to a
         //         secondary SHTTPSManager request; this can be
         //         initiated in _peekCommand(), and the command won't
@@ -56,7 +60,10 @@ class SQLiteNode : public STCPNode {
             httpsRequest = 0;
             creationTimestamp = STimeNow();
             replicationStartTimestamp = 0;
+            httpsRequest = nullptr;
             processingTime = 0;
+            peeked = false;
+            processed = false;
             writeConsistency = SQLC_ONE;
         }
         virtual ~Command() {
@@ -81,9 +88,9 @@ class SQLiteNode : public STCPNode {
                int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
-    // When the update loop goes to queue a command, it will either queue it internally, or pass it to an external
-    // queue, if the subclass has implemented such. 
-    virtual bool passToExternalQueue(SData command) { return false; };
+    // Should return true if an external queue accepted the command. If so, this node now keeps no reference to the
+    // command, and the external queue is responsible for calling `reopenCommand` to return the command to this node.
+    virtual bool passToExternalQueue(Command* command) { return false; };
 
     // Simple accessors
     SQLCState getState() { return _state; }
@@ -130,6 +137,7 @@ class SQLiteNode : public STCPNode {
 #define SPRIORITY_LOW 250
 #define SPRIORITY_MIN 0
     Command* openCommand(const SData& request, int priority, bool unique = false, int64_t commandExecuteTime = 0);
+    Command* reopenCommand(SQLiteNode::Command* existingCommand);
 
     // Gets a completed command from the database
     Command* getProcessedCommand();
@@ -145,7 +153,8 @@ class SQLiteNode : public STCPNode {
     void clearCommandHolds(const string& heldBy);
 
     // Aborts (if active) a command on the database and cleans it up.
-    void closeCommand(Command* command);
+    // If the command has been passed to the control of a different SQLiteNode, the caller can elect not to delete it.
+    void closeCommand(Command* command, bool deleteCommand = true);
 
     // Updates the internal state machine; returns true if it wants immediate
     // re-updating.
@@ -248,7 +257,7 @@ class SQLiteNode : public STCPNode {
     void _recvSynchronize(Peer* peer, const SData& message);
     void _queueCommand(Command* command);
     void _escalateCommand(Command* command);
-    void _finishCommand(Command* command);
+    Command* _finishCommand(Command* command);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
     list<Command*> _getOrderedCommandListFromMap(const map<string, Command*> commandMap);
@@ -265,6 +274,9 @@ class SQLiteNode : public STCPNode {
     // How many journal tables does our DB have?
     // We always have 'journal', and then we have numbered tables 'journal00' through this number, inclusive.
     static int _maximumJournalTable;
+
+    // Common functionality to `openCommand` and `reopenCommand`.
+    Command* _openCommand(SQLiteNode::Command* command);
 
     // Measure how much time we spend in `process()` and `COMMIT` as a fraction of total time spent.
     // Hopefully, we spend a lot of time in `process()` and relatively little in `COMMIT`, which would give us a good

@@ -68,6 +68,9 @@ recursive_mutex SQLiteNode::_commitMutex;
 bool SQLiteNode::_haveUnsentTransactions = false;
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
+
+
+
 // --------------------------------------------------------------------------
 SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
@@ -288,6 +291,22 @@ bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
     return result;
 }
 
+SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingCommand) {
+    // If there's already a response to this command, we must have finished it somewhere else (presumably, wherever we
+    // called `reopenCommand` from. We'll simply clean up here.
+    if (!existingCommand->response.empty()) {
+        SINFO("[TYLER] Reopening and finishing command. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+        return _finishCommand(existingCommand);
+    }
+
+    // It's feasible to support this case, but let's wait in that until later.
+    SASSERT(!existingCommand->httpsRequest);
+    
+    // No response? We must not have processed this. Let's process it now.
+    SINFO("[TYLER] Reopening command from the start. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+    return _openCommand(existingCommand);
+}
+
 // --------------------------------------------------------------------------
 SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority, bool unique,
                                              int64_t commandExecuteTime) {
@@ -346,18 +365,10 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
         return 0;
     }
 
-    // If we want to execute the command at a particular time.
-    // **FIXME: This is not preserved if we escalate this command.
-    //          That's fine for now given our use case for it, but
-    //          may not be the case in the future.
-    int64_t now = STimeNow();
-    if (commandExecuteTime > now) {
-        command->creationTimestamp = commandExecuteTime;
-        SINFO("Scheduling command " << command->id << " for "
-                                    << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
-                                    << "s in the future.");
-    }
+    return _openCommand(command);
+}
 
+SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
     // Pre-process this command if we're MASTER or SLAVE.
     //
     // **NOTE: This is only a "best attempt" -- if the node isn't MASTERING or
@@ -369,6 +380,21 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     // **NOTE: It's possible the node's state will change after peeking and before
     //         the command is either begun or escalated.
     //
+
+    // If we want to execute the command at a particular time.
+    // **FIXME: This is not preserved if we escalate this command.
+    //          That's fine for now given our use case for it, but
+    //          may not be the case in the future.
+    int64_t now = STimeNow();
+    int64_t commandExecuteTime = SToInt64(command->request["commandExecuteTime"]);
+    if (commandExecuteTime > now) {
+        command->creationTimestamp = commandExecuteTime;
+        SINFO("Scheduling command " << command->id << " for "
+                                    << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
+                                    << "s in the future.");
+    }
+
+    const SData& request = command->request;
     bool nodeUpToDate = request["commitCount"].empty() || request.calcU64("commitCount") <= getCommitCount();
     bool peekIt = (_state == SQLC_MASTERING || _state == SQLC_SLAVING) && (int64_t)command->creationTimestamp <= now &&
                   nodeUpToDate;
@@ -435,7 +461,7 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     if ((peekIt || forcePeekIt) && _peekCommandWrapper(_db, command)) {
         // Done with this command.  Make sure it only started a secondary command
         // if we are in fact mastering.
-        SINFO("Processed peekable command '" << request.methodLine << "' (" << id << ")");
+        SINFO("Processed peekable command '" << request.methodLine << "' (" << command->id << ")");
         SASSERTWARN(_state == SQLC_MASTERING || !command->httpsRequest);
         _processedCommandList.push_back(command);
     } else if (_masterPeer && SIEquals((*_masterPeer)["State"], "MASTERING")) {
@@ -447,8 +473,8 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
         _escalateCommand(command);
     } else {
         // Queue it.
-        SINFO("Queuing new non-peekable command '" << request.methodLine << "' (" << id << "), priority=" << priority
-                                                   << (!nodeUpToDate ? " because node out of date." : ""));
+        SINFO("Queuing new non-peekable command '" << request.methodLine << "' (" << command->id << "), priority="
+              << command->priority << (!nodeUpToDate ? " because node out of date." : ""));
         _queueCommand(command);
     }
 
@@ -546,7 +572,7 @@ void SQLiteNode::clearCommandHolds(const string& heldBy) {
 }
 
 // --------------------------------------------------------------------------
-void SQLiteNode::closeCommand(Command* command) {
+void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
     SASSERT(command);
     // Note that we've closed the command
     SDEBUG("Closing command '" << command->id << "'");
@@ -707,7 +733,7 @@ void SQLiteNode::_escalateCommand(Command* command) {
 }
 
 // --------------------------------------------------------------------------
-void SQLiteNode::_finishCommand(Command* command) {
+SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
     SASSERT(command);
     // Done with this command
     // **FIXME: I'd prefer _cleanCommand() to be in closeCommand(), but it needs
@@ -745,14 +771,17 @@ void SQLiteNode::_finishCommand(Command* command) {
         escalate.content = command->response.serialize();
         _sendToPeer(command->initiator, escalate);
         delete command;
+        return nullptr;
     } else if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
         // Special command, just delete it.
         SINFO("Database upgrade complete");
         delete command;
+        return nullptr;
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
         // TODO: Probably not for retried commands.
         _processedCommandList.push_back(command);
+        return command;
     }
 }
 
@@ -2304,25 +2333,17 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 throw "missing ID";
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
-            // We'll add some fields to this request so that it can be reconstructed when we deserialize it later. This
-            // is a bit of a hack, so we may try and clean this up later.
-            request["__messageID"] = message["ID"];
-            request["__initiator"] = peer->name;
-
-            if (message.calc("priority")) {
-                request["__priority"] = message["priority"];
-            }
-            if (!passToExternalQueue(request)) {
-                Command* command = new Command;
-                command->initiator = peer;
-                command->id = message["ID"];
-                command->request = request;
-                command->priority = message.calc("priority");
+            Command* command = new Command;
+            command->initiator = peer;
+            command->id = message["ID"];
+            command->request = request;
+            command->priority = message.calc("priority");
+            if (!passToExternalQueue(command)) {
                 SINFO("[TYLER] got ESCALATEd command: " << command->id << ":" << request.methodLine << ", queueing.");
                 _queueCommand(command);
             } else {
-                SINFO("[TYLER] got ESCALATEd command: " << message["ID"] << ":" << request.methodLine
-                      << ", passing to external queue. initiator:" << request["__initiator"] << ".");
+                SINFO("[TYLER] got ESCALATEd command: " << command->id << ":" << request.methodLine
+                      << ", passing to external queue. initiator:" << command->initiator->name << ".");
             }
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {

@@ -786,6 +786,7 @@ struct STestTimer {
 #include "STCPNode.h"
 #include "SDataClient.h"
 #include "SHTTPSManager.h"
+#include "SSynchronizedQueue.h"
 
 // Other libstuff headers.
 #include "SRandom.h"

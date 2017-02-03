@@ -6,47 +6,27 @@
 #include <thread>
 #include <condition_variable>
 
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-/// BedrockServer
-/// ---------
+template<>
+bool SSynchronizedQueue<SQLiteNode::Command*>::cancel(const string& name, const string& value);
+
 class BedrockServer : public STCPServer {
   public: // External Bedrock
+
+    // A MessageQueue is a synchronized queue of SDatas.
+    typedef SSynchronizedQueue<SData> MessageQueue;
+
+    typedef SSynchronizedQueue<SQLiteNode::Command*> CommandQueue;
+
     // A synchronized queue of messages for enabling the main, read, and write
     // threads to communicate safely.
     //
-    class MessageQueue {
-      public:
-        // Constructor / Destructor
-        MessageQueue();
-        ~MessageQueue();
-
-        // Explicitly delete copy constructor so it can't accidentally get called.
-        MessageQueue(const MessageQueue& other) = delete;
-
-        // Wait for something to be put onto the queue
-        int preSelect(fd_map& fdm);
-        void postSelect(fd_map& fdm, int bytesToRead = 1);
-
-        // Synchronized interface to add/remove work
-        void push(const SData& rhs);
-        SData pop();
-        bool empty();
-        bool cancel(const string& name, const string& value);
-
-      private:
-        // Private state
-        list<SData> _queue;
-        recursive_mutex _queueMutex;
-        int _pipeFD[2] = {-1, -1};
-    };
-
     class ThreadData {
       public:
         ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
                    SSynchronized<uint64_t>& replicationCommitCount_, SSynchronized<bool>& gracefulShutdown_,
                    SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
-                   MessageQueue& queuedEscalatedRequests_, MessageQueue& processedResponses_, BedrockServer* server_) :
+                   MessageQueue& processedResponses_, CommandQueue& escalatedCommands_, CommandQueue& peekedCommands_,
+                   BedrockServer* server_) :
             name(name_),
             args(args_),
             replicationState(replicationState_),
@@ -54,8 +34,9 @@ class BedrockServer : public STCPServer {
             gracefulShutdown(gracefulShutdown_),
             masterVersion(masterVersion_),
             queuedRequests(queuedRequests_),
-            queuedEscalatedRequests(queuedEscalatedRequests_),
             processedResponses(processedResponses_),
+            escalatedCommands(escalatedCommands_),
+            peekedCommands(peekedCommands_),
             server(server_),
             threadObject() {}
 
@@ -82,11 +63,11 @@ class BedrockServer : public STCPServer {
         // Shared external queue between threads. Queued for read-only thread(s)
         MessageQueue& queuedRequests;
 
-        // Shared external queue between threads. Queued for replication thread
-        MessageQueue& queuedEscalatedRequests;
-
         // Shared external queue between threads. Finished commands ready to return to client.
         MessageQueue& processedResponses;
+
+        CommandQueue& escalatedCommands;
+        CommandQueue& peekedCommands;
 
         // The server this thread is running in.
         BedrockServer* server;
@@ -129,7 +110,7 @@ class BedrockServer : public STCPServer {
     SPerformanceTimer pollTimer;
 
     // Called by a bedrockNode when it needs to make an escalated request available externally.
-    void enqueueRequest(SData request);
+    void enqueueCommand(SQLiteNode::Command* command);
 
   private: // Internal Bedrock
     // Attributes
@@ -142,8 +123,13 @@ class BedrockServer : public STCPServer {
     SSynchronized<bool> _nodeGracefulShutdown;
     SSynchronized<string> _masterVersion;
     MessageQueue _queuedRequests;
-    MessageQueue _queuedEscalatedRequests;
     MessageQueue _processedResponses;
+
+    // Two new queues for communicating escalated requests out from the sync thread to workers, and then when
+    // completed, communicating those responses back to the sync thread.
+    CommandQueue _escalatedCommands;
+    CommandQueue _peekedCommands;
+
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;

@@ -71,10 +71,10 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
-bool BedrockNode::passToExternalQueue(SData command) {
+bool BedrockNode::passToExternalQueue(Command* command) {
     if (server) {
-        SINFO("[TYLER] Bedrock Server enqueueing escalated request: " << command.methodLine << ":" << command["ID"]);
-        server->enqueueRequest(command);
+        SINFO("[TYLER] Bedrock Server enqueueing escalated request: " << command->id << ":" << command->request.methodLine);
+        server->enqueueCommand(command);
         return true;
     }
     return false;
