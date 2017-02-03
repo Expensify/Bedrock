@@ -1,25 +1,6 @@
 #pragma once
 #include "SQLite.h"
 
-class SNodeData : public SData {
-  public:
-    SData response;
-    SHTTPSManager::Transaction* httpsRequest = 0;
-    STCPNode::Peer* initiator = 0;
-
-    SNodeData(string name) : SData(name) {};
-    SNodeData() : SData() {};
-
-    static SNodeData fromSData(SData convert) {
-        // TODO: there's probably a way more efficient way to do this with std::move.
-        SNodeData result;
-        result.methodLine = convert.methodLine;
-        result.nameValueMap = convert.nameValueMap;
-        result.content = convert.content;
-        return result;
-    };
-};
-
 // Possible states of a node in a DB cluster
 enum SQLCState {
     SQLC_SEARCHING,     // Searching for peers
@@ -51,7 +32,7 @@ class SQLiteNode : public STCPNode {
         Peer* initiator;
         string id;
         SData transaction;  // Used inside SQLiteNode
-        SNodeData request;      // Original request
+        SData request;      // Original request
         STable jsonContent; // Accumulated response content
         SData response;     // Final response
         int priority;
@@ -102,7 +83,7 @@ class SQLiteNode : public STCPNode {
 
     // When the update loop goes to queue a command, it will either queue it internally, or pass it to an external
     // queue, if the subclass has implemented such. 
-    virtual bool passToExternalQueue(SNodeData command) { return false; };
+    virtual bool passToExternalQueue(SData command) { return false; };
 
     // Simple accessors
     SQLCState getState() { return _state; }
@@ -148,7 +129,7 @@ class SQLiteNode : public STCPNode {
 #define SPRIORITY_NORMAL 500
 #define SPRIORITY_LOW 250
 #define SPRIORITY_MIN 0
-    Command* openCommand(const SNodeData& request, int priority, bool unique = false, int64_t commandExecuteTime = 0);
+    Command* openCommand(const SData& request, int priority, bool unique = false, int64_t commandExecuteTime = 0);
 
     // Gets a completed command from the database
     Command* getProcessedCommand();

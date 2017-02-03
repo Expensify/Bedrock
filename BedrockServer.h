@@ -29,14 +29,14 @@ class BedrockServer : public STCPServer {
         void postSelect(fd_map& fdm, int bytesToRead = 1);
 
         // Synchronized interface to add/remove work
-        void push(const SNodeData& rhs);
-        SNodeData pop();
+        void push(const SData& rhs);
+        SData pop();
         bool empty();
         bool cancel(const string& name, const string& value);
 
       private:
         // Private state
-        list<SNodeData> _queue;
+        list<SData> _queue;
         recursive_mutex _queueMutex;
         int _pipeFD[2] = {-1, -1};
     };
@@ -116,7 +116,7 @@ class BedrockServer : public STCPServer {
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
     // Add a new request to our message queue.
-    void queueRequest(const SNodeData& request);
+    void queueRequest(const SData& request);
 
     // Returns the version string of the server.
     const string& getVersion();
@@ -129,7 +129,7 @@ class BedrockServer : public STCPServer {
     SPerformanceTimer pollTimer;
 
     // Called by a bedrockNode when it needs to make an escalated request available externally.
-    void enqueueRequest(SNodeData request);
+    void enqueueRequest(SData request);
 
   private: // Internal Bedrock
     // Attributes

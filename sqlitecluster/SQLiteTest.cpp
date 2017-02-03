@@ -43,7 +43,7 @@ struct SQLiteTestWebServer : public STCPServer {
                 if (STimeNow() > timeout) {
                     // Respond and shut down
                     SDEBUG("Responding to '" << s->addr << "'");
-                    s->sendBuffer += SNodeData("HTTP 200 OK").serialize();
+                    s->sendBuffer += SData("HTTP 200 OK").serialize();
                     shutdownSocket(s, SHUT_RD);
                 } else
                     nextActivity = min(nextActivity, timeout);
@@ -61,7 +61,7 @@ struct SQLiteTestWebClient : public SHTTPSManager {
     Transaction* send(const string& method) {
         // Just send a basic transaction
         SDEBUG("Sending '" << method << "'");
-        return _httpsSend("http://localhost:12345", SNodeData(method));
+        return _httpsSend("http://localhost:12345", SData(method));
     }
 
     // Pass through the response
@@ -276,9 +276,9 @@ struct SQLiteTester {
     }
 
     // ---------------------------------------------------------------------
-    void createCommand(int index, const SNodeData& request) {
+    void createCommand(int index, const SData& request) {
         // Create the command, and add a bunch of weirdly encoded attributes to make sure they go through
-        SNodeData requestCopy = request;
+        SData requestCopy = request;
         requestCopy["a"] = "a";
         requestCopy["n"] = "n\n n\n";
         requestCopy["r"] = "t\t t\t";
@@ -300,7 +300,7 @@ struct SQLiteTester {
         SASSERT(count >= 0);
         while (count--) {
             // Randomly choose a request
-            SNodeData request;
+            SData request;
             switch (_commandsStarted % 4) {
             case 0:
                 request.methodLine = "INCREMENT";
@@ -596,7 +596,7 @@ void SQLiteTestBlinks(SQLiteTester& tester, const string& message, int initiator
 }
 
 /////////////////////////////////////////////////////////////////////////////
-void SQLiteTest(const SNodeData& args) {
+void SQLiteTest(const SData& args) {
     if (args.isSet("-all") || args.isSet("-1")) {
         SINFO("##############################################################");
         SINFO("                Testing standalone node");
@@ -666,7 +666,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Test a master hold/release command");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(0, holdRequest);                 // Queue the held master command
@@ -674,7 +674,7 @@ void SQLiteTest(const SNodeData& args) {
             while (STimeNow() < waitUntil)
                 tester.update(test);
             STESTEQUALS(tester._commandList.size(), 1); // Verify not processed
-            SNodeData releaseRequest("INCREMENT");          // Create a command to release the first
+            SData releaseRequest("INCREMENT");          // Create a command to release the first
             releaseRequest["Holding"] = "Mr. Dude";
             tester.createCommand(0, releaseRequest); // Release the first command
             while (!tester._commandList.empty())
@@ -685,7 +685,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Test a slave hold/release command");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(1, holdRequest);                 // Queue the held slave command
@@ -693,7 +693,7 @@ void SQLiteTest(const SNodeData& args) {
             while (STimeNow() < waitUntil)
                 tester.update(test);
             STESTEQUALS(tester._commandList.size(), 1); // Verify not processed
-            SNodeData releaseRequest("INCREMENT");          // Create a command to release the first
+            SData releaseRequest("INCREMENT");          // Create a command to release the first
             releaseRequest["Holding"] = "Mr. Dude";
             tester.createCommand(1, releaseRequest); // Release the first command
             while (!tester._commandList.empty())
@@ -704,7 +704,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Test a slave hold/timeout command");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             holdRequest["Timeout"] = "15000";     // 15s
@@ -717,7 +717,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Test cancelling a slave hold/release command");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(1, holdRequest); // Queue the held slave command
@@ -736,7 +736,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Test slave hold/release commands are cancelled on dirty slave shutdown");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(1, holdRequest); // Queue the held slave command
@@ -829,7 +829,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Verify a HeldBy: command doesn't block a master from graceful shutdown");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(1, holdRequest); // Queue the held command
@@ -842,7 +842,7 @@ void SQLiteTest(const SNodeData& args) {
             tester.toggle(0);        // Restart master
             while (!tester.mastering(0) || !tester.slaving(1))
                 tester.update(test);           // Wait until stable
-            SNodeData releaseRequest("INCREMENT"); // Create a command to release the first
+            SData releaseRequest("INCREMENT"); // Create a command to release the first
             releaseRequest["Holding"] = "Mr. Dude";
             tester.createCommand(1, releaseRequest); // Release the first command
             while (!tester._commandList.empty())
@@ -853,7 +853,7 @@ void SQLiteTest(const SNodeData& args) {
         // ---------------------------------------------------------------------
         {
             STestTimer test("Verify a Connection:wait command doesn't block a slave from graceful shutdown");
-            SNodeData holdRequest("INCREMENT"); // Create a command that is held by another
+            SData holdRequest("INCREMENT"); // Create a command that is held by another
             holdRequest["Connection"] = "wait";
             holdRequest["HeldBy"] = "Mr. Dude";
             tester.createCommand(1, holdRequest); // Queue the held command on the slave
