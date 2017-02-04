@@ -300,7 +300,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     }
 
     // It's feasible to support this case, but let's wait in that until later.
-    SASSERT(!existingCommand->httpsRequest);
+    SASSERT(!(existingCommand->httpsRequest));
     
     // No response? We must not have processed this. Let's process it now.
     SINFO("[TYLER] Reopening command from the start. " << existingCommand->id << ":" << existingCommand->request.methodLine);
@@ -575,7 +575,7 @@ void SQLiteNode::clearCommandHolds(const string& heldBy) {
 void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
     SASSERT(command);
     // Note that we've closed the command
-    SDEBUG("Closing command '" << command->id << "'");
+    SDEBUG("[TYLER] Closing command '" << command->id << "'. DELETE? " << deleteCommand);
 
     // Verify the command has completed before closing.  Three exceptions:
     // 1) If we self-initiated the command.  (**FIXME: Why is this ok?)
@@ -624,7 +624,10 @@ void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
 
     // Finish the cleanup
     _processedCommandList.remove(command);
-    delete command;
+    if (deleteCommand) {
+        SINFO("[TYLER] deleting command.");
+        delete command;
+    }
 }
 
 // --------------------------------------------------------------------------

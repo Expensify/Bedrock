@@ -173,6 +173,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Check for available work.
         while (true) {
             // Try to get some work
+            SINFO("[TYLER] Getting peeked Command to work on.");
             SQLiteNode::Command* command = data.peekedCommands.pop();
             if (!command) {
                 break;
@@ -189,7 +190,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Put everything the replication node has finished on the threaded queue.
         BedrockNode::Command* command = nullptr;
         while ((command = node.getProcessedCommand())) {
-            SINFO("[TYLER] processed: " << command->id << ": " << command->request.methodLine);
             //SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
@@ -271,6 +271,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         bool deleteCommand = true;
         // If there was an escalated command, we'll use it's request ID as our log prefix.
         if (command) {
+            SINFO("[TYLER] reopening command.");
             // Auto-prefix the logs with the request ID for the escalated request.
             // SAUTOPREFIX(command->request["requestID"]);
             escalatedCommand = true;
@@ -345,7 +346,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {
-                SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << "'.");
+                SINFO("[TYLER] Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
                 data.peekedCommands.push(command);
                 deleteCommand = false;
             } else {
