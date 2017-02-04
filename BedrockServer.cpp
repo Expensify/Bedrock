@@ -347,6 +347,11 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {
                 SINFO("[TYLER] Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
+
+                // TODO: It'd be nice if we didn't have to clear this here before passing back. Maybe we could
+                // encapsualte better? (See later invocation as well.) Perhaps if `peek` returns `false`, we just do
+                // it here?
+                command->response.clear();
                 data.peekedCommands.push(command);
                 deleteCommand = false;
             } else {
@@ -406,6 +411,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // case, we need to give this command back to the sync thread to deal with.
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
                     SINFO("[TYLER] Too many conflicts, escalating command." << ":" << command->request.methodLine);
+                    command->response.clear();
                     data.peekedCommands.push(command);
                     deleteCommand = false;
                 }
