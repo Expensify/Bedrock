@@ -11,23 +11,6 @@ BedrockNode* BedrockServer::_syncNode = 0;
 
 #define MAX_ASYNC_CONCURRENT_TRIES 3
 
-// Template specialization for command queues.
-template<>
-bool SSynchronizedQueue<SQLiteNode::Command*>::cancel(const string& name, const string& value) {
-    SAUTOLOCK(_queueMutex);
-    // Loop across and see if we can find it; if so, cancel
-    for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
-        if ((*queueIt)->request[name] == value) {
-            // Found it
-            _queue.erase(queueIt);
-            return true;
-        }
-    }
-
-    // Didn't find it
-    return false;
-}
-
 // --------------------------------------------------------------------------
 void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     // The multi-threaded queues work on SDatas of either requests or

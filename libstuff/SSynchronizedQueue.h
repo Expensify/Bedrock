@@ -19,7 +19,9 @@ class SSynchronizedQueue {
     T pop();
 
     bool empty();
-    bool cancel(const string& name, const string& value);
+    //bool cancel(const string& name, const string& value);
+    template<typename KeyType, typename ValueType>
+    bool cancel(const KeyType& key, const ValueType& value);
 
   private:
     // Private state
@@ -90,7 +92,8 @@ bool SSynchronizedQueue<T>::empty() {
 }
 
 template<typename T>
-bool SSynchronizedQueue<T>::cancel(const string& name, const string& value) {
+template<typename KeyType, typename ValueType>
+bool SSynchronizedQueue<T>::cancel(const KeyType& name, const ValueType& value) {
     SAUTOLOCK(_queueMutex);
     // Loop across and see if we can find it; if so, cancel
     for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
