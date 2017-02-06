@@ -19,11 +19,8 @@ class SSynchronizedQueue {
     T pop();
 
     bool empty();
-    //bool cancel(const string& name, const string& value);
-    template<typename KeyType, typename ValueType>
-    bool cancel(const KeyType& key, const ValueType& value);
 
-  private:
+  protected:
     // Private state
     list<T> _queue;
     recursive_mutex _queueMutex;
@@ -89,23 +86,6 @@ bool SSynchronizedQueue<T>::empty() {
     SAUTOLOCK(_queueMutex);
     // Just return the state of the queue
     return _queue.empty();
-}
-
-template<typename T>
-template<typename KeyType, typename ValueType>
-bool SSynchronizedQueue<T>::cancel(const KeyType& name, const ValueType& value) {
-    SAUTOLOCK(_queueMutex);
-    // Loop across and see if we can find it; if so, cancel
-    for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
-        if ((*queueIt)[name] == value) {
-            // Found it
-            _queue.erase(queueIt);
-            return true;
-        }
-    }
-
-    // Didn't find it
-    return false;
 }
 
 template<typename T>

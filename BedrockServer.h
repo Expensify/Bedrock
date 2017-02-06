@@ -6,35 +6,45 @@
 #include <thread>
 #include <condition_variable>
 
-// Template specialization to make SSynchronizedQueue work with SQLiteNode::Command*
-template<>
-template<typename KeyType, typename ValueType>
-bool SSynchronizedQueue<SQLiteNode::Command*>::cancel(const KeyType& name, const ValueType& value) {
-    SAUTOLOCK(_queueMutex);
-    // Loop across and see if we can find it; if so, cancel
-    for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
-        if ((*queueIt)->request[name] == value) {
-            // Found it
-            _queue.erase(queueIt);
-            return true;
-        }
-    }
-
-    // Didn't find it
-    return false;
-}
-
 class BedrockServer : public STCPServer {
   public: // External Bedrock
 
-    // A MessageQueue is a synchronized queue of SDatas.
-    typedef SSynchronizedQueue<SData> MessageQueue;
+    class MessageQueue : public SSynchronizedQueue<SData> {
+      public:
+        bool cancel(const string& name, const string& value) {
+            SAUTOLOCK(_queueMutex);
+            // Loop across and see if we can find it; if so, cancel
+            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
+                if ((*queueIt)[name] == value) {
+                    // Found it
+                    _queue.erase(queueIt);
+                    return true;
+                }
+            }
 
-    typedef SSynchronizedQueue<SQLiteNode::Command*> CommandQueue;
+            // Didn't find it
+            return false;
+        }
+    };
 
-    // A synchronized queue of messages for enabling the main, read, and write
-    // threads to communicate safely.
-    //
+    class CommandQueue : public SSynchronizedQueue<SQLiteNode::Command*> {
+      public:
+        bool cancel(const string& name, const string& value) {
+            SAUTOLOCK(_queueMutex);
+            // Loop across and see if we can find it; if so, cancel
+            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
+                if ((*queueIt)->request[name] == value) {
+                    // Found it
+                    _queue.erase(queueIt);
+                    return true;
+                }
+            }
+
+            // Didn't find it
+            return false;
+        }
+    };
+
     class ThreadData {
       public:
         ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
