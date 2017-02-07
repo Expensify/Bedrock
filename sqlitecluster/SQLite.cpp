@@ -12,7 +12,11 @@
 
 bool SQLite::sqliteInitialized = false;
 mutex SQLite::_commitLock;
+mutex SQLite::_hashLock;
 atomic<uint64_t> SQLite::_commitCount(0);
+map<uint64_t, pair<string, string>> SQLite::_inFlightTransactions;
+set<uint64_t> SQLite::_committedtransactionIDs;
+string SQLite::_lastCommittedHash;
 
 void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
@@ -110,10 +114,21 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     uint64_t originalCommitCount = _commitCount.load();
     _commitCount.store(_getCommitCount());
     uint64_t loadedCommitCount = _commitCount.load();
+    // Load the query and hash values as well.
+
+    // Lock to keep multiple objects from overwriting these.
+    SINFO("[TYLER2] acquiring _commitLock and _hashLock.");
+    lock_guard<mutex> clock(_commitLock);
+    lock_guard<mutex> hlock(_hashLock);
+    SINFO("[TYLER2] _commitLock and _hashLock acquired.");
+    string ignore;
+    getCommit(loadedCommitCount, ignore, _lastCommittedHash);
+
     if (originalCommitCount && originalCommitCount != loadedCommitCount) {
         SWARN("[TYLER2] Inconsistent values loaded in _commitCount: " << originalCommitCount << " and "
               << loadedCommitCount);
     }
+    SINFO("[TYLER2] releasing _commitLock and _hashLock.");
 }
 
 string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
@@ -243,6 +258,32 @@ string SQLite::read(const string& query) {
     return result[0][0];
 }
 
+void SQLite::clean() {
+
+    SINFO("[TYLER2] Cleaning DB");
+    int code = sqlite3_get_autocommit(_db);
+    if (!code) {
+        SWARN("[TYLER2] Oh no, sqlite3_get_autocommit returned 0!");
+    }
+
+    // Does anything require a reset?
+    sqlite3_stmt* stmt;
+    do {
+        stmt = sqlite3_next_stmt(_db, 0);
+        if (stmt) {
+            int busy = sqlite3_stmt_busy(stmt);
+            if (busy) {
+                SINFO("[TYLER2] busy statement.");
+            } else {
+                SINFO("[TYLER2] statement not busy.");
+            }
+
+        } else {
+            SINFO("[TYLER2] No more statements, finishing.");
+        }
+    } while (stmt);
+}
+
 bool SQLite::read(const string& query, SQResult& result) {
     // Execute the read-only query
     SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
@@ -296,22 +337,31 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    SINFO("[concurrent] Starting prepare, acquiring _commitLock.");
+    SINFO("[TYLER2] acquiring _commitLock.");
     _commitLock.lock();
     SINFO("[TYLER2] _commitLock acquired.");
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
-    uint64_t commitCount;
-    getLatestCommit(commitCount, committedQuery, committedHash);
+    uint64_t commitCount = _commitCount.load();
 
     // Queue up the journal entry
-    _uncommittedHash = SToHex(SHashSHA1(committedHash + _uncommittedQuery));
+    string lastCommittedHash = getCommittedHash();
+    _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
+    if (commitCount && lastCommittedHash.empty()) {
+        SWARN("[TYLER2] lastCommittedHash is empty but commitCount not 0!");
+    }
+    SINFO("[TYLER2] Computed new uncommitted hash. At commitCount(" << commitCount << "): " << _uncommittedHash << " from " << lastCommittedHash << " and " << _uncommittedQuery);
     _uncommittedTransaction = true;
     uint64_t before = STimeNow();
 
     // Let the DB auto-increment this.
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
+
+    // These are the values we're currently operating on, until we either commit or rollback.
+    _uncommittedID = commitCount + 1;
+    _inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
+
     int result = SQuery(_db, "updating journal", query);
     _lastJournalQuery = query;
     SINFO("[TYLER2] preparing: " << _lastJournalQuery);
@@ -360,23 +410,56 @@ int SQLite::commit() {
         _commitElapsed += STimeNow() - before;
         // Successful commit
         _journalSize += !truncating; // Only increase if we didn't truncate by a row
-        _insideTransaction = false;
-        _uncommittedTransaction = false;
-        _uncommittedHash.clear();
-        _uncommittedQuery.clear();
 
         // Ok, someone else can commit now.
         // Incrementing the commit count.
         _commitCount++;
+
+        _committedtransactionIDs.insert(_uncommittedID);
+        {
+            // Update atomically.
+            SINFO("[TYLER2] acquiring _hashLock"); 
+            lock_guard<mutex> lock(_hashLock);
+            SINFO("[TYLER2] _hashLock acquired"); 
+            _lastCommittedHash = _uncommittedHash;
+            SINFO("[TYLER2] releasing _hashLock"); 
+        }
         SINFO("[TYLER2] Commit successful (" << _commitCount.load() << "), releasing _commitLock for: " << _lastJournalQuery);
         _lastJournalQuery = "";
         _commitLock.unlock();
+
+        _insideTransaction = false;
+        _uncommittedTransaction = false;
+        _uncommittedHash.clear();
+        _uncommittedQuery.clear();
     } else {
         SINFO("[TYLER2] Commit failed, waiting for rollback for: " << _lastJournalQuery);
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding _commitLock, and it will need to be unlocked by
     // calling rollback().
+    return result;
+}
+
+map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
+    // TODO: We need to be careful about where we call this, or we need to make this recursive.
+    SINFO("[TYLER2] acquiring _commitLock for getCommittedTransactions"); 
+    lock_guard<mutex> lock(_commitLock);
+
+    map<uint64_t, pair<string,string>> result;
+    if (_committedtransactionIDs.empty()) {
+        SINFO("[TYLER2] releasing _commitLock for getCommittedTransactions"); 
+        return result;
+    }
+
+    for (uint64_t key : _committedtransactionIDs) {
+        result[key] = move(_inFlightTransactions.at(key));
+        _inFlightTransactions.erase(key);
+        SINFO("[TYLER2] Clearing committed transaction: " << key);
+    }
+
+    _committedtransactionIDs.clear();
+    SINFO("[TYLER2] releasing _commitLock for getCommittedTransactions"); 
     return result;
 }
 
@@ -394,12 +477,12 @@ void SQLite::rollback() {
         }
 
         // Finally done with this.
-        SINFO("[TYLER2] Rollback successful, releasing _commitLock for: " << _lastJournalQuery);
         _lastJournalQuery = "";
         _insideTransaction = false;
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        SINFO("[TYLER2] Rollback successful, releasing _commitLock for: " << _lastJournalQuery);
         _commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
@@ -418,54 +501,12 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
     return begin + read + write + prepare + commit + rollback;
 }
 
-void SQLite::getLatestCommit(uint64_t& id, string& query, string& hash) {
-    #if 0
-    // This doesn't work because we need to get the previous row sometimes (i.e., when we have an uncommitted
-    // transaction).
-    /*
-    SELECT MAX(id) as id,  hash, query FROM (
-        SELECT MAX(id) as id, hash, query FROM journal
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal00
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal01
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal02
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal03
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal04
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal05
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal06
-        UNION
-        SELECT MAX(id) as id, hash, query FROM journal07
-    );
-    */
-    string q = getJournalQuery({"SELECT MAX(id) as id, query, hash FROM"}, true);
-    q = "SELECT MAX(id) as id, hash, query FROM (" + q + ");";
 
-    SQResult result;
-    SASSERT(!SQuery(_db, "getting latest commit", q, result));
-
-    if (!result.empty()) {
-        id = SToUInt64(result[0][0]);
-        hash = result[0][1];
-        query = result[0][2];
-    } else {
-        id = 0;
-        hash = "";
-        query = "";
-    }
-    #endif
-
-    // There's a race condition here, but it's probably up to the caller to handle it.
-    id = getCommitCount();
-    getCommit(id, query, hash);
-}
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
+
+    // TODO: This can fail if called after `BEGIN TRANSACTION`.
+
     // Look up the query and hash for the given commit
     string q= getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)}); 
     SQResult result;
@@ -486,10 +527,10 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() { 
-    string committedQuery, committedHash;
-    uint64_t commitCount = getCommitCount();
-    getLatestCommit(commitCount, committedQuery, committedHash);
-    return committedHash;
+    SINFO("[TYLER2] acquiring _hashLock"); 
+    lock_guard<mutex> lock(_hashLock);
+    SINFO("[TYLER2] _hashLock acquired and releasing."); 
+    return _lastCommittedHash;
 }
 
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
