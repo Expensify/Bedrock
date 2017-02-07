@@ -665,6 +665,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         //          job to a dead socket -- that job will never get done.
 
         // Log some performance and diagnostic data
+        // Note: be mindful of external stats aggregation scripts/services that parse these messages
         const string& commandStatus = "'" + response["request.methodLine"] + "' "
                                                                              "#" +
                                       SToStr(requestCount) + " "

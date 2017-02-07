@@ -579,6 +579,7 @@ void SQLiteNode::_escalateCommand(Command* command) {
     SASSERT(_masterPeer);
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
     uint64_t elapsed = STimeNow() - command->creationTimestamp;
+    // Note: be mindful of external stats aggregation scripts/services that parse these messages
     SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to MASTER '" << _masterPeer->name
                          << "' after " << elapsed / STIME_US_PER_MS << " ms");
     _escalatedCommandMap.insert(pair<string, Command*>(command->id, command));
@@ -602,6 +603,7 @@ void SQLiteNode::_finishCommand(Command* command) {
         (command->httpsRequest ? command->httpsRequest->finished - command->httpsRequest->created : 0);
     uint64_t replicationElapsed =
         (command->replicationStartTimestamp ? STimeNow() - command->replicationStartTimestamp : 0);
+    // Note: be mindful of external stats aggregation scripts/services that parse these messages
     SINFO("Finishing command '" << command->request.methodLine << "'(" << command->id << ")->'"
                                 << command->response.methodLine << "' after " << elapsed / STIME_US_PER_MS << "ms ("
                                 << httpElapsed / STIME_US_PER_MS << "ms in http) ("
@@ -614,9 +616,11 @@ void SQLiteNode::_finishCommand(Command* command) {
         // slave drop we clean out any pending commands.
         uint64_t elapsed = STimeNow() - command->creationTimestamp;
         if (elapsed < STIME_US_PER_S * 4 || !command->request["HeldBy"].empty()) {
+            // Note: be mindful of external stats aggregation scripts/services that parse these messages
             SINFO("Responding to escalation for transaction '" << command->request.methodLine << "' (" << command->id
                                                                << ") after " << elapsed / STIME_US_PER_MS << " ms");
         } else {
+            // Note: be mindful of external stats aggregation scripts/services that parse these messages
             SWARN("Responding to escalation for transaction '" << command->request.methodLine << "' (" << command->id
                                                                << ") after " << elapsed / STIME_US_PER_MS
                                                                << " ms (slow)");
@@ -1159,6 +1163,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 commandFinished = true;
 
                 // Record how long it took
+                // Note: be mindful of external stats aggregation scripts/services that parse these messages
                 uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
                 uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
                                                                      prepareElapsed, commitElapsed, rollbackElapsed);
