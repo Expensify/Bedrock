@@ -1,6 +1,7 @@
 // SQLite.h
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <atomic>
 
 // SQLite
 class SQLite {
@@ -169,4 +170,13 @@ class SQLite {
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value.
     static mutex _commitLock;
+
+    string _lastJournalQuery;
+
+    // Like getCommitCount(), but only callable internally, when we know for certain that we're not int he middle of
+    // any transactions.
+    uint64_t _getCommitCount();
+
+    // Static atomic commit count. Any thread can read or update this.
+    static atomic<uint64_t> _commitCount;
 };

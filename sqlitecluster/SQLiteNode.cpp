@@ -207,6 +207,11 @@ void SQLiteNode::processCommand(Command* command) {
 bool SQLiteNode::commit() {
     SAUTOLOCK(_commitMutex);
 
+    if (!_db.prepare()) {
+        SINFO("[TYLER2] calling prepare() failed, we'll have to roll this back.");
+        return false;
+    }
+
     if (_db.getUncommittedHash().empty()) {
         SINFO("[concurrent] (" << name << ") No outstanding transaction");
         return true;
@@ -216,7 +221,7 @@ bool SQLiteNode::commit() {
     SINFO("[concurrent] (" << name << ") Attempting commit.");
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[concurrent] (" << name << ") conflict - rolling back commit.");
+        SINFO("[TYLER2] (" << name << ") conflict - rolling back commit.");
         _db.rollback();
         return false; // Commit conflicted.
     }
@@ -225,22 +230,31 @@ bool SQLiteNode::commit() {
     return true; // Commit succeeded.
 }
 
-void SQLiteNode::_sendOutstandingTransactions() {
+void SQLiteNode::_sendOutstandingTransactions(uint64_t max) {
     SAUTOLOCK(_commitMutex);
 
     // Make sure we have something to do.
     if (!_haveUnsentTransactions) {
+        if (max > _lastSentTransactionID) {
+            SINFO("[TYLER2] no unsent transactions but max " << max << ", and _lastSentTransactionID " << _lastSentTransactionID << ". Seems wrong.");
+        }
         return;
     }
 
+    string whereClause = "WHERE id > " + SQ(_lastSentTransactionID);
+    if (max) {
+        whereClause += " AND id <= " + SQ(max);
+    }
+
     // Get the transactions we need to send.
-    string query = _db.getJournalQuery({"SELECT id, hash, query FROM",
-                                        "WHERE id > " + SQ(_lastSentTransactionID)});
+    string query = _db.getJournalQuery({"SELECT id, hash, query FROM", whereClause});
     query += " ORDER BY id ASC;";
+
+    SINFO("[TYLER2] query to find transactions: " << query);
     SQResult transactions;
     _db.read(query, transactions);
     int count = transactions.size();
-    SINFO("[concurrent] (" << name << ") Sending " << count << " outstanding transactions. Last sent: " << _lastSentTransactionID);
+    SINFO("[TYLER2] (" << name << ") Sending " << count << " outstanding transactions. Last sent: " << _lastSentTransactionID);
 
     for (int i = 0; i < count; i++) {
 
@@ -248,7 +262,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         string hash = transactions[i][1];
         string query = transactions[i][2];
 
-        SINFO("[concurrent] (" << name << ") replicating unsent transaction " << id << ".");
+        SINFO("[TYLER2] (" << name << ") replicating unsent transaction " << id << ".");
 
         SData transaction("BEGIN_TRANSACTION");
         transaction["Command"] = "ASYNC";
@@ -266,6 +280,10 @@ void SQLiteNode::_sendOutstandingTransactions() {
 
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = "ASYNC_" + id;
+
+        commit["CommitCount"] = SToStr(id);
+        commit["Hash"] = hash;
+
         _sendToAllPeers(commit, true); // subscribed only
 
         _lastSentTransactionID = SToUInt64(id);
@@ -767,12 +785,15 @@ SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
                                                                << ") after " << elapsed / STIME_US_PER_MS
                                                                << " ms (slow)");
         }
-        SASSERT(command->initiator->s);
-        SASSERTWARN((*command->initiator)["Subscribed"] == "true");
-        SData escalate("ESCALATE_RESPONSE");
-        escalate["ID"] = command->id;
-        escalate.content = command->response.serialize();
-        _sendToPeer(command->initiator, escalate);
+        if (command->initiator->s) {
+            SData escalate("ESCALATE_RESPONSE");
+            escalate["ID"] = command->id;
+            escalate.content = command->response.serialize();
+            _sendToPeer(command->initiator, escalate);
+        } else {
+            SWARN("[TYLER2] Peer socket died and trying to finish command. Handling disconnect.");
+            _onDisconnect(command->initiator);
+        }
         delete command;
         return nullptr;
     } else if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
@@ -1187,6 +1208,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // transactions while we wait for a synchronous command to complete, and because _commitMutex is recursive, we
         // shouldn't actually require this "if" wrapper here.
         if (!_currentCommand) {
+            SINFO("[TYLER2] Sending outstanding transactions from main loop.");
             _sendOutstandingTransactions();
         }
 
@@ -1584,8 +1606,15 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 // outstanding. This remains locked until we've finished this transaction.
                                 _commitMutex.lock();
 
+                                if(!_db.prepare()) {
+                                    SWARN("[TYLER2] Well, fuck, I don't know what to do here. Rollback and then what?");
+                                    return true;
+                                }
+
                                 // Clear anything outstanding before starting this one.
-                                _sendOutstandingTransactions();
+                                uint64_t max = _db.getCommitCount();
+                                SINFO("[TYLER2] Sending outstanding transactions from " << _lastSentTransactionID << " through " << max);
+                                _sendOutstandingTransactions(max);
 
                                 SINFO("[concurrent] (" << name << ") committing: " << _currentCommand->request.methodLine << ", ID: " << _currentCommand->id);
                                 _commitTimer.start();
@@ -1593,12 +1622,12 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 SASSERT(!_db.getUncommittedQuery().empty());
                                 SINFO("Finished processing command '"
                                       << _currentCommand->request.methodLine << "' (" << _currentCommand->id
-                                      << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
+                                      << "), beginning distributed transaction for commit #" << max + 1
                                       << " (" << _db.getUncommittedHash() << ")");
                                 _currentCommand->replicationStartTimestamp = STimeNow();
                                 _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
                                 _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
-                                _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
+                                _currentCommand->transaction["NewCount"] = SToStr(max + 1);
                                 _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
                                 _currentCommand->transaction["ID"] = _currentCommand->id;
                                 _currentCommand->transaction.content = _db.getUncommittedQuery();
@@ -2145,9 +2174,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "no master?";
         if (!_db.getUncommittedHash().empty())
             throw "already in a transaction";
-        if (_db.getCommitCount() + 1 != message.calcU64("NewCount"))
+        if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
+            SINFO("[TYLER2] commit count mismatch BEGIN. Got message indicating new count " << message.calcU64("NewCount") << ", but currently at: " << _db.getCommitCount() << " message: " << message.serialize());
             throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
-        if (!_db.beginTransaction())
+        } if (!_db.beginTransaction())
             throw "failed to begin transaction";
         try {
             // Inside transaction; get ready to back out on error
@@ -2226,9 +2256,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 // Current, make sure it all matches.
                 if (message["NewHash"] != _db.getUncommittedHash())
                     throw "new hash mismatch";
-                if (message.calcU64("NewCount") != _db.getCommitCount() + 1)
+                if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
+                    SINFO("[TYLER2] commit count mismatch APPROVE. Got message indicating new count " << message.calcU64("NewCount") << ", but currently at: " << _db.getCommitCount());
                     throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
-                if (peer->params["Permaslave"] == "true")
+                } if (peer->params["Permaslave"] == "true")
                     throw "permaslaves shouldn't approve";
                 uint64_t replicationElapsed = STimeNow() - _currentCommand->replicationStartTimestamp;
                 PINFO("Peer approved transaction #" << message["NewCount"] << " (" << message["NewHash"] << ") after "
@@ -2263,10 +2294,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "not slaving";
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
-        if (message.calcU64("CommitCount") != _db.getCommitCount() + 1)
+        if (message.calcU64("CommitCount") != _db.getCommitCount() + 1) {
+            SINFO("[TYLER2] commit count mismatch COMMIT. Got message indicating new count " << message.calcU64("NewCount") << ", but currently at: " << _db.getCommitCount());
             throw "commit count mismatch. Expected: " + message["CommitCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
+        }
         if (message["Hash"] != _db.getUncommittedHash())
             throw "hash mismatch";
+
+        SINFO("[TYLER2] Committing transaction " << message.calcU64("CommitCount") << " (specififed by message).");
         _db.commit();
         uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
@@ -2601,8 +2636,12 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Piggyback on whatever we're sending to add the CommitCount/Hash, but then
     // only serialize once before broadcasting
     SData messageCopy = message;
-    messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
-    messageCopy["Hash"] = _db.getCommittedHash();
+    if (!messageCopy.isSet("CommitCount")) {
+        messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
+    }
+    if (!messageCopy.isSet("Hash")) {
+        messageCopy["Hash"] = _db.getCommittedHash();
+    }
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message

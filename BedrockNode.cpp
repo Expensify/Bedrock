@@ -209,10 +209,13 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
         // If we have no uncommitted query, just rollback the empty transaction.
         // Otherwise, try to prepare to commit.
         bool isQueryEmpty = db.getUncommittedQuery().empty();
-        if (isQueryEmpty)
+        if (isQueryEmpty) {
             db.rollback();
-        else if (!db.prepare())
-            throw "501 Failed to prepare transaction";
+        }
+
+        // We can't do this here any more. It's been moved to `commit`.
+        // else if (!db.prepare())
+        //    throw "501 Failed to prepare transaction";
 
         // If no response was sent, assume 200 OK
         if (response.methodLine == "") {

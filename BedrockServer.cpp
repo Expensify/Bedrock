@@ -156,7 +156,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Check for available work.
         while (true) {
             // Try to get some work
-            SINFO("[TYLER] Getting peeked Command to work on.");
             SQLiteNode::Command* command = data.peekedCommands.pop();
             if (!command) {
                 break;
@@ -393,7 +392,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // At this point, either we've already prepared a response, or `tries` has hit our max. If that's the
                 // case, we need to give this command back to the sync thread to deal with.
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[TYLER] Too many conflicts, escalating command." << ":" << command->request.methodLine);
+                    SINFO("[TYLER] Too many conflicts, escalating command." << command->id << ":" << command->request.methodLine);
                     command->response.clear();
                     data.peekedCommands.push(command);
                     deleteCommand = false;

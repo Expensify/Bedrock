@@ -269,7 +269,7 @@ class SQLiteNode : public STCPNode {
     }
     bool _majoritySubscribed(int& numFullPeersOut, int& numFullSlavesOut);
 
-    void _sendOutstandingTransactions();
+    void _sendOutstandingTransactions(uint64_t max = 0);
 
     // How many journal tables does our DB have?
     // We always have 'journal', and then we have numbered tables 'journal00' through this number, inclusive.

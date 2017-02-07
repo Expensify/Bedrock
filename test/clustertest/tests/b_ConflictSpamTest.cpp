@@ -61,7 +61,6 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
-    #if 0
         // Get the global tester object.
         tester = BedrockClusterTester::testers.front();
 
@@ -77,10 +76,10 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
                 int numCommands = 20;
-                for (int i = 0; i < numCommands; i++) {
+                for (int j = 0; j < numCommands; j++) {
                     SData query("Query");
                     query["writeConsistency"] = "ASYNC";
-                    query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ(i) + " );";
+                    query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ("node: " + to_string(i) + ", cmd: " + to_string(j)) + " );";
                     requests.push_back(query);
                 }
 
@@ -103,6 +102,5 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             }
             cout << endl;
         }
-        #endif
     }
 } __b_ConflictSpamTest;
