@@ -1330,7 +1330,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 if (result == SQLITE_BUSY_SNAPSHOT) {
                     _db.rollback();
                     _commitTimer.stop();
-                    commandFinished = true;
 
                     // Notify everybody to rollback
                     SWARN("[TYLER2] ROLLBACK, conflicted on sync: " << _currentCommand->id);
@@ -1345,10 +1344,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                     // Make sure the response is empty, and re-open the command.
                     _currentCommand->response.empty();
+                    reopenCommand(_currentCommand);
+                    /*
+                    //commandFinished = true;
+                    SINFO("[TYLER3] Re-queueing command (and will blow it away): " << _currentCommand->id << ":" << _currentCommand->request["debug"]);
                     openCommand(_currentCommand->request, _currentCommand->priority,
                                 _currentCommand->request.test("unique"),
                                 _currentCommand->request.calc64("commandExecuteTime"));
-
+                    */
                     _currentCommand = nullptr;
                     return true;
                 } else {
@@ -2427,7 +2430,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
             Command* command = commandIt->second;
-            SINFO("[TYLER2] completed: " << command->id << ", removing from escalated map.");
+            SINFO("[TYLER3] finishing command: " << command->id << ":" << command->request["debug"]);
             _escalatedCommandMap.erase(command->id);
             command->response = response;
             _finishCommand(command);

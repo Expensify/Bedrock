@@ -115,6 +115,11 @@ bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode
             response["lastInsertRowID"] = SToStr(db.getLastInsertRowID());
         }
 
+        // Parrot this back for testing.
+        if (request.isSet("debug") && request["debug"].size()) {
+            response.content = request["debug"];
+        }
+
         // Successfully processed
         return true;
     }
