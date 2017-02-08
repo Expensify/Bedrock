@@ -1,5 +1,6 @@
 #pragma once
 #include "SQLite.h"
+#include <atomic>
 
 // Possible states of a node in a DB cluster
 enum SQLCState {
@@ -242,7 +243,7 @@ class SQLiteNode : public STCPNode {
     list<Command*> _processedCommandList;
     Peer* _masterPeer;
     uint64_t _stateTimeout;
-    int _commandCount;
+    static atomic<int> _commandCount;
     SStopwatch _gracefulShutdownTimeout;
     string _version;
     int _quorumCheckpoint; // Commits before requiring quorum.

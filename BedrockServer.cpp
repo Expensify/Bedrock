@@ -161,7 +161,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
                 break;
             }
 
-            SINFO("[TYLER] re-opening peeked command for processing: " << command->id << ":" << command->request.methodLine);
+            SINFO("Re-opening peeked command for processing: " << command->id << ":" << command->request.methodLine);
             node.reopenCommand(command);
         }
 
@@ -175,6 +175,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             //SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
+            SINFO("[TYLER3] sync thread responding to command: " << command->id << ":" << command->request["debug"]);
             data.processedResponses.push(command->response);
 
             // Close the command to remove it from any internal queues.
@@ -253,7 +254,6 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         bool deleteCommand = true;
         // If there was an escalated command, we'll use it's request ID as our log prefix.
         if (command) {
-            SINFO("[TYLER] reopening command.");
             // Auto-prefix the logs with the request ID for the escalated request.
             // SAUTOPREFIX(command->request["requestID"]);
             escalatedCommand = true;
@@ -305,12 +305,13 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         if (node.getProcessedCommand()) {
             if (escalatedCommand) {
                 // Send it back to the sync node.
-                SINFO("[TYLER] Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
+                SINFO("Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
                 data.peekedCommands.push(command);
             } else {
                 // Prepare the final response.
                 SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
                 BedrockServer_PrepareResponse(command);
+                SINFO("[TYLER3] worker thread responding to (read-only) command: " << command->id << ":" << command->request["debug"]);
                 data.processedResponses.push(command->response);
             }
         } else if (node.getQueuedCommand(command->priority)) {
@@ -328,7 +329,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {
-                SINFO("[TYLER] Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
+                SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
 
                 // TODO: It'd be nice if we didn't have to clear this here before passing back. Maybe we could
                 // encapsualte better? (See later invocation as well.) Perhaps if `peek` returns `false`, we just do
@@ -343,7 +344,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // parallel commits.
                 int tries = 0;
                 while (++tries < MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[TYLER] processing ASYNC command " << command->id << ":" << command->request.methodLine
+                    SINFO("processing ASYNC command " << command->id << ":" << command->request.methodLine
                           << " from worker thread. (try #" << tries << ").");
 
                     // Try and process.
@@ -353,7 +354,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                         node.processCommand(command);
                     } catch (...) {
                         success = false;
-                        SINFO("[TYLER] error processing command: " << command->id << ":"
+                        SINFO("Error processing command: " << command->id << ":"
                               << command->request.methodLine);
                     }
 
@@ -362,7 +363,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     if (success) {
                         if (!node.commit()) {
                             // If the commit failed, we just try again.
-                            SINFO("[TYLER] ASYNC command " << command->id << ":" << command->request.methodLine
+                            SINFO("ASYNC command " << command->id << ":" << command->request.methodLine
                                   << " conflicted, retrying.");
                             continue;
                         } else {
@@ -376,12 +377,13 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     // or we've successfully processed and committed the entire transaction. Now we'll respond back to
                     // either the caller, or the sync thread, if this was escalated by a slave.
                     if (escalatedCommand) {
-                        SINFO("[TYLER] Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
+                        SINFO("Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
                         data.peekedCommands.push(command);
                         deleteCommand = false;
                     } else {
-                        SINFO("[TYLER] preparing response to ASYNC command." << ":" << command->request.methodLine);
+                        SINFO("Preparing response to ASYNC command." << ":" << command->request.methodLine);
                         BedrockServer_PrepareResponse(command);
+                        SINFO("[TYLER3] worker thread responding to command: " << command->id << ":" << command->request["debug"]);
                         data.processedResponses.push(command->response);
                     }
 
@@ -392,7 +394,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // At this point, either we've already prepared a response, or `tries` has hit our max. If that's the
                 // case, we need to give this command back to the sync thread to deal with.
                 if (tries == MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("[TYLER] Too many conflicts, escalating command." << command->id << ":" << command->request.methodLine);
+                    SINFO("Too many conflicts, escalating command." << command->id << ":" << command->request.methodLine);
                     command->response.clear();
                     data.peekedCommands.push(command);
                     deleteCommand = false;
@@ -949,7 +951,6 @@ void BedrockServer::queueRequest(const SData& request) {
     // We could potentially interrupt the select loop here (perhaps by writing to our own incoming server socket) if
     // we want these requests to trigger instantly.
     _queuedRequests.push(request);
-    SINFO("[TYLER] sent ESCALATEd request, which we requeued. " << request["ID"] << ":" << request.methodLine);
 }
 
 const string& BedrockServer::getVersion() { return _version; }

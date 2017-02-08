@@ -174,7 +174,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     }
                 } catch (const char* e) {
                     // Error -- reconnect
-                    PWARN("[TYLER2] Error processing message '" << message.methodLine << "' (" << e
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e
                                                        << "), reconnecting:" << message.serialize());
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e;
@@ -184,7 +184,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 } catch (const string& e) {
                     // TODO: Don't repeat the above block.
                     // Error -- reconnect
-                    PWARN("[TYLER2] Error processing message '" << message.methodLine << "' (" << e
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e
                                                        << "), reconnecting:" << message.serialize());
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e;

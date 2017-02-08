@@ -79,7 +79,9 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 for (int j = 0; j < numCommands; j++) {
                     SData query("Query");
                     query["writeConsistency"] = "ASYNC";
-                    query["query"] = "INSERT INTO test VALUES ( NULL, " + SQ("node: " + to_string(i) + ", cmd: " + to_string(j)) + " );";
+                    string safeVal = SQ("node: " + to_string(i) + ", cmd: " + to_string(j));
+                    query["debug"] = safeVal;
+                    query["query"] = "INSERT INTO test VALUES ( NULL, " + safeVal + " );";
                     requests.push_back(query);
                 }
 

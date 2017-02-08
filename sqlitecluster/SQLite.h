@@ -130,7 +130,6 @@ class SQLite {
     // This atomically removes and returns committed transactions from our inflight list.
     map<uint64_t, pair<string,string>> getCommittedTransactions();
 
-    void clean();
   protected: // Internal API
     sqlite3* _db;
 

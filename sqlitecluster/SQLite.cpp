@@ -117,18 +117,15 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     // Load the query and hash values as well.
 
     // Lock to keep multiple objects from overwriting these.
-    SINFO("[TYLER2] acquiring _commitLock and _hashLock.");
     lock_guard<mutex> clock(_commitLock);
     lock_guard<mutex> hlock(_hashLock);
-    SINFO("[TYLER2] _commitLock and _hashLock acquired.");
     string ignore;
     getCommit(loadedCommitCount, ignore, _lastCommittedHash);
 
     if (originalCommitCount && originalCommitCount != loadedCommitCount) {
-        SWARN("[TYLER2] Inconsistent values loaded in _commitCount: " << originalCommitCount << " and "
+        SWARN("[TYLER] Inconsistent values loaded in _commitCount: " << originalCommitCount << " and "
               << loadedCommitCount);
     }
-    SINFO("[TYLER2] releasing _commitLock and _hashLock.");
 }
 
 string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
@@ -258,32 +255,6 @@ string SQLite::read(const string& query) {
     return result[0][0];
 }
 
-void SQLite::clean() {
-
-    SINFO("[TYLER2] Cleaning DB");
-    int code = sqlite3_get_autocommit(_db);
-    if (!code) {
-        SWARN("[TYLER2] Oh no, sqlite3_get_autocommit returned 0!");
-    }
-
-    // Does anything require a reset?
-    sqlite3_stmt* stmt;
-    do {
-        stmt = sqlite3_next_stmt(_db, 0);
-        if (stmt) {
-            int busy = sqlite3_stmt_busy(stmt);
-            if (busy) {
-                SINFO("[TYLER2] busy statement.");
-            } else {
-                SINFO("[TYLER2] statement not busy.");
-            }
-
-        } else {
-            SINFO("[TYLER2] No more statements, finishing.");
-        }
-    } while (stmt);
-}
-
 bool SQLite::read(const string& query, SQResult& result) {
     // Execute the read-only query
     SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
@@ -337,9 +308,7 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    SINFO("[TYLER2] acquiring _commitLock.");
     _commitLock.lock();
-    SINFO("[TYLER2] _commitLock acquired.");
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -348,10 +317,6 @@ bool SQLite::prepare() {
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash();
     _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
-    if (commitCount && lastCommittedHash.empty()) {
-        SWARN("[TYLER2] lastCommittedHash is empty but commitCount not 0!");
-    }
-    SINFO("[TYLER2] Computed new uncommitted hash. At commitCount(" << commitCount << "): " << _uncommittedHash << " from " << lastCommittedHash << " and " << _uncommittedQuery);
     _uncommittedTransaction = true;
     uint64_t before = STimeNow();
 
@@ -364,13 +329,12 @@ bool SQLite::prepare() {
 
     int result = SQuery(_db, "updating journal", query);
     _lastJournalQuery = query;
-    SINFO("[TYLER2] preparing: " << _lastJournalQuery);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        SINFO("[TYLER2] Prepare failed, releasing _commitLock.");
+        SINFO("Prepare failed, releasing _commitLock.");
         _commitLock.unlock();
         return false;
     }
@@ -418,13 +382,10 @@ int SQLite::commit() {
         _committedtransactionIDs.insert(_uncommittedID);
         {
             // Update atomically.
-            SINFO("[TYLER2] acquiring _hashLock"); 
             lock_guard<mutex> lock(_hashLock);
-            SINFO("[TYLER2] _hashLock acquired"); 
             _lastCommittedHash = _uncommittedHash;
-            SINFO("[TYLER2] releasing _hashLock"); 
         }
-        SINFO("[TYLER2] Commit successful (" << _commitCount.load() << "), releasing _commitLock for: " << _lastJournalQuery);
+        SINFO("Commit successful (" << _commitCount.load() << "), releasing _commitLock for: " << _lastJournalQuery);
         _lastJournalQuery = "";
         _commitLock.unlock();
 
@@ -433,7 +394,7 @@ int SQLite::commit() {
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
     } else {
-        SINFO("[TYLER2] Commit failed, waiting for rollback for: " << _lastJournalQuery);
+        SINFO("Commit failed, waiting for rollback for: " << _lastJournalQuery);
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding _commitLock, and it will need to be unlocked by
@@ -443,23 +404,19 @@ int SQLite::commit() {
 
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
     // TODO: We need to be careful about where we call this, or we need to make this recursive.
-    SINFO("[TYLER2] acquiring _commitLock for getCommittedTransactions"); 
     lock_guard<mutex> lock(_commitLock);
 
     map<uint64_t, pair<string,string>> result;
     if (_committedtransactionIDs.empty()) {
-        SINFO("[TYLER2] releasing _commitLock for getCommittedTransactions"); 
         return result;
     }
 
     for (uint64_t key : _committedtransactionIDs) {
         result[key] = move(_inFlightTransactions.at(key));
         _inFlightTransactions.erase(key);
-        SINFO("[TYLER2] Clearing committed transaction: " << key);
     }
 
     _committedtransactionIDs.clear();
-    SINFO("[TYLER2] releasing _commitLock for getCommittedTransactions"); 
     return result;
 }
 
@@ -482,7 +439,7 @@ void SQLite::rollback() {
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        SINFO("[TYLER2] Rollback successful, releasing _commitLock for: " << _lastJournalQuery);
+        SINFO("Rollback successful, releasing _commitLock for: " << _lastJournalQuery);
         _commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
@@ -527,9 +484,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() { 
-    SINFO("[TYLER2] acquiring _hashLock"); 
     lock_guard<mutex> lock(_hashLock);
-    SINFO("[TYLER2] _hashLock acquired and releasing."); 
     return _lastCommittedHash;
 }
 
