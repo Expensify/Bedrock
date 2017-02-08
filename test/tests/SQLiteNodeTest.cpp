@@ -7,7 +7,7 @@ struct TestSQLiteNode : public SQLiteNode {
 
     // Useless implementations that at least define the methods.
     bool _peekCommand(SQLite&, SQLiteNode::Command*) {return true;}
-    void _processCommand(SQLite&, SQLiteNode::Command*) {}
+    bool _processCommand(SQLite&, SQLiteNode::Command*) {return true;}
     void _abortCommand(SQLite&, SQLiteNode::Command*) {}
     void _cleanCommand(SQLiteNode::Command*) {}
 

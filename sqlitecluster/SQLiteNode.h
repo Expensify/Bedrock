@@ -155,7 +155,7 @@ class SQLiteNode : public STCPNode {
 
     // Aborts (if active) a command on the database and cleans it up.
     // If the command has been passed to the control of a different SQLiteNode, the caller can elect not to delete it.
-    void closeCommand(Command* command, bool deleteCommand = true);
+    void closeCommand(Command* command);
 
     // Updates the internal state machine; returns true if it wants immediate
     // re-updating.
@@ -191,15 +191,21 @@ class SQLiteNode : public STCPNode {
     // _cleanCommand() is called when the command is closed; use it for any
     // final cleanup operations.
     //
-    void processCommand(Command* command);
+
+    // Externally exposed version of _processCommand().
+    bool processCommand(Command* command);
     virtual bool _peekCommand(SQLite& db, Command* command) = 0;
-    virtual void _processCommand(SQLite& db, Command* command) = 0;
+
+    // This returns `true` if we need to commit something to the database after this operation, false otherwise. The
+    // two common cases for why this would return false are that the command threw an exception, or it succeeded but
+    // didn't need to write anything to the database.
+    virtual bool _processCommand(SQLite& db, Command* command) = 0;
     virtual void _abortCommand(SQLite& db, Command* command) = 0;
     virtual void _cleanCommand(Command* command) = 0;
 
     // Wrappers for peek and process command to keep track of processing time.
     bool _peekCommandWrapper(SQLite& db, Command* command);
-    void _processCommandWrapper(SQLite& db, Command* command);
+    bool _processCommandWrapper(SQLite& db, Command* command);
 
     bool commit();
 

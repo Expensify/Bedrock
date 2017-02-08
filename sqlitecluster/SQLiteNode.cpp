@@ -197,8 +197,8 @@ bool SQLiteNode::shutdownComplete() {
     }
 }
 
-void SQLiteNode::processCommand(Command* command) {
-    _processCommandWrapper(_db, command);
+bool SQLiteNode::processCommand(Command* command) {
+    return _processCommandWrapper(_db, command);
 }
 
 bool SQLiteNode::commit() {
@@ -277,13 +277,14 @@ void SQLiteNode::_sendOutstandingTransactions() {
     _haveUnsentTransactions = false;
 }
 
-void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
+bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
     // Measure elapsed time and add to processing
     uint64_t start = STimeNow();
     _processTimer.start();
-    _processCommand(db, command);
+    bool result = _processCommand(db, command);
     _processTimer.stop();
     command->processingTime += STimeNow() - start;
+    return result;
 }
 
 bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
@@ -575,10 +576,10 @@ void SQLiteNode::clearCommandHolds(const string& heldBy) {
 }
 
 // --------------------------------------------------------------------------
-void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
+void SQLiteNode::closeCommand(Command* command) {
     SASSERT(command);
     // Note that we've closed the command
-    SDEBUG("Closing command '" << command->id << "'. Delete it? " << deleteCommand);
+    SDEBUG("Closing command '" << command->id << "'.");
 
     // Verify the command has completed before closing.  Three exceptions:
     // 1) If we self-initiated the command.  (**FIXME: Why is this ok?)
@@ -594,8 +595,9 @@ void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
     //          However, the command is distinct and near the front so using list.erase( ).
     list<Command*>::iterator commandIt =
         ::find(_queuedCommandMap[command->priority].begin(), _queuedCommandMap[command->priority].end(), command);
-    if (commandIt != _queuedCommandMap[command->priority].end())
+    if (commandIt != _queuedCommandMap[command->priority].end()) {
         _queuedCommandMap[command->priority].erase(commandIt);
+    }
 
     // Verify we're not closing a command while it's being worked on
     if (_currentCommand == command) {
@@ -622,15 +624,11 @@ void SQLiteNode::closeCommand(Command* command, bool deleteCommand) {
         } else {
             SWARN("Trying to cancel escalated command " << command->id << ", but no master. Just erasing it.");
         }
-        SINFO("[TYLER2] erasing escalated command: " << command->id);
         _escalatedCommandMap.erase(command->id);
     }
 
-    // Finish the cleanup
     _processedCommandList.remove(command);
-    if (deleteCommand) {
-        delete command;
-    }
+    delete command;
 }
 
 // --------------------------------------------------------------------------
@@ -1587,16 +1585,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SASSERTWARN(_currentCommand->transaction.empty());
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
-                            try {
-                                SINFO("[TYLER] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
-                                _processCommandWrapper(_db, _currentCommand);
-                            } catch (...) {
-                                // Only worker threads need to handle this case.
-                            }
+
+                            SINFO("[TYLER] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
+                            bool needsCommit = _processCommandWrapper(_db, _currentCommand);
+
                             SASSERT(!_currentCommand->response.empty()); // Must set a response
 
                             // Anything to commit?
-                            if (_db.insideTransaction()) {
+                            if (needsCommit) {
 
                                 // We're about to send a transaction here, grab our commit mutex and send anything
                                 // outstanding. This remains locked until we've finished this transaction.

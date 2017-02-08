@@ -27,7 +27,7 @@ class BedrockNode : public SQLiteNode {
 
     // SQLiteNode API: Command management
     virtual bool _peekCommand(SQLite& db, Command* command);
-    virtual void _processCommand(SQLite& db, Command* command);
+    virtual bool _processCommand(SQLite& db, Command* command);
     virtual void _abortCommand(SQLite& db, Command* command);
     virtual void _cleanCommand(Command* command);
 

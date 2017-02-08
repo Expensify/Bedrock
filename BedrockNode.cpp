@@ -158,12 +158,15 @@ bool BedrockNode::dbReady() {
     return _dbReady;
 }
 
-void BedrockNode::_processCommand(SQLite& db, Command* command) {
+bool BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
     SDEBUG("Received '" << request.methodLine << "'");
+
+    bool needsCommit = false;
+
     try {
         if (SIEquals(request.methodLine, "UpgradeDatabase")) {
             if (!db.beginTransaction()) {
@@ -211,11 +214,9 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
         bool isQueryEmpty = db.getUncommittedQuery().empty();
         if (isQueryEmpty) {
             db.rollback();
+        } else {
+            needsCommit = true;
         }
-
-        // We can't do this here any more. It's been moved to `commit`.
-        // else if (!db.prepare())
-        //    throw "501 Failed to prepare transaction";
 
         // If no response was sent, assume 200 OK
         if (response.methodLine == "") {
@@ -243,6 +244,8 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     } catch (...) {
         handleCommandException(db, command, "", true);
     }
+
+    return needsCommit;
 }
 
 void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing) {
@@ -270,11 +273,6 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
     // we'll use the text of the error.
     if (command->response.methodLine == "") {
         command->response.methodLine = e;
-    }
-
-    // Re-throw, this is how worker threads know that processing failed.
-    if (wasProcessing) {
-        throw;
     }
 }
 

@@ -111,8 +111,9 @@ struct SQLiteTestNode : public SQLiteNode {
     }
 
     // Begin processing a new command
-    virtual void _processCommand(SQLite& db, Command* command) {
+    virtual bool _processCommand(SQLite& db, Command* command) {
         // See what we're starting
+        bool needsCommit = false;
         SASSERT(db.beginTransaction());
         SDEBUG("Processing '" << command->request.methodLine << "'");
         if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
@@ -122,7 +123,7 @@ struct SQLiteTestNode : public SQLiteNode {
             if (created) {
                 // Seed the database
                 SASSERT(db.write("INSERT INTO test VALUES ( 0 );"));
-                SASSERT(db.prepare());
+                needsCommit = true;
             } else
                 db.rollback();
             command->response.methodLine = "200 OK";
@@ -162,6 +163,7 @@ struct SQLiteTestNode : public SQLiteNode {
             } else
                 SERROR("Unrecognized request '" << command->request.methodLine << "'");
         }
+        return needsCommit;
     }
 
     // Cleanup pseudo-command

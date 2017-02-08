@@ -251,7 +251,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // This should always be empty if we're not mastering.
         BedrockNode::Command* command = data.escalatedCommands.pop();
         bool escalatedCommand = false;
-        bool deleteCommand = true;
+        bool closeCommand = true;
         // If there was an escalated command, we'll use it's request ID as our log prefix.
         if (command) {
             // Auto-prefix the logs with the request ID for the escalated request.
@@ -307,6 +307,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // Send it back to the sync node.
                 SINFO("Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
                 data.peekedCommands.push(command);
+                closeCommand = false;
             } else {
                 // Prepare the final response.
                 SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
@@ -336,7 +337,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // it here?
                 command->response.clear();
                 data.peekedCommands.push(command);
-                deleteCommand = false;
+                closeCommand = false;
             } else {
 
                 // And here's our special case, where we can attempt to process a command from a worker thread. We'll
@@ -348,23 +349,16 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                           << " from worker thread. (try #" << tries << ").");
 
                     // Try and process.
-                    bool success = true;
-                    try {
-                        // TODO: Make this return success code/bool?
-                        node.processCommand(command);
-                    } catch (...) {
-                        success = false;
-                        SINFO("Error processing command: " << command->id << ":"
-                              << command->request.methodLine);
-                    }
+                    bool needsCommit = node.processCommand(command);
 
                     // If there was an error processing this, the transaction's been rolled back, but we still need to
                     // send a response to the caller. Otherwise, we can commit now.
-                    if (success) {
+                    if (needsCommit) {
                         if (!node.commit()) {
                             // If the commit failed, we just try again.
                             SINFO("ASYNC command " << command->id << ":" << command->request.methodLine
                                   << " conflicted, retrying.");
+                            command->response.clear();
                             continue;
                         } else {
                             // Hey, everything worked!
@@ -379,7 +373,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     if (escalatedCommand) {
                         SINFO("Giving this back to sync thread: " << command->id << ":" << command->request.methodLine);
                         data.peekedCommands.push(command);
-                        deleteCommand = false;
+                        closeCommand = false;
                     } else {
                         SINFO("Preparing response to ASYNC command." << ":" << command->request.methodLine);
                         BedrockServer_PrepareResponse(command);
@@ -397,17 +391,17 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     SINFO("Too many conflicts, escalating command." << command->id << ":" << command->request.methodLine);
                     command->response.clear();
                     data.peekedCommands.push(command);
-                    deleteCommand = false;
+                    closeCommand = false;
                 }
             }
         } else {
             SERROR("[dmb] Lost command after worker peek. This should never happen");
         }
 
-        // Close the command to remove it from any internal queues.
-        // This doesn't really do anything differently than it used to, so I think we can leave it here. We don't want
-        // it to delete the command though, if we've put it in a different queue.
-        node.closeCommand(command, deleteCommand);
+        if (closeCommand) {
+            // Only close commands we haven't passed to a different node.
+            node.closeCommand(command);
+        }
     }
 }
 
