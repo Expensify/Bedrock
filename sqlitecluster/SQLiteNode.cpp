@@ -710,14 +710,16 @@ void SQLiteNode::_queueCommand(Command* command) {
     // at the proper position, based on command timestamp. Start from the back because the proper place
     // for the command is likely near the back.
     if (_queuedCommandMap[command->priority].empty() ||
-        command->creationTimestamp > _queuedCommandMap[command->priority].back()->creationTimestamp)
+        command->creationTimestamp > _queuedCommandMap[command->priority].back()->creationTimestamp) {
         _queuedCommandMap[command->priority].push_back(command);
-    else
-        SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt)
+    } else {
+        SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt) {
             if (command->creationTimestamp < (*commandIt)->creationTimestamp) {
                 _queuedCommandMap[command->priority].insert(commandIt, command);
                 return;
             }
+        }
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1432,11 +1434,13 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (_state == SQLC_MASTERING && !_currentCommand) {
             // See if it's time to stand down
             string standDownReason;
+            bool shuttingDown = false;
             if (gracefulShutdown()) {
                 // Graceful shutdown.  Set priority 1 and stand down so
                 // we'll re-connect to the new master and finish up our
                 // commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
+                shuttingDown = true;
                 _priority = 1;
             } else {
                 // Loop across peers
@@ -1465,13 +1469,26 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 }
             }
 
-            // Do we want to stand down, and can we?
-            if (!standDownReason.empty()) {
-                // Do it
-                SHMMM(standDownReason);
-                _changeState(SQLC_STANDINGDOWN);
-                return true; // Re-update
+            // Historically, if we're shutting down, everything's already processed and handled, but since we now
+            // support other threads processing commands on our behalf, we can end up in the state where we're shutting
+            // down, but we still have either queued or processed commands. In the case that we still have queued
+            // commands to deal with at shutdown, we'll defer switching to STANDINGDOWN for another loop iteration to
+            // handle those commands. And, once we do switch to STANDNGDOWN, we return `true` rather than `false` to
+            // let the caller know it should clean up our command queues, as we may have processed some more commands.
+            if (!shuttingDown || _isQueuedCommandMapEmpty()) {
+                // Do we want to stand down, and can we?
+                if (!standDownReason.empty()) {
+                    // Do it
+                    SHMMM(standDownReason);
+                    _changeState(SQLC_STANDINGDOWN);
+                    SINFO("Standing down: " << standDownReason);
+                    // We might have processed more commands that the caller needs to respond to.
+                    return false;
+                }
+            } else {
+                SWARN("Shutting down but non-empty command queue, running another MASTERING loop.");
             }
+
 
             // Not standing down -- do we have any commands to start?  Only
             // dequeue if we either have no peers configured (meaning
