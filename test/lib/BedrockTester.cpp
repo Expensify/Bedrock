@@ -12,6 +12,8 @@ set<int> BedrockTester::serverPIDs;
 #define __NOEXCEPT _GLIBCXX_USE_NOEXCEPT
 #endif
 
+#define DB_WRITE_OPEN_FLAGS SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
+
 class BedrockTestException : public std::exception {
   private:
     const string message;
@@ -48,13 +50,20 @@ BedrockTester::BedrockTester(const string& filename, const string& serverAddress
 
     createFile(_dbFile);
 
-    SQLite db(_dbFile, 1000000, 1, false, 1000000, -1, -1);
+    // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
+    if (queries.size()) {
+        sqlite3* _db;
+        sqlite3_initialize();
+        sqlite3_open_v2(_dbFile.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL);
 
-    for (string query : queries) {
-        db.beginTransaction();
-        db.write(query);
-        db.prepare();
-        db.commit();
+        for (string query : queries) {
+            int error = sqlite3_exec(_db, query.c_str(), 0, 0, 0);
+            if (error) {
+                cout << "Init Query: " << query << ", FAILED. Error: " << error << endl;
+            }
+        }
+
+        SASSERT(!sqlite3_close(_db));
     }
 
     if (startServers) {
