@@ -189,10 +189,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             sleep(1);
         }
 
+        /*
         for (auto i : {0, 1, 2}) {
             cout << "Complete journal table for node " << i << endl;
             cout << allResults[i] << endl;
         }
+        */
 
         // Verify the journals all match.
         ASSERT_TRUE(allResults[0].size() > 0);
@@ -263,10 +265,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         }
         threads.clear();
 
+        /*
         for (auto i : {0, 1, 2}) {
             cout << "TEST Table, Node " << i << endl;
             cout << allResults[0] << endl << endl;
         }
+        */
 
         // Verify the actual table contains the right number of rows.
         allResults.clear();

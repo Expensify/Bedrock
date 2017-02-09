@@ -71,6 +71,8 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         // - Status( )
         //
         //     Give us some data on this server.
+        // TODO Some or all of this data might be wrong as worker threads can now respond this, but previously didn't
+        // have access to all of this information.
         list<string> plugins;
         for (BedrockPlugin* plugin : *g_registeredPluginList) {
             STable pluginData;

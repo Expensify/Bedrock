@@ -406,27 +406,7 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
 
     // Process status commands special, as we never want to escalate to the master
     bool forcePeekIt = false;
-    if (SIEquals(request.methodLine, "Status")) {
-        // If we're a slave, we never want to escalate this to the master, else
-        // it'll return the master's status (which will be super confusing).
-        // However, if we're a read only thread on a slave, then we *do* want
-        // to escalate to the write thread -- because only the write thread
-        // knows the peer status (which is the primary point of this command).
-        // So, we want to peek if we're *not* read only.  This way:
-        //
-        // - If we're a read thread on the slave, we *don't* peek -- instead,
-        //   we escalate this internally to the write thread
-        //
-        // - If we're a write thread on a slave, we *do* peek -- this will
-        //   return the peer status from the perspective of this slave.
-        //
-        // - If we're a read thread on the master, again, we still *don't*
-        //   peek, as we want the master's write thread's status
-        //
-        // - If we're a write thread on the master, we *do* peek.
-        forcePeekIt = !_worker;
-        peekIt = !_worker;
-    } else if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
+    if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
                SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
         // Force peek these always -- even if read only -- because any read
         // thread knows our status, and thus can handle these.
@@ -2029,24 +2009,27 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
         }
     } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
-        /// - STANDUP_RESPONSE: Sent in response to the STATE message generated
-        ///     when a node enters the STANDINGUP state.  Contains a header
-        ///     "Response" with either the value "approve" or "deny".  This
-        ///     response is stored within the peer for testing in the update loop.
-        ///
-        if (_state != SQLC_STANDINGUP)
-            throw "not standing up";
-        if (!message.isSet("Response"))
-            throw "missing Response";
-        if (peer->isSet("StandupResponse"))
-            PWARN("Already received standup response '" << (*peer)["StandupResponse"] << "', now receiving '"
-                                                        << message["Response"]
-                                                        << "', odd -- multiple masters competing?");
-        if (SIEquals(message["Response"], "approve"))
-            PINFO("Received standup approval");
-        else
-            PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
-        (*peer)["StandupResponse"] = message["Response"];
+        // STANDUP_RESPONSE: Sent in response to the STATE message generated when a node enters the STANDINGUP state.
+        // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
+        // peer for testing in the update loop.
+        if (_state == SQLC_STANDINGUP) {
+            if (!message.isSet("Response")) {
+                throw "missing Response";
+            }
+            if (peer->isSet("StandupResponse")) {
+                PWARN("Already received standup response '" << (*peer)["StandupResponse"] << "', now receiving '"
+                      << message["Response"] << "', odd -- multiple masters competing?");
+            }
+            if (SIEquals(message["Response"], "approve")) {
+                PINFO("Received standup approval");
+            }
+            else {
+                PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
+            }
+            (*peer)["StandupResponse"] = message["Response"];
+        } else {
+            SINFO("Got STANDUP_RESPONSE but not SQLC_STANDINGUP. Probably a late message, ignoring.");
+        }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
         /// - SYNCHRONIZE: Sent by a node in the SEARCHING state to a peer that
         ///     has new commits.  Respond with a SYNCHRONIZE_RESPONSE containing
@@ -2779,8 +2762,11 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         string myHash, ignore;
         if (!_db.getCommit(peerCommitCount, ignore, myHash))
             throw "error getting hash";
-        if (myHash != (*peer)["Hash"])
+        if (myHash != (*peer)["Hash"]) {
+            SWARN("[TY5] Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << (*peer)["Hash"]
+                  << ", but we have hash: " << myHash << " for that commit.");
             throw "hash mismatch";
+        }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
     } else
         PINFO("Peer has no commits, beginning synchronization.");

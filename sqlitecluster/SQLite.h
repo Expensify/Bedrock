@@ -238,4 +238,6 @@ class SQLite {
     // Static atomic commit count. Any thread can read or update this.
     static atomic<uint64_t> _commitCount;
 
+    static atomic<int> _dbInitialized;
+
 };

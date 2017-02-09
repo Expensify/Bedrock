@@ -14,6 +14,8 @@ bool SQLite::sqliteInitialized = false;
 mutex SQLite::_commitLock;
 mutex SQLite::_hashLock;
 atomic<uint64_t> SQLite::_commitCount(0);
+atomic<int> SQLite::_dbInitialized(0);
+
 map<uint64_t, pair<string, string>> SQLite::_inFlightTransactions;
 set<uint64_t> SQLite::_committedtransactionIDs;
 string SQLite::_lastCommittedHash;
@@ -110,22 +112,35 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     SASSERT(!SQuery(_db, "getting commit count", "SELECT COUNT(*) FROM " + _journalName + ";", result));
     _journalSize = SToUInt64(result[0][0]);
 
-    // Seed the atomic commit count. From here out, we increment this when we successfully commit a transaction.
-    uint64_t originalCommitCount = _commitCount.load();
-    _commitCount.store(_getCommitCount());
-    uint64_t loadedCommitCount = _commitCount.load();
-    // Load the query and hash values as well.
+    // If we're the first thread to get to it, we'll initialize the DB.
 
-    // Lock to keep multiple objects from overwriting these.
-    lock_guard<mutex> clock(_commitLock);
-    lock_guard<mutex> hlock(_hashLock);
-    string ignore;
-    getCommit(loadedCommitCount, ignore, _lastCommittedHash);
+    // First we grab the commit and hash locks so nobody else can try to commit, or read the last hash.
+    lock_guard<mutex> c_lock(_commitLock);
+    lock_guard<mutex> h_lock(_hashLock);
 
-    if (originalCommitCount && originalCommitCount != loadedCommitCount) {
-        SWARN("[TYLER] Inconsistent values loaded in _commitCount: " << originalCommitCount << " and "
-              << loadedCommitCount);
+    // Now we'll see if the DB's initialized.
+    int alreadyInitialized = _dbInitialized.fetch_add(1);
+
+    // Nobody'd initialized this before! Let's do it now.
+    if (!alreadyInitialized) {
+        // Read the highest commit count from the database, and store it in _commitCount.
+        uint64_t commitCount = _getCommitCount();
+        _commitCount.store(commitCount);
+
+        // And then read the hash for that transaction.
+        string lastCommittedHash, ignore;
+        getCommit(commitCount, ignore, lastCommittedHash);
+        _lastCommittedHash = lastCommittedHash;
+
+        // If we have a commit count, we should have a hash as well.
+        if (commitCount && lastCommittedHash.empty()) {
+            SWARN("[TYLER] Loaded commit count " << commitCount << " with empty hash!");
+        } else {
+            SWARN("[TYLER] Loaded commit count " << commitCount << " with hash " << _lastCommittedHash);
+        }
     }
+
+    // Alright, done, we'll release locks and continue on!
 }
 
 string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
@@ -374,16 +389,17 @@ int SQLite::commit() {
         // Successful commit
         _journalSize += !truncating; // Only increase if we didn't truncate by a row
 
-        // Ok, someone else can commit now.
-        // Incrementing the commit count.
-        _commitCount++;
-
         _committedtransactionIDs.insert(_uncommittedID);
         {
             // Update atomically.
             lock_guard<mutex> lock(_hashLock);
             _lastCommittedHash = _uncommittedHash;
+            SINFO("[TYLER] Updated last committed hash to: " << _lastCommittedHash << " (commit: " << _uncommittedID << ").");
         }
+
+        // Ok, someone else can commit now.
+        // Incrementing the commit count.
+        _commitCount++;
         SINFO("Commit successful (" << _commitCount.load() << "), releasing _commitLock.");
 
         _insideTransaction = false;
