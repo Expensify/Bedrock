@@ -250,14 +250,6 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             }
         }
 
-        // We'd initially intended for any value to be allowable here, but for performance reasons, we currently
-        // will only allow specific values to try and keep queries fast. If you pass an invalid value, we'll throw
-        // here so that the caller can know that he did something wrong rather than having his job sit unprocessed
-        // in the queue forever. Hopefully we can remove this restriction in the future.
-        if (priority != 0 && priority != 500 && priority != 1000) {
-            throw "402 Invalid priority value";
-        }
-
         // Create this new job
         db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
                  "VALUES( " +
@@ -286,28 +278,13 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         SQResult result;
         const string& name = request["name"];
 
-        string query =
-            "SELECT jobID, name, data FROM ( "
-            "SELECT * FROM "
-            "(SELECT jobID, name, data, priority "
-            "FROM jobs "
-            "WHERE state='QUEUED' "
-            "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(1000) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + "UNION ALL " + "SELECT * FROM "
-                                                                         "(SELECT jobID, name, data, priority "
-                                                                         "FROM jobs "
-                                                                         "WHERE state='QUEUED' "
-                                                                         "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(500) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + "UNION ALL " + "SELECT * FROM "
-                                                                         "(SELECT jobID, name, data, priority "
-                                                                         "FROM jobs "
-                                                                         "WHERE state='QUEUED' "
-                                                                         "  AND " +
-            SCURRENT_TIMESTAMP() + ">=nextRun " + "  AND name GLOB " + SQ(name) + " " + "  AND priority=" + SQ(0) +
-            " " + "ORDER BY nextRun ASC " + "LIMIT 1) " + ") " + "ORDER BY priority DESC "
-                                                                 "LIMIT 1;";
+        string query = "SELECT jobID, name, data "
+					   "FROM jobs "
+					   "WHERE state='QUEUED' "
+					   "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun " +
+					   "  AND name GLOB " + SQ(name) + " " +
+					   "ORDER BY priority DESC, nextRun ASC "
+					   "LIMIT 1;";
 
         if (!db.read(query, result)) {
             throw "502 Query failed";
