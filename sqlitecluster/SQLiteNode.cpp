@@ -299,7 +299,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     // If there's already a response to this command, we must have finished it somewhere else (presumably, wherever we
     // called `reopenCommand` from. We'll simply clean up here.
     if (!existingCommand->response.empty()) {
-        SINFO("[TYLER] Reopening and finishing command. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+        SINFO("[TY2] Reopening and finishing command. " << existingCommand->id << ":" << existingCommand->request.methodLine);
         return _finishCommand(existingCommand);
     }
 
@@ -307,7 +307,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     SASSERT(!(existingCommand->httpsRequest));
     
     // No response? We must not have processed this. Let's process it now.
-    SINFO("[TYLER] Reopening command from the start. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+    SINFO("[TY2] Reopening command from the start. " << existingCommand->id << ":" << existingCommand->request.methodLine);
     return _openCommand(existingCommand);
 }
 
@@ -1314,7 +1314,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 commandFinished = true;
 
                 // Notify everybody to rollback
-                SWARN("[TYLER2] ROLLBACK, not approved: " << _currentCommand->id);
+                SWARN("[TY2] ROLLBACK, not approved: " << _currentCommand->id);
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback["ID"] = _currentCommand->id;
                 _sendToAllPeers(rollback, true); // subscribed only
@@ -1332,7 +1332,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     _commitTimer.stop();
 
                     // Notify everybody to rollback
-                    SWARN("[TYLER2] ROLLBACK, conflicted on sync: " << _currentCommand->id);
+                    SWARN("[TY2] ROLLBACK, conflicted on sync: " << _currentCommand->id << ":" << _currentCommand->request["query"]);
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback["ID"] = _currentCommand->id;
                     _sendToAllPeers(rollback, true); // subscribed only
@@ -1343,7 +1343,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     _commitMutex.unlock();
 
                     // Make sure the response is empty, and re-open the command.
-                    _currentCommand->response.empty();
+                    _currentCommand->response.clear();
                     reopenCommand(_currentCommand);
                     /*
                     //commandFinished = true;
@@ -1603,7 +1603,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
 
-                            SINFO("[TYLER] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
+                            SINFO("[TY2] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
                             bool needsCommit = _processCommandWrapper(_db, _currentCommand);
 
                             SASSERT(!_currentCommand->response.empty()); // Must set a response

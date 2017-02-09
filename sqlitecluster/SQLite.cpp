@@ -328,7 +328,6 @@ bool SQLite::prepare() {
     _inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
 
     int result = SQuery(_db, "updating journal", query);
-    _lastJournalQuery = query;
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -385,16 +384,15 @@ int SQLite::commit() {
             lock_guard<mutex> lock(_hashLock);
             _lastCommittedHash = _uncommittedHash;
         }
-        SINFO("Commit successful (" << _commitCount.load() << "), releasing _commitLock for: " << _lastJournalQuery);
-        _lastJournalQuery = "";
-        _commitLock.unlock();
+        SINFO("Commit successful (" << _commitCount.load() << "), releasing _commitLock.");
 
         _insideTransaction = false;
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        _commitLock.unlock();
     } else {
-        SINFO("Commit failed, waiting for rollback for: " << _lastJournalQuery);
+        SINFO("Commit failed, waiting for rollback.");
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding _commitLock, and it will need to be unlocked by
@@ -428,18 +426,13 @@ void SQLite::rollback() {
         uint64_t before = STimeNow();
         SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
         _rollbackElapsed += STimeNow() - before;
-        if (!_uncommittedQuery.empty() && _rollbackElapsed > 1000 * STIME_US_PER_MS) {
-            SALERT("[opszy] Freak out! Rolled back an actual query in " << (_rollbackElapsed / STIME_US_PER_MS)
-                                                                        << "ms.");
-        }
 
         // Finally done with this.
-        _lastJournalQuery = "";
         _insideTransaction = false;
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        SINFO("Rollback successful, releasing _commitLock for: " << _lastJournalQuery);
+        SINFO("Rollback successful, releasing _commitLock for.");
         _commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");

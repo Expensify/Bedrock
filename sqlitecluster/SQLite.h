@@ -231,8 +231,6 @@ class SQLite {
     static mutex _commitLock;
     static mutex _hashLock;
 
-    string _lastJournalQuery;
-
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not int he middle of
     // any transactions.
     uint64_t _getCommitCount();

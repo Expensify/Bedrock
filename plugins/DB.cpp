@@ -41,7 +41,7 @@ bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::C
         // **NOTE: This isn't intended to be foolproof, and attempts to err on the
         //         side of caution (eg, assuming read-write unless clearly read-
         //         only).  A not-so-clever client could easily bypass this.  But
-        //         that same person could also easily wreck havok in a bunch of
+        //         that same person could also easily wreck havoc in a bunch of
         //         other ways, too.  That said, the worst-case scenario is that a
         //         read-write command is mis-classified as read-only an executed in
         //         the peek, but even then we'll detect it after the fact and shut
@@ -67,7 +67,7 @@ bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::C
             throw "502 Query failed";
         }
 
-        // Verify it didn't change anything -- assert becuase if we did, we did so
+        // Verify it didn't change anything -- assert because if we did, we did so
         // outside of a replicated transaction and that's REALLY bad.
         if (preChangeCount != db.getChangeCount()) {
             // This database is fucked -- we made a change outside of a transaction
@@ -113,11 +113,6 @@ bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode
         const string& upperQuery = SToUpper(STrim(query));
         if (SStartsWith(upperQuery, "INSERT ")) {
             response["lastInsertRowID"] = SToStr(db.getLastInsertRowID());
-        }
-
-        // Parrot this back for testing.
-        if (request.isSet("debug") && request["debug"].size()) {
-            response.content = request["debug"];
         }
 
         // Successfully processed
