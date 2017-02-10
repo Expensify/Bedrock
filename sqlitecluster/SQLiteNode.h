@@ -144,7 +144,7 @@ class SQLiteNode : public STCPNode {
 
     // Updates the internal state machine; returns true if it wants immediate
     // re-updating.
-    bool update(uint64_t& nextActivity);
+    bool update();
 
     // STCPNode API: Peer handling framework functions
     virtual void _onConnect(Peer* peer);
@@ -191,6 +191,8 @@ class SQLiteNode : public STCPNode {
     void setQuroumCheckpoint(const int quroumCheckpoint) { _quorumCheckpoint = quroumCheckpoint; };
     int getQuorumCheckpoint() { return _quorumCheckpoint; };
 
+    bool isQueuedCommandMapEmpty();
+
   protected:
     bool _readOnly;
     SQLite _db;
@@ -234,7 +236,6 @@ class SQLiteNode : public STCPNode {
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
     list<Command*> _getOrderedCommandListFromMap(const map<string, Command*> commandMap);
-    bool _isQueuedCommandMapEmpty();
     bool _isNothingBlockingShutdown();
     bool _majoritySubscribed() {
         int ignore;

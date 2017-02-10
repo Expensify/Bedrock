@@ -182,7 +182,7 @@ struct SQLiteTestNode : public SQLiteNode {
     // Override the base update
     bool update(uint64_t& nextActivity) {
         // If a timeout is set, use that
-        bool result = SQLiteNode::update(nextActivity);
+        bool result = SQLiteNode::update();
         if (commandTimeout)
             nextActivity = min(nextActivity, commandTimeout);
         return result;

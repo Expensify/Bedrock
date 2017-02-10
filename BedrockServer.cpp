@@ -194,7 +194,12 @@ void BedrockServer_WorkerThread(void* _data) {
             data->server->pollTimer.start();
             S_poll(fdm, max(nextActivity, now) - now);
             data->server->pollTimer.stop();
-            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+            nextActivity = STimeNow();
+            // Only wait up to one second if there's nothing in the node's internal queue. Otherwise, we'll want to
+            // process that immediately if no new work is waiting.
+            if (node.isQueuedCommandMapEmpty()) {
+                nextActivity += STIME_US_PER_S; // 1s max period
+            }
 
             // Handle any HTTPS requests from our plugins.
             for (list<SHTTPSManager*>& managerList : httpsManagers) { 
@@ -227,7 +232,7 @@ void BedrockServer_WorkerThread(void* _data) {
 
             // Let the node process any new commands we've opened or existing
             // commands outstanding
-            while (node.update(nextActivity))
+            while (node.update())
                 ;
 
             // Put everything the replication node has finished on the threaded queue.

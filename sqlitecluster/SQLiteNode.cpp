@@ -21,8 +21,6 @@
 ///
 /// **FIXME**: Add test to measure how long it takes for master to stabalize
 ///
-/// **FIXME**: Add 'nextActivity' to update() [TYLER: Partially addressed?]
-///
 /// **FIXME**: If master dies before sending ESCALATE_RESPONSE (or if slave dies
 ///            before receiving it), then a command might have been committed to
 ///            the database without notifying whoever initiated it.  Perhaps have
@@ -95,7 +93,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
 // --------------------------------------------------------------------------
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    SASSERTWARN(_isQueuedCommandMapEmpty());
+    SASSERTWARN(isQueuedCommandMapEmpty());
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(_processedCommandList.empty());
 }
@@ -672,7 +670,7 @@ void SQLiteNode::_finishCommand(Command* command) {
 /// -----------------
 /// Each state transitions according to the following events and operates as follows:
 ///
-bool SQLiteNode::update(uint64_t& nextActivity) {
+bool SQLiteNode::update() {
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a a period and try to connect to all known
@@ -1028,7 +1026,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         SASSERTWARN(!_masterPeer);
 
         // Are we waiting for approval of a distributed transaction?
-        if (_currentCommand && !_currentCommand->transaction.empty()) {
+        if (_currentCommand) {
             // Loop across all peers configured to see how many are:
             SAUTOPREFIX(_currentCommand->request["requestID"]);
             int numFullPeers = 0;     // Num non-permaslaves configured
@@ -1212,10 +1210,15 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                       << "): consistencyRequired=" << SQLCConsistencyLevelNames[consistencyRequired]
                       << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
             }
+
+            // We return false here *even if* we've finished the command. This lets the caller read any new commands
+            // from the network before we process the next command. This lets any new high-priority commands make their
+            // way into our queue before we process anything else, which may be lower priority.
+            return false;
         }
 
         // If we're the master, see if we're to stand down (and if not, start a new command)
-        if (_state == SQLC_MASTERING && !_currentCommand) {
+        if (_state == SQLC_MASTERING) {
             // See if it's time to stand down
             string standDownReason;
             if (gracefulShutdown()) {
@@ -1265,7 +1268,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // the peers are connected.  Otherwise we're in a live
             // environment but can't commit anything because we may cause a
             // split brain scenario.
-            if (!_isQueuedCommandMapEmpty() && _majoritySubscribed()) {
+            if (!isQueuedCommandMapEmpty() && _majoritySubscribed()) {
                 // Have commands and a majority, so let's start a new one.
                 SFOREACHMAPREVERSE(int, list<Command*>, _queuedCommandMap, it) {
                     // **XXX: Using pointer to list because STL containers copy on assignment.
@@ -1399,11 +1402,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
                                 // we need to wait for quorum.  This keeps all the quorum logic in the same place.
-                                if (STimeNow() > nextActivity) {
-                                    SINFO("Timeout reached while processing (transaction) commands. Exceeded by "
-                                          << (STimeNow() - nextActivity) << "us");
-                                    return false;
-                                }
                                 return true;
                             } else {
                                 // Doesn't need to commit anything; done processing.
@@ -1414,13 +1412,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 _finishCommand(_currentCommand);
                                 _currentCommand = nullptr;
                             }
-
-                            // **NOTE: This loops back and starts the next command of the same priority immediately
-                            if (STimeNow() > nextActivity) {
-                                SINFO("Timeout reached while processing commands. Exceeded by "
-                                      << (STimeNow() - nextActivity) << "us");
-                                return false;
-                            }
+                            // Return false to allow caller to read new commands from the network. This prevents us
+                            // from getting stuck in a state where a long queue of low-priority commands keeps getting
+                            // processed where a queue of higher-priority commands is building up in a network buffer,
+                            // but never gets read and made available to process.
+                            return false;
                         }
                     }
 
@@ -2685,7 +2681,7 @@ list<SQLiteNode::Command*> SQLiteNode::_getOrderedCommandListFromMap(const map<s
 }
 
 // --------------------------------------------------------------------------
-bool SQLiteNode::_isQueuedCommandMapEmpty() {
+bool SQLiteNode::isQueuedCommandMapEmpty() {
     SFOREACHMAPCONST(int, list<Command*>, _queuedCommandMap, it)
     if (!it->second.empty())
         return false;
