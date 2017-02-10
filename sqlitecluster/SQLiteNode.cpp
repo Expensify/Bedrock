@@ -2658,6 +2658,8 @@ void SQLiteNode::_removeQueuedCommand(SQLiteNode::Command* command) {
                 // Ok, we've removed it.
                 return; 
             }
+
+            ++commandIt;
         }
     }
 }
