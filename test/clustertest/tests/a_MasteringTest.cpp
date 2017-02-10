@@ -102,6 +102,8 @@ struct a_MasteringTest : tpunit::TestFixture {
             responses[i] = json["state"];
         }
 
+        // TODO: These don't work reliably. Maybe `Status` is broken?
+
         ASSERT_EQUAL(responses[0], "MASTERING");
         ASSERT_EQUAL(responses[1], "SLAVING");
         ASSERT_EQUAL(responses[2], "SLAVING");
