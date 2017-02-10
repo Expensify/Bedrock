@@ -65,7 +65,6 @@ const char* SQLCStateNames[] = {"SEARCHING", "SYNCHRONIZING", "WAITING",     "ST
 const char* SQLCConsistencyLevelNames[] = {"ASYNC", "ONE", "QUORUM"};
 
 // Initializations for static vars.
-recursive_mutex SQLiteNode::_commitMutex;
 bool SQLiteNode::_haveUnsentTransactions = false;
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
@@ -202,35 +201,36 @@ bool SQLiteNode::processCommand(Command* command) {
 }
 
 bool SQLiteNode::commit() {
-    SAUTOLOCK(_commitMutex);
+    _db.commitLock();
 
     if (!_db.prepare()) {
-        SINFO("[TYLER] calling prepare() failed, we'll have to roll this back.");
+        _db.commitUnlock();
         return false;
     }
 
     if (_db.getUncommittedHash().empty()) {
-        SINFO("[concurrent] No outstanding transaction");
+        _db.commitUnlock();
         return true;
     }
     // No prepare() call here because it's handled in process
 
-    SINFO("[concurrent] Attempting commit.");
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[TYLER] conflict - rolling back commit.");
         _db.rollback();
+        _db.commitUnlock();
         return false; // Commit conflicted.
     }
     _haveUnsentTransactions = true;
+    _db.commitUnlock();
     return true; // Commit succeeded.
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    SAUTOLOCK(_commitMutex);
+    _db.commitLock();
 
     // Make sure we have something to do.
     if (!_haveUnsentTransactions) {
+        _db.commitUnlock();
         return;
     }
 
@@ -275,6 +275,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
     }
 
     _haveUnsentTransactions = false;
+    _db.commitUnlock();
 }
 
 bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
@@ -1172,8 +1173,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
         // If there are outstanding transactions to send, then we'll do that, but only if we're not waiting on a
         // synchronous command to complete. However, it should be impossible for there to be any outstanding
-        // transactions while we wait for a synchronous command to complete, and because _commitMutex is recursive, we
-        // shouldn't actually require this "if" wrapper here.
+        // transactions while we wait for a synchronous command to complete
         if (!_currentCommand) {
             _sendOutstandingTransactions();
         }
@@ -1320,18 +1320,12 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // We're done with this, we'll re-open it, and then return from `update` indicating we need to run
                     // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
                     // caller.
-                    _commitMutex.unlock();
+                    _db.commitUnlock();
 
                     // Make sure the response is empty, and re-open the command.
                     _currentCommand->response.clear();
                     reopenCommand(_currentCommand);
-                    /*
-                    //commandFinished = true;
-                    SINFO("[TYLER3] Re-queueing command (and will blow it away): " << _currentCommand->id << ":" << _currentCommand->request["debug"]);
-                    openCommand(_currentCommand->request, _currentCommand->priority,
-                                _currentCommand->request.test("unique"),
-                                _currentCommand->request.calc64("commandExecuteTime"));
-                    */
+
                     _currentCommand = nullptr;
                     return true;
                 } else {
@@ -1400,7 +1394,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 }
 
                 // Done with this.
-                _commitMutex.unlock();
+                _db.commitUnlock();
             } else {
                 // Still waiting
                 SINFO("Waiting to commit: '"
@@ -1593,10 +1587,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 // We're about to send a transaction here, grab our commit mutex and send anything
                                 // outstanding. This remains locked until we've finished this transaction.
-                                _commitMutex.lock();
+                                _db.commitLock();
 
                                 // Clear anything outstanding before starting this one.
                                 uint64_t commitCount = getCommitCount();
+                                // This breaks with a non-recursive mutex.
                                 _sendOutstandingTransactions();
 
                                 if(!_db.prepare()) {
@@ -2689,11 +2684,12 @@ void SQLiteNode::_changeState(SQLCState newState) {
         if (newState == SQLC_MASTERING) {
             // Seed our last sent transaction.
             {
-                SAUTOLOCK(_commitMutex);
+                _db.commitLock();
                 _haveUnsentTransactions = false;
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
                 _db.getCommittedTransactions();
+                _db.commitUnlock();
             }
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it

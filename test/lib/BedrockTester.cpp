@@ -264,7 +264,7 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
 
-        threads.emplace_back([&](){
+        threads.emplace_back([&, i](){
 
             // Create a socket.
             int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
@@ -304,17 +304,48 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
 
                 string methodLine, content;
                 STable headers;
+                int timeouts = 0;
                 while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
-                    bool result = S_recvappend(socket, recvBuffer);
-                    if (!result) {
-                        break;
+
+                    // Poll the socket, so we get a timeout.
+
+                    pollfd readSock;
+                    readSock.fd = socket;
+                    readSock.events = POLLIN;
+                    readSock.revents = 0;
+
+                    // wait for a second...
+                    poll(&readSock, 1, 1000);
+                    if (readSock.revents & POLLIN) {
+                        bool result = S_recvappend(socket, recvBuffer);
+                        if (!result) {
+                            break;
+                        }
+                    } else {
+                        timeouts++;
+                        if (timeouts > 5) {
+                            //SAUTOLOCK(listLock);
+                            //cout << "Timeout (" << timeouts << ") waiting on socket, will try again." << endl;
+                        }
+                        if (timeouts == 60) {
+                            SAUTOLOCK(listLock);
+                            cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest["Query"] << endl;
+                            break;
+                        }
                     }
+
                 }
 
-                // Ok, done, let's lock again and insert this in the results.
+                // Lock to avoid log lines writing over each other.
                 {
                     SAUTOLOCK(listLock);
-                    results[myIndex] = make_pair(methodLine, content);
+                    if (timeouts == 60) {
+                        // cout << "this failed: " << myRequest.serialize() << endl;
+                        results[myIndex] = make_pair("000 Timeout", myRequest.serialize());
+                    } else {
+                        // Ok, done, let's lock again and insert this in the results.
+                        results[myIndex] = make_pair(methodLine, content);
+                    }
                 }
             }
 

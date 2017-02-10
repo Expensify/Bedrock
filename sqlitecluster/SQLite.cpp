@@ -11,8 +11,8 @@
 #define DB_READ_OPEN_FLAGS SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
 
 bool SQLite::sqliteInitialized = false;
-mutex SQLite::_commitLock;
-mutex SQLite::_hashLock;
+recursive_mutex SQLite::_commitLock;
+recursive_mutex SQLite::_hashLock;
 atomic<uint64_t> SQLite::_commitCount(0);
 atomic<int> SQLite::_dbInitialized(0);
 
@@ -115,8 +115,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     // If we're the first thread to get to it, we'll initialize the DB.
 
     // First we grab the commit and hash locks so nobody else can try to commit, or read the last hash.
-    lock_guard<mutex> c_lock(_commitLock);
-    lock_guard<mutex> h_lock(_hashLock);
+    lock_guard<recursive_mutex> c_lock(_commitLock);
+    lock_guard<recursive_mutex> h_lock(_hashLock);
 
     // Now we'll see if the DB's initialized.
     int alreadyInitialized = _dbInitialized.fetch_add(1);
@@ -348,7 +348,6 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        SINFO("Prepare failed, releasing _commitLock.");
         _commitLock.unlock();
         return false;
     }
@@ -392,7 +391,7 @@ int SQLite::commit() {
         _committedtransactionIDs.insert(_uncommittedID);
         {
             // Update atomically.
-            lock_guard<mutex> lock(_hashLock);
+            lock_guard<recursive_mutex> lock(_hashLock);
             _lastCommittedHash = _uncommittedHash;
             SINFO("[TYLER] Updated last committed hash to: " << _lastCommittedHash << " (commit: " << _uncommittedID << ").");
         }
@@ -418,7 +417,7 @@ int SQLite::commit() {
 
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
     // TODO: We need to be careful about where we call this, or we need to make this recursive.
-    lock_guard<mutex> lock(_commitLock);
+    lock_guard<recursive_mutex> lock(_commitLock);
 
     map<uint64_t, pair<string,string>> result;
     if (_committedtransactionIDs.empty()) {
@@ -493,7 +492,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() { 
-    lock_guard<mutex> lock(_hashLock);
+    lock_guard<recursive_mutex> lock(_hashLock);
     return _lastCommittedHash;
 }
 

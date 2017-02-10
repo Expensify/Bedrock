@@ -232,7 +232,6 @@ class SQLiteNode : public STCPNode {
     }
 
     // Synchronization variables.
-    static recursive_mutex _commitMutex;
     static bool _haveUnsentTransactions;
     static uint64_t _lastSentTransactionID;
 

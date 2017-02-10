@@ -33,6 +33,15 @@ class SQLite {
     // Begins a new concurrent transaction. Returns true on success.
     bool beginConcurrentTransaction();
 
+    // Lock and unlock the underlying mutex.
+    void commitLock() {
+        _commitLock.lock();
+    }
+
+    void commitUnlock() {
+        _commitLock.unlock();
+    }
+
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
     // table is already there with the wrong schema, it returns false.
@@ -228,8 +237,8 @@ class SQLite {
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value.
-    static mutex _commitLock;
-    static mutex _hashLock;
+    static recursive_mutex _commitLock;
+    static recursive_mutex _hashLock;
 
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not int he middle of
     // any transactions.

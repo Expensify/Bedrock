@@ -73,11 +73,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         tester = BedrockClusterTester::testers.front();
 
         recursive_mutex m;
+        atomic<int> totalRequestFailures(0);
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &m](){
+            threads.emplace_back([this, i, &totalRequestFailures, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
 
                 // Let's make ourselves 20 commands to spam at each node.
@@ -96,6 +97,16 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
                 // Ok, send them all!
                 auto results = brtester->executeWaitMultiple(requests);
+
+                int failures = 0;
+                for (auto row : results) {
+                    if (SToInt(row.first) != 200) {
+                        cout << "Node " << i << " Expected 200, got: " << SToInt(row.first) << endl;
+                        cout << row.second << endl;
+                        failures++;
+                    }
+                }
+                totalRequestFailures.fetch_add(failures);
             });
         }
 
@@ -306,6 +317,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         resultCount.pop_front();
         int rows = SToInt(resultCount.front());
         cout << "Rows in test: " << rows << endl;
-        ASSERT_EQUAL(75, SToInt(resultCount.front()));
+        ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
+
+        int fail = totalRequestFailures.load();
+        if (fail > 0) {
+            cout << "Total failures: " << fail << endl;
+        }
+        ASSERT_EQUAL(fail, 0);
     }
 } __b_ConflictSpamTest;
