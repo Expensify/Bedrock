@@ -2662,6 +2662,8 @@ void SQLiteNode::_removeQueuedCommand(SQLiteNode::Command* command) {
             ++commandIt;
         }
     }
+
+    SERROR("Tried to remove queued command that wasn't queued.");
 }
 
 SQLiteNode::Command* SQLiteNode::getNextQueuedActionableCommand() {

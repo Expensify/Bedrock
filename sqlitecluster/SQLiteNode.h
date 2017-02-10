@@ -144,7 +144,7 @@ class SQLiteNode : public STCPNode {
 
     // Gets the next process-able command in the queue. Returns null if there are no such commands.
     // Note that a command currently being processed (typically, waiting for quorum), will not be returned here.
-    SQLiteNode::Command* getNextQueuedActionableCommand();
+    Command* getNextQueuedActionableCommand();
 
     // Updates the internal state machine; returns true if it wants immediate
     // re-updating.
