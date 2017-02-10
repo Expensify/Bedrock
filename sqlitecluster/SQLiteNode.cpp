@@ -21,8 +21,6 @@
 ///
 /// **FIXME**: Add test to measure how long it takes for master to stabalize
 ///
-/// **FIXME**: Add 'nextActivity' to update() [TYLER: Partially addressed?]
-///
 /// **FIXME**: If master dies before sending ESCALATE_RESPONSE (or if slave dies
 ///            before receiving it), then a command might have been committed to
 ///            the database without notifying whoever initiated it.  Perhaps have
@@ -672,7 +670,7 @@ void SQLiteNode::_finishCommand(Command* command) {
 /// -----------------
 /// Each state transitions according to the following events and operates as follows:
 ///
-bool SQLiteNode::update(uint64_t& nextActivity) {
+bool SQLiteNode::update() {
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a a period and try to connect to all known
@@ -1028,7 +1026,10 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         SASSERTWARN(!_masterPeer);
 
         // Are we waiting for approval of a distributed transaction?
-        if (_currentCommand && !_currentCommand->transaction.empty()) {
+        if (_currentCommand) {
+            // It should be impossible to have a _currentCommand with no transaction.
+            SASSERT(!_currentCommand->transaction.empty());
+
             // Loop across all peers configured to see how many are:
             SAUTOPREFIX(_currentCommand->request["requestID"]);
             int numFullPeers = 0;     // Num non-permaslaves configured
@@ -1212,10 +1213,18 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                       << "): consistencyRequired=" << SQLCConsistencyLevelNames[consistencyRequired]
                       << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
             }
+
+            // We return false here *even if* we've finished the command. This lets the caller read any new commands
+            // from the network before we process the next command. This lets any new high-priority commands make their
+            // way into our queue before we process anything else, which may be lower priority.
+            return false;
         }
 
         // If we're the master, see if we're to stand down (and if not, start a new command)
-        if (_state == SQLC_MASTERING && !_currentCommand) {
+        if (_state == SQLC_MASTERING) {
+            // This should never be set here.
+            SASSERT(!_currentCommand);
+
             // See if it's time to stand down
             string standDownReason;
             if (gracefulShutdown()) {
@@ -1259,175 +1268,106 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 return true; // Re-update
             }
 
-            // Not standing down -- do we have any commands to start?  Only
-            // dequeue if we either have no peers configured (meaning
-            // remote commits are non-mandatory), or if at least half of
-            // the peers are connected.  Otherwise we're in a live
-            // environment but can't commit anything because we may cause a
-            // split brain scenario.
-            if (!_isQueuedCommandMapEmpty() && _majoritySubscribed()) {
-                // Have commands and a majority, so let's start a new one.
-                SFOREACHMAPREVERSE(int, list<Command*>, _queuedCommandMap, it) {
-                    // **XXX: Using pointer to list because STL containers copy on assignment.
-                    list<Command*>* commandList = &it->second;
-                    if (!commandList->empty()) {
-                        // Find the first command that either has no httpsRequest,
-                        // or has a completed one.
-                        int64_t now = STimeNow();
-                        list<Command*>::iterator nextIt = commandList->begin();
-                        while (nextIt != commandList->end()) {
-                            // See if this command has an outstanding https
-                            // transaction.  If so, wait for it to complete.
-                            list<Command*>::iterator commandIt = nextIt++;
-                            Command* command = *commandIt;
-                            if (command->httpsRequest && !command->httpsRequest->response)
-                                continue;
-                            SAUTOPREFIX(command->request["requestID"]);
+            // Not standing down -- do we have any commands to start? Only dequeue if we either have no peers
+            // configured (meaning remote commits are non-mandatory), or if at least half of the peers are connected.
+            // Otherwise we're in a live environment but can't commit anything because we may cause a split brain
+            // scenario.
+            Command* command = getNextQueuedActionableCommand();
+            if (_majoritySubscribed() && command) {
 
-                            // See if this command has a "Hold" on it.  If
-                            // so, just skip it until whatever put the hold
-                            // on clears it.
-                            if (!command->request["HeldBy"].empty()) {
-                                // It's being held -- have we exceeded the timeout?
-                                uint64_t elapsed = STimeNow() - command->creationTimestamp;
-                                if (command->request.isSet("Timeout") &&
-                                    elapsed > command->request.calc64("Timeout") * STIME_US_PER_MS) {
-                                    // Command timed out, return the result
-                                    SINFO("Command '" << command->id << "' timed out after "
-                                                      << elapsed / STIME_US_PER_MS << "ms ("
-                                                      << command->request["Timeout"]
-                                                      << "ms configured): " << command->request.methodLine);
-                                    command->response = SData("303 Timeout");
-                                    commandList->erase(commandIt);
-                                    _finishCommand(command);
-                                    continue;
-                                } else {
-                                    // Not timed out; just skip
-                                    continue;
-                                }
-                            }
-
-                            // Make sure the command isn't scheduled for the future.
-                            // **NOTE: We break because all commands after this one
-                            //         will be for the future too.  Clearly, this
-                            //         is a dicey optimization givent that things
-                            //         could break catastrophically if a command
-                            //         scheduled for the distant future gets jammed
-                            //         accidentally in the front of the queue.
-                            if ((int64_t)command->creationTimestamp > now)
-                                break;
-
-                            // Did we already peek this command?  If it has an
-                            // httpsRequest, then we know it's already been peeked.
-                            if (!command->httpsRequest) {
-                                // We don't know if it's peen peeked; Peek this
-                                // command if we haven't already.  (ESCALATED
-                                // commands aren't peeked until now.  Local
-                                // commands will have already been peeked, but it's
-                                // non-damaging to do it again.)
-                                if (_peekCommandWrapper(_db, command)) {
-                                    // Done -- respond immediately to this.  This
-                                    // should only happen in really rare cases
-                                    // because most "pure peekable" commands (eg,
-                                    // purely read-only) will be handled
-                                    // immediately when queued and never get here
-                                    // However, this can happen when a command is
-                                    // queued while the node is in a transitional
-                                    // state (eg, while SEARCHING), in which it
-                                    // won't get peeked at all until now.  This can
-                                    // also happen if something changes or expires,
-                                    // between the first peek and this one.
-                                    SINFO("Finished processing peekable command '" << command->request.methodLine
-                                                                                   << "' (" << command->id
-                                                                                   << "), nothing to commit.");
-                                    SASSERT(!_db.insideTransaction());
-                                    commandList->erase(commandIt);
-                                    _finishCommand(command);
-                                    continue;
-                                }
-
-                                // Did the peek place a hold on this command?
-                                // If so, put it back in the list and try a
-                                // new one.
-                                if (!command->request["HeldBy"].empty()) {
-                                    // Skipping it for later
-                                    SINFO("Hold re-placed on command by '" << command->request["HeldBy"]
-                                                                           << "', skipping.");
-                                    continue;
-                                }
-
-                                // Peek complete; now let's see if it's started a
-                                // secondary command.  If so, just go on to the
-                                // next command while we wait for this one to
-                                // complete.  (This is a duplicate of the above
-                                // line but is still needed.)
-                                if (command->httpsRequest && !command->httpsRequest->response)
-                                    continue;
-                            }
-
-                            // Process this transactional command
-                            _currentCommand = command;
-                            commandList->erase(commandIt);
-                            SASSERTWARN(_currentCommand->transaction.empty());
-                            SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
-                                                                  << _currentCommand->id << ")");
-                            _processCommandWrapper(_db, _currentCommand);
-                            SASSERT(!_currentCommand->response.empty()); // Must set a response
-
-                            // Anything to commit?
-                            if (_db.insideTransaction()) {
-                                _commitTimer.start();
-                                // Begin the distributed transaction
-                                SASSERT(!_db.getUncommittedQuery().empty());
-                                SINFO("Finished processing command '"
-                                      << _currentCommand->request.methodLine << "' (" << _currentCommand->id
-                                      << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
-                                      << " (" << _db.getUncommittedHash() << ")");
-                                _currentCommand->replicationStartTimestamp = STimeNow();
-                                _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
-                                _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
-                                _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
-                                _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
-                                _currentCommand->transaction["ID"] = _currentCommand->id;
-                                _currentCommand->transaction.content = _db.getUncommittedQuery();
-                                _sendToAllPeers(_currentCommand->transaction, true); // subscribed only
-                                SFOREACH (list<Peer*>, peerList, peerIt) {
-                                    // Clear the response flag from the last transaction
-                                    Peer* peer = *peerIt;
-                                    (*peer)["TransactionResponse"].clear();
-                                }
-
-                                // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
-                                // we need to wait for quorum.  This keeps all the quorum logic in the same place.
-                                if (STimeNow() > nextActivity) {
-                                    SINFO("Timeout reached while processing (transaction) commands. Exceeded by "
-                                          << (STimeNow() - nextActivity) << "us");
-                                    return false;
-                                }
-                                return true;
-                            } else {
-                                // Doesn't need to commit anything; done processing.
-                                SINFO("Finished processing command '" << _currentCommand->request.methodLine << "' ("
-                                                                      << _currentCommand->id
-                                                                      << "), nothing to commit.");
-                                SASSERT(!_db.insideTransaction());
-                                _finishCommand(_currentCommand);
-                                _currentCommand = nullptr;
-                            }
-
-                            // **NOTE: This loops back and starts the next command of the same priority immediately
-                            if (STimeNow() > nextActivity) {
-                                SINFO("Timeout reached while processing commands. Exceeded by "
-                                      << (STimeNow() - nextActivity) << "us");
-                                return false;
-                            }
-                        }
-                    }
-
-                    // **NOTE: This loops back and starts the next command of the next lower priority immediately
+                // If this command has a hold on it, and was returned to us by getNextQueuedActionableCommand, then it
+                // must have timed out.
+                if (!command->request["HeldBy"].empty()) {
+                    command->response = SData("303 Timeout");
+                    _removeQueuedCommand(command);
+                    _finishCommand(command);
                 }
 
-                // **NOTE: we've exhausted the current batch of queued commands and can continue
+                // Did we already peek this command? If it has an httpsRequest, then we know it's already been peeked.
+                if (!command->httpsRequest) {
+                    // We don't know if it's been peeked; Peek this command if we haven't already. (ESCALATED commands
+                    // aren't peeked until now. Local commands will have already been peeked, but it's non-damaging to
+                    // do it again.)
+                    if (_peekCommandWrapper(_db, command)) {
+                        // Done -- respond immediately to this. This should only happen in really rare cases because
+                        // most "pure peekable" commands (eg, purely read-only) will be handled immediately when
+                        // queued and never get here However, this can happen when a command is queued while the node
+                        // is in a transitional state (eg, while SEARCHING), in which it won't get peeked at all until
+                        // now. This can also happen if something changes or expires, between the first peek and this
+                        // one.
+                        SINFO("Finished processing peekable command '" << command->request.methodLine << "' ("
+                              << command->id << "), nothing to commit.");
+                        SASSERT(!_db.insideTransaction());
+                        _removeQueuedCommand(command);
+                        _finishCommand(command);
+                        return false;
+                    }
+
+                    // Did the peek place a hold on this command? If so, put it back in the list and try a new one.
+                    if (!command->request["HeldBy"].empty()) {
+                        // Skipping it for later
+                        SINFO("Hold placed on command by '" << command->request["HeldBy"] << "', skipping.");
+                        return false;
+                    }
+
+                    // Peek complete; now let's see if it's started a secondary command. If so, just go on to the next
+                    // command while we wait for this one to complete. (This is a duplicate of the above line but is
+                    // still needed.)
+                    if (command->httpsRequest && !command->httpsRequest->response) {
+                        return false;
+                    }
+                }
+
+                // Process this transactional command
+                _currentCommand = command;
+                _removeQueuedCommand(command);
+                SASSERTWARN(_currentCommand->transaction.empty());
+                SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
+                                                      << _currentCommand->id << ")");
+                _processCommandWrapper(_db, _currentCommand);
+                SASSERT(!_currentCommand->response.empty()); // Must set a response
+
+                // Anything to commit?
+                if (_db.insideTransaction()) {
+                    _commitTimer.start();
+                    // Begin the distributed transaction
+                    SASSERT(!_db.getUncommittedQuery().empty());
+                    SINFO("Finished processing command '"
+                          << _currentCommand->request.methodLine << "' (" << _currentCommand->id
+                          << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
+                          << " (" << _db.getUncommittedHash() << ")");
+                    _currentCommand->replicationStartTimestamp = STimeNow();
+                    _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
+                    _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
+                    _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
+                    _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
+                    _currentCommand->transaction["ID"] = _currentCommand->id;
+                    _currentCommand->transaction.content = _db.getUncommittedQuery();
+                    _sendToAllPeers(_currentCommand->transaction, true); // subscribed only
+                    SFOREACH (list<Peer*>, peerList, peerIt) {
+                        // Clear the response flag from the last transaction
+                        Peer* peer = *peerIt;
+                        (*peer)["TransactionResponse"].clear();
+                    }
+
+                    // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
+                    // we need to wait for quorum.  This keeps all the quorum logic in the same place.
+                    return true;
+                } else {
+                    // Doesn't need to commit anything; done processing.
+                    SINFO("Finished processing command '" << _currentCommand->request.methodLine << "' ("
+                                                          << _currentCommand->id
+                                                          << "), nothing to commit.");
+                    SASSERT(!_db.insideTransaction());
+                    _finishCommand(_currentCommand);
+                    _currentCommand = nullptr;
+                }
+
+                // Return false to allow caller to read new commands from the network. This prevents us
+                // from getting stuck in a state where a long queue of low-priority commands keeps getting
+                // processed where a queue of higher-priority commands is building up in a network buffer,
+                // but never gets read and made available to process.
+                return false;
             }
         }
 
@@ -2690,6 +2630,96 @@ bool SQLiteNode::_isQueuedCommandMapEmpty() {
     if (!it->second.empty())
         return false;
     return true;
+}
+
+void SQLiteNode::_removeQueuedCommand(SQLiteNode::Command* command) {
+    // Iterate in the same order we probably found this command in. I.e., it was most likely found by
+    // getNextQueuedActionableCommand, at the front of a queue from it's perspective, so we'll look in the same order.
+    for (auto it = _queuedCommandMap.rbegin(); it != _queuedCommandMap.rend(); ++it) {
+        
+        auto& list = it->second;
+        auto commandIt = list.begin();
+        while (commandIt != list.end()) {
+
+            // Is this our command?
+            if (command == *commandIt) {
+                // Erase it.
+                list.erase(commandIt);
+
+                // If it was the last command in the whole list, erase that, to.
+                if (list.empty()) {
+                    // Lol. We can't just erase `it` because `erase()` takes an `iterator` and `it` is a
+                    // `reverse_iterator`. Looking up the correct iterator by the priority should be much faster though
+                    // than iterating across potentially many commands in the wrong priority queue to find the one that
+                    // we want to remove.
+                    _queuedCommandMap.erase(_queuedCommandMap.find(it->first));
+                }
+
+                // Ok, we've removed it.
+                return; 
+            }
+
+            ++commandIt;
+        }
+    }
+
+    SERROR("Tried to remove queued command that wasn't queued.");
+}
+
+SQLiteNode::Command* SQLiteNode::getNextQueuedActionableCommand() {
+
+    // We need to see if commands are scheduled in the future.
+    int64_t now = STimeNow();
+
+    // Look through each of our command queues, highest priority first.
+    for (auto it = _queuedCommandMap.rbegin(); it != _queuedCommandMap.rend(); ++it) {
+
+        // The list of commands for this priority is `second` in the map's pair.
+        auto commandIt = it->second.begin();
+        while (commandIt != it->second.end()) {
+
+            // Get our command.
+            Command* command = *commandIt;
+
+            // Next time we look at this, it'll be the next loop iteration.
+            ++commandIt;
+
+            // If there's an HTTPS request, but no response, we're waiting on the network for this command.
+            if (command->httpsRequest && !command->httpsRequest->response) {
+                continue;
+            }
+
+            // See if this command has a "Hold" on it.
+            if (!command->request["HeldBy"].empty()) {
+                // If a command is being held, it's generally not actionable, unless it's exceeded its timeout.
+                uint64_t timeout = command->request.calc64("Timeout");
+                if (timeout) {
+                    uint64_t elapsed = now - command->creationTimestamp;
+                    if (elapsed > timeout * STIME_US_PER_MS) {
+                        // Timed out, there's action to be taken.
+                        return command;
+                    }
+                }
+
+                // Hold, but hasn't timed out. Look at the next command.
+                continue;
+            }
+
+            // Make sure the command isn't scheduled for the future.
+            // NOTE: We break because all commands after this one will be for the future too. Clearly, this is a dicey
+            //       optimization given that things could break catastrophically if a command scheduled for the
+            //       distant future gets jammed accidentally in the front of the queue.
+            if ((int64_t)command->creationTimestamp > now) {
+                break;
+            }
+
+            // There's nothing blocking this one!
+            return command;
+        }
+    }
+
+    // No actionable commands.
+    return nullptr;
 }
 
 // --------------------------------------------------------------------------
