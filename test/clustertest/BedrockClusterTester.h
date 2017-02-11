@@ -14,7 +14,7 @@ class BedrockClusterTester {
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become master.
-    BedrockClusterTester(ClusterSize size);
+    BedrockClusterTester(ClusterSize size, list<string> queries = {});
     ~BedrockClusterTester();
 
     // Returns the index of the node that's mastering. Returns a negative number on error:

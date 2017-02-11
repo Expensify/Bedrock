@@ -34,7 +34,11 @@ int main(int argc, char* argv[]) {
     int retval = 0;
     {
         // Create our cluster.
-        BedrockClusterTester tester(BedrockClusterTester::THREE_NODE_CLUSTER);
+        list<string> queries = {
+            "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)"
+        };
+
+        BedrockClusterTester tester(BedrockClusterTester::THREE_NODE_CLUSTER, queries);
 
         // Our cluster is up and has responded to status, we can run our tests!
         try {

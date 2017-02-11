@@ -2,7 +2,7 @@
 
 list<BedrockClusterTester*> BedrockClusterTester::testers;
 
-BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size)
+BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries)
 : _size(size)
 {
     cout << "Starting " << size << " node bedrock cluster." << endl;
@@ -58,8 +58,6 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         // save this map for later.
         _args.push_back(args);
 
-        // Not used, but needed so we can pass args.
-        list<string> queries = {};
         _cluster.emplace_back(db, serverHost, queries, args, false);
     }
 
