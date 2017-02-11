@@ -7,7 +7,7 @@ class BedrockClusterTester {
     static list<BedrockClusterTester*> testers;
 
     enum ClusterSize {
-        one_NODE_CLUSTER   = 1,
+        ONE_NODE_CLUSTER   = 1,
         THREE_NODE_CLUSTER = 3,
         FIVE_NODE_CLUSTER  = 5,
     };
