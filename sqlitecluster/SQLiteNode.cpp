@@ -408,7 +408,7 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
     // Process status commands special, as we never want to escalate to the master
     bool forcePeekIt = false;
     if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
-               SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
+        SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1") || SIEquals(request.methodLine, "Status")) {
         // Force peek these always -- even if read only -- because any read
         // thread knows our status, and thus can handle these.
         forcePeekIt = true;

@@ -3,9 +3,9 @@
 struct a_MasteringTest : tpunit::TestFixture {
     a_MasteringTest()
         : tpunit::TestFixture("a_Mastering",
-                              TEST(a_MasteringTest::clusterUp)/*,
+                              TEST(a_MasteringTest::clusterUp),
                               TEST(a_MasteringTest::failover),
-                              TEST(a_MasteringTest::restoreMaster)*/
+                              TEST(a_MasteringTest::restoreMaster)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -68,45 +68,45 @@ struct a_MasteringTest : tpunit::TestFixture {
     void restoreMaster()
     {
         tester->startNode(0);
-        BedrockTester* newMaster = tester->getBedrockTester(0);
 
+        mutex m;
         int count = 0;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response = newMaster->executeWait(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
+        while (count++ < 10) {
+            list<thread> threads;
+            vector<string> responses(3);
+            for (int i : {0, 1, 2}) {
+                threads.emplace_back([this, i, &responses, &m](){
+                    BedrockTester* brtester = tester->getBedrockTester(i);
 
-                // Ok, let's check the slaves.
-                string response1 = tester->getBedrockTester(1)->executeWait(cmd);
-                STable json1 = SParseJSONObject(response1);
-                if (json1["state"] == "SLAVING") {
-                    string response2 = tester->getBedrockTester(2)->executeWait(cmd);
-                    STable json2 = SParseJSONObject(response2);
-                    if (json2["state"] == "SLAVING") {
-                        break;
-                    }
-                }
+                    SData status("Status");
+                    status["writeConsistency"] = "ASYNC";
+
+                    auto result = brtester->executeWait(status);
+                    lock_guard<decltype(m)> lock(m);
+                    responses[i] = result;
+                });
             }
 
-            // Give it another second...
+            // Done.
+            for (thread& t : threads) {
+                t.join();
+            }
+            threads.clear();
+
+            STable json0 = SParseJSONObject(responses[0]);
+            STable json1 = SParseJSONObject(responses[1]);
+            STable json2 = SParseJSONObject(responses[2]);
+
+            if (json0["state"] == "MASTERING" && 
+                json1["state"] == "SLAVING" && 
+                json2["state"] == "SLAVING") {
+
+                break;
+            }
             sleep(1);
         }
 
-        // Should be back up, let's verify the cluster one last time.
-        SData cmd("Status");
-        vector<string> responses(3);
-        for (int i : {0, 1, 2}) {
-            string response = tester->getBedrockTester(i)->executeWait(cmd);
-            STable json = SParseJSONObject(response);
-            responses[i] = json["state"];
-        }
-
-        // TODO: These don't work reliably. Maybe `Status` is broken?
-
-        ASSERT_EQUAL(responses[0], "MASTERING");
-        ASSERT_EQUAL(responses[1], "SLAVING");
-        ASSERT_EQUAL(responses[2], "SLAVING");
+        ASSERT_TRUE(count <= 10);
     }
 
 } __a_MasteringTest;

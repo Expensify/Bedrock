@@ -268,7 +268,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             }
 
             // previously, these always had to go to the sync thread. I get why for `unique` commands, but I don't know
-            // why for `creationTimestamp` commands. Right now, it's they're jsut broken.
+            // why for `creationTimestamp` commands. Right now, they're just broken.
             if (!request["unique"].empty() || !request["creationTimestamp"].empty()) {
                 // build a command, *don't open it*, and stick it on the peekedCommands queue for the sync thread.
                 SWARN("[TYLER] not properly handling `unique` or `creationTimestamp` command.");
