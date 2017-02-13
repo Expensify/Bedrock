@@ -194,17 +194,7 @@ void BedrockServer_WorkerThread(void* _data) {
             data->server->pollTimer.start();
             S_poll(fdm, max(nextActivity, now) - now);
             data->server->pollTimer.stop();
-
-            // nextActivity contains the timestamp of the next action we intend to do.  We use this to determine how
-            // long to wait for new work to come in from the network. If our command map is empty, then we have
-            // nothing in particular to do right now, and can wait a second before we check some internal timers to see
-            // if we spontaneously decide to do something. On the other hand, if the command map is *not* empty, it
-            // means we have work to do right now, and thus shouldn't wait at all for the network (though we should
-            // still check it to see if higher priority work has come in while processing the last command).
-            nextActivity = STimeNow();
-            if (!node.getNextQueuedActionableCommand()) {
-                nextActivity += STIME_US_PER_S; // 1s max period
-            }
+            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
             // Handle any HTTPS requests from our plugins.
             for (list<SHTTPSManager*>& managerList : httpsManagers) { 
@@ -237,7 +227,7 @@ void BedrockServer_WorkerThread(void* _data) {
 
             // Let the node process any new commands we've opened or existing
             // commands outstanding
-            while (node.update())
+            while (node.update(nextActivity))
                 ;
 
             // Put everything the replication node has finished on the threaded queue.
