@@ -43,8 +43,8 @@ class SQLiteNode : public STCPNode {
         SQLCConsistencyLevel writeConsistency;
 
         // Keep track of some state as we go through everything that needs to be done here.
-        bool peeked;
-        bool processed;
+        int peeked;
+        int processed;
 
         // **NOTE: httpsRequest is used to store a pointer to a
         //         secondary SHTTPSManager request; this can be
@@ -63,8 +63,8 @@ class SQLiteNode : public STCPNode {
             replicationStartTimestamp = 0;
             httpsRequest = nullptr;
             processingTime = 0;
-            peeked = false;
-            processed = false;
+            peeked = 0;
+            processed = 0;
             writeConsistency = SQLC_ONE;
         }
         virtual ~Command() {
@@ -291,4 +291,6 @@ class SQLiteNode : public STCPNode {
     // great solution for at the moment.
     SPerformanceTimer _processTimer;
     SPerformanceTimer _commitTimer;
+
+    static const int MAX_PROCESS_TRIES = 3;
 };

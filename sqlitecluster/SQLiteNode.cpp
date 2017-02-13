@@ -283,6 +283,7 @@ bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
     uint64_t start = STimeNow();
     _processTimer.start();
     bool result = _processCommand(db, command);
+    command->processed++;
     _processTimer.stop();
     command->processingTime += STimeNow() - start;
     return result;
@@ -292,6 +293,7 @@ bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
     // Measure elapsed time and add to processing
     uint64_t start = STimeNow();
     bool result = _peekCommand(db, command);
+    command->peeked++;
     command->processingTime += STimeNow() - start;
     return result;
 }
@@ -1578,6 +1580,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                                                   << _currentCommand->id << ")");
 
                             SINFO("[TY2] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
+                            bool unlock = false;
+                            if (_currentCommand->processed >= MAX_PROCESS_TRIES) {
+                                SWARN("[concurrent] Command " << _currentCommand->id << " processed " << _currentCommand->processed
+                                      << " times, exceeded max of " << MAX_PROCESS_TRIES
+                                      << ", forcing synchronous commit.");
+                                unlock = true;
+                                _db.commitLock();
+                            }
                             bool needsCommit = _processCommandWrapper(_db, _currentCommand);
 
                             SASSERT(!_currentCommand->response.empty()); // Must set a response
@@ -1596,6 +1606,10 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 if(!_db.prepare()) {
                                     SWARN("[TYLER] PREPARE FAILED.");
+                                    // If we forced a synchronous commit, unlock.
+                                    if (unlock) {
+                                        _db.commitUnlock();
+                                    }
                                     return true;
                                 }
 
@@ -1621,6 +1635,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                     (*peer)["TransactionResponse"].clear();
                                 }
 
+                                // If we forced a synchronous commit, unlock.
+                                if (unlock) {
+                                    _db.commitUnlock();
+                                }
+
                                 // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
                                 // we need to wait for quorum.  This keeps all the quorum logic in the same place.
                                 if (STimeNow() > nextActivity) {
@@ -1637,6 +1656,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 SASSERT(!_db.insideTransaction());
                                 _finishCommand(_currentCommand);
                                 _currentCommand = nullptr;
+                            }
+
+                            // If we forced a synchronous commit, unlock.
+                            if (unlock) {
+                                _db.commitUnlock();
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
