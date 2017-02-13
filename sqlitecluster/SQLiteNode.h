@@ -142,13 +142,9 @@ class SQLiteNode : public STCPNode {
     // Aborts (if active) a command on the database and cleans it up.
     void closeCommand(Command* command);
 
-    // Gets the next process-able command in the queue. Returns null if there are no such commands.
-    // Note that a command currently being processed (typically, waiting for quorum), will not be returned here.
-    Command* getNextQueuedActionableCommand();
-
     // Updates the internal state machine; returns true if it wants immediate
     // re-updating.
-    bool update();
+    bool update(uint64_t& nextActivity);
 
     // STCPNode API: Peer handling framework functions
     virtual void _onConnect(Peer* peer);
@@ -235,11 +231,10 @@ class SQLiteNode : public STCPNode {
     void _queueCommand(Command* command);
     void _escalateCommand(Command* command);
     void _finishCommand(Command* command);
-    bool _isQueuedCommandMapEmpty();
-    void _removeQueuedCommand(Command* command);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
     list<Command*> _getOrderedCommandListFromMap(const map<string, Command*> commandMap);
+    bool _isQueuedCommandMapEmpty();
     bool _isNothingBlockingShutdown();
     bool _majoritySubscribed() {
         int ignore;
