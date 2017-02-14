@@ -201,36 +201,41 @@ bool SQLiteNode::processCommand(Command* command) {
 }
 
 bool SQLiteNode::commit() {
-    _db.commitLock();
+    SWARN("[SLOW] Locking.");
+    SQLITE_COMMIT_AUTOLOCK;
+    SWARN("[SLOW] Locked, preparing.");
 
     if (!_db.prepare()) {
-        _db.commitUnlock();
+        SWARN("[SLOW] Couldn't prepare.");
         return false;
     }
+    SWARN("[SLOW] Prepared.");
 
     if (_db.getUncommittedHash().empty()) {
-        _db.commitUnlock();
+        SWARN("[SLOW] Nothing to commit.");
         return true;
     }
     // No prepare() call here because it's handled in process
 
+    SWARN("[SLOW] Committing.");
     int errorCode = _db.commit();
+    SWARN("[SLOW] Committed.");
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+        SWARN("[SLOW] Busy, Rolling back.");
         _db.rollback();
-        _db.commitUnlock();
+        SWARN("[SLOW] Busy, Rolled back.");
         return false; // Commit conflicted.
     }
+    SWARN("[SLOW] Done.");
     _haveUnsentTransactions = true;
-    _db.commitUnlock();
     return true; // Commit succeeded.
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    _db.commitLock();
+    SQLITE_COMMIT_AUTOLOCK;
 
     // Make sure we have something to do.
     if (!_haveUnsentTransactions) {
-        _db.commitUnlock();
         return;
     }
 
@@ -275,7 +280,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
     }
 
     _haveUnsentTransactions = false;
-    _db.commitUnlock();
 }
 
 bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
@@ -1322,7 +1326,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // We're done with this, we'll re-open it, and then return from `update` indicating we need to run
                     // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
                     // caller.
-                    _db.commitUnlock();
+                    SQLite::commitLock.unlock();
 
                     // Make sure the response is empty, and re-open the command.
                     _currentCommand->response.clear();
@@ -1396,7 +1400,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 }
 
                 // Done with this.
-                _db.commitUnlock();
+                SQLite::commitLock.unlock();
             } else {
                 // Still waiting
                 SINFO("Waiting to commit: '"
@@ -1586,7 +1590,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                       << " times, exceeded max of " << MAX_PROCESS_TRIES
                                       << ", forcing synchronous commit.");
                                 unlock = true;
-                                _db.commitLock();
+                                SQLite::commitLock.lock();
                             }
                             bool needsCommit = _processCommandWrapper(_db, _currentCommand);
 
@@ -1597,7 +1601,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 // We're about to send a transaction here, grab our commit mutex and send anything
                                 // outstanding. This remains locked until we've finished this transaction.
-                                _db.commitLock();
+                                SQLite::commitLock.lock();
 
                                 // Clear anything outstanding before starting this one.
                                 uint64_t commitCount = getCommitCount();
@@ -1608,7 +1612,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                     SWARN("[TYLER] PREPARE FAILED.");
                                     // If we forced a synchronous commit, unlock.
                                     if (unlock) {
-                                        _db.commitUnlock();
+                                        SQLite::commitLock.unlock();
                                     }
                                     return true;
                                 }
@@ -1637,12 +1641,16 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                                 // If we forced a synchronous commit, unlock.
                                 if (unlock) {
-                                    _db.commitUnlock();
+                                    // NOTE: This doesn't actually unlock anything, it just decrements our lock
+                                    // counter, so that we'll unlock properly when we commit the transaction.
+                                    SQLite::commitLock.unlock();
                                 }
 
                                 // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
                                 // we need to wait for quorum.  This keeps all the quorum logic in the same place.
                                 if (STimeNow() > nextActivity) {
+                                    // TODO: If we hit this, nobody can commit anything until we resolve that. Is that
+                                    // an issue?
                                     SINFO("Timeout reached while processing (transaction) commands. Exceeded by "
                                           << (STimeNow() - nextActivity) << "us");
                                     return false;
@@ -1660,7 +1668,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                             // If we forced a synchronous commit, unlock.
                             if (unlock) {
-                                _db.commitUnlock();
+                                SQLite::commitLock.unlock();
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
@@ -2708,12 +2716,11 @@ void SQLiteNode::_changeState(SQLCState newState) {
         if (newState == SQLC_MASTERING) {
             // Seed our last sent transaction.
             {
-                _db.commitLock();
+                SQLITE_COMMIT_AUTOLOCK;
                 _haveUnsentTransactions = false;
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
                 _db.getCommittedTransactions();
-                _db.commitUnlock();
             }
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it

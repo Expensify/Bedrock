@@ -2149,12 +2149,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         //SDEBUG(sql);
+        SWARN("[SLOW] Start exec. " << sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
+        SWARN("[SLOW] Finish exec." << sql);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
-        SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
+        SWARN("[SLOW] sqlite3_exec returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
               << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
               << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
@@ -2168,7 +2170,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("[SLOW] Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
 
     // Log this if enabled
     if (_g_sQueryLogFP) {

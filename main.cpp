@@ -372,6 +372,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Log how much time we spent in our main mutex.
+    SQLite::commitLock.log();
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;

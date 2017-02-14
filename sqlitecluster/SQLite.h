@@ -3,6 +3,9 @@
 #include <libstuff/sqlite3.h>
 #include <atomic>
 
+// Convenience macro for locking our global commit lock.
+#define SQLITE_COMMIT_AUTOLOCK SLockTimerGuard<decltype(SQLite::commitLock)> __SSQLITEAUTOLOCK_##__LINE__(SQLite::commitLock)
+
 // SQLite
 class SQLite {
   public: // External API
@@ -33,14 +36,9 @@ class SQLite {
     // Begins a new concurrent transaction. Returns true on success.
     bool beginConcurrentTransaction();
 
-    // Lock and unlock the underlying mutex.
-    void commitLock() {
-        _commitLock.lock();
-    }
-
-    void commitUnlock() {
-        _commitLock.unlock();
-    }
+    // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
+    // such, when they determine that those operations must be made atomically with operations happening in SQLite.
+    static SLockTimer<recursive_mutex> commitLock;
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -52,7 +50,7 @@ class SQLite {
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
     // Returns true  on success.
-    bool write(const string& query);
+    bool write(const string& query, bool dontCheckSchema = false);
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.

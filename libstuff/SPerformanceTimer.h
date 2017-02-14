@@ -7,7 +7,7 @@ class SPerformanceTimer {
     void stop();
     void log();
 
-  private:
+  protected:
     bool _reverse;
     uint64_t _logPeriod;
     uint64_t _lastStart;

@@ -12,6 +12,7 @@
 
 bool SQLite::sqliteInitialized = false;
 recursive_mutex SQLite::_commitLock;
+SLockTimer<recursive_mutex> SQLite::commitLock("Commit Lock", _commitLock);
 recursive_mutex SQLite::_hashLock;
 atomic<uint64_t> SQLite::_commitCount(0);
 atomic<int> SQLite::_dbInitialized(0);
@@ -115,7 +116,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     // If we're the first thread to get to it, we'll initialize the DB.
 
     // First we grab the commit and hash locks so nobody else can try to commit, or read the last hash.
-    lock_guard<recursive_mutex> c_lock(_commitLock);
+    SQLITE_COMMIT_AUTOLOCK;
     lock_guard<recursive_mutex> h_lock(_hashLock);
 
     // Now we'll see if the DB's initialized.
@@ -281,16 +282,21 @@ bool SQLite::read(const string& query, SQResult& result) {
     return queryResult;
 }
 
-bool SQLite::write(const string& query) {
+bool SQLite::write(const string& query, bool dontCheckSchema) {
     SASSERT(!_readOnly);
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
     // First, check our current state
     SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaBefore = SToUInt64(results[0][0]);
+    uint64_t schemaBefore = 0;
+    uint64_t schemaAfter = 0;
+
+    if (!dontCheckSchema) {
+        SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+        SASSERT(!results.empty() && !results[0].empty());
+        schemaBefore = SToUInt64(results[0][0]);
+    }
     uint64_t changesBefore = sqlite3_total_changes(_db);
 
     // Try to execute the query
@@ -302,9 +308,11 @@ bool SQLite::write(const string& query) {
     }
 
     // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaAfter = SToUInt64(results[0][0]);
+    if (!dontCheckSchema) {
+        SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+        SASSERT(!results.empty() && !results[0].empty());
+        schemaAfter = SToUInt64(results[0][0]);
+    }
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
     // Did something change.
@@ -323,7 +331,7 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    _commitLock.lock();
+    commitLock.lock();
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -348,14 +356,14 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        _commitLock.unlock();
+        commitLock.unlock();
         return false;
     }
 
     // Ready to commit
     SDEBUG("Prepared transaction");
 
-    // We're still holding _commitLock now, and will until the commit is complete.
+    // We're still holding commitLock now, and will until the commit is complete.
     return true;
 }
 
@@ -378,7 +386,9 @@ int SQLite::commit() {
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
+    SWARN("[SLOW2] pre COMMIT");
     result = SQuery(_db, "committing db transaction", "COMMIT");
+    SWARN("[SLOW2] COMMITTED");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -399,25 +409,24 @@ int SQLite::commit() {
         // Ok, someone else can commit now.
         // Incrementing the commit count.
         _commitCount++;
-        SINFO("Commit successful (" << _commitCount.load() << "), releasing _commitLock.");
+        SINFO("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
 
         _insideTransaction = false;
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        _commitLock.unlock();
+        commitLock.unlock();
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
 
-    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding _commitLock, and it will need to be unlocked by
+    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
 }
 
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
-    // TODO: We need to be careful about where we call this, or we need to make this recursive.
-    lock_guard<recursive_mutex> lock(_commitLock);
+    SQLITE_COMMIT_AUTOLOCK;
 
     map<uint64_t, pair<string,string>> result;
     if (_committedtransactionIDs.empty()) {
@@ -447,8 +456,8 @@ void SQLite::rollback() {
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        SINFO("Rollback successful, releasing _commitLock for.");
-        _commitLock.unlock();
+        SINFO("Rollback successful, releasing commitLock for.");
+        commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }
