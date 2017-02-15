@@ -53,6 +53,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         //     Parameters:
         //     - name - name pattern of jobs to match
         //     - numResults - maximum number of jobs to dequeue
+        //     - connection - (optional) If "wait" will pause up to "timeout" for a match
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
         //
         //     Returns:
@@ -714,7 +715,8 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 
 // ==========================================================================
 bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
-    // Returns true if there are any children of this jobID in a RUNNING or QUEUED state.
+    // Returns true if there are any children of this jobID in a "pending" (eg,
+    // running or yet to run) state
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
