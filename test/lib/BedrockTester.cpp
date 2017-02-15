@@ -26,7 +26,7 @@ class BedrockTestException : public std::exception {
 
 // Create temporary file. Returns its name or the empty string on failure.
 string BedrockTester::getTempFileName(string prefix) {
-    string templateStr = prefix + "bedrocktest_XXXXXX.db";
+    string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
     strcpy(buffer, templateStr.c_str());
     int filedes = mkstemps(buffer, 3);
