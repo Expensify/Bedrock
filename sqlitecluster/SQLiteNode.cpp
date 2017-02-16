@@ -697,7 +697,7 @@ void SQLiteNode::_queueCommand(Command* command) {
     // at the proper position, based on command timestamp. Start from the back because the proper place
     // for the command is likely near the back.
     if (_queuedCommandMap[command->priority].empty() ||
-        command->creationTimestamp > _queuedCommandMap[command->priority].back()->creationTimestamp) {
+        command->creationTimestamp >= _queuedCommandMap[command->priority].back()->creationTimestamp) {
         _queuedCommandMap[command->priority].push_back(command);
     } else {
         SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt) {
