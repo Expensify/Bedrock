@@ -201,32 +201,23 @@ bool SQLiteNode::processCommand(Command* command) {
 }
 
 bool SQLiteNode::commit() {
-    SWARN("[SLOW] Locking.");
     SQLITE_COMMIT_AUTOLOCK;
-    SWARN("[SLOW] Locked, preparing.");
 
     if (!_db.prepare()) {
-        SWARN("[SLOW] Couldn't prepare.");
         return false;
     }
-    SWARN("[SLOW] Prepared.");
 
     if (_db.getUncommittedHash().empty()) {
-        SWARN("[SLOW] Nothing to commit.");
         return true;
     }
     // No prepare() call here because it's handled in process
 
-    SWARN("[SLOW] Committing.");
     int errorCode = _db.commit();
-    SWARN("[SLOW] Committed.");
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SWARN("[SLOW] Busy, Rolling back.");
+        SINFO("Commit conflict, rolling back.");
         _db.rollback();
-        SWARN("[SLOW] Busy, Rolled back.");
         return false; // Commit conflicted.
     }
-    SWARN("[SLOW] Done.");
     _haveUnsentTransactions = true;
     return true; // Commit succeeded.
 }
@@ -251,8 +242,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
 
         string& query = i.second.first;
         string& hash = i.second.second;
-
-        SINFO("[TYLER] replicating unsent transaction " << id << ".");
 
         SData transaction("BEGIN_TRANSACTION");
         transaction["Command"] = "ASYNC";
@@ -306,7 +295,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     // If there's already a response to this command, we must have finished it somewhere else (presumably, wherever we
     // called `reopenCommand` from. We'll simply clean up here.
     if (!existingCommand->response.empty()) {
-        SINFO("[TY2] Reopening and finishing command. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+        SINFO("Reopening and finishing command. " << existingCommand->id);
         return _finishCommand(existingCommand);
     }
 
@@ -314,7 +303,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     SASSERT(!(existingCommand->httpsRequest));
     
     // No response? We must not have processed this. Let's process it now.
-    SINFO("[TY2] Reopening command from the start. " << existingCommand->id << ":" << existingCommand->request.methodLine);
+    SINFO("Reopening command from the start. " << existingCommand->id);
     return _openCommand(existingCommand);
 }
 
@@ -335,44 +324,13 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
 
     // Wrap in a command for processing
     const string& id = name + "#" + SToStr(_commandCount.fetch_add(1));
-    SINFO("[TYLER3] Assigning new command name: " << id);
     Command* command = new Command;
     command->id = id;
     command->request = request;
     command->priority = priority;
 
-    // TODO: retrieving these values from a command is the other half of our hack for persisting these in an external
-    // queue.
-    if (!request["__messageID"].empty()) {
-        command->id = request["__messageID"];
-    }
-    if (!request["__priority"].empty()) {
-        command->priority = request.calc("__priority");
-    }
-    if (!request["__initiator"].empty()) {
-        SINFO("[TYLER] Trying to restore initiator for command: " << request.methodLine << ":" << request["ID"]
-              << ", was: " << request["__initiator"] << ", from " << peerList.size() << " peers.");
-        const string& name = request["__initiator"];
-        for (auto peer : peerList) {
-            // NOTE: This will never find anything on worker threads. They don't have access to the peers list. It
-            // doesn't actually matter, though, since they won't try to talk to the peers either. They just have to
-            // query the `__initiator` field (until we make this less messy).
-            if (peer->name == name) {
-                SINFO("[TYLER] Restoring initiator for command: " << request.methodLine << ":" << request["ID"] << ", to: " << name);
-                command->initiator = peer;
-            } else {
-                SINFO("[TYLER] Peer names doesn't match: " << peer->name);
-            }
-        }
-    }
-
-    // This is some bullshit.
-    if (request["hasResponse"] == "true") {
-        command->response.methodLine = "200 Mostly OK";
-    }
-
     if (!command->response.empty()) {
-        SINFO("[TYLER] Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
+        SINFO("Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
         _finishCommand(command);
         return 0;
     }
@@ -720,7 +678,6 @@ void SQLiteNode::_escalateCommand(Command* command) {
     _escalatedCommandMap.insert(pair<string, Command*>(command->id, command));
     SData escalate("ESCALATE");
     escalate["ID"] = command->id;
-    SINFO("[TYLER3] Escalating command: " << command->id << ":" << command->request["debug"]);
     escalate["priority"] = SToStr(command->priority);
     escalate.content = command->request.serialize();
     _sendToPeer(_masterPeer, escalate);
@@ -762,10 +719,9 @@ SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
             SData escalate("ESCALATE_RESPONSE");
             escalate["ID"] = command->id;
             escalate.content = command->response.serialize();
-            SINFO("[TYLER2] responding to ESCALATE command: " << command->id);
             _sendToPeer(command->initiator, escalate);
         } else {
-            SWARN("[TYLER] Peer socket died and trying to finish command. Handling disconnect.");
+            SWARN("Peer socket died and trying to finish command. Handling disconnect.");
             _onDisconnect(command->initiator);
         }
         delete command;
@@ -1373,7 +1329,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     SData commit("COMMIT_TRANSACTION");
                     commit["ID"] = _currentCommand->id;
                     _sendToAllPeers(commit, true); // subscribed only
-                    SINFO("[TYLER2] Commit successful on SYNC. Command: " << _currentCommand->id);
                 }
 
                 // OK, this might fail.
@@ -1583,7 +1538,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
 
-                            SINFO("[TY2] process command in Update: " << _currentCommand->id << ":" << _currentCommand->request.methodLine);
                             bool unlock = false;
                             if (_currentCommand->processed >= MAX_PROCESS_TRIES) {
                                 SWARN("[concurrent] Command " << _currentCommand->id << " processed " << _currentCommand->processed
@@ -1617,7 +1571,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                     return true;
                                 }
 
-                                SINFO("[concurrent] (" << name << ") committing: " << _currentCommand->request.methodLine << ", ID: " << _currentCommand->id);
                                 _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());
@@ -2453,12 +2406,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
             Command* command = commandIt->second;
-            SINFO("[TYLER3] finishing command: " << command->id << ":" << command->request["debug"]);
             _escalatedCommandMap.erase(command->id);
             command->response = response;
             _finishCommand(command);
         } else
-            SHMMM("[TYLER3] Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         /// - ESCALATE_RESPONSE: Sent when the master aborts processing an
         ///     escalated command.  Re-submit to the new master.
@@ -2477,7 +2429,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
                                           << command->id << ")");
             _queuedCommandMap[command->priority].push_front(command);
-            SINFO("[TYLER2] ABORTING: " << command->id);
             _escalatedCommandMap.erase(commandIt);
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
@@ -2622,7 +2573,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
             _db.rollback();
         SData rollback("ROLLBACK_TRANSACTION");
         rollback["ID"] = _currentCommand->id;
-        SINFO("[TYLER2] ROLLBACK on disconnect: " << _currentCommand->id);
+        SINFO("ROLLBACK on disconnect: " << _currentCommand->id);
         SFOREACH (list<Peer*>, peerList, peerIt)
             if ((**peerIt)["Subscribed"] == "true") {
                 // Send the rollback command

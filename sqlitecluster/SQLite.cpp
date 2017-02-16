@@ -133,9 +133,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
 
         // If we have a commit count, we should have a hash as well.
         if (commitCount && lastCommittedHash.empty()) {
-            SWARN("[TYLER] Loaded commit count " << commitCount << " with empty hash!");
-        } else {
-            SWARN("[TYLER] Loaded commit count " << commitCount << " with hash " << _lastCommittedHash);
+            SWARN("Loaded commit count " << commitCount << " with empty hash.");
         }
     }
 
@@ -384,9 +382,7 @@ int SQLite::commit() {
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
-    SWARN("[SLOW2] pre COMMIT");
     result = SQuery(_db, "committing db transaction", "COMMIT");
-    SWARN("[SLOW2] COMMITTED");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -401,7 +397,6 @@ int SQLite::commit() {
             // Update atomically.
             lock_guard<recursive_mutex> lock(_hashLock);
             _lastCommittedHash = _uncommittedHash;
-            SINFO("[TYLER] Updated last committed hash to: " << _lastCommittedHash << " (commit: " << _uncommittedID << ").");
         }
 
         // Ok, someone else can commit now.
@@ -454,7 +449,7 @@ void SQLite::rollback() {
         _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        SINFO("Rollback successful, releasing commitLock for.");
+        SINFO("Rollback successful.");
         commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");

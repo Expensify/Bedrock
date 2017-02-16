@@ -1,13 +1,11 @@
-// SQLite.h
 #pragma once
 #include <libstuff/sqlite3.h>
 
-// Convenience macro for locking our global commit lock.
+// Convenience macro for locking our static commit lock.
 #define SQLITE_COMMIT_AUTOLOCK SLockTimerGuard<decltype(SQLite::commitLock)> __SSQLITEAUTOLOCK_##__LINE__(SQLite::commitLock)
 
-// SQLite
 class SQLite {
-  public: // External API
+  public:
     // Loads a database and confirms its schema
     // The journalTable and numJournalTables parameters are maybe less than straightforward, here's what they mean:
     // journalTable: this is the numerical id of the journalTable that this DB will *write* to. It can be -1 to
@@ -136,7 +134,7 @@ class SQLite {
     // This atomically removes and returns committed transactions from our inflight list.
     map<uint64_t, pair<string,string>> getCommittedTransactions();
 
-  protected: // Internal API
+  protected:
     sqlite3* _db;
 
   private:
@@ -237,7 +235,7 @@ class SQLite {
     static recursive_mutex _commitLock;
     static recursive_mutex _hashLock;
 
-    // Like getCommitCount(), but only callable internally, when we know for certain that we're not int he middle of
+    // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
     // any transactions.
     uint64_t _getCommitCount();
 
