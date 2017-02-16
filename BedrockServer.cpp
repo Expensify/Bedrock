@@ -113,12 +113,13 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Update shared var so all threads have awareness of the current replication state
         // and version as determined by the replication node.
         data.replicationState.set(node.getState());
-        data.replicationCommitCount.set(node.getCommitCount());
+        data.replicationCommitCount.store(node.getCommitCount());
         data.masterVersion.set(node.getMasterVersion());
 
         // If we've been instructed to shutdown and we haven't yet, do it.
-        if (data.gracefulShutdown.get())
+        if (data.gracefulShutdown.load()) {
             node.beginShutdown();
+        }
 
         // Wait and process
         fd_map fdm;
@@ -134,9 +135,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         data.peekedCommands.preSelect(fdm);
         data.directMessages.preSelect(fdm);
         const uint64_t now = STimeNow();
-        data.server->pollTimer.start();
         S_poll(fdm, max(nextActivity, now) - now);
-        data.server->pollTimer.stop();
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
         // Handle any HTTPS requests from our plugins.
@@ -183,9 +182,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         }
     }
 
-    // We're shutting down, do the final performance log.
-    data.server->pollTimer.log();
-
     // Update the state one last time when the writing replication thread exits.
     SQLCState state = node.getState();
     if (state > SQLC_WAITING) {
@@ -198,7 +194,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         SINFO("Sync thread exiting, setting state to: " << state);
     }
     data.replicationState.set(state);
-    data.replicationCommitCount.set(node.getCommitCount());
+    data.replicationCommitCount.store(node.getCommitCount());
 }
 
 void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int threadCount)
@@ -216,7 +212,6 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
     SAUTOPREFIX(node.name);
     while (true) {
-        node.setSyncNode(_syncNode);
         // Set the worker node's state/master status coming from the replication thread.
         // Only worker nodes will allow an external party to set these properties.
 
@@ -237,7 +232,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // If we've been instructed to shutdown and there are no more requests waiting
         // to be processed, then exit the loop. Main thread will join us and continue
         // the shutdown process.
-        if (data.gracefulShutdown.get() && data.queuedRequests.empty()) {
+        if (data.gracefulShutdown.load() && data.queuedRequests.empty()) {
             break;
         }
 
@@ -271,6 +266,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // why for `creationTimestamp` commands. Right now, they're just broken.
             if (!request["unique"].empty() || !request["creationTimestamp"].empty()) {
                 // build a command, *don't open it*, and stick it on the peekedCommands queue for the sync thread.
+                // TODO:
                 SWARN("[TYLER] not properly handling `unique` or `creationTimestamp` command.");
                 continue;
             }
@@ -321,9 +317,9 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // queue. However, there's a special case if we're the master server, and the command is set to ASYNC
             // consistency. In that case, we'll try and perform the write from the worker thread.
 
-            // node.dbReady() implies that we're master, and that the initial `upgradeDatabase` command that runs each
+            // dbReady() implies that we're master, and that the initial `upgradeDatabase` command that runs each
             // time we begin mastering has completed.
-            bool canWriteInWorker = (node.dbReady() && command->writeConsistency == SQLC_ASYNC);
+            bool canWriteInWorker = (_syncNode->dbReady() && command->writeConsistency == SQLC_ASYNC);
 
             // Also, make sure it didn't open any secondary request (for now, we may support this in the future).
             SASSERT(!command->httpsRequest);
@@ -407,20 +403,20 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
 // --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), pollTimer("poll()", true), _args(args), _requestCount(0),
-      _replicationState(SQLC_SEARCHING), _replicationCommitCount(0), _nodeGracefulShutdown(false), _masterVersion(""),
-      _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
+    : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING), _replicationCommitCount(0),
+      _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
+      _suppressCommandPortManualOverride(false),
       _syncThread("sync",
-                   _args,
-                   _replicationState,
-                   _replicationCommitCount,
-                   _nodeGracefulShutdown,
-                   _masterVersion,
-                   _queuedRequests,
-                   _processedResponses,
-                   _escalatedCommands,
-                   _peekedCommands,
-                   this) {
+                  _args,
+                  _replicationState,
+                  _replicationCommitCount,
+                  _nodeGracefulShutdown,
+                  _masterVersion,
+                  _queuedRequests,
+                  _processedResponses,
+                  _escalatedCommands,
+                  _peekedCommands,
+                  this) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -522,16 +518,11 @@ BedrockServer::~BedrockServer() {
 // --------------------------------------------------------------------------
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
-    bool gs = _nodeGracefulShutdown.get();
+    bool gs = _nodeGracefulShutdown.load();
     bool rs = (_replicationState.get() <= SQLC_WAITING);
     bool qr = _queuedRequests.empty();
     bool qe = _escalatedCommands.empty();
     bool pr = _processedResponses.empty();
-
-    // Original code - restore once shutdown issue has been diagnosed.
-    //return _nodeGracefulShutdown.get() && _replicationState.get() <= SQLC_WAITING && _queuedRequests.empty() &&
-    //       _escalatedCommands.empty() && _processedResponses.empty();
-
     bool retVal = false;
 
     // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
@@ -591,7 +582,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     if (!_suppressCommandPort && portList.empty() && (state == SQLC_MASTERING || state == SQLC_SLAVING) &&
-        !_nodeGracefulShutdown.get()) {
+        !_nodeGracefulShutdown.load()) {
         // Open the port
         SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
         openPort(_args["-serverHost"]);
@@ -649,11 +640,11 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             SClearSignals();
         } else {
             // For anything else, just shutdown -- but only if we're not already shutting down
-            if (!_nodeGracefulShutdown.get()) {
+            if (!_nodeGracefulShutdown.load()) {
                 // Begin a graceful shutdown; close our port
                 SINFO("Beginning graceful shutdown due to '"
                       << SGetSignalNames(sigmask) << "', closing command port on '" << _args["-serverHost"] << "'");
-                _nodeGracefulShutdown.set(true);
+                _nodeGracefulShutdown.store(true);
                 closePorts();
             }
         }
@@ -836,7 +827,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         response["waitTime"] = SToStr(waitTime / STIME_US_PER_MS);
         response["processingTime"] = SToStr(processingTime / STIME_US_PER_MS);
         response["nodeName"] = _args["-nodeName"];
-        response["commitCount"] = SToStr(_replicationCommitCount.get());
+        response["commitCount"] = SToStr(_replicationCommitCount.load());
 
         // Warn on slow commands.
         if (processingTime > 2000 * STIME_US_PER_MS)
@@ -936,15 +927,6 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
         // to close, but not always safe to open.)
         SHMMM("Clearing command port suppression");
     }
-}
-
-// --------------------------------------------------------------------------
-void BedrockServer::queueRequest(const SData& request) {
-    // This adds a request to the queue, but it doesn't affect our `select` loop, so any messages queued here may not
-    // trigger until the next time `select` finishes (which should be within 1 second).
-    // We could potentially interrupt the select loop here (perhaps by writing to our own incoming server socket) if
-    // we want these requests to trigger instantly.
-    _queuedRequests.push(request);
 }
 
 const string& BedrockServer::getVersion() { return _version; }

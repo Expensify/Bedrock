@@ -15,8 +15,7 @@ class BedrockNode : public SQLiteNode {
 
     bool isWorker();
 
-    void setSyncNode(BedrockNode* node);
-
+    // Returns _dbReady, which is only useful on a sync node.
     bool dbReady();
 
     // STCPManager API: Socket management
@@ -37,7 +36,4 @@ class BedrockNode : public SQLiteNode {
   private:
     // If we're the sync node, we keep track of whether our database is ready to use.
     bool _dbReady = false;
-
-    // If we're a worker node, we keep track of a sync node, to know when his database is ready to use.
-    BedrockNode* _syncNode = 0;
 };
