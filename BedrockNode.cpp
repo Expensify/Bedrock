@@ -71,9 +71,8 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
-bool BedrockNode::passToExternalQueue(Command* command) {
+bool BedrockNode::_passToExternalQueue(Command* command) {
     if (server) {
-        SINFO("Bedrock Server enqueueing escalated request: " << command->id << ":" << command->request.methodLine);
         server->enqueueCommand(command);
         return true;
     }
@@ -92,6 +91,7 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
+    SDEBUG("Peeking at '" << request.methodLine << "'");
 
     // Assume success; will throw failure if necessary
     try {
@@ -101,6 +101,7 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             // See if it peeks this
             if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
                 // Peeked it!
+                SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
                 break;
             }
@@ -150,6 +151,7 @@ void BedrockNode::_setState(SQLCState state) {
 void BedrockNode::setSyncNode(BedrockNode* node) {
     _syncNode = node;
 }
+
 bool BedrockNode::dbReady() {
     if (_syncNode) {
         return _syncNode->_dbReady;

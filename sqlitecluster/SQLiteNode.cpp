@@ -2392,7 +2392,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             command->id = message["ID"];
             command->request = request;
             command->priority = message.calc("priority");
-            if (!passToExternalQueue(command)) {
+            if (!_passToExternalQueue(command)) {
                 _queueCommand(command);
             }
         }

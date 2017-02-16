@@ -25,15 +25,13 @@ class BedrockNode : public SQLiteNode {
     // Handle an exception thrown by a plugin while peek/processing a command.
     void handleCommandException(SQLite& db, Command* command, const string& errorStr, bool wasProcessing);
 
+  protected:
     // SQLiteNode API: Command management
-    virtual bool _peekCommand(SQLite& db, Command* command);
-    virtual bool _processCommand(SQLite& db, Command* command);
     virtual void _abortCommand(SQLite& db, Command* command);
     virtual void _cleanCommand(Command* command);
-
-    virtual bool passToExternalQueue(Command* command);
-  
-  protected:
+    virtual bool _passToExternalQueue(Command* command);
+    virtual bool _peekCommand(SQLite& db, Command* command);
+    virtual bool _processCommand(SQLite& db, Command* command);
     virtual void _setState(SQLCState state);
 
   private:

@@ -1,49 +1,44 @@
-// --------------------------------------------------------------------------
-// libstuff.h
-// --------------------------------------------------------------------------
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
 
-// Include relevant headers
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+// C library
 #include <arpa/inet.h>
-#include <syslog.h>
-#include <unistd.h>
 #include <fcntl.h>
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
-#include <poll.h>
-#include <time.h>
 #include <libgen.h>   // for basename()
-#include <sys/time.h> // for gettimeofday()
+#include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/time.h> // for gettimeofday()
+#include <sys/types.h>
+#include <syslog.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
 
-// --------------------------------------------------------------------------
-// Initialization / Shutdown
-// --------------------------------------------------------------------------
-// Initialize libstuff on every thread before calling any of its functions
-void SInitialize(string threadName = "");
-
-// --------------------------------------------------------------------------
-// Standard Template Library stuff
-// --------------------------------------------------------------------------
-// Include the files
-#include <map>
-#include <string>
-#include <list>
+// STL
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <condition_variable>
 #include <iostream>
-#include <sstream>
-#include <vector>
+#include <list>
+#include <map>
+#include <mutex>
 #include <random>
 #include <set>
-#include <algorithm>
-#include <stdlib.h>
-#include <mutex>
-#include <cctype>
+#include <sstream>
+#include <string>
 #include <thread>
+#include <vector>
 using namespace std;
+
+// Custom libraries.
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+
+// Initialize libstuff on every thread before calling any of its functions
+void SInitialize(string threadName = "");
 
 // --------------------------------------------------------------------------
 // Assertion stuff
@@ -84,7 +79,7 @@ using namespace std;
     } while (false)
 
 // --------------------------------------------------------------------------
-// A very simple name/value pair table with case-insensitive name maching
+// A very simple name/value pair table with case-insensitive name matching
 // --------------------------------------------------------------------------
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
 class STableComp : binary_function<string, string, bool> {
@@ -145,7 +140,7 @@ struct SData {
 };
 
 // --------------------------------------------------------------------------
-// Time stuff
+// Time stuff TODO: Replace with std::chrono
 // --------------------------------------------------------------------------
 #define STIME_US_PER_MS ((uint64_t)1000)
 #define STIME_US_PER_S ((uint64_t)1000 * STIME_US_PER_MS)
@@ -700,7 +695,8 @@ inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThr
     return SQuery(db, e, sql, ignore, warnThreshold);
 }
 
-bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql, bool verifyOnly = false);
+bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
+bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
 // --------------------------------------------------------------------------
 inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }

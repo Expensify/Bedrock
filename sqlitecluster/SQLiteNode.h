@@ -1,6 +1,5 @@
 #pragma once
 #include "SQLite.h"
-#include <atomic>
 
 // Possible states of a node in a DB cluster
 enum SQLCState {
@@ -89,9 +88,6 @@ class SQLiteNode : public STCPNode {
                int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
-    // Should return true if an external queue accepted the command. If so, this node now keeps no reference to the
-    // command, and the external queue is responsible for calling `reopenCommand` to return the command to this node.
-    virtual bool passToExternalQueue(Command* command) { return false; };
 
     // Simple accessors
     SQLCState getState() { return _state; }
@@ -157,14 +153,20 @@ class SQLiteNode : public STCPNode {
     // If the command has been passed to the control of a different SQLiteNode, the caller can elect not to delete it.
     void closeCommand(Command* command);
 
-    // Updates the internal state machine; returns true if it wants immediate
-    // re-updating.
+    // Updates the internal state machine; returns true if it wants immediate re-updating.
     bool update(uint64_t& nextActivity);
 
     // STCPNode API: Peer handling framework functions
     virtual void _onConnect(Peer* peer);
     virtual void _onDisconnect(Peer* peer);
     virtual void _onMESSAGE(Peer* peer, const SData& message);
+
+    // Externally exposed version of _processCommand().
+    bool processCommand(Command* command);
+    bool commit();
+
+  protected:
+    virtual bool _peekCommand(SQLite& db, Command* command) = 0;
 
     // Parent overrides these in order to process commands.  Return true in
     // _processCommand() or _peekCommand to signal that the command is complete
@@ -190,25 +192,20 @@ class SQLiteNode : public STCPNode {
     //
     // _cleanCommand() is called when the command is closed; use it for any
     // final cleanup operations.
-    //
-
-    // Externally exposed version of _processCommand().
-    bool processCommand(Command* command);
-    virtual bool _peekCommand(SQLite& db, Command* command) = 0;
-
+    virtual void _abortCommand(SQLite& db, Command* command) = 0;
+    virtual void _cleanCommand(Command* command) = 0;
     // This returns `true` if we need to commit something to the database after this operation, false otherwise. The
     // two common cases for why this would return false are that the command threw an exception, or it succeeded but
     // didn't need to write anything to the database.
     virtual bool _processCommand(SQLite& db, Command* command) = 0;
-    virtual void _abortCommand(SQLite& db, Command* command) = 0;
-    virtual void _cleanCommand(Command* command) = 0;
+
+    // Should return true if an external queue accepted the command. If so, this node now keeps no reference to the
+    // command, and the external queue is responsible for calling `reopenCommand` to return the command to this node.
+    virtual bool _passToExternalQueue(Command* command) { return false; };
 
     // Wrappers for peek and process command to keep track of processing time.
     bool _peekCommandWrapper(SQLite& db, Command* command);
     bool _processCommandWrapper(SQLite& db, Command* command);
-
-    bool commit();
-
 
     // Force quorum among the replica after every N commits.  This prevents master from running ahead
     // too far. "Too far" is an arbitrary threshold that trades potential loss of consistency in the
@@ -216,10 +213,9 @@ class SQLiteNode : public STCPNode {
     void setQuroumCheckpoint(const int quroumCheckpoint) { _quorumCheckpoint = quroumCheckpoint; };
     int getQuorumCheckpoint() { return _quorumCheckpoint; };
 
-  protected:
     bool _worker;
     SQLite _db;
-    map<int, list<Command*>> _queuedCommandMap; // priority  -> list<Command*> map
+    map<int, list<Command*>> _queuedCommandMap; // priority -> list<Command*> map
 
     // The peer we should sync from is recalculated every time we call this. If no other peer is logged in, or no
     // logged in peer has a higher commitCount that we do, this will return null.

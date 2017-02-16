@@ -55,17 +55,8 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
         if (s > 0) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            socket = new Socket;
-            socket->s = s;
+            socket = new Socket(s, STCP_CONNECTED);
             socket->addr = addr;
-            socket->state = STCP_CONNECTED;
-            socket->connectFailure = false;
-            socket->openTime = STimeNow();
-            // Prevent default values from causing immediate timeouts.
-            socket->lastSendTime = STimeNow();
-            socket->lastRecvTime = STimeNow();
-            socket->ssl = nullptr;
-            socket->data = nullptr; // Used by caller, not libstuff
             socketList.push_back(socket);
 
             // Try to read immediately

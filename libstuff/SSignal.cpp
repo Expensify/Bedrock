@@ -130,8 +130,6 @@ string SGetSignalNames(uint64_t sigmask) {
 void _SInitializeSignals() {
     // Catch all signals (or, rather, every signal we are able to catch).
     for (int signum = 0; signum < 64; ++signum) {
-        if (signum != SIGABRT) {
-            signal(signum, SSendSignal);
-        }
+        signal(signum, SSendSignal);
     }
 }

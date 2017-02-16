@@ -211,6 +211,10 @@ void STCPManager::postSelect(fd_map& fdm) {
     }
 }
 
+STCPManager::Socket::Socket(int sock, STCPState state_)
+  : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr) { }
+
 // --------------------------------------------------------------------------
 STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
@@ -221,18 +225,10 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     }
 
     // Create a new socket
-    Socket* socket = new Socket;
-    socket->s = s;
-    SASSERT(socket->s != -1);
+    Socket* socket = new Socket(s, STCP_CONNECTING);
     socket->state = STCP_CONNECTING;
-    socket->connectFailure = false;
-    socket->openTime = STimeNow();
-    socket->lastSendTime = STimeNow();
-    socket->lastRecvTime = STimeNow();
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
-    socket->data = nullptr; // Used by caller, not libstuff
     SASSERT(!x509 || socket->ssl);
-    memset(&socket->addr, 0, sizeof(socket->addr));
     socketList.push_back(socket);
     return socket;
 }

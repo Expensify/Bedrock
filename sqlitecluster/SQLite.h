@@ -1,7 +1,6 @@
 // SQLite.h
 #pragma once
 #include <libstuff/sqlite3.h>
-#include <atomic>
 
 // Convenience macro for locking our global commit lock.
 #define SQLITE_COMMIT_AUTOLOCK SLockTimerGuard<decltype(SQLite::commitLock)> __SSQLITEAUTOLOCK_##__LINE__(SQLite::commitLock)

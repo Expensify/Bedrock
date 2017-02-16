@@ -1,12 +1,11 @@
 #include "../BedrockClusterTester.h"
-#include <atomic>
+
 struct b_ConflictSpamTest : tpunit::TestFixture {
     b_ConflictSpamTest()
         : tpunit::TestFixture("b_ConflictSpam",
                               BEFORE_CLASS(b_ConflictSpamTest::setup),
                               TEST(b_ConflictSpamTest::slow),
-                              TEST(b_ConflictSpamTest::spam),
-                              TEST(b_ConflictSpamTest::ULTRAspam)) { }
+                              TEST(b_ConflictSpamTest::spam)) { }
 
     /* What's a conflict spam test? The main point of this test is to make sure we have lots of conflicting commits
      * coming in to the whole cluster, so that we can make sure they all eventually get committed and replicated in a
@@ -327,9 +326,4 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         ASSERT_EQUAL(fail, 0);
     }
 
-    void ULTRAspam() {
-        for (int i = 0; i < 20; i++) {
-            spam();
-        }
-    }
 } __b_ConflictSpamTest;

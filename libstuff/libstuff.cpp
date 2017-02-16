@@ -2148,15 +2148,13 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     int extErr = 0;
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
-        //SDEBUG(sql);
-        SWARN("[SLOW] Start exec. " << sql);
+        SDEBUG(sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
-        SWARN("[SLOW] Finish exec." << sql);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
-        SWARN("[SLOW] sqlite3_exec returned SQLITE_BUSY on try #"
+        SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
               << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
               << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
@@ -2170,7 +2168,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("[SLOW] Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
@@ -2196,23 +2194,29 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
 // --------------------------------------------------------------------------
 // Creates a table, if not there, or verifies it's defined correctly
-bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql, bool verifyOnly) {
+bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     if (result.empty()) {
         // Table doesn't already exist, create it
-        if (!verifyOnly) {
-            SINFO("Creating '" << tableName << "'");
-            SASSERT(!SQuery(db, "SQVerifyTable", sql));
-        }
+        SINFO("Creating '" << tableName << "'");
+        SASSERT(!SQuery(db, "SQVerifyTable", sql));
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
-        if (!verifyOnly) {
-            SINFO("'" << tableName << "' already exists, verifying. ");
-            SASSERT(result[0][4] == sql);
-        }
+        SINFO("'" << tableName << "' already exists, verifying. ");
+        SASSERT(result[0][4] == sql);
         return false; // Table already exists with correct definition
+    }
+}
+
+bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
+    SQResult result;
+    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    if (result.empty()) {
+        return false;
+    } else {
+        return true;
     }
 }

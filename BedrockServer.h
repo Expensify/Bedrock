@@ -3,8 +3,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
-#include <thread>
-#include <condition_variable>
 
 class BedrockServer : public STCPServer {
   public: // External Bedrock

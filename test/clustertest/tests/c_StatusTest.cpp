@@ -1,5 +1,5 @@
 #include "../BedrockClusterTester.h"
-#include <atomic>
+
 struct c_StatusTest : tpunit::TestFixture {
     c_StatusTest()
         : tpunit::TestFixture("b_ConflictSpam",

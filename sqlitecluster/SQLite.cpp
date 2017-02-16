@@ -89,9 +89,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     int currentJounalTable = -1;
     while(true) {
         string name = getJournalTableName(currentJounalTable);
-        // useless select, we don't want to create anything, just see if these tables exist.
-        bool exists = !SQVerifyTable(_db, name, "select 1", true);
-        if (exists) {
+        if (SQVerifyTableExists(_db, name)) {
             _allJournalNames.push_back(name);
             currentJounalTable++;
         } else {

@@ -11,7 +11,6 @@
 #include "plugins/Jobs.h"
 #include "plugins/Status.h"
 #include "plugins/MySQL.h"
-#include "plugins/Test.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
 
@@ -88,8 +87,7 @@ set<string> loadPlugins(SData& args) {
         {"STATUS", new BedrockPlugin_Status()},
         {"JOBS",   new BedrockPlugin_Jobs()},
         {"CACHE",  new BedrockPlugin_Cache()},
-        {"MYSQL",  new BedrockPlugin_MySQL()},
-        {"TEST",   new BedrockPlugin_Test()}
+        {"MYSQL",  new BedrockPlugin_MySQL()}
     };
 
     for (string pluginName : plugins) {
