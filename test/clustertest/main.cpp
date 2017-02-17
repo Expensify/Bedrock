@@ -1,5 +1,6 @@
 #include <libstuff/libstuff.h>
 #include <test/clustertest/BedrockClusterTester.h>
+#include <unistd.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the
@@ -24,12 +25,25 @@ void sigclean(int sig) {
     exit(1);
 }
 
+// This is a bit of a hack and assumes various things about syslogd
+void log() {
+    int pid = getpid();
+    cout << "Starting log recording with pid: " << pid << endl;
+    unlink("log.txt");
+    execl("/bin/bash", "/bin/bash", "-c", "tail -f /var/log/syslog | grep --line-buffered bedrock > log.txt", (char *)NULL);
+}
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.
     signal(SIGINT, sigclean);
+
+    int pid = fork();
+    if (!pid) {
+        log();
+        return 0;
+    }
 
     int retval = 0;
     {
@@ -48,7 +62,10 @@ int main(int argc, char* argv[]) {
             retval = 1;
         }
     }
+
+    // Kill the logger.
+    kill(pid, 9);
+
     // Tester gets destroyed here. Everything's done.
     return retval;
 }
-

@@ -2,7 +2,7 @@
 
 struct c_StatusTest : tpunit::TestFixture {
     c_StatusTest()
-        : tpunit::TestFixture("b_ConflictSpam",
+        : tpunit::TestFixture("c_StatusTest",
                               TEST(c_StatusTest::status)) { }
 
     BedrockClusterTester* tester;
@@ -37,5 +37,11 @@ struct c_StatusTest : tpunit::TestFixture {
         threads.clear();
 
         // TODO: Verify peers, once that works in Status.
+        for (string response: responses) {
+            cout << response << endl;
+        }
+
+        syslog(LOG_WARNING, "%s", "bedrock TEST_MARKER_1");
+        syslog(LOG_WARNING, "%s", "bedrock TEST_MARKER_1");
     }
 } __c_StatusTest;
