@@ -929,4 +929,12 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
     }
 }
 
+void BedrockServer::queueRequest(const SData& request) {
+    // This adds a request to the queue, but it doesn't affect our `select` loop, so any messages queued here may not
+    // trigger until the next time `select` finishes (which should be within 1 second).
+    // We could potentially interrupt the select loop here (perhaps by writing to our own incoming server socket) if
+    // we want these requests to trigger instantly.
+    _queuedRequests.push(request);
+}
+
 const string& BedrockServer::getVersion() { return _version; }

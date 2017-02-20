@@ -119,6 +119,9 @@ class BedrockServer : public STCPServer {
     // in which case that setting trumps the `suppress` setting.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
+    // Add a new request to our message queue.
+    void queueRequest(const SData& request);
+
     // Returns the version string of the server.
     const string& getVersion();
 
