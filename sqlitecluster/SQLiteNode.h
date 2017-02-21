@@ -26,6 +26,7 @@ extern const char* SQLCConsistencyLevelNames[];
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
   public: // External API
+
     // Captures all data associated with an atomic command
     struct Command {
         enum Priority {

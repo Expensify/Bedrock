@@ -3,6 +3,9 @@
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
 
+// Status is special - it has commands that need to be handled by the sync node.
+#include <plugins/Status.h>
+
 // Definitions of static variables.
 condition_variable BedrockServer::_threadInitVar;
 mutex BedrockServer::_threadInitMutex;
@@ -262,8 +265,14 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 continue;
             }
 
+            // If the command is scheduled for the future, we'll forward it to the sync thread, as only the sync thread
+            // keeps a long-running queue instead of operating on one command at a time.
+            // Also, if the command is a status command, we'll forward it to the sync thread, because status commands
+            // are special and require access to information that only the sync thread knows.
             command = node.createCommand(request);
-            if(command->creationTimestamp > STimeNow()) {
+            if(command->creationTimestamp > STimeNow() ||
+               find(BedrockPlugin_Status::statusCommandNames.begin(), BedrockPlugin_Status::statusCommandNames.end(),
+                    request.methodLine) != BedrockPlugin_Status::statusCommandNames.end()) {
                 SINFO("Forwarding command " << command->id << " to sync thread.");
                 command->response.clear(); // TODO: These should be clear on creation.
                 data.peekedCommands.push(command);

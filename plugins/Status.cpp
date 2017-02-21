@@ -3,6 +3,13 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
+const vector<string> BedrockPlugin_Status::statusCommandNames = {
+    "GET /status/isSlave HTTP/1.1",
+    "GET /status/handlingCommands HTTP/1.1",
+    "Ping",
+    "Status",
+};
+
 // ==========================================================================
 bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
     // Pull out some helpful variables
@@ -14,7 +21,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     // --------------------
     //
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1")) {
+    if (SIEquals(request.methodLine, statusCommandNames[0])) {
         // - GET /status/isSlave HTTP/1.1
         //
         //    Used for liveness check for HAProxy. Unfortunately it's limited to
@@ -34,7 +41,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     }
 
     // --------------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
+    else if (SIEquals(request.methodLine, statusCommandNames[1])) {
         // - GET /status/handlingCommands HTTP/1.1
         //
         //    Used for liveness check for HAProxy. Unfortunately it's limited to
@@ -58,7 +65,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "Ping")) {
+    else if (SIEquals(request.methodLine, statusCommandNames[2])) {
         // - Ping( )
         //
         //     For liveness tests.
@@ -67,7 +74,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "Status")) {
+    else if (SIEquals(request.methodLine, statusCommandNames[3])) {
         // - Status( )
         //
         //     Give us some data on this server.

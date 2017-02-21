@@ -13,9 +13,9 @@ struct c_StatusTest : tpunit::TestFixture {
 
         mutex m;
 
-        // Let's spin up three threads, each spamming commands at one of our nodes.
+        // Send to each node simultaneously.
         list<thread> threads;
-        list<string> responses;
+        vector<string> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &responses, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
@@ -26,7 +26,7 @@ struct c_StatusTest : tpunit::TestFixture {
                 // Ok, send them all!
                 auto result = brtester->executeWait(status);
                 lock_guard<decltype(m)> lock(m);
-                responses.push_back(result);
+                responses[i] = result;
             });
         }
 
@@ -36,12 +36,18 @@ struct c_StatusTest : tpunit::TestFixture {
         }
         threads.clear();
 
-        // TODO: Verify peers, once that works in Status.
-        for (string response: responses) {
-            cout << response << endl;
-        }
+        for (int i = 0; i < 3; i++) {
+            STable json = SParseJSONObject(responses[i]);
+            auto peers = SParseJSONArray(json["peerList"]);
+            if (i == 0) {
+                ASSERT_EQUAL(json["isMaster"], "true");
+            } else {
+                ASSERT_EQUAL(json["isMaster"], "false");
+            }
+            ASSERT_EQUAL(peers.size(), 2);
 
-        syslog(LOG_WARNING, "%s", "bedrock TEST_MARKER_1");
-        syslog(LOG_WARNING, "%s", "bedrock TEST_MARKER_1");
+            // TODO: It looks like slaves broadcast the wrong commit count.
+            cout << json["peerList"] << endl;
+        }
     }
 } __c_StatusTest;
