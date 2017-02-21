@@ -174,7 +174,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             //SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
-            SINFO("[TYLER3] sync thread responding to command: " << command->id << ":" << command->request["debug"]);
             data.processedResponses.push(command->response);
 
             // Close the command to remove it from any internal queues.
@@ -256,39 +255,23 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         } else {
             // Otherwise, let's see if we can get a new request.
             SData request = data.queuedRequests.pop();
+            //SAUTOPREFIX(request["requestID"]);
 
             // If we didn't get anything here, there's no work to do. Go back to waiting.
             if (request.empty()) {
                 continue;
             }
 
-            // previously, these always had to go to the sync thread. I get why for `unique` commands, but I don't know
-            // why for `creationTimestamp` commands. Right now, they're just broken.
-            if (!request["unique"].empty() || !request["creationTimestamp"].empty()) {
-                // build a command, *don't open it*, and stick it on the peekedCommands queue for the sync thread.
-                // TODO:
-                SWARN("[TYLER] not properly handling `unique` or `creationTimestamp` command.");
+            command = node.createCommand(request);
+            if(command->creationTimestamp > STimeNow()) {
+                SINFO("Forwarding command " << command->id << " to sync thread.");
+                command->response.clear(); // TODO: These should be clear on creation.
+                data.peekedCommands.push(command);
                 continue;
+            } else {
+                // Let this actually execute the peek.
+                command = node.reopenCommand(command);
             }
-
-            //SAUTOPREFIX(request["requestID"]);
-            int priority = SPRIORITY_NORMAL;
-            if (!request["priority"].empty()) {
-                // Make sure the priority is valid.
-                if (SWITHIN(SPRIORITY_MIN, request.calc("priority"), SPRIORITY_MAX)) {
-                    priority = request.calc("priority");
-                } else {
-                    SWARN("Invalid priority " << request["priority"] << ". Ignoring");
-                }
-            }
-
-            // Open this command -- it'll be peeked immediately
-            const int64_t creationTimestamp = request.calc64("creationTimestamp");
-            SINFO("Dispatching request '" << request.methodLine << "' (Connection: " << request["Connection"]
-                                          << ", creationTimestamp: " << creationTimestamp
-                                          << ", priority: " << priority << ")");
-
-            command = node.openCommand(request, priority, false, creationTimestamp);
         }
 
         SDEBUG("Worker thread unblocked!");
@@ -308,7 +291,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // Prepare the final response.
                 SINFO("Peek successful. Putting command '" << command->id << "' on processed list.");
                 BedrockServer_PrepareResponse(command);
-                SINFO("[TYLER3] worker thread responding to (read-only) command: " << command->id << ":" << command->request["debug"]);
+                SINFO("Worker thread responding to (read-only) command: " << command->id << ":" << command->request["debug"]);
                 data.processedResponses.push(command->response);
             }
         } else if (node.getQueuedCommand(command->priority)) {
@@ -341,8 +324,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 // parallel commits.
                 int tries = 0;
                 while (++tries < MAX_ASYNC_CONCURRENT_TRIES) {
-                    SINFO("processing ASYNC command " << command->id << ":" << command->request.methodLine
-                          << " from worker thread. (try #" << tries << ").");
+                    SINFO("Processing ASYNC command " << command->id << " from worker. (try #" << tries << ").");
 
                     // Try and process.
                     bool needsCommit = node.processCommand(command);
@@ -352,14 +334,12 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     if (needsCommit) {
                         if (!node.commit()) {
                             // If the commit failed, we just try again.
-                            SINFO("ASYNC command " << command->id << ":" << command->request.methodLine
-                                  << " conflicted, retrying.");
+                            SINFO("ASYNC command " << command->id << " conflicted, retrying.");
                             command->response.clear();
                             continue;
                         } else {
                             // Hey, everything worked!
-                            SINFO("[TYLER] ASYNC command " << command->id << ":" << command->request.methodLine
-                                  << " successfully processed.");
+                            SINFO("ASYNC command " << command->id << " successfully processed.");
                         }
                     }
 
@@ -373,7 +353,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                     } else {
                         SINFO("Preparing response to ASYNC command." << ":" << command->request.methodLine);
                         BedrockServer_PrepareResponse(command);
-                        SINFO("[TYLER3] worker thread responding to command: " << command->id << ":" << command->request["debug"]);
+                        SINFO("Worker thread responding to command: " << command->id << ".");
                         data.processedResponses.push(command->response);
                     }
 
@@ -771,7 +751,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     _queuedRequests.push(request);
 
                     // Either shut down the socket or store it so we can eventually sync out the response.
-                    if (SIEquals(request["Connection"], "forget")) {
+                    uint64_t creationTimestamp = request.calc64("commandExecuteTime");
+                    if (SIEquals(request["Connection"], "forget") || creationTimestamp > STimeNow()) {
                         // Respond immediately to make it clear we successfully
                         // queued it, but don't add to the socket map as we don't
                         // care about the answer

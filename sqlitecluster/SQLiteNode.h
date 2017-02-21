@@ -28,6 +28,14 @@ class SQLiteNode : public STCPNode {
   public: // External API
     // Captures all data associated with an atomic command
     struct Command {
+        enum Priority {
+            SPRIORITY_MIN = 0,
+            SPRIORITY_LOW = 250,
+            SPRIORITY_NORMAL = 500,
+            SPRIORITY_HIGH = 750,
+            SPRIORITY_MAX = 1000
+        };
+
         // Attributes
         Peer* initiator;
         string id;
@@ -56,7 +64,7 @@ class SQLiteNode : public STCPNode {
         Command() {
             // Initialize
             initiator = 0;
-            priority = 0;
+            priority = SPRIORITY_NORMAL;
             httpsRequest = 0;
             creationTimestamp = STimeNow();
             replicationStartTimestamp = 0;
@@ -126,14 +134,8 @@ class SQLiteNode : public STCPNode {
     // Returns true when we're ready to process commands
     bool ready() { return (_state == SQLC_MASTERING || _state == SQLC_SLAVING); }
 
-// Executes a new command on the distributed database with a given priority.
-// High priority commands take precedence over low, otherwise it's FIFO.
-#define SPRIORITY_MAX 1000
-#define SPRIORITY_HIGH 750
-#define SPRIORITY_NORMAL 500
-#define SPRIORITY_LOW 250
-#define SPRIORITY_MIN 0
-    Command* openCommand(const SData& request, int priority, bool unique = false, int64_t commandExecuteTime = 0);
+    Command* createCommand(const SData& request);
+    Command* openCommand(const SData& request);
     Command* reopenCommand(SQLiteNode::Command* existingCommand);
 
     // Gets a completed command from the database

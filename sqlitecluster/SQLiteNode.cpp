@@ -307,32 +307,51 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
     return _openCommand(existingCommand);
 }
 
-// --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority, bool unique,
-                                             int64_t commandExecuteTime) {
-    SASSERT(!request.empty());
-    SASSERT(priority <= SPRIORITY_MAX); // Else will trump UpgradeDatabase
-    // If unique, then make sure another one isn't on the queue already.
-    SAUTOPREFIX(request["requestID"]);
-    if (unique)
-        SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt)
-    if ((*commandIt)->request.methodLine == request.methodLine) {
-        // Already got one.  No thanks.
-        SINFO("'" << request.methodLine << " already in queue, ignoring");
-        return NULL;
+SQLiteNode::Command* SQLiteNode::createCommand(const SData& request) {
+
+    // Create our new command.
+    Command* command = new Command;
+
+    // Save it's request info.
+    command->request = request;
+
+    // Give it a unique name.
+    command->id = name + "#" + SToStr(_commandCount.fetch_add(1));
+
+    // Set it's creationTimestamp.
+    command->creationTimestamp = request.calc64("creationTimestamp");
+    uint64_t commandExecuteTime = request.calc64("commandExecuteTime");
+    uint64_t now = STimeNow();
+    if (commandExecuteTime > now) {
+        command->creationTimestamp = commandExecuteTime;
+    }
+    if (!command->creationTimestamp) {
+        command->creationTimestamp = now;
     }
 
+    // If it's specified priority info, set it.
+    if (!request["priority"].empty()) {
+        int priority = request.calc("priority");
+        if (SWITHIN(Command::SPRIORITY_MIN, priority, Command::SPRIORITY_MAX)) {
+            command->priority = priority;
+        } else {
+            SWARN("Invalid priority " << request["priority"] << ". Ignoring");
+        }
+    }
+
+    return command;
+}
+
+SQLiteNode::Command* SQLiteNode::openCommand(const SData& request) {
+    SASSERT(!request.empty());
+    SAUTOPREFIX(request["requestID"]);
+
     // Wrap in a command for processing
-    const string& id = name + "#" + SToStr(_commandCount.fetch_add(1));
-    Command* command = new Command;
-    command->id = id;
-    command->request = request;
-    command->priority = priority;
+    Command* command = createCommand(request);
 
     if (!command->response.empty()) {
         SINFO("Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
         _finishCommand(command);
-        return 0;
     }
 
     return _openCommand(command);
@@ -356,9 +375,7 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
     //          That's fine for now given our use case for it, but
     //          may not be the case in the future.
     int64_t now = STimeNow();
-    int64_t commandExecuteTime = SToInt64(command->request["commandExecuteTime"]);
-    if (commandExecuteTime > now) {
-        command->creationTimestamp = commandExecuteTime;
+    if (command->creationTimestamp) {
         SINFO("Scheduling command " << command->id << " for "
                                     << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
                                     << "s in the future.");
@@ -2303,7 +2320,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
         SINFO("Rolling back slave transaction " << message["ID"]);
-        SWARN("[TYLER2] ROLLBACK received on slave for: " << message["ID"]);
+        SWARN("ROLLBACK received on slave for: " << message["ID"]);
         _db.rollback();
 
         // Look through our escalated commands and see if it's one being processed
@@ -2676,7 +2693,9 @@ void SQLiteNode::_changeState(SQLCState newState) {
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it
             if (!gracefulShutdown()) {
-                openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
+                SData upgrade("UpgradeDatabase");
+                upgrade["priority"] = to_string(Command::SPRIORITY_MAX);
+                openCommand(upgrade);
             }
         } else if (newState == SQLC_STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING

@@ -287,7 +287,7 @@ struct SQLiteTester {
         requestCopy["t"] = "t\t t\t";
         requestCopy["z"] = "z";
         requestCopy["writeConsistency"] = SQLCConsistencyLevelNames[_commandsStarted % SQLC_NUM_CONSISTENCY_LEVELS];
-        Command command = {_nodeArray[index]->openCommand(requestCopy, 0), _nodeArray[index]};
+        Command command = {_nodeArray[index]->openCommand(requestCopy), _nodeArray[index]};
         _commandList.push_back(command);
         ++_commandsStarted;
 
