@@ -45,6 +45,9 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         }
         string peerString = SComposeList(peerList, ",");
 
+        char cwd[1024];
+        getcwd(cwd, sizeof(cwd));
+
         // Ok, build a legit map out of these.
         map <string, string> args = {
             {"-serverHost", serverHost},
@@ -53,6 +56,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-priority",   priority},
             {"-nodeName",   nodeName},
             {"-peerList",   peerString},
+            {"-plugins",    "status,db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
 
         // save this map for later.

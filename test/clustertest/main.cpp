@@ -39,11 +39,13 @@ int main(int argc, char* argv[]) {
     // Catch sigint.
     signal(SIGINT, sigclean);
 
+    /*
     int pid = fork();
     if (!pid) {
         log();
         return 0;
     }
+    */
 
     int retval = 0;
     {
@@ -64,7 +66,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Kill the logger.
+    /*
     kill(pid, 9);
+    */
 
     // Tester gets destroyed here. Everything's done.
     return retval;

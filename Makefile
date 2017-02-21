@@ -31,12 +31,15 @@ endif
 INTERMEDIATEDIR = .build
 
 # These targets aren't actual files.
-.PHONY: all test clustertest clean
+.PHONY: all test clustertest clean testplugin
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 all: bedrock test clustertest
 test: test/test
-clustertest: test/clustertest/clustertest
+clustertest: test/clustertest/clustertest testplugin
+
+testplugin:
+	cd test/clustertest/testplugin && make
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
@@ -63,6 +66,7 @@ clean:
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
 	cd mbedtls && make clean
+	cd test/clustertest/testplugin && make clean
 
 # The mbedtls libraries are all built the same way.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:

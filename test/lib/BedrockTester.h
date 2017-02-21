@@ -20,6 +20,8 @@ class BedrockTester {
     SQLite* db = nullptr;
     SQLite* writableDB = nullptr;
 
+    string getServerAddr();
+
     // Constructor
     BedrockTester(const string& filename = "", const string& serverAddress = "", const list<string>& queries = {}, const map<string, string>& args = {}, bool wait = true);
     ~BedrockTester();

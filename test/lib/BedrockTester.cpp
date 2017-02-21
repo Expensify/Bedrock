@@ -363,10 +363,13 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
     return results;
 }
 
+string BedrockTester::getServerAddr() {
+    return _serverAddr.empty() ? SERVER_ADDR : _serverAddr;
+}
 
 string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
-    int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
+    int socket = S_socket(getServerAddr(), true, false, true);
 
     string sendBuffer = request.serialize();
     // Send our data.
