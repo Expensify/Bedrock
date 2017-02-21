@@ -311,21 +311,22 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
             // dbReady() implies that we're master, and that the initial `upgradeDatabase` command that runs each
             // time we begin mastering has completed.
-            bool canWriteInWorker = (_syncNode->dbReady() && command->writeConsistency == SQLC_ASYNC);
+            bool canWriteInWorker = (_syncNode->dbReady() && command->writeConsistency == SQLC_ASYNC
+                                     && !command->httpsRequest);
 
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
 
                 // TODO: It'd be nice if we didn't have to clear this here before passing back. Maybe we could
-                // encapsualte better? (See later invocation as well.) Perhaps if `peek` returns `false`, we just do
-                // it here?
+                // encapsulate better? (See later invocation as well) Perhaps if `peek` returns `false`, we just do
+                // it there?
                 command->response.clear();
                 data.peekedCommands.push(command);
                 closeCommand = false;
             } else {
 
-                // Also, make sure it didn't open any secondary request (for now, we may support this in the future).
+                // We may want to support this case in the future. For now, these should all have been escalated.
                 SASSERT(!command->httpsRequest);
 
                 // And here's our special case, where we can attempt to process a command from a worker thread. We'll
