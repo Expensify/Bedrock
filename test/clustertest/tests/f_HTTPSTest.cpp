@@ -11,17 +11,27 @@ struct f_HTTPSTest : tpunit::TestFixture {
         // Get the global tester object.
         tester = BedrockClusterTester::testers.front();
 
+        // Send one request to verify that it works.
+        BedrockTester* brtester = tester->getBedrockTester(0);
+
+        SData status("sendrequest");
+        auto result = brtester->executeWait(status);
+        ASSERT_TRUE(result.size() > 10);
+#if 0
         mutex m;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         list<string> responses;
-        for (int i : {0, 1, 2}) {
+        // Only send to master.
+        // for (int i : {0, 1, 2}) {
+        for (int i : {0}) {
             threads.emplace_back([this, i, &responses, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
 
-                SData status("testcommand");
-                status["writeConsistency"] = "ASYNC";
+                SData status("sendrequest");
+                // TODO: Make this work as well, at least on master.
+                // status["writeConsistency"] = "ASYNC";
 
                 // Ok, send them all!
                 auto result = brtester->executeWait(status);
@@ -39,5 +49,6 @@ struct f_HTTPSTest : tpunit::TestFixture {
         for (string response: responses) {
             cout << response << endl;
         }
+#endif
     }
 } __f_HTTPSTest;

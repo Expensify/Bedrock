@@ -313,9 +313,6 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             // time we begin mastering has completed.
             bool canWriteInWorker = (_syncNode->dbReady() && command->writeConsistency == SQLC_ASYNC);
 
-            // Also, make sure it didn't open any secondary request (for now, we may support this in the future).
-            SASSERT(!command->httpsRequest);
-
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {
                 SINFO("Peek unsuccessful. Signaling replication thread to process command '" << command->id << ":" << (void*)command);
@@ -327,6 +324,9 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 data.peekedCommands.push(command);
                 closeCommand = false;
             } else {
+
+                // Also, make sure it didn't open any secondary request (for now, we may support this in the future).
+                SASSERT(!command->httpsRequest);
 
                 // And here's our special case, where we can attempt to process a command from a worker thread. We'll
                 // try this up to MAX_ASYNC_CONCURRENT_TRIES times, because it's possible to have conflicts doing

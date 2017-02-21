@@ -1,5 +1,9 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
+
+// This is a hack so that we can support 'special' Status commands, but it really breaks encapsulation entirely.
+#include <plugins/Status.h>
+
 atomic<int> SQLiteNode::_commandCount(0);
 
 /// Introduction
@@ -299,9 +303,6 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
         return _finishCommand(existingCommand);
     }
 
-    // It's feasible to support this case, but let's wait in that until later.
-    SASSERT(!(existingCommand->httpsRequest));
-    
     // No response? We must not have processed this. Let's process it now.
     SINFO("Reopening command from the start. " << existingCommand->id);
     return _openCommand(existingCommand);
@@ -388,8 +389,8 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
 
     // Process status commands special, as we never want to escalate to the master
     bool forcePeekIt = false;
-    if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
-        SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1") || SIEquals(request.methodLine, "Status")) {
+    if (find(BedrockPlugin_Status::statusCommandNames.begin(), BedrockPlugin_Status::statusCommandNames.end(),
+             request.methodLine) != BedrockPlugin_Status::statusCommandNames.end()) {
         // Force peek these always -- even if read only -- because any read
         // thread knows our status, and thus can handle these.
         forcePeekIt = true;
@@ -406,11 +407,14 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
             SHMMM("Skipping slave peek because our version (" << _version << ") doesn't match master ("
                                                               << getMasterVersion() << ").");
             peekIt = false;
+        } else if (command->httpsRequest) {
+            SINFO("Not peeking command with HTTPS request, already peeked.");
+            peekIt = false;
         }
 
         // Don't process if we are not the master of the majority.  A split
         // brain could occur if we are the master of less than half of the peers.
-        if (_state == SQLC_MASTERING) {
+        else if (_state == SQLC_MASTERING) {
             // We need at least half the non-permaslave peers to form a majority in order to commit.
             int numFullPeers = 0;
             int numFullSlaves = 0;

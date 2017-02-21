@@ -45,9 +45,6 @@ struct c_StatusTest : tpunit::TestFixture {
                 ASSERT_EQUAL(json["isMaster"], "false");
             }
             ASSERT_EQUAL(peers.size(), 2);
-
-            // TODO: It looks like slaves broadcast the wrong commit count.
-            cout << json["peerList"] << endl;
         }
     }
 } __c_StatusTest;
