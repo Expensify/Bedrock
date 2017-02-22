@@ -102,7 +102,7 @@ bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode
 
         // Attempt the query
         const string& query = request["query"] + ";";
-        if (!db.write(query, true)) {
+        if (!db.write(query)) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();

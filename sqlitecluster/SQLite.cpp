@@ -278,7 +278,7 @@ bool SQLite::read(const string& query, SQResult& result) {
     return queryResult;
 }
 
-bool SQLite::write(const string& query, bool dontCheckSchema) {
+bool SQLite::write(const string& query) {
     SASSERT(!_readOnly);
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
@@ -288,11 +288,9 @@ bool SQLite::write(const string& query, bool dontCheckSchema) {
     uint64_t schemaBefore = 0;
     uint64_t schemaAfter = 0;
 
-    if (!dontCheckSchema) {
-        SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-        SASSERT(!results.empty() && !results[0].empty());
-        schemaBefore = SToUInt64(results[0][0]);
-    }
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!results.empty() && !results[0].empty());
+    schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
 
     // Try to execute the query
@@ -304,11 +302,9 @@ bool SQLite::write(const string& query, bool dontCheckSchema) {
     }
 
     // See if the query changed anything
-    if (!dontCheckSchema) {
-        SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-        SASSERT(!results.empty() && !results[0].empty());
-        schemaAfter = SToUInt64(results[0][0]);
-    }
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!results.empty() && !results[0].empty());
+    schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
     // Did something change.

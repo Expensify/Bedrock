@@ -47,7 +47,7 @@ class SQLite {
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
     // Returns true  on success.
-    bool write(const string& query, bool dontCheckSchema = false);
+    bool write(const string& query);
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
