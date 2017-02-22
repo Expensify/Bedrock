@@ -84,7 +84,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     _syncNode = &node;
     SINFO("Node created, ready for action.");
 
-    SAUTOPREFIX(node.name);
     // Notify the parent thread that we're ready to go.
     {
         lock_guard<mutex> lock(_threadInitMutex);
@@ -174,7 +173,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // Put everything the replication node has finished on the threaded queue.
         BedrockNode::Command* command = nullptr;
         while ((command = node.getProcessedCommand())) {
-            //SAUTOPREFIX(command->request["requestID"]);
+            SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
             data.processedResponses.push(command->response);
@@ -212,7 +211,6 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
     BedrockNode node(data.args, threadId, threadCount, data.server);
     SINFO("Node created, ready for action.");
 
-    SAUTOPREFIX(node.name);
     while (true) {
         // Set the worker node's state/master status coming from the replication thread.
         // Only worker nodes will allow an external party to set these properties.
@@ -252,13 +250,13 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // If there was an escalated command, we'll use it's request ID as our log prefix.
         if (command) {
             // Auto-prefix the logs with the request ID for the escalated request.
-            // SAUTOPREFIX(command->request["requestID"]);
+            SAUTOPREFIX(command->request["requestID"]);
             escalatedCommand = true;
             command = node.reopenCommand(command);
         } else {
             // Otherwise, let's see if we can get a new request.
             SData request = data.queuedRequests.pop();
-            //SAUTOPREFIX(request["requestID"]);
+            SAUTOPREFIX(request["requestID"]);
 
             // If we didn't get anything here, there's no work to do. Go back to waiting.
             if (request.empty()) {
