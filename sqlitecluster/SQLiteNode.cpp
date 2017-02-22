@@ -376,8 +376,8 @@ SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
     //          That's fine for now given our use case for it, but
     //          may not be the case in the future.
     int64_t now = STimeNow();
-    if (command->creationTimestamp) {
-        SINFO("Scheduling command " << command->id << " for "
+    if (command->creationTimestamp > STimeNow()) {
+        SINFO("Scheduling command " << command->id << " (" << command->request.methodLine << ") for "
                                     << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
                                     << "s in the future.");
     }
@@ -1295,7 +1295,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     _commitTimer.stop();
 
                     // Notify everybody to rollback
-                    SWARN("[TY2] ROLLBACK, conflicted on sync: " << _currentCommand->id << ":" << _currentCommand->request["query"]);
+                    SWARN("ROLLBACK, conflicted on sync: " << _currentCommand->id << " : "
+                          << _currentCommand->request.methodLine);
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback["ID"] = _currentCommand->id;
                     _sendToAllPeers(rollback, true); // subscribed only

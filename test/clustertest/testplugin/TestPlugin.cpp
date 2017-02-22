@@ -47,22 +47,38 @@ bool BedrockPlugin_TestPlugin::peekCommand(BedrockNode* node, SQLite& db, Bedroc
     } else if (command->request.methodLine == "sendrequest") {
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.expensify.com";
+        command->request["httpsRequests"] = to_string(command->request.calc("httpsRequests") + 1);
         command->httpsRequest = httpsManager.send("https://www.expensify.com/", request);
+        return false; // Not complete.
     }
 
     return false;
 }
 
 bool BedrockPlugin_TestPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
-    if (command->httpsRequest) {
-        // If we're calling `process` on a command with a https request, it had better be finished.
-        SASSERT(command->httpsRequest->finished);
-        command->response.methodLine = to_string(command->httpsRequest->response);
-        command->response.content = command->httpsRequest->fullResponse.content;
-    } else {
-        // Some non-http command, I guess.
-        command->response.methodLine = "200 OK";
-    }
+    if (command->request.methodLine == "sendrequest") {
+        if (command->httpsRequest) {
+            // If we're calling `process` on a command with a https request, it had better be finished.
+            SASSERT(command->httpsRequest->finished);
+            command->response.methodLine = to_string(command->httpsRequest->response);
+            // return the number of times we made an HTTPS request on this command.
+            int tries = SToInt(command->request["httpsRequests"]);
+            if (tries != 1) {
+                throw "500 Retried HTTPS request!";
+            }
+            command->response.content = " " + command->httpsRequest->fullResponse.content;
 
-    return true;
+            // Update the DB so we can test conflicts.
+            if (!command->request["Query"].empty()) {
+                if (!db.write(command->request["Query"])) {
+                    throw "502 Query failed.";
+                }
+            }
+        } else {
+            // Shouldn't get here.
+            SASSERT(false);
+        }
+        return true;
+    }
+    return false;
 }
