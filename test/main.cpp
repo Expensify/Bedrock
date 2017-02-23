@@ -60,7 +60,8 @@ int main(int argc, char* argv[]) {
         BedrockTester::startServers = false;
         cout << "Not starting server, would have run:" << endl;
         //cout << BedrockTester::getCommandLine() << endl;
-        cout << "TYLER BROKE THIS" << endl;
+        cout << "TYLER BROKE THIS. FIX EVENTUALLY." << endl;
+        exit(1);
     }
 
     if (args.isSet("-wait")) {

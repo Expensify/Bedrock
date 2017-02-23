@@ -1585,7 +1585,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 _sendOutstandingTransactions();
 
                                 if(!_db.prepare()) {
-                                    SWARN("[TYLER] PREPARE FAILED.");
+                                    // This is expected to be fatal, the following code remains in case this is ever
+                                    // changed or refactored such that we attempt to recover from a failed prepare().
+                                    SERROR("PREPARE FAILED");
                                     // If we forced a synchronous commit, unlock.
                                     if (unlock) {
                                         SQLite::commitLock.unlock();
