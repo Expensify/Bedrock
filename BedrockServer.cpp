@@ -256,12 +256,15 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         } else {
             // Otherwise, let's see if we can get a new request.
             SData request = data.queuedRequests.pop();
-            SAUTOPREFIX(request["requestID"]);
 
             // If we didn't get anything here, there's no work to do. Go back to waiting.
             if (request.empty()) {
                 continue;
             }
+
+            // This *needs* to be after the empty check, because otherwise we'll have added an empty 'requestID' to the
+            // request, making it non-empty.
+            SAUTOPREFIX(request["requestID"]);
 
             // If the command is scheduled for the future, we'll forward it to the sync thread, as only the sync thread
             // keeps a long-running queue instead of operating on one command at a time.
