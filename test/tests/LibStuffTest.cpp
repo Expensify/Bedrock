@@ -29,6 +29,9 @@ struct LibStuff : tpunit::TestFixture {
     }
 
     void testMaskPAN() {
+        ASSERT_EQUAL(SMaskPAN(""), "");
+        ASSERT_EQUAL(SMaskPAN("123"), "XXX");
+        ASSERT_EQUAL(SMaskPAN("1234"), "1234");
         ASSERT_EQUAL(SMaskPAN("12345"), "X2345");
         ASSERT_EQUAL(SMaskPAN("1234567"), "XXX4567");
         ASSERT_EQUAL(SMaskPAN("12345678"), "XXXX5678");
