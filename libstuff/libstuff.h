@@ -666,15 +666,10 @@ inline string SMaskPAN(const string& pan) {
     // First, make sure it's valid
     const string& safePAN = SReplaceAllBut(pan, "0123456789", 'X');
 
-    // Hide these numbers completely.
-    // We should not be getting account numbers this small or large.
-    if (safePAN.size() < 6 || 20 < safePAN.size())
-        return string(safePAN.size(), 'X');
-
     // Can show last 4.
-    if (safePAN.size() < 14)
+    if (safePAN.size() < 14) {
         return string(safePAN.size() - 4, 'X') + safePAN.substr(safePAN.size() - 4);
-
+    }
     // Can show last 4 and first 6.
     return safePAN.substr(0, 6) + string(safePAN.size() - 10, 'X') + safePAN.substr(safePAN.size() - 4);
 }
