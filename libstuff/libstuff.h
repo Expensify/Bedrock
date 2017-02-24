@@ -666,8 +666,11 @@ inline string SMaskPAN(const string& pan) {
     // First, make sure it's valid
     const string& safePAN = SReplaceAllBut(pan, "0123456789", 'X');
 
-    // Can show last 4.
-    if (safePAN.size() < 14) {
+    if (safePAN.size() < 4) {
+        return string(safePAN.size(), 'X');
+    }
+    else if (safePAN.size() < 14) {
+        // Card numbers smaller than 14 digits can only reveal the last 4 digits
         return string(safePAN.size() - 4, 'X') + safePAN.substr(safePAN.size() - 4);
     }
     // Can show last 4 and first 6.
