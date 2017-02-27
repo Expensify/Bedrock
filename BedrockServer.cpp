@@ -12,6 +12,8 @@ mutex BedrockServer::_threadInitMutex;
 bool BedrockServer::_threadReady = false;
 BedrockNode* BedrockServer::_syncNode = 0;
 
+// Maximum number of times we retry an ASYNC command concurrent before giving
+// up and doing it synchronously on the sync node.
 #define MAX_ASYNC_CONCURRENT_TRIES 3
 
 // --------------------------------------------------------------------------
@@ -98,7 +100,6 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         string host;
         STable params;
         SASSERT(SParseURIPath(peer, host, params));
-
         string name = SGetDomain(host);
         if (params.find("nodeName") != params.end()) {
             name = params["nodeName"];
@@ -123,38 +124,48 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             node.beginShutdown();
         }
 
-        // Wait and process
+        // The fd_map contains a list of all file descriptors (eg, sockets,
+        // Unix pipes) that poll will wait on for activity.  Once any of them
+        // has activity (or the timeout ends), poll will return.
         fd_map fdm;
 
-        // Handle any HTTPS requests from our plugins.
+        // Add all HTTPS requests from plugins to the fdm 
         for (list<SHTTPSManager*>& managerList : httpsManagers) {
             for (SHTTPSManager* manager : managerList) {
                 manager->preSelect(fdm);
             }
         }
 
+        // Add the node's sockets to the fdm
         node.preSelect(fdm);
+
+        // Add the Unix pipe from the shared queues to the fdm
         data.peekedCommands.preSelect(fdm);
         data.directMessages.preSelect(fdm);
+
+        // Wait for activity on any of those FDs, up to a timeout
         const uint64_t now = STimeNow();
         S_poll(fdm, max(nextActivity, now) - now);
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
-        // Handle any HTTPS requests from our plugins.
+        // Allow plugins to handle any activity
         for (list<SHTTPSManager*>& managerList : httpsManagers) { 
             for (SHTTPSManager* manager : managerList) {
                 manager->postSelect(fdm, nextActivity);
             }
         }
 
+        // Allow the node to handle any activity
         node.postSelect(fdm, nextActivity);
+
+        // Allow the shared queues to handle any activity
         data.peekedCommands.postSelect(fdm);
         data.directMessages.postSelect(fdm);
 
         // Process any direct messages from the main thread to us
         BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
 
-        // Check for available work.
+        // Check for available work sent to us from worker threads
         while (true) {
             // Try to get some work
             SQLiteNode::Command* command = data.peekedCommands.pop();
@@ -162,6 +173,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
                 break;
             }
 
+            // Found some work -- let's resume processing it
             SINFO("Re-opening peeked command for processing: " << command->id << ":" << command->request.methodLine);
             node.reopenCommand(command);
         }
@@ -170,9 +182,10 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         while (node.update(nextActivity)) {
         }
 
-        // Put everything the replication node has finished on the threaded queue.
+        // Did the sync node process any commands?
         BedrockNode::Command* command = nullptr;
         while ((command = node.getProcessedCommand())) {
+            // Finalize the response and add to the output queue
             SAUTOPREFIX(command->request["requestID"]);
             SINFO("Putting escalated command '" << command->id << "' on processed list.");
             BedrockServer_PrepareResponse(command);
@@ -239,26 +252,24 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // Process any direct messages from the main thread to us
         BedrockServer_WorkerThread_ProcessDirectMessages(node, data.directMessages);
 
-        // Now try to get a request to work on.  If None available (either select
-        // timed out or another thread 'stole' it, go to the top and wait again.
-        
-        // Are there any escalated commands that need processing? If so, let's process those first.
-        // This should always be empty if we're not mastering.
+        // Now try to get a request to work on.  If none available (either
+        // select timed out or another thread 'stole' it, go to the top and
+        // wait again.  So firt: are there any escalated commands that need
+        // processing? If so, let's process those first.  This should always be
+        // empty if we're not mastering.
         BedrockNode::Command* command = data.escalatedCommands.pop();
         bool escalatedCommand = false;
         bool closeCommand = true;
-        // If there was an escalated command, we'll use it's request ID as our log prefix.
         if (command) {
-            // Auto-prefix the logs with the request ID for the escalated request.
+            // There was an escalated command, we'll use it's request ID as our log prefix.
             SAUTOPREFIX(command->request["requestID"]);
             escalatedCommand = true;
             command = node.reopenCommand(command);
         } else {
             // Otherwise, let's see if we can get a new request.
             SData request = data.queuedRequests.pop();
-
-            // If we didn't get anything here, there's no work to do. Go back to waiting.
             if (request.empty()) {
+                // We didn't get anything here, there's no work to do. Go back to waiting.
                 continue;
             }
 
@@ -439,13 +450,12 @@ BedrockServer::BedrockServer(const SData& args)
         httpsManagers.push_back(plugin->httpsManagers);
     }
 
-    // We'll pass the syncThread object (by reference) as the object to our actual thread.
+    // We'll pass the syncThread object (by reference) as the object to our
+    // actual thread, then reassign ownership and wait for it to complete
+    // initializing.
     SINFO("Launching sync thread '" << _syncThread.name << "'");
     thread syncThread(syncWorker, ref(_syncThread));
-
-    // Now we give ownership of our thread to our ThreadData object.
     _syncThread.threadObject = move(syncThread);
-
     SINFO("Waiting for sync thread to be ready to continue.");
     _threadReady = 0;
     while (!_threadReady) {

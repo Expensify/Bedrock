@@ -1560,6 +1560,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
 
+                            // Determine if we need to force a synchronous commit due to excessive conflicts
                             bool unlock = false;
                             if (_currentCommand->processed >= MAX_PROCESS_TRIES) {
                                 SWARN("[concurrent] Command " << _currentCommand->id << " processed " << _currentCommand->processed
@@ -1568,8 +1569,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 unlock = true;
                                 SQLite::commitLock.lock();
                             }
-                            bool needsCommit = _processCommandWrapper(_db, _currentCommand);
 
+                            // Process the command itself and see if it needs to commit
+                            bool needsCommit = _processCommandWrapper(_db, _currentCommand);
                             SASSERT(!_currentCommand->response.empty()); // Must set a response
 
                             // Anything to commit?
@@ -2364,12 +2366,15 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 throw "missing ID";
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
+            // Create a new Command and send to a worker thread
             Command* command = new Command;
             command->initiator = peer;
             command->id = message["ID"];
             command->request = request;
             command->priority = message.calc("priority");
             if (!_passToExternalQueue(command)) {
+                // We have no server because **REASON**, so process on the sync
+                // node
                 _queueCommand(command);
             }
         }

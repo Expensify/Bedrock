@@ -83,13 +83,23 @@ class BedrockServer : public STCPServer {
         // Shared var for communicating the master version (for knowing if we should skip the slave peek).
         SSynchronized<string>& masterVersion;
 
-        // Shared external queue between threads. Queued for read-only thread(s)
+        // Shared external queue containing requests from the client, from the
+        // main thread to the worker/sync threads.
         MessageQueue& queuedRequests;
 
-        // Shared external queue between threads. Finished commands ready to return to client.
+        // Shared external queue containing finished responses from the
+        // worker/sync threads, ready to be sent back to the client by the main
+        // thread.
         MessageQueue& processedResponses;
 
+        // Shared internal queue containing commands escalated from slaves to
+        // the master sync thread, sent to the master worker threads for
+        // processing.
         CommandQueue& escalatedCommands;
+
+        // Shared internal queue containing commands that have already been
+        // peeked by a worker thread, but that need final processing by the
+        // sync thread.
         CommandQueue& peekedCommands;
 
         // The server this thread is running in.
@@ -156,6 +166,7 @@ class BedrockServer : public STCPServer {
     string _version;
     ThreadData _syncThread;
 
+    // Static attributes
     static void worker(ThreadData& data, int threadId, int threadCount);
     static void syncWorker(ThreadData& data);
 
@@ -164,5 +175,6 @@ class BedrockServer : public STCPServer {
     static mutex _threadInitMutex;
     static bool _threadReady;
 
+    // **DMB: Why is this here?
     static BedrockNode* _syncNode;
 };
