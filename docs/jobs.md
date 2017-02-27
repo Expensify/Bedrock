@@ -16,6 +16,12 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
 
+ * **GetJobs( name, numResults [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues up to the number of requested jobs.
+   * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
+   * *numResults* - Maximum number of jobs to dequeue
+   * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
+   * *timeout* - (optional) Number of ms to wait for a match
+
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
    * *data* - New data object to associate with the job

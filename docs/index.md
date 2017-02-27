@@ -27,7 +27,10 @@ If you're building a website or other online service, you've got to use *somethi
 Bedrock is not only production ready, but actively used by Expensify's many thousands of customers, and millions of users.  (Curious why an expense reporting company built their own database?  Read what the [First Round Review](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) has to say about it.)
 
 ## How to get it
-Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed into your Ubuntu environment using the following commands:  (Go ahead and copy/paste this whole section and copy it into your Ubuntu terminal.)
+Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed with the commands below:
+
+### Ubuntu Linux
+Copy/paste this whole section into your terminal:
 
     # Add the Bedrock repo to apt sources for your distro:
     sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/$(lsb_release -cs)/bedrock.list
@@ -38,6 +41,13 @@ Bedrock can be compiled from source using the [Expensify/Bedrock](https://github
     # Update the apt-get and install Bedrock
     sudo apt-get update
     sudo apt-get install bedrock
+
+### Arch Linux
+Copy/paste this command into your terminal:
+
+    yaourt -S bedrock
+
+This will tansparently download the latest version from GitHub, compile it, package it up, and install it.
 
 ## How to use it
 Bedrock is so easy to use, you'll think you're missing something.  Once installed, Bedrock listens on `localhost` port 8888, and stores its database in `/var/lib/bedrock`.  The easiest way to talk with Bedrock is using `netcat` as follows:
