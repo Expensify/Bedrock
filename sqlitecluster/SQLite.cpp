@@ -26,10 +26,10 @@ void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
                                 << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
-SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize,
-               int journalTable, int minJournalTables) {
+SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
+               int minJournalTables) {
     // Initialize
-    SINFO("Opening " << (readOnly ? "Read Only" : "Writable") << " sqlite connection");
+    SINFO("Opening sqlite connection");
     SASSERT(!filename.empty());
     SASSERT(cacheSize > 0);
     SASSERT(autoCheckpoint >= 0);
@@ -37,7 +37,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     _filename = filename;
     _insideTransaction = false;
     _lastWriteChanged = false;
-    _readOnly = readOnly;
     _maxJournalSize = maxJournalSize;
     _beginElapsed = 0;
     _readElapsed = 0;
@@ -70,19 +69,14 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     } else {
         DBINFO("Creating new database '" << _filename << "'");
     }
-    if (!readOnly) {
-        // Open a read/write database
-        SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
-        _setPragmas(_db, autoCheckpoint);
-        for (int i = -1; i <= minJournalTables; i++) {
-            if (SQVerifyTable(_db, getJournalTableName(i), "CREATE TABLE " + getJournalTableName(i) +
-                              " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-                SHMMM("Created " << getJournalTableName(i) << " table.");
-            }
+    // Open a read/write database
+    SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
+    _setPragmas(_db, autoCheckpoint);
+    for (int i = -1; i <= minJournalTables; i++) {
+        if (SQVerifyTable(_db, getJournalTableName(i), "CREATE TABLE " + getJournalTableName(i) +
+                          " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
+            SHMMM("Created " << getJournalTableName(i) << " table.");
         }
-    } else {
-        // Open a read-only database
-        SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_READ_OPEN_FLAGS, NULL));
     }
 
     // Figure out which journal tables actually exist. They must be sequential.
@@ -151,14 +145,12 @@ string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
 
 string SQLite::getJournalTableName(int journalTableID)
 {
-    string name = "journal";
-    if (journalTableID >= 0 && journalTableID <= 9) {
-        name += "0";
+    if (journalTableID < 0) {
+        return "journal";
     }
-    if (journalTableID >= 0) {
-        name += to_string(journalTableID);
-    }
-    return name;
+    char buff[12] = {0};
+    sprintf(buff, "journal%04d", journalTableID);
+    return buff;
 }
 
 SQLite::~SQLite() {
@@ -176,7 +168,6 @@ SQLite::~SQLite() {
 }
 
 bool SQLite::beginTransaction() {
-    SASSERT(!_readOnly);
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -194,7 +185,6 @@ bool SQLite::beginTransaction() {
 }
 
 bool SQLite::beginConcurrentTransaction() {
-    SASSERT(!_readOnly);
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -279,7 +269,6 @@ bool SQLite::read(const string& query, SQResult& result) {
 }
 
 bool SQLite::write(const string& query) {
-    SASSERT(!_readOnly);
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
@@ -544,13 +533,11 @@ void SQLite::_setPragmas(sqlite3* db, int autoCheckpoint) {
     SASSERT(!SQuery(db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
     // These other pragma only relate to read/write databases.
-    if (!_readOnly) {
-        SASSERT(!SQuery(db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
-        SASSERT(!SQuery(db, "disabling change counting", "PRAGMA count_changes = OFF;"));
-        SASSERT(autoCheckpoint >= 0);
-        DBINFO("Enabling automatic checkpointing every " << SToStr(autoCheckpoint) << " pages.");
-        SASSERT(!SQuery(db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
-    }
+    SASSERT(!SQuery(db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
+    SASSERT(!SQuery(db, "disabling change counting", "PRAGMA count_changes = OFF;"));
+    SASSERT(autoCheckpoint >= 0);
+    DBINFO("Enabling automatic checkpointing every " << SToStr(autoCheckpoint) << " pages.");
+    SASSERT(!SQuery(db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
 }
 
 size_t SQLite::getLastWriteChangeCount() {

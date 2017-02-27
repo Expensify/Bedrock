@@ -51,8 +51,8 @@ class SQLiteNode : public STCPNode {
         SQLCConsistencyLevel writeConsistency;
 
         // Keep track of some state as we go through everything that needs to be done here.
-        int peeked;
-        int processed;
+        int peekCount;
+        int processCount;
 
         // **NOTE: httpsRequest is used to store a pointer to a
         //         secondary SHTTPSManager request; this can be
@@ -71,8 +71,8 @@ class SQLiteNode : public STCPNode {
             replicationStartTimestamp = 0;
             httpsRequest = nullptr;
             processingTime = 0;
-            peeked = 0;
-            processed = 0;
+            peekCount = 0;
+            processCount = 0;
             writeConsistency = SQLC_ONE;
         }
         virtual ~Command() {
@@ -93,7 +93,7 @@ class SQLiteNode : public STCPNode {
     // Constructor
     SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
                int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
-               int quorumCheckpoint = 0, const string& synchronousCommands = "", bool readOnly = false,
+               int quorumCheckpoint = 0, const string& synchronousCommands = "", bool worker = false,
                int maxJournalSize = 1000000);
     virtual ~SQLiteNode();
 
@@ -282,7 +282,7 @@ class SQLiteNode : public STCPNode {
     static int _maximumJournalTable;
 
     // Common functionality to `openCommand` and `reopenCommand`.
-    Command* _openCommand(SQLiteNode::Command* command);
+    Command* _finishOpeningCommand(SQLiteNode::Command* command);
 
     // Measure how much time we spend in `process()` and `COMMIT` as a fraction of total time spent.
     // Hopefully, we spend a lot of time in `process()` and relatively little in `COMMIT`, which would give us a good

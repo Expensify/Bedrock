@@ -45,7 +45,7 @@ class BedrockServer : public STCPServer {
 
     class ThreadData {
       public:
-        ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
+        ThreadData(string name_, SData args_, atomic<SQLCState>& replicationState_,
                    atomic<uint64_t>& replicationCommitCount_, atomic<bool>& gracefulShutdown_,
                    SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
                    MessageQueue& processedResponses_, CommandQueue& escalatedCommands_, CommandQueue& peekedCommands_,
@@ -72,7 +72,7 @@ class BedrockServer : public STCPServer {
         SData args;
 
         // Shared var for communicating replication thread's status.
-        SSynchronized<SQLCState>& replicationState;
+        atomic<SQLCState>& replicationState;
 
         // Shared var for communicating replication thread's commit count (for sticky connections)
         atomic<uint64_t>& replicationCommitCount;
@@ -114,7 +114,7 @@ class BedrockServer : public STCPServer {
     virtual ~BedrockServer();
 
     // Accessors
-    SQLCState getState() { return _replicationState.get(); }
+    SQLCState getState() { return _replicationState.load(); }
 
     // Ready to gracefully shut down
     bool shutdownComplete();
@@ -148,7 +148,7 @@ class BedrockServer : public STCPServer {
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
     list<ThreadData> _workerThreadList;
-    SSynchronized<SQLCState> _replicationState;
+    atomic<SQLCState> _replicationState;
     atomic<uint64_t> _replicationCommitCount;
     atomic<bool> _nodeGracefulShutdown;
     SSynchronized<string> _masterVersion;

@@ -13,8 +13,8 @@ class SQLite {
     // The actual table name use will always have at least two digits (leading 0 for numbers less than 10).
     // minJournalTables: This will make sure at least this many journal tables exist. The format of this number is the
     // same as for journalTable - i.e., -1 verifies only that 'journal' exists.
-    SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool readOnly, int maxJournalSize,
-           int journalTable, int minJournalTables);
+    SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
+           int minJournalTables);
     virtual ~SQLite();
 
     // Returns the filename for this database
@@ -207,7 +207,6 @@ class SQLite {
     // TODO: We might be able to re-use a different var for this purpose.
     bool _uncommittedTransaction = false;
     bool _lastWriteChanged;
-    bool _readOnly;
     uint64_t _beginElapsed;
     uint64_t _readElapsed;
     uint64_t _writeElapsed;

@@ -77,7 +77,7 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
                        int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
                        int quorumCheckpoint, const string& synchronousCommands, bool worker, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(filename, cacheSize, autoCheckpoint, false, maxJournalSize, threadId, threadCount - 1),
+      _db(filename, cacheSize, autoCheckpoint, maxJournalSize, threadId, threadCount - 1),
       _processTimer("process()"), _commitTimer("COMMIT")
     {
     SASSERT(worker || !portList.empty());
@@ -280,7 +280,7 @@ bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
     uint64_t start = STimeNow();
     _processTimer.start();
     bool result = _processCommand(db, command);
-    command->processed++;
+    command->processCount++;
     _processTimer.stop();
     command->processingTime += STimeNow() - start;
     return result;
@@ -290,7 +290,7 @@ bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
     // Measure elapsed time and add to processing
     uint64_t start = STimeNow();
     bool result = _peekCommand(db, command);
-    command->peeked++;
+    command->peekCount++;
     command->processingTime += STimeNow() - start;
     return result;
 }
@@ -305,7 +305,7 @@ SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingComm
 
     // No response? We must not have processed this. Let's process it now.
     SINFO("Reopening command from the start. " << existingCommand->id);
-    return _openCommand(existingCommand);
+    return _finishOpeningCommand(existingCommand);
 }
 
 SQLiteNode::Command* SQLiteNode::createCommand(const SData& request) {
@@ -355,10 +355,10 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request) {
         _finishCommand(command);
     }
 
-    return _openCommand(command);
+    return _finishOpeningCommand(command);
 }
 
-SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
+SQLiteNode::Command* SQLiteNode::_finishOpeningCommand(SQLiteNode::Command* command) {
     // Pre-process this command if we're MASTER or SLAVE.
     //
     // **NOTE: This is only a "best attempt" -- if the node isn't MASTERING or
@@ -1562,10 +1562,10 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                             // Determine if we need to force a synchronous commit due to excessive conflicts
                             bool unlock = false;
-                            if (_currentCommand->processed >= MAX_PROCESS_TRIES) {
-                                SWARN("[concurrent] Command " << _currentCommand->id << " processed " << _currentCommand->processed
-                                      << " times, exceeded max of " << MAX_PROCESS_TRIES
-                                      << ", forcing synchronous commit.");
+                            if (_currentCommand->processCount >= MAX_PROCESS_TRIES) {
+                                SWARN("[concurrent] Command " << _currentCommand->id << " processed "
+                                      << _currentCommand->processCount << " times, exceeded max of "
+                                      << MAX_PROCESS_TRIES << ", forcing synchronous commit.");
                                 unlock = true;
                                 SQLite::commitLock.lock();
                             }
@@ -1586,16 +1586,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 // This breaks with a non-recursive mutex.
                                 _sendOutstandingTransactions();
 
-                                if(!_db.prepare()) {
-                                    // This is expected to be fatal, the following code remains in case this is ever
-                                    // changed or refactored such that we attempt to recover from a failed prepare().
-                                    SERROR("PREPARE FAILED");
-                                    // If we forced a synchronous commit, unlock.
-                                    if (unlock) {
-                                        SQLite::commitLock.unlock();
-                                    }
-                                    return true;
-                                }
+                                // There's no handling for a failed prepare. This should only happen if the DB has been
+                                // corrupted or something catastrophic like that.
+                                SASSERT(_db.prepare());
 
                                 _commitTimer.start();
                                 // Begin the distributed transaction

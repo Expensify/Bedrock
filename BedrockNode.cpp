@@ -52,11 +52,11 @@
 // * 531 Expected but unusable response, retry later.
 // * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
 
-BedrockNode::BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_)
+BedrockNode::BedrockNode(const SData& args, int threadID, int workerThreadCount, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
                  1024,                                                         // auto-checkpoint every 1024 pages
                  STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), threadId, threadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
+                 server_->getVersion(), threadID, workerThreadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
                  args.test("-worker"), args.calc("-maxJournalSize")),
       server(server_) {
     // Initialize
@@ -149,12 +149,12 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
 void BedrockNode::_setState(SQLCState state) {
     // When we change states, our schema might change - note that we need to
     // wait for any possible upgrade to complete again.
-    _dbReady = false;
+    _masterAndUpgradeComplete = false;
     SQLiteNode::_setState(state);
 }
 
 bool BedrockNode::dbReady() {
-    return _dbReady;
+    return _masterAndUpgradeComplete;
 }
 
 bool BedrockNode::_processCommand(SQLite& db, Command* command) {
@@ -182,7 +182,7 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
                  }
              }
             SINFO("Finished upgrading database");
-            _dbReady = true;
+            _masterAndUpgradeComplete = true;
         } else {
             // All non-upgrade commands should be concurrent
             if (!db.beginConcurrentTransaction()) {

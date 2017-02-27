@@ -8,7 +8,7 @@ struct BedrockTester; // Defined in BedrockTester.h, but can't include else circ
 class BedrockNode : public SQLiteNode {
   public:
     // Construct the base class
-    BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_);
+    BedrockNode(const SData& args, int threadID, int workerThreadCount, BedrockServer* server_);
     virtual ~BedrockNode();
 
     // **FIXME: Why is this public?  Make private; put behind a getter
@@ -38,6 +38,7 @@ class BedrockNode : public SQLiteNode {
     virtual void _setState(SQLCState state);
 
   private:
-    // If we're the sync node, we keep track of whether our database is ready to use.
-    bool _dbReady = false;
+    // If we're the sync node, we keep track of whether our database has finished running it's `UpgradeDatabase`
+    // command.
+    bool _masterAndUpgradeComplete = false;
 };

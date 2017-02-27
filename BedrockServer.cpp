@@ -115,7 +115,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     while (!node.shutdownComplete()) {
         // Update shared var so all threads have awareness of the current replication state
         // and version as determined by the replication node.
-        data.replicationState.set(node.getState());
+        data.replicationState.store(node.getState());
         data.replicationCommitCount.store(node.getCommitCount());
         data.masterVersion.set(node.getMasterVersion());
 
@@ -207,7 +207,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     } else {
         SINFO("Sync thread exiting, setting state to: " << state);
     }
-    data.replicationState.set(state);
+    data.replicationState.store(state);
     data.replicationCommitCount.store(node.getCommitCount());
 }
 
@@ -228,7 +228,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // Set the worker node's state/master status coming from the replication thread.
         // Only worker nodes will allow an external party to set these properties.
 
-        SQLCState state = data.replicationState.get();
+        SQLCState state = data.replicationState.load();
         node.setState(state);
         node.setMasterVersion(data.masterVersion.get());
 
@@ -520,7 +520,7 @@ BedrockServer::~BedrockServer() {
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
     bool gs = _nodeGracefulShutdown.load();
-    bool rs = (_replicationState.get() <= SQLC_WAITING);
+    bool rs = (_replicationState.load() <= SQLC_WAITING);
     bool qr = _queuedRequests.empty();
     bool qe = _escalatedCommands.empty();
     bool pr = _processedResponses.empty();
@@ -565,7 +565,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     _processedResponses.postSelect(fdm, 100); // Can 'consume' up 100 processed responses.
 
     // Open the port the first time we enter a command-processing state
-    SQLCState state = _replicationState.get();
+    SQLCState state = _replicationState.load();
 
     // If we're a slave, and the master's on a different version than us, we don't open the command port.
     // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
