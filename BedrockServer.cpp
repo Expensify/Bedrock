@@ -117,7 +117,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         // and version as determined by the replication node.
         data.replicationState.store(node.getState());
         data.replicationCommitCount.store(node.getCommitCount());
-        data.masterVersion.set(node.getMasterVersion());
+        data.masterVersion.store(node.getMasterVersion());
 
         // If we've been instructed to shutdown and we haven't yet, do it.
         if (data.gracefulShutdown.load()) {
@@ -230,7 +230,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 
         SQLCState state = data.replicationState.load();
         node.setState(state);
-        node.setMasterVersion(data.masterVersion.get());
+        node.setMasterVersion(data.masterVersion.load());
 
         // Block until work is available.
         fd_map fdm;
@@ -406,7 +406,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
 // --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
     : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING), _replicationCommitCount(0),
-      _nodeGracefulShutdown(false), _masterVersion(""), _suppressCommandPort(false),
+      _nodeGracefulShutdown(false), _masterVersion(), _suppressCommandPort(false),
       _suppressCommandPortManualOverride(false),
       _syncThread("sync",
                   _args,
@@ -570,7 +570,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // If we're a slave, and the master's on a different version than us, we don't open the command port.
     // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
     // Instead, we'll simply not respond and let this request get re-directed to another slave.
-    string masterVersion = _masterVersion.get();
+    string masterVersion = _masterVersion.load();
     if (!_suppressCommandPort && state == SQLC_SLAVING && (masterVersion != _version)) {
         SINFO("Node " << _args["-nodeName"] << " slaving on version " << _version
                       << ", master is version: " << masterVersion << ", not opening command port.");

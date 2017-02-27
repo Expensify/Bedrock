@@ -47,7 +47,7 @@ class BedrockServer : public STCPServer {
       public:
         ThreadData(string name_, SData args_, atomic<SQLCState>& replicationState_,
                    atomic<uint64_t>& replicationCommitCount_, atomic<bool>& gracefulShutdown_,
-                   SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
+                   atomic<string>& masterVersion_, MessageQueue& queuedRequests_,
                    MessageQueue& processedResponses_, CommandQueue& escalatedCommands_, CommandQueue& peekedCommands_,
                    BedrockServer* server_) :
             name(name_),
@@ -81,7 +81,7 @@ class BedrockServer : public STCPServer {
         atomic<bool>& gracefulShutdown;
 
         // Shared var for communicating the master version (for knowing if we should skip the slave peek).
-        SSynchronized<string>& masterVersion;
+        atomic<string>& masterVersion;
 
         // Shared external queue containing requests from the client, from the
         // main thread to the worker/sync threads.
@@ -151,7 +151,7 @@ class BedrockServer : public STCPServer {
     atomic<SQLCState> _replicationState;
     atomic<uint64_t> _replicationCommitCount;
     atomic<bool> _nodeGracefulShutdown;
-    SSynchronized<string> _masterVersion;
+    atomic<string> _masterVersion;
     MessageQueue _queuedRequests;
     MessageQueue _processedResponses;
 

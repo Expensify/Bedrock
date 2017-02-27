@@ -297,30 +297,42 @@ struct SAutoThreadPrefix {
 // Automatically locks/unlocks a mutex by scope
 #define SAUTOLOCK(_MUTEX_) lock_guard<decltype(_MUTEX_)> __SAUTOLOCK_##__LINE__(_MUTEX_);
 
-// Convenient interface for multi-threaded, synchronized variables.
-template <typename T> class SSynchronized {
-  public:
-    // Initialize and wrap with a mutex that is cleaned up in the destructor
-    // Initialize with the default constructor for the value.
-    SSynchronized() {}
-    // Initialize with a specific value.
-    SSynchronized(const T& val) : _synchronizedValue(val) {
-    }
+// Template specialization for atomic strings.
+// As the standard library doesn't provide its own template specialization for atomic strings, we provide one here so
+// that strings can be used in an atomic fashion in the same way the integral types and trivially-copyable classes are,
+// with the same interface. Note that this is not a lock-free implementation, and thus may suffer worse performance
+// than many of the standard library specializations.
+namespace std {
+    template<>
+    struct atomic<string> {
+        string operator=(string desired) {
+            SAUTOLOCK(m);
+            _string = desired;
+            return _string;
+        }
+        bool is_lock_free() const {
+            return false;
+        } 
+        void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
+            SAUTOLOCK(m);
+            _string = desired;
+        };
+        string load(std::memory_order order = std::memory_order_seq_cst) const {
+            SAUTOLOCK(m);
+            return _string;
+        }
+        operator string() const;
+        string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
+            SAUTOLOCK(m);
+            string existing = _string;
+            _string = desired;
+            return existing;
+        };
 
-    // Getter and setter
-    T get() {
-        SAUTOLOCK(_mutex);
-        return _synchronizedValue;
-    }
-    void set(const T& val) {
-        SAUTOLOCK(_mutex);
-        _synchronizedValue = val;
-    }
-
-  private:
-    // Attributes
-    T _synchronizedValue;
-    recursive_mutex _mutex;
+      private:
+        string _string;
+        mutable recursive_mutex m;
+    };
 };
 
 // --------------------------------------------------------------------------
