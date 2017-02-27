@@ -72,7 +72,10 @@ BedrockNode::~BedrockNode() {
 }
 
 bool BedrockNode::_passToExternalQueue(Command* command) {
+    // Check to see if we have a server
+    // **FIXME: Given that this->server is defined in the constructor, how can this be false?
     if (server) {
+        // No server, which probably means REASON
         server->enqueueCommand(command);
         return true;
     }
@@ -144,6 +147,8 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
 }
 
 void BedrockNode::_setState(SQLCState state) {
+    // When we change states, our schema might change - note that we need to
+    // wait for any possible upgrade to complete again.
     _dbReady = false;
     SQLiteNode::_setState(state);
 }
@@ -158,14 +163,14 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
     SData& response = command->response;
     STable& content = command->jsonContent;
     SDEBUG("Received '" << request.methodLine << "'");
-
     bool needsCommit = false;
-
     try {
         if (SIEquals(request.methodLine, "UpgradeDatabase")) {
+            // Begin a non-concurrent transaction for database upgrading
             if (!db.beginTransaction()) {
                 throw "501 Failed to begin transaction";
             }
+
             // Loop across the plugins to give each an opportunity to upgrade the
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
@@ -179,10 +184,11 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
             SINFO("Finished upgrading database");
             _dbReady = true;
         } else {
+            // All non-upgrade commands should be concurrent
             if (!db.beginConcurrentTransaction()) {
                 throw "501 Failed to begin concurrent transaction";
             }
-            // --------------------------------------------------------------------------
+
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
             for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
@@ -239,6 +245,7 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
         handleCommandException(db, command, "", true);
     }
 
+    // Done, return whether or not we need the parent to commit our transaction
     return needsCommit;
 }
 

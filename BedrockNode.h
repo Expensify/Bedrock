@@ -11,11 +11,15 @@ class BedrockNode : public SQLiteNode {
     BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_);
     virtual ~BedrockNode();
 
+    // **FIXME: Why is this public?  Make private; put behind a getter
     BedrockServer* server;
 
+    // Returns if this is a worker node (versus the sync node).  Made available
+    // for the benefit of plugins.
     bool isWorker();
 
-    // Returns _dbReady, which is only useful on a sync node.
+    // Returns whether this node is both the master AND has run
+    // UpgradeDatabase, and thus ready to be used
     bool dbReady();
 
     // STCPManager API: Socket management
