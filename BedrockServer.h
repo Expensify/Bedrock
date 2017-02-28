@@ -147,7 +147,7 @@ class BedrockServer : public STCPServer {
     SData _args;
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
-    list<ThreadData> _workerThreadList;
+    list<ThreadData> _workerThreadDataList;
     atomic<SQLCState> _replicationState;
     atomic<uint64_t> _replicationCommitCount;
     atomic<bool> _nodeGracefulShutdown;
@@ -164,16 +164,16 @@ class BedrockServer : public STCPServer {
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
-    ThreadData _syncThread;
+    ThreadData _syncThreadData;
 
     // Static attributes
     static void worker(ThreadData& data, int threadId, int threadCount);
     static void syncWorker(ThreadData& data);
 
     // Used to communicate to workers threads that the sync thread is ready.
-    static condition_variable _threadInitVar;
-    static mutex _threadInitMutex;
-    static bool _threadReady;
+    static condition_variable _syncThreadReadyCondition;
+    static mutex _syncThreadInitMutex;
+    static bool _syncThreadReady;
 
     // **DMB: Why is this here?
     static BedrockNode* _syncNode;
