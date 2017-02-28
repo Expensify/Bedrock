@@ -316,15 +316,18 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
                 data.processedResponses.push(command->response);
             }
         } else if (node.getQueuedCommand(command->priority)) {
-            // In this case, `peek` wasn't enough to complete the command, and so we'll need to `process` it as well.
+            // If the command is queued, then it wasn't completed in `peek` when we opened the command. There are
+            // several possible reasons for this, including that `peek` was never called in open command, or that the
+            // command needs to write to the database.
             // In the general case, this just means we will re-queue the command in the sync thread's `escalated`
             // queue. However, there's a special case if we're the master server, and the command is set to ASYNC
-            // consistency. In that case, we'll try and perform the write from the worker thread.
+            // consistency, and the command has already been peeked. In that case, we'll try and perform the write
+            // from the worker thread.
 
             // dbReady() implies that we're master, and that the initial `upgradeDatabase` command that runs each
             // time we begin mastering has completed.
             bool canWriteInWorker = (_syncNode->dbReady() && command->writeConsistency == SQLC_ASYNC
-                                     && !command->httpsRequest);
+                                     && !command->httpsRequest && command->peekCount != 0);
 
             // The standard case, we're not master, the DB isn't ready, or the command isn't ASYNC. Just escalate.
             if (!canWriteInWorker) {

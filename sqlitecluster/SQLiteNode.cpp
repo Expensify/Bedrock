@@ -349,12 +349,6 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request) {
 
     // Wrap in a command for processing
     Command* command = createCommand(request);
-
-    if (!command->response.empty()) {
-        SINFO("Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
-        _finishCommand(command);
-    }
-
     return _finishOpeningCommand(command);
 }
 
