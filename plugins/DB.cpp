@@ -3,7 +3,7 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
-bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_DB::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -87,7 +87,7 @@ bool BedrockPlugin_DB::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::C
     return false;
 }
 
-bool BedrockPlugin_DB::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_DB::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;

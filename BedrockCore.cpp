@@ -1,99 +1,16 @@
-// /srs/bedrock/BedrockNode.cpp
-#include <libstuff/libstuff.h>
-#include <libstuff/version.h>
-#include "BedrockNode.h"
+#include "BedrockCore.h"
 #include "BedrockPlugin.h"
-#include "BedrockServer.h"
-#include <iomanip>
+    
+bool BedrockCore::peekCommand(SQLiteCommand& baseCommand)
+{
+    // Bedrock will always create these as BedrockCommands, and even when accepting commands from an SQLiteNode, it
+    // converts them to the derived class before storing them.
+    BedrockCommand& command = static_cast<BedrockCommand&>(baseCommand);
 
-// *jsonCode* Values
-// -----------------------
-// For consistency, all API commands return response codes in the following categories:
-//
-// ### 2xx Class ###
-// Any response between 200 and 299 means the request was valid and accepted.
-//
-// * 200 OK
-//
-// ### 3xx Class ###
-// Any response between 300 and 399 means that the request was valid, but rejected
-// for some reason less than failure.
-//
-// * 300 Redundant request
-// * 301 Limit hit.
-// * 302 Invalid validateCode (for bank account validation)
-//
-// ### 4xx Class ###
-// Any response between 400 and 499 means the request was valid, but failed.
-//
-// * 400 Unknown request failure
-// * 401 Unauthorized
-// * 402 Incomplete request
-// * 403 Terrorist <-- no longer used, but left in for nostalgia.
-// * 404 Resource doesn't exist
-// * 405 Resource in incorrect state
-// * 410 Resource not ready.
-// * 411 Insufficient privileges
-// * 412 Down for maintenance (used in waf)
-//
-// ### 5xx Class ###
-// Any response between 500 and 599 indicates the server experienced some internal
-// failure, and it's unknown if the request was valid.
-//
-// * 500 Unknown server failure
-// * 501 Transaction failure
-// * 502 Failed to execute query
-// * 503 Query returned invalid response
-// * 504 Resource in invalid state
-// * 507 Vendor error
-// * 508 Live operation not enabled
-// * 509 Operation timed out.
-// * 530 Unexpected response.
-// * 531 Expected but unusable response, retry later.
-// * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
-
-BedrockNode::BedrockNode(const SData& args, int threadID, int workerThreadCount, BedrockServer* server_)
-    : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
-                 1024,                                                         // auto-checkpoint every 1024 pages
-                 STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), threadID, workerThreadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
-                 args.test("-worker"), args.calc("-maxJournalSize")),
-      server(server_) {
-    // Initialize
-    SINFO("BedrockNode constructor");
-}
-
-BedrockNode::~BedrockNode() {
-    // Note any orphaned commands; this list should ideally be empty
-    list<string> commandList;
-    commandList = getQueuedCommandList();
-    if (!commandList.empty())
-        SALERT("Queued: " << SComposeJSONArray(commandList));
-}
-
-bool BedrockNode::_passToExternalQueue(Command* command) {
-    // Check to see if we have a server
-    // **FIXME: Given that this->server is defined in the constructor, how can this be false?
-    if (server) {
-        // No server, which probably means REASON
-        server->enqueueCommand(command);
-        return true;
-    }
-    return false;
-};
-
-void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
-    // Update the parent and attributes
-    SQLiteNode::postSelect(fdm, nextActivity);
-}
-
-bool BedrockNode::isWorker() { return _worker; }
-
-bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     // Classify the message
-    SData& request = command->request;
-    SData& response = command->response;
-    STable& content = command->jsonContent;
+    SData& request = command.request;
+    SData& response = command.response;
+    STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
     // Assume success; will throw failure if necessary
@@ -102,7 +19,7 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
         bool pluginPeeked = false;
         for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
             // See if it peeks this
-            if (plugin->enabled() && plugin->peekCommand(this, db, command)) {
+            if (plugin->enabled() && plugin->peekCommand(_db, command)) {
                 // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
@@ -135,39 +52,47 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
             }
         }
     } catch (const char* e) {
-        handleCommandException(db, command, e, false);
+        _handleCommandException(command, e, false);
     } catch (const string e) {
-        handleCommandException(db, command, e, false);
+        _handleCommandException(command, e, false);
     } catch (...) {
-        handleCommandException(db, command, "", false);
+        _handleCommandException(command, "", false);
     }
 
     // If we get here, it means the command is fully completed.
     return true;
 }
 
-void BedrockNode::_setState(SQLCState state) {
-    // When we change states, our schema might change - note that we need to
-    // wait for any possible upgrade to complete again.
-    _masterAndUpgradeComplete = false;
-    SQLiteNode::_setState(state);
+void BedrockCore::upgradeDatabase() 
+{
+    if (!_db.beginTransaction()) {
+        throw "501 Failed to begin transaction";
+    }
+
+    for(BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+         if (plugin->enabled()) {
+             plugin->upgradeDatabase(_db);
+         }
+    }
+    SINFO("Finished upgrading database");
 }
 
-bool BedrockNode::dbReady() {
-    return _masterAndUpgradeComplete;
-}
+bool BedrockCore::processCommand(SQLiteCommand& baseCommand)
+{
+    // Bedrock will always create these as BedrockCommands, and even when accepting commands from an SQLiteNode, it
+    // converts them to the derived class before storing them.
+    BedrockCommand& command = static_cast<BedrockCommand&>(baseCommand);
 
-bool BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
-    SData& request = command->request;
-    SData& response = command->response;
-    STable& content = command->jsonContent;
+    SData& request = command.request;
+    SData& response = command.response;
+    STable& content = command.jsonContent;
     SDEBUG("Received '" << request.methodLine << "'");
     bool needsCommit = false;
     try {
         if (SIEquals(request.methodLine, "UpgradeDatabase")) {
             // Begin a non-concurrent transaction for database upgrading
-            if (!db.beginTransaction()) {
+            if (!_db.beginTransaction()) {
                 throw "501 Failed to begin transaction";
             }
 
@@ -178,14 +103,13 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
             for(BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
                  // See if it processes this
                  if (plugin->enabled()) {
-                     plugin->upgradeDatabase(this, db);
+                     plugin->upgradeDatabase(_db);
                  }
              }
             SINFO("Finished upgrading database");
-            _masterAndUpgradeComplete = true;
         } else {
             // All non-upgrade commands should be concurrent
-            if (!db.beginConcurrentTransaction()) {
+            if (!_db.beginConcurrentTransaction()) {
                 throw "501 Failed to begin concurrent transaction";
             }
 
@@ -193,7 +117,7 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
             bool pluginProcessed = false;
             for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
                 // See if it processes this
-                if (plugin->enabled() && plugin->processCommand(this, db, command)) {
+                if (plugin->enabled() && plugin->processCommand(_db, command)) {
                     // Processed it!
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
@@ -211,9 +135,9 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
 
         // If we have no uncommitted query, just rollback the empty transaction.
         // Otherwise, try to prepare to commit.
-        bool isQueryEmpty = db.getUncommittedQuery().empty();
+        bool isQueryEmpty = _db.getUncommittedQuery().empty();
         if (isQueryEmpty) {
-            db.rollback();
+            _db.rollback();
         } else {
             needsCommit = true;
         }
@@ -238,25 +162,25 @@ bool BedrockNode::_processCommand(SQLite& db, Command* command) {
             }
         }
     } catch (const char* e) {
-        handleCommandException(db, command, e, true);
+        _handleCommandException(command, e, true);
     } catch (const string e) {
-        handleCommandException(db, command, e, true);
+        _handleCommandException(command, e, true);
     } catch (...) {
-        handleCommandException(db, command, "", true);
+        _handleCommandException(command, "", true);
     }
 
     // Done, return whether or not we need the parent to commit our transaction
     return needsCommit;
 }
 
-void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing) {
+void BedrockCore::_handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing) {
     // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
     if (wasProcessing) {
-        db.rollback();
+        _db.rollback();
     }
 
-    const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e + "), ignoring: " +
-                        command->request.serialize();
+    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e + "), ignoring: " +
+                        command.request.serialize();
 
     if (SContains(e, "_ALERT_")) {
         SALERT(msg);
@@ -272,9 +196,59 @@ void BedrockNode::handleCommandException(SQLite& db, Command* command, const str
 
     // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
     // we'll use the text of the error.
-    if (command->response.methodLine == "") {
-        command->response.methodLine = e;
+    if (command.response.methodLine == "") {
+        command.response.methodLine = e;
     }
+}
+
+#if 0
+BedrockNode::BedrockNode(const SData& args, int threadID, int workerThreadCount, BedrockServer* server_)
+    : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
+                 1024,                                                         // auto-checkpoint every 1024 pages
+                 STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
+                 server_->getVersion(), threadID, workerThreadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
+                 args.test("-worker"), args.calc("-maxJournalSize")),
+      server(server_) {
+    // Initialize
+    SINFO("BedrockNode constructor");
+}
+
+
+BedrockNode::~BedrockNode() {
+    // Note any orphaned commands; this list should ideally be empty
+    list<string> commandList;
+    commandList = getQueuedCommandList();
+    if (!commandList.empty())
+        SALERT("Queued: " << SComposeJSONArray(commandList));
+}
+
+bool BedrockNode::_passToExternalQueue(Command* command) {
+    // Check to see if we have a server
+    // **FIXME: Given that this->server is defined in the constructor, how can this be false?
+    if (server) {
+        // No server, which probably means REASON
+        server->enqueueCommand(command);
+        return true;
+    }
+    return false;
+};
+
+void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
+    // Update the parent and attributes
+    SQLiteNode::postSelect(fdm, nextActivity);
+}
+
+bool BedrockNode::isWorker() { return _worker; }
+
+void BedrockNode::_setState(SQLCState state) {
+    // When we change states, our schema might change - note that we need to
+    // wait for any possible upgrade to complete again.
+    _masterAndUpgradeComplete = false;
+    SQLiteNode::_setState(state);
+}
+
+bool BedrockNode::dbReady() {
+    return _masterAndUpgradeComplete;
 }
 
 // Notes that we failed to process something
@@ -289,3 +263,4 @@ void BedrockNode::_cleanCommand(Command* command) {
         command->httpsRequest = 0;
     }
 }
+#endif

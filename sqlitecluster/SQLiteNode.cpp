@@ -5,7 +5,6 @@
 #include <plugins/Status.h>
 
 atomic<int> SQLiteNode::_commandCount(0);
-
 /// Introduction
 /// ------------
 /// SQLiteNode builds atop STCPNode and SQLite to provide a distributed
@@ -36,7 +35,7 @@ atomic<int> SQLiteNode::_commandCount(0);
 ///
 // --------------------------------------------------------------------------
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << name << "/" << SQLCStateNames[_state] << "} "
+#define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateNames[_state] << "} "
 
 // Useful STL macros
 // _CT_ : Container type
@@ -64,27 +63,35 @@ atomic<int> SQLiteNode::_commandCount(0);
     STIME_US_PER_S * 60 // Seperate timeout for receiving and applying synchronization commits
                         // Increase me during a rekey if you need larger commits to have more time
 
-const char* SQLCStateNames[] = {"SEARCHING", "SYNCHRONIZING", "WAITING",     "STANDINGUP",
-                                "MASTERING", "STANDINGDOWN",  "SUBSCRIBING", "SLAVING"};
-const char* SQLCConsistencyLevelNames[] = {"ASYNC", "ONE", "QUORUM"};
+const string SQLiteNode::stateNames[] = {"SEARCHING",
+                                         "SYNCHRONIZING",
+                                         "WAITING",
+                                         "STANDINGUP",
+                                         "MASTERING",
+                                         "STANDINGDOWN",
+                                         "SUBSCRIBING",
+                                         "SLAVING"};
+
+const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
+                                                    "ONE",
+                                                    "QUORUM"};
 
 // Initializations for static vars.
-bool SQLiteNode::_haveUnsentTransactions = false;
+atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
 // --------------------------------------------------------------------------
-SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
-                       int quorumCheckpoint, const string& synchronousCommands, bool worker, int maxJournalSize)
+SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList, int priority,
+                       uint64_t firstTimeout, const string& version, int quorumCheckpoint,
+                       const string& synchronousCommands)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(filename, cacheSize, autoCheckpoint, maxJournalSize, threadId, threadCount - 1),
-      _processTimer("process()"), _commitTimer("COMMIT")
+      _db(db),
+      _processTimer("process()"), _commitTimer("COMMIT"), _server(server)
     {
-    SASSERT(worker || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
-    _setState(SQLC_SEARCHING);
+    _setState(SEARCHING);
     _currentCommand = nullptr;
     _syncPeer = nullptr;
     _masterPeer = nullptr;
@@ -94,10 +101,23 @@ SQLiteNode::SQLiteNode(const string& filename, const string& name, const string&
     _quorumCheckpoint = quorumCheckpoint;
     _synchronousCommands = SParseList(SToLower(synchronousCommands));
     _synchronousCommands.push_back("upgradedatabase");
-    _worker = worker;
 
     // Get this party started
-    _changeState(SQLC_SEARCHING);
+    _changeState(SEARCHING);
+
+    // Add any peers.
+    list<string> parsedPeerList = SParseList(peerList);
+    for (const string& peer : parsedPeerList) {
+        // Get the params from this peer, if any
+        string host;
+        STable params;
+        SASSERT(SParseURIPath(peer, host, params));
+        string name = SGetDomain(host);
+        if (params.find("nodeName") != params.end()) {
+            name = params["nodeName"];
+        }
+        addPeer(name, host, params);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -105,7 +125,7 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_isQueuedCommandMapEmpty());
     SASSERTWARN(_escalatedCommandMap.empty());
-    SASSERTWARN(_processedCommandList.empty());
+    SASSERTWARN(processedCommandList.empty());
 }
 
 // --------------------------------------------------------------------------
@@ -125,19 +145,18 @@ bool SQLiteNode::_isNothingBlockingShutdown() {
     if (_db.insideTransaction())
         return false;
 
-    // If we have non-held commands still queued for processing, not done
-    SFOREACHMAP (int, list<Command*>, _queuedCommandMap, queuedCommandIt)
-        SFOREACH (list<Command*>, queuedCommandIt->second, commandIt)
-            if (!(*commandIt)->request.isSet("HeldBy"))
-                return false;
+    // If we're doing a commit, don't shut down.
+    if (_commitInProgress) {
+        return false;
+    }
 
     // If we have non-"Connection: wait" commands escalated to master, not done
-    SFOREACHMAP (string, Command*, _escalatedCommandMap, escalatedCommandIt)
-        if (!SIEquals(escalatedCommandIt->second->request["Connection"], "wait"))
-            return false;
+    if (!_escalatedCommandMap.empty()) {
+        return false;
+    }
 
     // Finally, we can shut down if we have no open processed commands.
-    return _processedCommandList.empty();
+    return processedCommandList.empty();
 }
 
 // --------------------------------------------------------------------------
@@ -154,25 +173,24 @@ bool SQLiteNode::shutdownComplete() {
     }
 
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
-    if (_state > SQLC_WAITING) {
+    if (_state > WAITING) {
         // Not in a shutdown state
         SINFO("Can't graceful shutdown yet because state="
-              << SQLCStateNames[_state] << ", queued=" << getQueuedCommandList().size()
-              << ", escalated=" << _escalatedCommandMap.size() << ", processed=" << _processedCommandList.size());
+              << SQLiteNode::stateNames[_state] << ", commitInProgress=" << _commitInProgress
+              << ", escalated=" << _escalatedCommandMap.size() << ", processed=" << processedCommandList.size());
 
         // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
         // so we can try and diagnose what's happening.
-        if (_escalatedCommandMap.size()) {
-            for (std::pair<string, Command*> cmd : _escalatedCommandMap) {
+        if (!_escalatedCommandMap.empty()) {
+            for (auto& cmd : _escalatedCommandMap) {
                 string name = cmd.first;
-                Command* command = cmd.second;
-                int64_t created = command->creationTimestamp;
+                SQLiteCommand& command = cmd.second;
+                int64_t created = command.creationTimestamp;
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
-                string hasHTTPS = (command->httpsRequest) ? "true" : "false";
                 SINFO("Escalated command remaining at shutdown("
-                      << name << "): " << command->request.methodLine << ". Created: " << command->creationTimestamp
-                      << " (" << elapsedSeconds << "s ago), has HTTPS request? " << hasHTTPS);
+                      << name << "): " << command.request.methodLine << ". Created: " << command.creationTimestamp
+                      << " (" << elapsedSeconds << "s ago)");
             }
         }
         return false;
@@ -193,44 +211,18 @@ bool SQLiteNode::shutdownComplete() {
         return true;
     } else {
         // Not done yet
-        SINFO("Can't graceful shutdown yet because waiting on commands: queued="
-              << getQueuedCommandList().size() << ", escalated=" << _escalatedCommandMap.size()
-              << ", processed=" << _processedCommandList.size());
+        SINFO("Can't graceful shutdown yet because waiting on commands: commitInProgress="
+              << _commitInProgress << ", escalated=" << _escalatedCommandMap.size()
+              << ", processed=" << processedCommandList.size());
         return false;
     }
-}
-
-bool SQLiteNode::processCommand(Command* command) {
-    return _processCommandWrapper(_db, command);
-}
-
-bool SQLiteNode::commit() {
-    SQLITE_COMMIT_AUTOLOCK;
-
-    if (!_db.prepare()) {
-        return false;
-    }
-
-    if (_db.getUncommittedHash().empty()) {
-        return true;
-    }
-    // No prepare() call here because it's handled in process
-
-    int errorCode = _db.commit();
-    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("Commit conflict, rolling back.");
-        _db.rollback();
-        return false; // Commit conflicted.
-    }
-    _haveUnsentTransactions = true;
-    return true; // Commit succeeded.
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
     // Make sure we have something to do.
-    if (!_haveUnsentTransactions) {
+    if (!unsentTransactions.load()) {
         return;
     }
 
@@ -272,434 +264,37 @@ void SQLiteNode::_sendOutstandingTransactions() {
         _lastSentTransactionID = id;
     }
 
-    _haveUnsentTransactions = false;
+    unsentTransactions.store(false);
 }
 
-bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
-    // Measure elapsed time and add to processing
-    uint64_t start = STimeNow();
-    _processTimer.start();
-    bool result = _processCommand(db, command);
-    command->processCount++;
-    _processTimer.stop();
-    command->processingTime += STimeNow() - start;
-    return result;
-}
-
-bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
-    // Measure elapsed time and add to processing
-    uint64_t start = STimeNow();
-    bool result = _peekCommand(db, command);
-    command->peekCount++;
-    command->processingTime += STimeNow() - start;
-    return result;
-}
-
-SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingCommand) {
-    // If there's already a response to this command, we must have finished it somewhere else (presumably, wherever we
-    // called `reopenCommand` from. We'll simply clean up here.
-    if (!existingCommand->response.empty()) {
-        SINFO("Reopening and finishing command. " << existingCommand->id);
-        return _finishCommand(existingCommand);
-    }
-
-    // No response? We must not have processed this. Let's process it now.
-    SINFO("Reopening command from the start. " << existingCommand->id);
-    return _finishOpeningCommand(existingCommand);
-}
-
-SQLiteNode::Command* SQLiteNode::createCommand(const SData& request) {
-
-    // Create our new command.
-    Command* command = new Command;
-
-    // Save it's request info.
-    command->request = request;
-
-    // Give it a unique name.
-    command->id = name + "#" + SToStr(_commandCount.fetch_add(1));
-
-    // Set it's creationTimestamp.
-    command->creationTimestamp = request.calc64("creationTimestamp");
-    uint64_t commandExecuteTime = request.calc64("commandExecuteTime");
-    uint64_t now = STimeNow();
-    if (commandExecuteTime > now) {
-        command->creationTimestamp = commandExecuteTime;
-    }
-    if (!command->creationTimestamp) {
-        command->creationTimestamp = now;
-    }
-
-    // If it's specified priority info, set it.
-    if (!request["priority"].empty()) {
-        int priority = request.calc("priority");
-        if (SWITHIN(Command::SPRIORITY_MIN, priority, Command::SPRIORITY_MAX)) {
-            command->priority = priority;
-        } else {
-            SWARN("Invalid priority " << request["priority"] << ". Ignoring");
-        }
-    }
-
-    return command;
-}
-
-SQLiteNode::Command* SQLiteNode::openCommand(const SData& request) {
-    SASSERT(!request.empty());
-    SAUTOPREFIX(request["requestID"]);
-
-    // Wrap in a command for processing
-    Command* command = createCommand(request);
-    return _finishOpeningCommand(command);
-}
-
-SQLiteNode::Command* SQLiteNode::_finishOpeningCommand(SQLiteNode::Command* command) {
-    // Pre-process this command if we're MASTER or SLAVE.
-    //
-    // **NOTE: This is only a "best attempt" -- if the node isn't MASTERING or
-    //         SLAVING the command won't get peeked.  If so, when we go
-    //         MASTERING we'll have queued commands that haven't been peeked.
-    //         Alternatively, when we go SLAVING we'll ESCALATE commands that
-    //         haven't been peeked.
-    //
-    // **NOTE: It's possible the node's state will change after peeking and before
-    //         the command is either begun or escalated.
-    //
-
-    // If we want to execute the command at a particular time.
-    // **FIXME: This is not preserved if we escalate this command.
-    //          That's fine for now given our use case for it, but
-    //          may not be the case in the future.
-    int64_t now = STimeNow();
-    if (command->creationTimestamp > STimeNow()) {
-        SINFO("Scheduling command " << command->id << " (" << command->request.methodLine << ") for "
-                                    << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
-                                    << "s in the future.");
-    }
-
-    const SData& request = command->request;
-    bool nodeUpToDate = request["commitCount"].empty() || request.calcU64("commitCount") <= getCommitCount();
-    bool peekIt = (_state == SQLC_MASTERING || _state == SQLC_SLAVING) && (int64_t)command->creationTimestamp <= now &&
-                  nodeUpToDate;
-
-    // Process status commands special, as we never want to escalate to the master
-    bool forcePeekIt = false;
-    if (find(BedrockPlugin_Status::statusCommandNames.begin(), BedrockPlugin_Status::statusCommandNames.end(),
-             request.methodLine) != BedrockPlugin_Status::statusCommandNames.end()) {
-        // Force peek these always -- even if read only -- because any read
-        // thread knows our status, and thus can handle these.
-        forcePeekIt = true;
-    }
-
-    // Do we peek this command?
-    if (peekIt) {
-        // Don't peek if the versions aren't identical.  If we're newer, then our
-        // code might not work until the master upgrades the schema.  On the other
-        // hand, if we're older, then the master might have upgraded the schema
-        // and is using code we don't have.
-        if (_state == SQLC_SLAVING && _version != getMasterVersion()) {
-            // Skip
-            SHMMM("Skipping slave peek because our version (" << _version << ") doesn't match master ("
-                                                              << getMasterVersion() << ").");
-            peekIt = false;
-        } else if (command->httpsRequest) {
-            SINFO("Not peeking command with HTTPS request, already peeked.");
-            peekIt = false;
-        }
-
-        // Don't process if we are not the master of the majority.  A split
-        // brain could occur if we are the master of less than half of the peers.
-        else if (_state == SQLC_MASTERING) {
-            // We need at least half the non-permaslave peers to form a majority in order to commit.
-            int numFullPeers = 0;
-            int numFullSlaves = 0;
-            if (!_majoritySubscribed(numFullPeers, numFullSlaves)) {
-                // Skip
-                SHMMM("Skipping master peek because only "
-                      << numFullSlaves << " of " << numFullPeers << " full peers (" << peerList.size()
-                      << " with permaslaves) subscribed so remote commit isn't possible.");
-                peekIt = false;
-            }
-        }
-    }
-
-    // Ok, peek if we're in the right state to, or if we're forcing it
-    if ((peekIt || forcePeekIt) && _peekCommandWrapper(_db, command)) {
-        // Done with this command.  Make sure it only started a secondary command
-        // if we are in fact mastering.
-        SINFO("Processed peekable command '" << request.methodLine << "' (" << command->id << ")");
-        SASSERTWARN(_state == SQLC_MASTERING || !command->httpsRequest);
-        _processedCommandList.push_back(command);
-    } else if (_masterPeer && SIEquals((*_masterPeer)["State"], "MASTERING")) {
-        // We are a slave (because we have a master) and we weren't able to
-        // peek the command, which means we're just going to queue it and
-        // escalate it in our update loop.  Rather than waiting until then,
-        // let's just skip the queue and escalate it right now.
-        _escalateCommand(command);
-    } else {
-        // Queue it.
-        SINFO("Queuing new non-peekable command '" << request.methodLine << "' (" << command->id << "), priority="
-              << command->priority << (!nodeUpToDate ? " because node out of date." : ""));
-        _queueCommand(command);
-    }
-
-    // Return the command so the caller can get progress
-    return command;
+bool SQLiteNode::Command_ptr_cmp::operator()(SQLiteCommand* lhs, SQLiteCommand* rhs) {
+    return lhs->priority > rhs->priority ||
+           (lhs->priority == rhs->priority && lhs->creationTimestamp < rhs->creationTimestamp);
 }
 
 // --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::getQueuedCommand(int priority) {
-    // Return the first queued command, if any
-    list<Command*>& commandList = _queuedCommandMap[priority];
-    if (commandList.empty())
-        return 0;
-
-    // Pop and return
-    Command* front = commandList.front();
-    commandList.pop_front();
-    SAUTOPREFIX(front->request["requestID"]);
-
-    // And if the list is empty now, then tear down this map index.
-    if (commandList.empty()) {
-        _queuedCommandMap.erase(priority);
-    }
-    SINFO("Returning queued command '" << front->request.methodLine << "' (" << front->id << ")");
-    return front;
-}
-
-// --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::getProcessedCommand() {
-    // Return the first processed command, if any
-    if (_processedCommandList.empty())
-        return 0;
-
-    // Pop and return
-    Command* front = _processedCommandList.front();
-    SAUTOPREFIX(front->request["requestID"]);
-    _processedCommandList.pop_front();
-    SINFO("Returning processed command '" << front->request.methodLine << "' (" << front->id << ")");
-    return front;
-}
-
-// --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::findCommand(const string& name, const string& value) {
-    // Search everywhere to see if we have it
-    SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt) {
-        if ((*commandIt)->request[name] == value) {
-            return *commandIt;
-        }
-    }
-    SFOREACHMAP (string, Command*, _escalatedCommandMap, commandIt) {
-        if (commandIt->second->request[name] == value) {
-            return commandIt->second;
-        }
-    }
-    SFOREACH (list<Command*>, _processedCommandList, commandIt) {
-        if ((*commandIt)->request[name] == value) {
-            return *commandIt;
-        }
-    }
-
-    // Didn't find it
-    return 0;
-}
-
-// --------------------------------------------------------------------------
-void SQLiteNode::clearCommandHolds(const string& heldBy) {
-    // Loop across and release everything waiting on this command
-    // **NOTE: It's tempting to only release some specific number of commands (eg, one)
-    //         waiting on this hold, such as to release only one worker waiting on a
-    //         job of a particular type.  However, it's possible that in the time between
-    //         the command being woken up and when it's processed, the command might get
-    //         closed.  It's a super edge case, but it's safer to just wake them
-    //         all up, to ensure at least one gets it.  (The others will be put back to
-    //         sleep when processed.)
-    SINFO("Clearing all commands held by '" << heldBy << "'");
-    SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt) {
-        // See if this command is held by anything
-        Command* command = *commandIt;
-        const string& commandHeldBy = command->request["HeldBy"];
-        if (!commandHeldBy.empty()) {
-            // Convert from SQL "LIKE" syntax to regular expression.  This will generate false
-            // positives, but no false negatives.
-            if (SREMatch(SReplace(SToLower(commandHeldBy), "%", ".*"), SToLower(heldBy))) {
-                // Release this one
-                SINFO("Releasing command '" << command->request.methodLine << "' (#" << command->id << ") held by '"
-                                            << commandHeldBy << "'");
-                command->request["HeldBy"].clear();
-            } else {
-                // Continue holding
-                SINFO("Continuing to hold '" << command->request.methodLine << "' (#" << command->id << ") held by '"
-                                             << commandHeldBy << "'");
-            }
-        }
-    }
-}
-
-// --------------------------------------------------------------------------
-void SQLiteNode::closeCommand(Command* command) {
-    SASSERT(command);
-    // Note that we've closed the command
-    SDEBUG("Closing command '" << command->id << "'.");
-
-    // Verify the command has completed before closing.  Three exceptions:
-    // 1) If we self-initiated the command.  (**FIXME: Why is this ok?)
-    // 2) If we we're waiting on some hold, then we'll close it without
-    //    response if the connection fails.
-    // 3) This is a read only node.  In this case, we close a command that
-    //    we haven't processed in order to send it to the write thread.
-    if (!command->initiator && command->request["HeldBy"].empty() && !_worker) {
-        SASSERTWARN(!command->response.empty());
-    }
-
-    // ***NOTE: Not using list.remove( ) because that will always iterate the entire list removing all matching values.
-    //          However, the command is distinct and near the front so using list.erase( ).
-    list<Command*>::iterator commandIt =
-        ::find(_queuedCommandMap[command->priority].begin(), _queuedCommandMap[command->priority].end(), command);
-    if (commandIt != _queuedCommandMap[command->priority].end()) {
-        _queuedCommandMap[command->priority].erase(commandIt);
-    }
-
-    // Verify we're not closing a command while it's being worked on
-    if (_currentCommand == command) {
-        // This can happen if a master needs to do an emergency standdown while
-        // waiting for a response to a distributed transaction.
-        uint64_t elapsed = STimeNow() - _currentCommand->creationTimestamp;
-        SWARN("Closing outstanding command '" << command->request.methodLine << "' (" << command->id << ") after "
-                                              << elapsed / STIME_US_PER_MS << "ms, aborting.");
-        _abortCommand(_db, command);
-        if (_db.insideTransaction())
-            _db.rollback();
-        _currentCommand = nullptr;
-    }
-
-    // Are we closing a command for which we're still awaiting a response from the master?
-    if (SContains(_escalatedCommandMap, command->id)) {
-        // Tell the master not to bother processing this command
-        SINFO("Canceling escalated command " << command->id);
-        if (_masterPeer && _masterPeer->s) {
-            SData escalate("ESCALATE_CANCEL");
-            escalate["ID"] = command->id;
-            escalate.content = command->request.serialize();
-            _sendToPeer(_masterPeer, escalate);
-        } else {
-            SWARN("Trying to cancel escalated command " << command->id << ", but no master. Just erasing it.");
-        }
-        _escalatedCommandMap.erase(command->id);
-    }
-
-    _processedCommandList.remove(command);
-    delete command;
-}
-
-// --------------------------------------------------------------------------
-list<string> SQLiteNode::getQueuedCommandList() {
-    list<string> commandList;
-    SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt)
-    commandList.push_back((*commandIt)->request.methodLine + " (" + (*commandIt)->id + ")");
-    return commandList;
-}
-
-// --------------------------------------------------------------------------
-list<string> SQLiteNode::getEscalatedCommandList() {
-    list<Command*> orderedEscalatedCommands = _getOrderedCommandListFromMap(_escalatedCommandMap);
-    list<string> commandList;
-    SFOREACH (list<Command*>, orderedEscalatedCommands, it)
-        commandList.push_back((*it)->request.methodLine + " (" + (*it)->id + ")");
-    return commandList;
-}
-
-// --------------------------------------------------------------------------
-list<string> SQLiteNode::getProcessedCommandList() {
-    list<string> commandList;
-    SFOREACH (list<Command*>, _processedCommandList, it)
-        commandList.push_back((*it)->request.methodLine + " (" + (*it)->id + ")");
-    return commandList;
-}
-
-// --------------------------------------------------------------------------
-void SQLiteNode::_queueCommand(Command* command) {
-    // Specify the consistency level.  Certain commands require quorum and are
-    // specified at launch with command line args.  Clients can also specify
-    // consistency requirements on a per-command basis.
-    if (SContains(_synchronousCommands, SToLower(command->request.methodLine))) {
-        // This was hard-configured via the comand line to use full quorum
-        SINFO("'" << command->request.methodLine << "' in synchronous comand list; setting QUORUM consistency");
-        command->writeConsistency = SQLC_QUORUM;
-    } else if (command->request.isSet("writeConsistency")) {
-        // The caller is requesting some amount of consistency
-        int wc = SStateNameToInt(SQLCConsistencyLevelNames, command->request["writeConsistency"],
-                                 SQLC_NUM_CONSISTENCY_LEVELS);
-        if (wc >= 0) {
-            command->writeConsistency = (SQLCConsistencyLevel)wc;
-        } else {
-            SWARN("Unknown write consistency supplied '" << command->request["writeConsistency"] << "'. Ignoring.");
-        }
-        SINFO("'" << command->request.methodLine << "' has overridden default consistency with '"
-                  << command->request["writeConsistency"] << "' ("
-                  << SQLCConsistencyLevelNames[command->writeConsistency] << ")");
-    }
-
-    // Insert in order of priority if the command is scheduled to be executed
-    // now.  However, absolutely never ever insert a command after one that is
-    // scheduled to run after the command you are inserting.  So, let's take
-    // two examples:
-    // 1. A command scheduled to be run in the future will skip past the front
-    //    part of the queue because it is creationTimestamp will be greater
-    //    than all the messages scheduled to be run now.  Then, it will keep
-    //    going comparing to ever increasing creationTimestamps until its own
-    //    timestamp is lower.  Insert there.
-    // 2. A command scheduled to be run now with minimal priority will keep
-    //    going through the queue comapring its priority until it hits commands
-    //    scheduled for the future.  There it will stop even though its
-    //    priority is lower than the future commands because the its timestamp
-    //    will be lower.  Its timestamp was not lower than all the other
-    //    commands scheduled to run now because we are queuing it later.  So,
-    //    we insert this command at the boundery of commands to run now and
-    //    commands scheduled for the future.  This was a serious bug before!
-    // **FIXME: If a command execute time is provided, priority is rendered
-    //          mostly meaningless.  It is not enforced when two commands are
-    //          scheduled for the same moment and it will effectively be at the
-    //          end of the queue after we pass its createdTimestamp.  This
-    //          will create a slightly odd queue where you could have a highest
-    //          priority command in the back.
-    if (_state != SQLC_MASTERING && command->httpsRequest)
-        SWARN("Only MASTERING nodes should trigger secondary requests.");
-
-    // If the priority queue is empty or the command timestamp is after all other commands, append it to the
-    // end of it's priority list (99.9% of the time). Otherwise insert the command into the priority queue
-    // at the proper position, based on command timestamp. Start from the back because the proper place
-    // for the command is likely near the back.
-    if (_queuedCommandMap[command->priority].empty() ||
-        command->creationTimestamp >= _queuedCommandMap[command->priority].back()->creationTimestamp) {
-        _queuedCommandMap[command->priority].push_back(command);
-    } else {
-        SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt) {
-            if (command->creationTimestamp < (*commandIt)->creationTimestamp) {
-                _queuedCommandMap[command->priority].insert(commandIt, command);
-                return;
-            }
-        }
-    }
-}
-
-// --------------------------------------------------------------------------
-void SQLiteNode::_escalateCommand(Command* command) {
+void SQLiteNode::_escalateCommand(SQLiteCommand&& command) {
     // Send this to the MASTER
     SASSERT(_masterPeer);
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
-    uint64_t elapsed = STimeNow() - command->creationTimestamp;
-    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to MASTER '" << _masterPeer->name
-                         << "' after " << elapsed / STIME_US_PER_MS << " ms");
-    _escalatedCommandMap.insert(pair<string, Command*>(command->id, command));
+    uint64_t elapsed = STimeNow() - command.creationTimestamp;
+    SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer->name
+          << "' after " << elapsed / STIME_US_PER_MS << " ms");
+
+    // Create a command to send to our master.
     SData escalate("ESCALATE");
-    escalate["ID"] = command->id;
-    escalate["priority"] = SToStr(command->priority);
-    escalate.content = command->request.serialize();
+    escalate["ID"] = command.id;
+    escalate.content = command.request.serialize();
+
+    // Store the command as escalated.
+    _escalatedCommandMap.emplace(command.id, move(command));
+
+    // And send to master.
     _sendToPeer(_masterPeer, escalate);
 }
-
+#if 0
 // --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
+SQLiteNode::SQLiteCommand* SQLiteNode::_finishCommand(SQLiteCommand* command) {
     SASSERT(command);
     // Done with this command
     // **FIXME: I'd prefer _cleanCommand() to be in closeCommand(), but it needs
@@ -749,11 +344,11 @@ SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
         // TODO: Probably not for retried commands.
-        _processedCommandList.push_back(command);
+        processedCommandList.push_back(command);
         return command;
     }
 }
-
+#endif
 // --------------------------------------------------------------------------
 /// State Machine
 /// -------------
@@ -802,7 +397,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///         if( nobody has more commits than us ) goto WAITING
     ///         else send SYNCHRONIZE and goto SYNCHRONIZING
     ///
-    case SQLC_SEARCHING: {
+    case SEARCHING: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -814,7 +409,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (peerList.empty()) {
             // There are no peers, jump straight to mastering
             SHMMM("No peers configured, jumping to MASTERING");
-            _changeState(SQLC_MASTERING);
+            _changeState(MASTERING);
             return true; // Re-update immediately
         }
 
@@ -858,7 +453,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (!freshestPeer) {
             // Unable to connect to anyone
             SHMMM("Unable to connect to any peer, WAITING.");
-            _changeState(SQLC_WAITING);
+            _changeState(WAITING);
             return true; // Re-update
         }
 
@@ -868,7 +463,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (freshestPeerCommitCount == _db.getCommitCount()) {
             // We're up to date
             SINFO("Synchronized with the freshest peer '" << freshestPeer->name << "', WAITING.");
-            _changeState(SQLC_WAITING);
+            _changeState(WAITING);
             return true; // Re-update
         }
 
@@ -876,7 +471,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (freshestPeerCommitCount < _db.getCommitCount()) {
             // Looks like we're the freshest peer overall
             SINFO("We're the freshest peer, WAITING.");
-            _changeState(SQLC_WAITING);
+            _changeState(WAITING);
             return true; // Re-update
         }
 
@@ -888,10 +483,10 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
         } else {
             SWARN("Updated to NULL _syncPeer when about to send SYNCHRONIZE. Going to WAITING.");
-            _changeState(SQLC_WAITING);
+            _changeState(WAITING);
             return true; // Re-update
         }
-        _changeState(SQLC_SYNCHRONIZING);
+        _changeState(SYNCHRONIZING);
         return true; // Re-update
     }
 
@@ -900,7 +495,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///     the WAITING state.  Alternately, give up waitng after a
     ///     period and go SEARCHING.
     ///
-    case SQLC_SYNCHRONIZING: {
+    case SYNCHRONIZING: {
         SASSERTWARN(_syncPeer);
         SASSERTWARN(!_masterPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -910,7 +505,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             SHMMM("Timed out while waiting for SYNCHRONIZE_RESPONSE, searching.");
             _reconnectPeer(_syncPeer);
             _syncPeer = nullptr;
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
         break;
@@ -933,15 +528,15 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///             clear "StandupResponse" on all peers
     ///             goto STANDINGUP
     ///
-    case SQLC_WAITING: {
+    case WAITING: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
         SASSERTWARN(_escalatedCommandMap.empty());
         // If we're trying and ready to shut down, do nothing.
         if (gracefulShutdown()) {
-            // Do we have any outstanding commands?
-            if (_queuedCommandMap.empty()) {
+            // Do we have an outstanding command?
+            if (1/* TODO: Commit in progress? */) {
                 // Nope!  Let's just halt the FSM here until we shutdown so as to
                 // avoid potential confusion.  (Technically it would be fine to continue
                 // the FSM, but it makes the logs clearer to just stop here.)
@@ -1002,7 +597,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (!highestPriorityPeer) {
             // Not connected to any other peers
             SHMMM("Configured to have peers but can't connect to any, re-SEARCHING.");
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
         SASSERT(highestPriorityPeer);
@@ -1018,7 +613,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             _masterPeer = currentMaster;
             _masterVersion = (*_masterPeer)["Version"];
             _sendToPeer(currentMaster, SData("SUBSCRIBE"));
-            _changeState(SQLC_SUBSCRIBING);
+            _changeState(SUBSCRIBING);
             return true; // Re-update
         }
 
@@ -1028,7 +623,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (freshestPeer->calcU64("CommitCount") > _db.getCommitCount()) {
             // Out of sync with a peer -- resynchronize
             SHMMM("Lost synchronization while waiting; re-SEARCHING.");
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
 
@@ -1044,7 +639,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             SINFO("No master and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
             SFOREACH (list<Peer*>, peerList, peerIt)
                 (*peerIt)->erase("StandupResponse");
-            _changeState(SQLC_STANDINGUP);
+            _changeState(STANDINGUP);
             return true; // Re-update
         }
 
@@ -1064,7 +659,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///         if( somebody hasn't responded but we're timing out )
     ///             goto SEARCHING
     ///
-    case SQLC_STANDINGUP: {
+    case STANDINGUP: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -1074,7 +669,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         int numLoggedInFullPeers = 0;
         if (gracefulShutdown()) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
         SFOREACH (list<Peer*>, peerList, peerIt) {
@@ -1093,7 +688,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     } else if (!SIEquals((*peer)["StandupResponse"], "approve")) {
                         // It responeded, but didn't approve -- abort
                         PHMMM("Refused our STANDUP (" << (*peer)["Reason"] << "), cancel and RESEARCH");
-                        _changeState(SQLC_SEARCHING);
+                        _changeState(SEARCHING);
                         return true; // Re-update
                     }
                 }
@@ -1105,7 +700,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (allResponded && majorityConnected) {
             // Complete standup
             SINFO("All peers approved standup, going MASTERING.");
-            _changeState(SQLC_MASTERING);
+            _changeState(MASTERING);
             return true; // Re-update
         }
 
@@ -1114,7 +709,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Timed out
             SHMMM("Timed out waiting for STANDUP approval; reconnect all and re-SEARCHING.");
             _reconnectAll();
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
         break;
@@ -1143,8 +738,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///         if( we're standing down and all slaves have unsubscribed )
     ///             goto SEARCHING
     ///
-    case SQLC_MASTERING:
-    case SQLC_STANDINGDOWN: {
+    case MASTERING:
+    case STANDINGDOWN: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
 
@@ -1382,7 +977,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         }
 
         // If we're the master, see if we're to stand down (and if not, start a new command)
-        if (_state == SQLC_MASTERING && !_currentCommand) {
+        if (_state == MASTERING && !_currentCommand) {
             // See if it's time to stand down
             string standDownReason;
             bool shuttingDown = false;
@@ -1431,7 +1026,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 if (!standDownReason.empty()) {
                     // Do it
                     SHMMM(standDownReason);
-                    _changeState(SQLC_STANDINGDOWN);
+                    _changeState(STANDINGDOWN);
                     SINFO("Standing down: " << standDownReason);
                     // We might have processed more commands that the caller needs to respond to.
                     return false;
@@ -1449,19 +1044,19 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // split brain scenario.
             if (!_isQueuedCommandMapEmpty() && _majoritySubscribed()) {
                 // Have commands and a majority, so let's start a new one.
-                SFOREACHMAPREVERSE(int, list<Command*>, _queuedCommandMap, it) {
+                SFOREACHMAPREVERSE(int, list<SQLiteCommand*>, _queuedCommandMap, it) {
                     // **XXX: Using pointer to list because STL containers copy on assignment.
-                    list<Command*>* commandList = &it->second;
+                    list<SQLiteCommand*>* commandList = &it->second;
                     if (!commandList->empty()) {
                         // Find the first command that either has no httpsRequest,
                         // or has a completed one.
                         int64_t now = STimeNow();
-                        list<Command*>::iterator nextIt = commandList->begin();
+                        list<SQLiteCommand*>::iterator nextIt = commandList->begin();
                         while (nextIt != commandList->end()) {
                             // See if this command has an outstanding https
                             // transaction.  If so, wait for it to complete.
-                            list<Command*>::iterator commandIt = nextIt++;
-                            Command* command = *commandIt;
+                            list<SQLiteCommand*>::iterator commandIt = nextIt++;
+                            SQLiteCommand* command = *commandIt;
                             if (command->httpsRequest && !command->httpsRequest->response)
                                 continue;
                             SAUTOPREFIX(command->request["requestID"]);
@@ -1654,7 +1249,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         }
 
         // We're standing down; wait until there are no more subscribed peers
-        if (_state == SQLC_STANDINGDOWN) {
+        if (_state == STANDINGDOWN) {
             // Loop across and search for subscribed peers
             bool allUnsubscribed = true;
             SFOREACH (list<Peer*>, peerList, peerIt) {
@@ -1673,7 +1268,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 // Standdown complete
                 SINFO("STANDDOWN complete, SEARCHING");
                 SASSERTWARN(!_currentCommand);
-                _changeState(SQLC_SEARCHING);
+                _changeState(SEARCHING);
                 return true; // Re-update
             }
         }
@@ -1684,7 +1279,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///     master.  When we receive it, we'll go SLAVING.  Otherwise, if we
     ///     timeout, go SEARCHING.
     ///
-    case SQLC_SUBSCRIBING:
+    case SUBSCRIBING:
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(_masterPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -1694,7 +1289,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to master and re-SEARCHING.");
             _reconnectPeer(_masterPeer);
             _masterPeer = nullptr;
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
         break;
@@ -1707,7 +1302,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     ///         if( master steps down or disconnects ) goto SEARCHING
     ///         if( new queued commands ) send ESCALATE to master
     ///
-    case SQLC_SLAVING:
+    case SLAVING:
         SASSERTWARN(!_syncPeer);
         SASSERT(_masterPeer);
         // If graceful shutdown requested, stop slaving once there is
@@ -1716,7 +1311,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (gracefulShutdown() && _isNothingBlockingShutdown()) {
             // Go searching so we stop slaving
             SINFO("Stopping SLAVING in order to gracefully shut down, SEARCHING.");
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return false; // Don't update
         }
 
@@ -1727,26 +1322,26 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             SHMMM("Master stepping down, re-queueing commands and re-SEARCHING.");
 
             // Get an ordered list of commands
-            list<Command*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
+            list<SQLiteCommand*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
             while (!escalatedCommandList.empty()) {
                 // Reschedule the escalated commands to the front of the pack.
-                Command* command = escalatedCommandList.back();
+                SQLiteCommand* command = escalatedCommandList.back();
                 SHMMM("Re-queueing escalated command '" << command->request.methodLine << "' (" << command->id << ")");
                 _queuedCommandMap[command->priority].push_front(command);
                 escalatedCommandList.pop_back();
             }
             _escalatedCommandMap.clear();
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             return true; // Re-update
         }
 
         // If there are any commands, send to the master
-        SFOREACHMAPREVERSE(int, list<Command*>, _queuedCommandMap, it) {
+        SFOREACHMAPREVERSE(int, list<SQLiteCommand*>, _queuedCommandMap, it) {
             // **XXX: Using a pointer to list because STL copies by value
-            list<Command*>* commandList = &it->second;
+            list<SQLiteCommand*>* commandList = &it->second;
             while (!commandList->empty()) {
                 // Just send on to the master.
-                Command* command = commandList->front();
+                SQLiteCommand* command = commandList->front();
                 if (command->httpsRequest) {
                     // If a MASTER has oustanding commands with active httpsRequest
                     // when it STANDSDOWN (such as as part of a graceful shutdown)
@@ -1763,7 +1358,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     _cleanCommand(command);
                 }
                 commandList->pop_front();
-                _escalateCommand(command);
+                _escalateCommand(move(command));
             }
         }
         break;
@@ -1846,49 +1441,48 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Peer switched from '" << oldState << "' to '" << newState << "' commit #" << message["CommitCount"]
                                          << " (" << message["Hash"] << ")");
             int from = 0, to = 0;
-            for (from = SQLC_SEARCHING; from <= SQLC_SLAVING; from++)
-                if (SIEquals(oldState, SQLCStateNames[from]))
+            for (from = SEARCHING; from <= SLAVING; from++)
+                if (SIEquals(oldState, stateNames[from]))
                     break;
-            for (to = SQLC_SEARCHING; to <= SQLC_SLAVING; to++)
-                if (SIEquals(newState, SQLCStateNames[to]))
+            for (to = SEARCHING; to <= SLAVING; to++)
+                if (SIEquals(newState, stateNames[to]))
                     break;
-            if (from > SQLC_SLAVING)
+            if (from > SLAVING)
                 PWARN("Peer coming from unrecognized state '" << oldState << "'");
-            if (to > SQLC_SLAVING)
+            if (to > SLAVING)
                 PWARN("Peer going to unrecognized state '" << newState << "'");
             bool okTransition = false;
             switch (from) {
-            case SQLC_SEARCHING:
-                okTransition = (to == SQLC_SYNCHRONIZING || to == SQLC_WAITING || to == SQLC_MASTERING);
+            case SEARCHING:
+                okTransition = (to == SYNCHRONIZING || to == WAITING || to == MASTERING);
                 break;
-            case SQLC_SYNCHRONIZING:
-                okTransition = (to == SQLC_SEARCHING || to == SQLC_WAITING);
+            case SYNCHRONIZING:
+                okTransition = (to == SEARCHING || to == WAITING);
                 break;
-            case SQLC_WAITING:
-                okTransition = (to == SQLC_SEARCHING || to == SQLC_STANDINGUP || to == SQLC_SUBSCRIBING);
+            case WAITING:
+                okTransition = (to == SEARCHING || to == STANDINGUP || to == SUBSCRIBING);
                 break;
-            case SQLC_STANDINGUP:
-                okTransition = (to == SQLC_SEARCHING || to == SQLC_MASTERING);
+            case STANDINGUP:
+                okTransition = (to == SEARCHING || to == MASTERING);
                 break;
-            case SQLC_MASTERING:
-                okTransition = (to == SQLC_SEARCHING || to == SQLC_STANDINGDOWN);
+            case MASTERING:
+                okTransition = (to == SEARCHING || to == STANDINGDOWN);
                 break;
-            case SQLC_STANDINGDOWN:
-                okTransition = (to == SQLC_SEARCHING);
+            case STANDINGDOWN:
+                okTransition = (to == SEARCHING);
                 break;
-            case SQLC_SUBSCRIBING:
-                okTransition = (to == SQLC_SEARCHING || to == SQLC_SLAVING);
+            case SUBSCRIBING:
+                okTransition = (to == SEARCHING || to == SLAVING);
                 break;
-            case SQLC_SLAVING:
-                okTransition = (to == SQLC_SEARCHING);
+            case SLAVING:
+                okTransition = (to == SEARCHING);
                 break;
             }
             if (!okTransition)
-                PWARN("Peer making invalid transition from '" << SQLCStateNames[from] << "' to '" << SQLCStateNames[to]
-                                                              << "'");
+                PWARN("Peer making invalid transition from '" << stateNames[from] << "' to '" << stateNames[to] << "'");
 
             // Next, should we do something about it?
-            if (to == SQLC_SEARCHING) {
+            if (to == SEARCHING) {
                 ///     * SEARCHING: If anything ever goes wrong, a node
                 ///         reverts to the SEARCHING state.  Thus if
                 ///         we see a peer go SEARCHING, we reset its
@@ -1899,7 +1493,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 ///
                 peer->erase("TransactionResponse");
                 peer->erase("Subscribed");
-            } else if (to == SQLC_STANDINGUP) {
+            } else if (to == STANDINGUP) {
                 ///     * STANDINGUP: When a peer announces it intends to stand
                 ///         up, we immediately respond with approval or denial.
                 ///         We determine this by checking to see if there is any
@@ -1918,16 +1512,16 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // What's our state
-                if (SWITHIN(SQLC_STANDINGUP, _state, SQLC_STANDINGDOWN)) {
+                if (SWITHIN(STANDINGUP, _state, STANDINGDOWN)) {
                     // Oh crap, it's trying to stand up while we're mastering.
                     // Who is higher priority?
                     if (peer->calc("Priority") > _priority) {
                         // Not good -- we're in the way.  Not sure how we got
                         // here, so just reconnect and start over.
-                        PWARN("Higher-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
+                        PWARN("Higher-priority peer is trying to stand up while we are " << stateNames[_state]
                               << ", reconnecting and SEARCHING.");
                         _reconnectAll();
-                        _changeState(SQLC_SEARCHING);
+                        _changeState(SEARCHING);
                     } else {
                         // Deny because we're currently in the process of mastering
                         // and we're higher priority
@@ -1938,7 +1532,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                         // control of the cluster? Let's see how many nodes are subscribed.
                         if (_majoritySubscribed()) {
                             // we have a majority of the cluster, so ignore this oddity.
-                            PHMMM("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
+                            PHMMM("Lower-priority peer is trying to stand up while we are " << stateNames[_state]
                                   << " with a majority of the cluster; denying and ignoring.");
                         } else {
                             // We don't have a majority of the cluster -- maybe
@@ -1950,10 +1544,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             // master, forked, and be a thousand commits in the
                             // future.  In this case, let's just reset
                             // everything anyway to be safe.
-                            PWARN("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
+                            PWARN("Lower-priority peer is trying to stand up while we are " << stateNames[_state]
                                   << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
                             _reconnectAll();
-                            _changeState(SQLC_SEARCHING);
+                            _changeState(SEARCHING);
                         }
                     }
                 } else {
@@ -1981,7 +1575,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     PHMMM("Denying standup request because " << response["Reason"]);
                 }
                 _sendToPeer(peer, response);
-            } else if (from == SQLC_STANDINGDOWN) {
+            } else if (from == STANDINGDOWN) {
                 ///     * STANDINGDOWN: When a peer stands down we double-check
                 ///         to make sure we don't have any outstanding transaction
                 ///         (and if we do, we warn and rollback).
@@ -1993,7 +1587,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     // all subscribed slaves (including us) have already
                     // unsubscribed, and we wouldn't do that in the middle of a
                     // transaction.  But just in case...
-                    SASSERTWARN(_state == SQLC_SLAVING);
+                    SASSERTWARN(_state == SLAVING);
                     PWARN("Was expecting a response for transaction #"
                           << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
                           << ") but stood down prematurely, rolling back and hoping for the best.");
@@ -2005,7 +1599,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // STANDUP_RESPONSE: Sent in response to the STATE message generated when a node enters the STANDINGUP state.
         // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
         // peer for testing in the update loop.
-        if (_state == SQLC_STANDINGUP) {
+        if (_state == STANDINGUP) {
             if (!message.isSet("Response")) {
                 throw "missing Response";
             }
@@ -2021,7 +1615,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
             (*peer)["StandupResponse"] = message["Response"];
         } else {
-            SINFO("Got STANDUP_RESPONSE but not SQLC_STANDINGUP. Probably a late message, ignoring.");
+            SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
         /// - SYNCHRONIZE: Sent by a node in the SEARCHING state to a peer that
@@ -2036,7 +1630,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///     Contains a payload of zero or more COMMIT messages, all of which
         ///     are immediately committed to the local database.
         ///
-        if (_state != SQLC_SYNCHRONIZING)
+        if (_state != SYNCHRONIZING)
             throw "not synchronizing";
         if (!_syncPeer)
             throw "too late, gave up on you";
@@ -2052,14 +1646,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Synchronization complete, at commitCount #" << _db.getCommitCount() << " ("
                                                                    << _db.getCommittedHash() << "), WAITING");
                 _syncPeer = nullptr;
-                _changeState(SQLC_WAITING);
+                _changeState(WAITING);
             } else if (_db.getCommitCount() > peerCommitCount) {
                 // How did this happen?  Something is screwed up.
                 SWARN("We have more data (" << _db.getCommitCount() << ") than our sync peer '" << _syncPeer->name
                                             << "' (" << peerCommitCount << "), reconnecting and SEARCHING.");
                 _reconnectPeer(_syncPeer);
                 _syncPeer = nullptr;
-                _changeState(SQLC_SEARCHING);
+                _changeState(SEARCHING);
             } else {
                 // Otherwise, more to go
                 SINFO("Synchronization underway, at commitCount #"
@@ -2070,7 +1664,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
                 } else {
                     SWARN("No usable _syncPeer but syncing not finished. Going to SEARCHING.");
-                    _changeState(SQLC_SEARCHING);
+                    _changeState(SEARCHING);
                 }
 
                 // Also, extend our timeout so long as we're still alive
@@ -2081,7 +1675,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SWARN("Synchronization failed '" << e << "', reconnecting and re-SEARCHING.");
             _reconnectPeer(_syncPeer);
             _syncPeer = nullptr;
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             throw e;
         }
     } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
@@ -2094,7 +1688,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///     is an outstanding distributed transaction being processed, send it
         ///     to this new slave.
         ///
-        if (_state != SQLC_MASTERING)
+        if (_state != MASTERING)
             throw "not mastering";
         PINFO("Received SUBSCRIBE, accepting new slave");
         SData response("SUBSCRIPTION_APPROVED");
@@ -2116,7 +1710,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///     subscription process.  Includes zero or more COMMITS that should be
         ///     immediately applied to the database.
         ///
-        if (_state != SQLC_SUBSCRIBING)
+        if (_state != SUBSCRIBING)
             throw "not subscribing";
         if (_masterPeer != peer)
             throw "not subscribing to you";
@@ -2128,12 +1722,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 throw "Incomplete synchronizationg";
             SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
                                                             << "), SLAVING");
-            _changeState(SQLC_SLAVING);
+            _changeState(SLAVING);
         } catch (const char* e) {
             // Transaction failed
             SWARN("Subscription failed '" << e << "', reconnecting to master and re-SEARCHING.");
             _reconnectPeer(_masterPeer);
-            _changeState(SQLC_SEARCHING);
+            _changeState(SEARCHING);
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
@@ -2152,7 +1746,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "missing NewCount";
         if (!message.isSet("NewHash"))
             throw "missing NewHash";
-        if (_state != SQLC_SLAVING)
+        if (_state != SLAVING)
             throw "not slaving";
         if (!_masterPeer)
             throw "no master?";
@@ -2231,7 +1825,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "missing NewCount";
         if (!message.isSet("NewHash"))
             throw "missing NewHash";
-        if (_state != SQLC_MASTERING && _state != SQLC_STANDINGDOWN)
+        if (_state != MASTERING && _state != STANDINGDOWN)
             throw "not mastering";
         try {
             // Approval of current command, or an old one?
@@ -2273,7 +1867,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///     committed to the database.  This completes a given distributed
         ///     transaction.
         ///
-        if (_state != SQLC_SLAVING)
+        if (_state != SLAVING)
             throw "not slaving";
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
@@ -2311,7 +1905,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///
         if (!message.isSet("ID"))
             throw "missing ID";
-        if (_state != SQLC_SLAVING)
+        if (_state != SLAVING)
             throw "not slaving";
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
@@ -2335,7 +1929,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///
         if (!message.isSet("ID"))
             throw "missing ID";
-        if (_state != SQLC_MASTERING) {
+        if (_state != MASTERING) {
             // Reject escalation because we're no longer mastering
             PWARN("Received ESCALATE but not MASTERING, aborting.");
             SData aborted("ESCALATE_ABORTED");
@@ -2354,16 +1948,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
             // Create a new Command and send to a worker thread
-            Command* command = new Command;
+            SQLiteCommand command();
             command->initiator = peer;
             command->id = message["ID"];
             command->request = request;
             command->priority = message.calc("priority");
-            if (!_passToExternalQueue(command)) {
-                // We have no server because **REASON**, so process on the sync
-                // node
-                _queueCommand(command);
-            }
+            _server.acceptCommand(command);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
         /// - ESCALATE_CANCEL: Sent to the master by a slave.  Indicates that the
@@ -2375,7 +1965,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         ///
         if (!message.isSet("ID"))
             throw "missing ID";
-        if (_state != SQLC_MASTERING) {
+        if (_state != MASTERING) {
             // Reject escalation because we're no longer mastering
             PWARN("Received ESCALATE_CANCEL but not MASTERING, ignoring.");
         } else {
@@ -2392,11 +1982,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
             // See if there is a command with that ID
             bool foundIt = false;
-            SFOREACHMAP (int, list<Command*>, _queuedCommandMap, queuedCommandIt)
-                SFOREACH (list<Command*>, queuedCommandIt->second, commandIt)
+            SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, queuedCommandIt)
+                SFOREACH (list<SQLiteCommand*>, queuedCommandIt->second, commandIt)
                     if (SIEquals((*commandIt)->id, commandID)) {
                         // Cancel that command
-                        Command* command = *commandIt;
+                        SQLiteCommand* command = *commandIt;
                         SINFO("Canceling escalated command " << command->id << " (" << command->request.methodLine
                                                               << ")");
                         closeCommand(command);
@@ -2408,7 +1998,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
         /// - ESCALATE_RESPONSE: Sent when the master processes the ESCALATE.
         ///
-        if (_state != SQLC_SLAVING)
+        if (_state != SLAVING)
             throw "not slaving";
         if (!message.isSet("ID"))
             throw "missing ID";
@@ -2421,7 +2011,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
-            Command* command = commandIt->second;
+            SQLiteCommand& command = commandIt->second;
             _escalatedCommandMap.erase(command->id);
             command->response = response;
             _finishCommand(command);
@@ -2431,7 +2021,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         /// - ESCALATE_RESPONSE: Sent when the master aborts processing an
         ///     escalated command.  Re-submit to the new master.
         ///
-        if (_state != SQLC_SLAVING)
+        if (_state != SLAVING)
             throw "not slaving";
         if (!message.isSet("ID"))
             throw "missing ID";
@@ -2441,7 +2031,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Re-queue this
-            Command* command = commandIt->second;
+            SQLiteCommand* command = commandIt->second;
             PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
                                           << command->id << ")");
             _queuedCommandMap[command->priority].push_front(command);
@@ -2460,7 +2050,7 @@ void SQLiteNode::_onConnect(Peer* peer) {
     PINFO("Sending LOGIN");
     SData login("LOGIN");
     login["Priority"] = SToStr(_priority);
-    login["State"] = SQLCStateNames[_state];
+    login["State"] = stateNames[_state];
     login["Version"] = _version;
     _sendToPeer(peer, login);
 }
@@ -2494,7 +2084,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // We've lost our master: make sure we aren't waiting for
         // transaction response and re-SEARCH
         PHMMM("Lost our MASTER, re-SEARCHING.");
-        SASSERTWARN(_state == SQLC_SUBSCRIBING || _state == SQLC_SLAVING);
+        SASSERTWARN(_state == SUBSCRIBING || _state == SLAVING);
         _masterPeer = nullptr;
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
@@ -2507,10 +2097,10 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         }
 
         // Get an ordered list of commands
-        list<Command*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
+        list<SQLiteCommand*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
         while (!escalatedCommandList.empty()) {
             // Reschedule the escalated commands to the front of the pack.
-            Command* command = escalatedCommandList.back();
+            SQLiteCommand* command = escalatedCommandList.back();
             if (command->transaction.methodLine.empty()) {
                 // Doesn't look like the master was processing this when it
                 // died, let's resubmit
@@ -2524,12 +2114,12 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                                                      << ") in transaction state '" << command->transaction.methodLine
                                                      << "'");
                 _abortCommand(_db, command);
-                _processedCommandList.push_back(command);
+                processedCommandList.push_back(command);
             }
             escalatedCommandList.pop_back();
         }
         _escalatedCommandMap.clear();
-        _changeState(SQLC_SEARCHING);
+        _changeState(SEARCHING);
     }
 
     /// - Verify we didn't just lose contact with the peer we're synchronizing
@@ -2539,9 +2129,9 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     if (peer == _syncPeer) {
         // Synchronization failed
         PHMMM("Lost our synchronization peer, re-SEARCHING.");
-        SASSERTWARN(_state == SQLC_SYNCHRONIZING);
+        SASSERTWARN(_state == SYNCHRONIZING);
         _syncPeer = nullptr;
-        _changeState(SQLC_SEARCHING);
+        _changeState(SEARCHING);
     }
 
     /// - Verify no queued commands were initiated by this peer.  This should only
@@ -2549,19 +2139,19 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   command initiator (and it should only be possible if it's also SLAVING)
     ///   then drop the command -- if the initiator is still alive it'll resubmit.
     ///
-    SFOREACHMAP (int, list<Command*>, _queuedCommandMap, it) {
+    SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, it) {
         // **XXX: Using pointer to list because STL containers copy on assignment.
-        list<Command*>* commandList = &it->second;
-        list<Command*>::iterator nextCommandIt = commandList->begin();
+        list<SQLiteCommand*>* commandList = &it->second;
+        list<SQLiteCommand*>::iterator nextCommandIt = commandList->begin();
         while (nextCommandIt != commandList->end()) {
             // Check this command and go to the next
-            list<Command*>::iterator commandIt = nextCommandIt++;
-            Command* command = *commandIt;
+            list<SQLiteCommand*>::iterator commandIt = nextCommandIt++;
+            SQLiteCommand* command = *commandIt;
             if (command->initiator == peer) {
                 // Drop this command
                 PHMMM("Queued command initiator disconnected, dropping '" << command->request.methodLine << "' ("
                                                                           << command->id << ")");
-                SASSERTWARN(_state == SQLC_MASTERING || _state == SQLC_STANDINGDOWN);
+                SASSERTWARN(_state == MASTERING || _state == STANDINGDOWN);
                 SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
                 commandList->erase(commandIt);
                 delete command;
@@ -2582,7 +2172,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // Clean up this command and notify everyone to roll it back
         PHMMM("Current command initiator disconnected, aborting '" << _currentCommand->request.methodLine << "' ("
                                                                    << _currentCommand->id << ") and rolling back.");
-        SASSERTWARN(_state == SQLC_MASTERING || _state == SQLC_STANDINGDOWN);
+        SASSERTWARN(_state == MASTERING || _state == STANDINGDOWN);
         SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
         _abortCommand(_db, _currentCommand);
         if (_db.insideTransaction())
@@ -2638,22 +2228,22 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 // --------------------------------------------------------------------------
-void SQLiteNode::_changeState(SQLCState newState) {
+void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Did we actually change _state?
     SQLCState oldState = _state;
     if (newState != oldState) {
         // Depending on the state, set a timeout
-        SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
+        SDEBUG("Switching from '" << stateNames[_state] << "' to '" << stateNames[newState] << "'");
         uint64_t timeout = 0;
-        if (newState == SQLC_STANDINGUP) {
+        if (newState == STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
             // for the other to respond, but neither sends a response. We want a short timeout on this state.
             // TODO: Maybe it would be better to re-send the message indicating we're standing up when we see someone
             // hasn't responded.
             timeout = STIME_US_PER_S * 5 + SRandom::rand64() % STIME_US_PER_S * 5;
-        } else if (newState == SQLC_SEARCHING || newState == SQLC_SUBSCRIBING) {
+        } else if (newState == SEARCHING || newState == SUBSCRIBING) {
             timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
-        } else if (newState == SQLC_SYNCHRONIZING) {
+        } else if (newState == SYNCHRONIZING) {
             timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
         } else {
             timeout = 0;
@@ -2662,8 +2252,8 @@ void SQLiteNode::_changeState(SQLCState newState) {
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
-        if (SWITHIN(SQLC_MASTERING, _state, SQLC_STANDINGDOWN) &&
-            !SWITHIN(SQLC_MASTERING, newState, SQLC_STANDINGDOWN)) {
+        if (SWITHIN(MASTERING, _state, STANDINGDOWN) &&
+            !SWITHIN(MASTERING, newState, STANDINGDOWN)) {
             // We are no longer mastering.  Are we processing a command?
             if (_currentCommand) {
                 // Abort this command
@@ -2674,17 +2264,17 @@ void SQLiteNode::_changeState(SQLCState newState) {
         }
 
         // Clear some state if we can
-        if (newState < SQLC_SUBSCRIBING) {
+        if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or SLAVING, so we have no master
             _masterPeer = nullptr;
         }
 
         // Additional logic for some new states
-        if (newState == SQLC_MASTERING) {
+        if (newState == MASTERING) {
             // Seed our last sent transaction.
             {
                 SQLITE_COMMIT_AUTOLOCK;
-                _haveUnsentTransactions = false;
+                unsentTransactions.store(false);
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
                 _db.getCommittedTransactions();
@@ -2693,19 +2283,19 @@ void SQLiteNode::_changeState(SQLCState newState) {
             // **NOTE: We'll detect this special command on destruction and clean it
             if (!gracefulShutdown()) {
                 SData upgrade("UpgradeDatabase");
-                upgrade["priority"] = to_string(Command::SPRIORITY_MAX);
+                upgrade["priority"] = to_string(SQLiteCommand::SPRIORITY_MAX);
                 openCommand(upgrade);
             }
-        } else if (newState == SQLC_STANDINGDOWN) {
+        } else if (newState == STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
-            SFOREACHMAP (int, list<Command*>, _queuedCommandMap, it) {
+            SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, it) {
                 // **XXX: Using pointer to list because STL containers copy on assignment.
-                list<Command*>* commandList = &it->second;
-                list<Command*>::iterator nextIt = commandList->begin();
+                list<SQLiteCommand*>* commandList = &it->second;
+                list<SQLiteCommand*>::iterator nextIt = commandList->begin();
                 while (nextIt != commandList->end()) {
                     // Check this command
-                    list<Command*>::iterator commandIt = nextIt++;
-                    Command* command = *commandIt;
+                    list<SQLiteCommand*>::iterator commandIt = nextIt++;
+                    SQLiteCommand* command = *commandIt;
                     if (command->initiator) {
                         // No need to wait, explicitly abort
                         SINFO("STANDINGDOWN and aborting " << command->id);
@@ -2718,14 +2308,14 @@ void SQLiteNode::_changeState(SQLCState newState) {
                     }
                 }
             }
-        } else if (newState == SQLC_SEARCHING) {
+        } else if (newState == SEARCHING) {
             if (!_escalatedCommandMap.empty()) {
                 // This isn't supposed to happen, though we've seen in logs where it can.
                 // So what we'll do is try and correct the problem and log the state we're coming from to see if that
                 // gives us any more useful info in the future.
                 _escalatedCommandMap.clear();
                 SWARN(
-                    "Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState]
+                    "Switching from '" << stateNames[_state] << "' to '" << stateNames[newState]
                                        << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
         }
@@ -2736,13 +2326,13 @@ void SQLiteNode::_changeState(SQLCState newState) {
         // Broadcast the new state
         _setState(newState);
         SData state("STATE");
-        state["State"] = SQLCStateNames[_state];
+        state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
     }
 
     // Verify some invariants with the new state
-    SASSERT(!_currentCommand || (_state != SQLC_MASTERING && _state != SQLC_STANDINGDOWN));
+    SASSERT(!_currentCommand || (_state != MASTERING && _state != STANDINGDOWN));
 }
 
 // --------------------------------------------------------------------------
@@ -2943,20 +2533,12 @@ void SQLiteNode::_reconnectAll() {
 }
 
 // --------------------------------------------------------------------------
-list<SQLiteNode::Command*> SQLiteNode::_getOrderedCommandListFromMap(const map<string, Command*> commandMap) {
-    list<Command*> commandList;
-    SFOREACHMAPCONST(string, Command*, commandMap, cmdMapIt)
+list<SQLiteCommand*> SQLiteNode::_getOrderedCommandListFromMap(const map<string, SQLiteCommand*> commandMap) {
+    list<SQLiteCommand*> commandList;
+    SFOREACHMAPCONST(string, SQLiteCommand*, commandMap, cmdMapIt)
     commandList.push_back(cmdMapIt->second);
     commandList.sort(Command_ptr_cmp());
     return commandList;
-}
-
-// --------------------------------------------------------------------------
-bool SQLiteNode::_isQueuedCommandMapEmpty() {
-    SFOREACHMAPCONST(int, list<Command*>, _queuedCommandMap, it)
-    if (!it->second.empty())
-        return false;
-    return true;
 }
 
 // --------------------------------------------------------------------------

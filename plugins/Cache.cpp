@@ -97,7 +97,7 @@ void BedrockPlugin_Cache::initialize(const SData& args) {
 #define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
 
 // ==========================================================================
-void BedrockPlugin_Cache::upgradeDatabase(BedrockNode* node, SQLite& db) {
+void BedrockPlugin_Cache::upgradeDatabase(SQLiteNode* node, SQLite& db) {
     // Create or verify the cache table
     bool ignore;
     while (!db.verifyTable("cache", "CREATE TABLE cache ( "
@@ -135,7 +135,7 @@ void BedrockPlugin_Cache::upgradeDatabase(BedrockNode* node, SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Cache::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_Cache::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -191,7 +191,7 @@ bool BedrockPlugin_Cache::peekCommand(BedrockNode* node, SQLite& db, BedrockNode
 }
 
 // ==========================================================================
-bool BedrockPlugin_Cache::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_Cache::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     // SData&  response = command->response; -- Not used
@@ -278,64 +278,3 @@ bool BedrockPlugin_Cache::processCommand(BedrockNode* node, SQLite& db, BedrockN
     return false;
 }
 
-// ==========================================================================
-void BedrockPlugin_Cache::test(BedrockTester* tester) {
-    {
-        STestTimer test("Testing BedrockPlugin_Cache");
-        // Startup a Bedrock::Cache server
-        SData args;
-        args["-clean"] = "1";      // First time, let's blow away the db
-        args["-cache.max"] = "10"; // 10 bytes
-        args["-plugins"] = "cache";
-        tester->startServer(args);
-
-        // Write something to the cache
-        SData writeCache("WriteCache");
-        writeCache["name"] = "name0";
-        writeCache["value"] = "123456"; // 6 bytes long
-        SData ok("200 OK");
-        tester->testRequest(writeCache, ok);
-
-        // Read it back
-        SData readCache("ReadCache");
-        readCache["name"] = "name0";
-        SData readOK("200 OK");
-        readOK.content = writeCache["value"];
-        tester->testRequest(readCache, readOK);
-
-        // Write something new to the cache, blowing away the first (due to
-        // exceeding the cache limit)
-        writeCache["name"] = "name1";
-        tester->testRequest(writeCache, ok);
-
-        // Confirm the first was expired, but the second is available
-        SData readFail("404 No match found");
-        tester->testRequest(readCache, readFail);
-        readCache["name"] = "name1";
-        tester->testRequest(readCache, readOK);
-
-        // At this point the cache only has 6 bytes in it (one value),
-        // but can take up to 10.  Let's add 1 more small value.
-        writeCache["name"] = "name2";
-        writeCache["value"] = "1"; // just 1 byte long
-        tester->testRequest(writeCache, ok);
-
-        // Confirm the 2nd is still there
-        readCache["name"] = "name1";
-        tester->testRequest(readCache, readOK);
-
-        // Now do a write on the 4th while invalidating the 2nd
-        writeCache["name"] = "name2";
-        writeCache["invalidateName"] = "name1";
-        tester->testRequest(writeCache, ok);
-
-        // Finally, confirm the item we invalidated is gone -- even though
-        // there's room in the cache for it
-        readCache["name"] = "name1";
-        readCache["invalidateName"] = "";
-        tester->testRequest(readCache, readFail);
-
-        // Done
-        tester->stopServer();
-    }
-}

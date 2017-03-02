@@ -34,7 +34,8 @@ INTERMEDIATEDIR = .build
 .PHONY: all test clustertest clean testplugin
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-all: bedrock test clustertest
+#all: bedrock test clustertest
+all: bedrock
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 
@@ -83,13 +84,19 @@ STUFFC = $(shell find libstuff -name '*.c')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+$(info $$STUFFCPP is [${STUFFCPP}])
+
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+$(info $$LIBBEDROCKCPP is [${LIBBEDROCKCPP}])
+
 BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+
+$(info $$BEDROCKCPP is [${BEDROCKCPP}])
 
 TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
@@ -105,8 +112,8 @@ ifneq ($(MAKECMDGOALS),clean)
 -include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
 -include $(BEDROCKDEP)
--include $(TESTDEP)
--include $(CLUSTERTESTDEP)
+#-include $(TESTDEP)
+#-include $(CLUSTERTESTDEP)
 endif
 
 # Our static libraries just depend on their object files.
@@ -125,6 +132,7 @@ BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
+	echo $(BEDROCKOBJ)
 	$(GXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)

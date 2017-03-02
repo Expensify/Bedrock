@@ -71,14 +71,13 @@ void SSynchronizedQueue<T>::push(T rhs) {
 template<typename T>
 T SSynchronizedQueue<T>::pop() {
     SAUTOLOCK(_queueMutex);
-    // Return the first if any, otherwise a default object.
-    T item{};
     if (!_queue.empty()) {
         // Take the first
-        item = _queue.front();
+        T item = move(_queue.front());
         _queue.pop_front();
+        return item;
     }
-    return item;
+    throw std::out_of_range;
 }
 
 template<typename T>

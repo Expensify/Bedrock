@@ -1,111 +1,63 @@
 #pragma once
 #include "SQLite.h"
+#include "SQLiteServer.h"
 
-// Possible states of a node in a DB cluster
-enum SQLCState {
-    SQLC_SEARCHING,     // Searching for peers
-    SQLC_SYNCHRONIZING, // Synchronizing with highest priority peer
-    SQLC_WAITING,       // Waiting for an opportnity to master or slave
-    SQLC_STANDINGUP,    // Taking over mastership
-    SQLC_MASTERING,     // Acting as master node
-    SQLC_STANDINGDOWN,  // Giving up master role
-    SQLC_SUBSCRIBING,   // Preparing to slave to the master
-    SQLC_SLAVING        // Slaving to the master node
-};
-extern const char* SQLCStateNames[];
+class SQLiteCommand;
 
-// Write consistencies available
-enum SQLCConsistencyLevel {
-    SQLC_ASYNC,  // Fully asynchronous write, no slave approval required.
-    SQLC_ONE,    // Require exactly one approval (likely from a peer on the same LAN)
-    SQLC_QUORUM, // Require majority approval
-    SQLC_NUM_CONSISTENCY_LEVELS
-};
 extern const char* SQLCConsistencyLevelNames[];
 
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
   public: // External API
 
-    // Captures all data associated with an atomic command
-    struct Command {
-        enum Priority {
-            SPRIORITY_MIN = 0,
-            SPRIORITY_LOW = 250,
-            SPRIORITY_NORMAL = 500,
-            SPRIORITY_HIGH = 750,
-            SPRIORITY_MAX = 1000
-        };
-
-        // Attributes
-        Peer* initiator;
-        string id;
-        SData transaction;  // Used inside SQLiteNode
-        SData request;      // Original request
-        STable jsonContent; // Accumulated response content
-        SData response;     // Final response
-        int priority;
-        uint64_t creationTimestamp;
-        uint64_t replicationStartTimestamp;
-        uint64_t processingTime;
-        SQLCConsistencyLevel writeConsistency;
-
-        // Keep track of some state as we go through everything that needs to be done here.
-        int peekCount;
-        int processCount;
-
-        // **NOTE: httpsRequest is used to store a pointer to a
-        //         secondary SHTTPSManager request; this can be
-        //         initiated in _peekCommand(), and the command won't
-        //         be processed by _processCommand() until the request
-        //         has completed.
-        SHTTPSManager::Transaction* httpsRequest;
-
-        // Constructor / Destructor
-        Command() {
-            // Initialize
-            initiator = 0;
-            priority = SPRIORITY_NORMAL;
-            httpsRequest = 0;
-            creationTimestamp = STimeNow();
-            replicationStartTimestamp = 0;
-            httpsRequest = nullptr;
-            processingTime = 0;
-            peekCount = 0;
-            processCount = 0;
-            writeConsistency = SQLC_ONE;
-        }
-        virtual ~Command() {
-            // Verify clean shutdown
-            SASSERTWARN(!httpsRequest);
-        }
+    // Possible states of a node in a DB cluster
+    enum State {
+        SEARCHING,     // Searching for peers
+        SYNCHRONIZING, // Synchronizing with highest priority peer
+        WAITING,       // Waiting for an opportunity to master or slave
+        STANDINGUP,    // Taking over master-ship
+        MASTERING,     // Acting as master node
+        STANDINGDOWN,  // Giving up master role
+        SUBSCRIBING,   // Preparing to slave to the master
+        SLAVING,        // Slaving to the master node
+        NUM_STATES
     };
+    static const string stateNames[NUM_STATES];
+
+    // Write consistencies available
+    enum ConsistencyLevel {
+        ASYNC,  // Fully asynchronous write, no slave approval required.
+        ONE,    // Require exactly one approval (likely from a peer on the same LAN)
+        QUORUM, // Require majority approval
+        NUM_CONSISTENCY_LEVELS
+    };
+    static const string consistencyLevelNames[NUM_CONSISTENCY_LEVELS];
 
     // Used to sort the escalated command map back into an ordered list
     struct Command_ptr_cmp {
-        bool operator()(Command* lhs, Command* rhs) {
-            return lhs->priority > rhs->priority ||
-                   (lhs->priority == rhs->priority && lhs->creationTimestamp < rhs->creationTimestamp);
-        }
+        bool operator()(SQLiteCommand* lhs, SQLiteCommand* rhs);
     };
-    typedef map<string, Command*>::iterator CommandMapIt;
+    typedef map<string, SQLiteCommand*>::iterator CommandMapIt;
 
     // Constructor
-    SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-               int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
-               int quorumCheckpoint = 0, const string& synchronousCommands = "", bool worker = false,
-               int maxJournalSize = 1000000);
+    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList, int priority,
+               uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0,
+               const string& synchronousCommands = "");
     virtual ~SQLiteNode();
 
 
     // Simple accessors
-    SQLCState getState() { return _state; }
+    State getState() { return _state; }
     int getPriority() { return _priority; }
     string getHash() { return _db.getCommittedHash(); }
     uint64_t getCommitCount() { return _db.getCommitCount(); }
+    #if 0
     list<string> getQueuedCommandList();
     list<string> getEscalatedCommandList();
-    list<string> getProcessedCommandList();
+    #endif
+    // Returns the entire list of processed commands that are ready to be responded to.
+    // Maybe this should return by reference?
+
     const string& getMasterVersion() { return _masterVersion; };
     const string& getVersion() { return _version; };
 
@@ -113,7 +65,8 @@ class SQLiteNode : public STCPNode {
     // by the read only threads even though they are replication concepts.  They let the slaves know if they
     // should accept commands, and if their version matches master so they can peek (otherwise skip peek and
     // escalate to master).
-    void setState(SQLCState state) {
+    #if 0
+    void setState(State state) {
         SASSERT(_worker);
         _setState(state);
     }
@@ -121,6 +74,7 @@ class SQLiteNode : public STCPNode {
         SASSERT(_worker);
         _masterVersion = version;
     }
+    #endif
 
     // Can shut down without causing problems
     void beginShutdown();
@@ -129,86 +83,91 @@ class SQLiteNode : public STCPNode {
 
     // Performs a read-only operation on the database.  Can happen in mid-
     // transaction, even if that transaction is later rolled back.
+    #if 0
     string read(const string& query) { return _db.read(query); }
     bool read(const string& query, SQResult& result) { return _db.read(query, result); }
+    #endif
 
     // Returns true when we're ready to process commands
-    bool ready() { return (_state == SQLC_MASTERING || _state == SQLC_SLAVING); }
+    bool ready() { return (_state == MASTERING || _state == SLAVING); }
 
-    Command* createCommand(const SData& request);
-    Command* openCommand(const SData& request);
-    Command* reopenCommand(SQLiteNode::Command* existingCommand);
+    #if 0
+    SQLiteCommand* createCommand(const SData& request);
+    SQLiteCommand* openCommand(const SData& request);
+    SQLiteCommand* reopenCommand(SQLiteCommand* existingCommand);
 
     // Gets a completed command from the database
-    Command* getProcessedCommand();
+    SQLiteCommand* getProcessedCommand();
 
     // Searches through commands in all states to see if we can find one that matches
-    Command* findCommand(const string& requestHeaderName, const string& requestHeaderValue);
+    SQLiteCommand* findCommand(const string& requestHeaderName, const string& requestHeaderValue);
 
     // Gets the next command queued for processsing
     // **FIXME: This is only used in BedrockServer, and the priority is a needless optimizatoin -- remove priority
-    Command* getQueuedCommand(int priority);
+    SQLiteCommand* getQueuedCommand(int priority);
 
     // Clears any command holds in place
     void clearCommandHolds(const string& heldBy);
 
     // Aborts (if active) a command on the database and cleans it up.
     // If the command has been passed to the control of a different SQLiteNode, the caller can elect not to delete it.
-    void closeCommand(Command* command);
+    void closeCommand(SQLiteCommand* command);
+    #endif
 
     // Updates the internal state machine; returns true if it wants immediate re-updating.
     bool update(uint64_t& nextActivity);
 
+    // Begins the process of committing a command.
+    void startCommit(SQLiteCommand& command);
+
+    // Similar to the above version, but with no explicit command. This can be used when the database has changed in a
+    // way that needs to be replicated, but doesn't need to be sent back to anyone when completed. For example, a cron
+    // job could update the database to contain the current free space on disk, but not need to hear the result.
+    void startCommit();
+
+    // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
+    // acknowledged by) peers.
+    bool commitInProgress();
+
+    // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns
+    // the success of the last *completed* commit. If called before `startCommit` is ever called, the return value is
+    // unspecified.
+    bool commitSucceeded();
+
+    // This takes a completed command and prepares to send it back to the originating peer. If this command doesn't
+    // have an `originator`, then it's an error to pass it to this function.
+    void queueResponse(SQLiteCommand&& command);
+
+    // This is a utility function that we call when we finish processing a command to hand it back to the caller that
+    // gave it to us in the first place. If `complete` is true, the corresponding field in the command object will also
+    // be set to true to alert the caller that the command is finished and can be responded to.
+    void _unblockFrontCommand(bool complete);
+
+    // Externally exposed version of _processCommand().
+    #if 0
+    bool processCommand(SQLiteCommand* command);
+    bool commit();
+    #endif
+
+    static atomic<bool> unsentTransactions;
+
+    // These commands are all completed and ready for responses.
+    list<SQLiteCommand> processedCommandList;
+
+  protected:
     // STCPNode API: Peer handling framework functions
     virtual void _onConnect(Peer* peer);
     virtual void _onDisconnect(Peer* peer);
     virtual void _onMESSAGE(Peer* peer, const SData& message);
-
-    // Externally exposed version of _processCommand().
-    bool processCommand(Command* command);
-    bool commit();
-
-  protected:
-    virtual bool _peekCommand(SQLite& db, Command* command) = 0;
-
-    // Parent overrides these in order to process commands.  Return true in
-    // _processCommand() or _peekCommand to signal that the command is complete
-    // and ready to commit (assuming any uncommitted transaction has been
-    // started). _abortCommand() is called if we cannot complete this command.
-    //
-    // _processCommand() is called without db having an active transaction --
-    // if you want to start a transaction, you're free to do so.  But you must
-    // prepare any non-empty uncommitted transaction before returning.  Also,
-    // you must rollback any empty (or aborted) uncommitted transaction before
-    // returning.
-    //
-    // Use _peekCommand() if you want to perform any pre-processing on the
-    // command before queueing.  This might include triggering a background
-    // operation to get a head-start on the command, or even doing the entire
-    // command without waiting.  (This would only work for
-    // read-only/non-mutable commands; anything changing the database would
-    // need to be queued so we do it in order.)  Return true to mark the
-    // command as completed without ever actually queueing it.  (If you do
-    // start a background operation, however, be sure executing that operation
-    // twice is non-damaging as it can be repeated in some edge cases involving
-    // server failure.)
-    //
-    // _cleanCommand() is called when the command is closed; use it for any
-    // final cleanup operations.
-    virtual void _abortCommand(SQLite& db, Command* command) = 0;
-    virtual void _cleanCommand(Command* command) = 0;
-    // This returns `true` if we need to commit something to the database after this operation, false otherwise. The
-    // two common cases for why this would return false are that the command threw an exception, or it succeeded but
-    // didn't need to write anything to the database.
-    virtual bool _processCommand(SQLite& db, Command* command) = 0;
-
+    #if 0
     // Should return true if an external queue accepted the command. If so, this node now keeps no reference to the
     // command, and the external queue is responsible for calling `reopenCommand` to return the command to this node.
-    virtual bool _passToExternalQueue(Command* command) { return false; };
+    virtual bool _passToExternalQueue(SQLiteCommand* command) { return false; };
 
     // Wrappers for peek and process command to keep track of processing time.
-    bool _peekCommandWrapper(SQLite& db, Command* command);
-    bool _processCommandWrapper(SQLite& db, Command* command);
+    bool _peekCommandWrapper(SQLite& db, SQLiteCommand* command);
+    bool _processCommandWrapper(SQLite& db, SQLiteCommand* command);
+    #endif
 
     // Force quorum among the replica after every N commits.  This prevents master from running ahead
     // too far. "Too far" is an arbitrary threshold that trades potential loss of consistency in the
@@ -216,9 +175,9 @@ class SQLiteNode : public STCPNode {
     void setQuroumCheckpoint(const int quroumCheckpoint) { _quorumCheckpoint = quroumCheckpoint; };
     int getQuorumCheckpoint() { return _quorumCheckpoint; };
 
-    bool _worker;
-    SQLite _db;
-    map<int, list<Command*>> _queuedCommandMap; // priority -> list<Command*> map
+    //bool _worker;
+    SQLite& _db;
+    //map<int, list<SQLiteCommand*>> _queuedCommandMap; // priority -> list<Command*> map
 
     // The peer we should sync from is recalculated every time we call this. If no other peer is logged in, or no
     // logged in peer has a higher commitCount that we do, this will return null.
@@ -226,25 +185,23 @@ class SQLiteNode : public STCPNode {
     Peer* _syncPeer;
 
     // This lets child classes perform extra actions when our state changes
-    virtual void _setState(SQLCState state) {
+    virtual void _setState(State state) {
         _state = state;
     }
 
     // Synchronization variables.
-    static bool _haveUnsentTransactions;
     static uint64_t _lastSentTransactionID;
 
   private: // Internal API
+  
     // Attributes
     // Escalated commands are a map for faster lookup times.  In circumstances
     // where we had many (~20k) escalated commands as a list, the slave CPUs
     // began to peg 100% as they iterated over the list
-    Command* _currentCommand;
+    SQLiteCommand* _currentCommand;
     string _currentTransactionCommand;
     int _priority;
-    SQLCState _state;
-    map<string, Command*> _escalatedCommandMap; // commandID -> Command* map
-    list<Command*> _processedCommandList;
+    State _state;
     Peer* _masterPeer;
     uint64_t _stateTimeout;
     static atomic<int> _commandCount;
@@ -255,18 +212,20 @@ class SQLiteNode : public STCPNode {
     list<string> _synchronousCommands;
     string _masterVersion;
 
+    // This will be set by either of the `startCommit` functions.
+    bool _commitInProgress;
+
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
-    void _changeState(SQLCState newState);
+    void _changeState(State newState);
     void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
-    void _queueCommand(Command* command);
-    void _escalateCommand(Command* command);
-    Command* _finishCommand(Command* command);
+    //void _queueCommand(SQLiteCommand* command);
+    SQLiteCommand* _finishCommand(SQLiteCommand* command);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
-    list<Command*> _getOrderedCommandListFromMap(const map<string, Command*> commandMap);
+    list<SQLiteCommand*> _getOrderedCommandListFromMap(const map<string, SQLiteCommand*> commandMap);
     bool _isQueuedCommandMapEmpty();
     bool _isNothingBlockingShutdown();
     bool _majoritySubscribed() {
@@ -275,6 +234,11 @@ class SQLiteNode : public STCPNode {
     }
     bool _majoritySubscribed(int& numFullPeersOut, int& numFullSlavesOut);
 
+    // When we're a slave, we can escalate a command to the master. When we do so, we store that command in the
+    // following map until the slave responds.
+    void _escalateCommand(SQLiteCommand&& command);
+    map<string, SQLiteCommand> _escalatedCommandMap; // commandID -> Command map
+
     void _sendOutstandingTransactions();
 
     // How many journal tables does our DB have?
@@ -282,7 +246,7 @@ class SQLiteNode : public STCPNode {
     static int _maximumJournalTable;
 
     // Common functionality to `openCommand` and `reopenCommand`.
-    Command* _finishOpeningCommand(SQLiteNode::Command* command);
+    SQLiteCommand* _finishOpeningCommand(SQLiteCommand* command);
 
     // Measure how much time we spend in `process()` and `COMMIT` as a fraction of total time spent.
     // Hopefully, we spend a lot of time in `process()` and relatively little in `COMMIT`, which would give us a good
@@ -292,4 +256,7 @@ class SQLiteNode : public STCPNode {
     SPerformanceTimer _commitTimer;
 
     static const int MAX_PROCESS_TRIES = 3;
+
+    // The server object to which we'll pass incoming escalated commands.
+    SQLiteServer& _server;
 };

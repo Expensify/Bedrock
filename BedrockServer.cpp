@@ -2,22 +2,12 @@
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
+#include "BedrockCore.h"
 
 // Status is special - it has commands that need to be handled by the sync node.
 #include <plugins/Status.h>
 
-// Definitions of static variables.
-condition_variable BedrockServer::_syncThreadReadyCondition;
-mutex BedrockServer::_syncThreadInitMutex;
-bool BedrockServer::_syncThreadReady = false;
-BedrockNode* BedrockServer::_syncNode = 0;
-
-// Maximum number of times we retry an ASYNC command concurrent before giving
-// up and doing it synchronously on the sync node.
-#define MAX_ASYNC_CONCURRENT_TRIES 3
-
-// --------------------------------------------------------------------------
-void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
+void BedrockServer_PrepareResponse(SQLiteCommand* command) {
     // The multi-threaded queues work on SDatas of either requests or
     // responses.  The response needs to know a few things about the original
     // request, like the requestCount, connect (so it knows whether to shut
@@ -36,49 +26,182 @@ void BedrockServer_PrepareResponse(BedrockNode::Command* command) {
     response["request.methodLine"] = request.methodLine;
 }
 
-// --------------------------------------------------------------------------
-// **FIXME: Refactor thread to use an object to simplify logic reuse
-void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, BedrockServer::MessageQueue& directMessages) {
-    // Keep going until all messages are processed
-    while (true) {
-        // See if we have any messages sent to us for processing
-        const SData& message = directMessages.pop();
-        if (message.methodLine.empty())
-            break;
-
-        // Process the front message
-        SINFO("Processing direct message '" << message.methodLine << "'");
-        if (SIEquals(message.methodLine, "CANCEL_REQUEST")) {
-            // Main thread wants us to cancel a request, if we have it.  It was
-            // probably abandoned by the caller.
-            BedrockNode::Command* command = node.findCommand("requestCount", message["requestCount"]);
-            if (command) {
-                if (command->response.empty()) {
-                    SINFO("Canceling unprocessed request #" << message["requestCount"] << " ("
-                                                            << command->request.methodLine << ")");
-                } else {
-                    SWARN("Canceling processed request #" << message["requestCount"] << " ("
-                                                          << command->request.methodLine
-                                                          << "), response=" << command->response.methodLine << ")");
-                }
-                node.closeCommand(command);
-            } else {
-                SINFO("No need to cancel request #" << message["requestCount"] << " because not queued, ignoring.");
-            }
-        } else
-            SWARN("Unrecognized message '" << message.methodLine << "', ignoring.");
-    }
+// Create a BedrockCommand from this escalated SQLiteCommand, and queue it locally for processing.
+void BedrockServer::acceptCommand(SQLiteCommand&& command) {
+    _commandQueue.push(BedrockCommand(move(command)));
 }
 
-void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
+void BedrockServer::sync(SData& args,
+                         atomic<SQLiteNode::State>& replicationState,
+                         atomic<bool>& nodeGracefulShutdown,
+                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockServer& server)
 {
-    SInitialize(data.name);
-    // This needs to be set because the constructor for BedrockNode depends on it.
+    // Initialize the thread.
+    SInitialize(syncThreadName);
+
+    // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
+    // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
+    // TODO: remove when nothing uses readThreads.
+    int workerThreads = args.calc("-workerThreads");
+    workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
+    // If still no value, use the number of cores on the machine, if available.
+    workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
+
+    // Initialize the DB.
+    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1);
+
+    // And the command processor.
+    BedrockCore core(db);
+
+    // And the sync node.
+    uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
+    SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"), firstTimeout,
+                        server.getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"]);
+
+    // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
+    // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
+    // it's running, and our workers will have to maintain awareness of that state anyway.
+    SINFO("Starting " << workerThreads << " worker threads.");
+    list<thread> workerThreadList;
+    for (int threadId = 0; threadId < workerThreads; threadId++) {
+        workerThreadList.emplace_back(worker,
+                                      ref(args),
+                                      ref(replicationState),
+                                      ref(nodeGracefulShutdown),
+                                      ref(syncNodeQueuedCommands),
+                                      server,
+                                      threadId,
+                                      workerThreads);
+    }
+
+    // Now we jump into our main command processing loop.
+    uint64_t nextActivity = STimeNow();
+    BedrockCommand command;
+    while (!syncNode.shutdownComplete()) {
+        // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
+        // activity. Once any of them has activity (or the timeout ends), poll will return.
+        fd_map fdm;
+
+        // Pre-process any HTTPS reqeusts that need handling.
+        for (list<SHTTPSManager*>& managerList : server.httpsManagers) {
+            for (SHTTPSManager* manager : managerList) {
+                manager->preSelect(fdm);
+            }
+        }
+
+        // Pre-process any sockets the sync node is managing.
+        syncNode.preSelect(fdm);
+
+        // Add the Unix pipe from the shared queues to the fdm
+        // data.peekedCommands.preSelect(fdm);
+        // data.directMessages.preSelect(fdm);
+
+        // Ok, so the challenge here is: How can I interrupt poll() if it's sitting waiting with nothing happening, and
+        // I get a new command to process?
+        // We can add an FD to the poll() set, and kick it when we queue activity for the sync node (which is what
+        // command queue already does).
+
+        // Wait for activity on any of those FDs, up to a timeout
+        const uint64_t now = STimeNow();
+        S_poll(fdm, max(nextActivity, now) - now);
+        nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+
+        // Process any network traffic that happened in the plugin HTTPS managers.
+        for (list<SHTTPSManager*>& managerList : server.httpsManagers) { 
+            for (SHTTPSManager* manager : managerList) {
+                manager->postSelect(fdm, nextActivity);
+            }
+        }
+
+        // Process any network traffic that happened in the sync thread.
+        syncNode.postSelect(fdm, nextActivity);
+
+        // See if there's any work to process, unless we're already mid-commit, in which case, we'll wait until
+        // that one completes.
+        bool hasWork = false;
+        if (!syncNode.commitInProgress()) {
+            try {
+                // TODO: We should skip commands with unfinished HTTPS requests.
+                command = syncNodeQueuedCommands.pop();
+                while (command.complete) {
+                    // This is complete, we just need to return a response to a peer. Run through these in order
+                    // until we find something we need to commit.
+                    syncNode.queueResponse(move(command));
+                    command = syncNodeQueuedCommands.pop();
+                }
+                hasWork = true;
+            } catch (out_of_range) {
+                // No commands to process.
+            }
+        }
+
+        // We found some work to do, let's start on it.
+        if (hasWork) {
+            core.peekCommand(command);
+            core.processCommand(command);
+            // Command is now invalidated, and the sync node owns the copy.
+            syncNode.startCommit(command);
+        }
+
+        // Let the update loop run as long as it needs.
+        SQLiteNode::State state = syncNode.getState();
+        while (syncNode.update(nextActivity)) {
+            SQLiteNode::State newState = syncNode.getState();
+            replicationState.store(newState);
+            // Checkif we've become the master. We'll need to let our plugins do their database upgrades.
+            if (newState != state && newState == SQLiteNode::MASTERING) {
+                // If we changed just changed states to mastering, this should be impossible.
+                SASSERT(!syncNode.commitInProgress());
+                core.upgradeDatabase();
+                syncNode.startCommit();
+            }
+            state = newState;
+        }
+
+        // Update finished, did the command complete?
+        // TODO: This is only valid of we even started a command
+        if (!syncNode.commitInProgress()) {
+            bool commandComplete = true;
+            // TODO: this? command = sncNode.completedCommand();
+            // Or this whole block gets replaced.
+            if (!syncNode.commitSucceeded()) {
+                // Try it again in a bit, unless we hit a limit.
+                if (command.processCount < 10) {
+                    syncNodeQueuedCommands.push(move(command));
+                    commandComplete = false;
+                } else {
+                    SWARN("10 conflicts in a row on the sync thread. Abandoning command.");
+                    command.complete = true;
+                    command.response.clear();
+                    command.response.methodLine = "500 Too Many Conflicts";
+                }
+            }
+            // This should be true unless we conflicted (or even if we did, if we hit the limit).
+            if (commandComplete) {
+                if (command.initiator) {
+                    syncNode.queueResponse(move(command));
+                } else {
+                    // TODO: Respond to caller.
+                }
+            }
+        }
+
+        // Are there any processed responses? These can be either to previously escalated commands, or one we just
+        // tried to commit.
+        // Dequeue these commands and return the responses.
+        syncNode.processedCommandList;
+    }
+
+#if 0
+
+
+    // This needs to be set because the constructor for SQLiteNode depends on it.
     data.args["-worker"] = "false";
     SINFO("Starting sync thread for '" << data.name << "'");
 
     // Create the actual node
-    SINFO("Starting BedrockNode: " << data.args.serialize());
+    SINFO("Starting SQLiteNode: " << data.args.serialize());
 
     // Figure out how many threads we should start.
     // "-readThreads" exists only for backwards compatibility. TODO: remove when nothing uses this.
@@ -91,7 +214,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
     threads = threads ? threads : max(1u, thread::hardware_concurrency());
 
     // We let the sync thread create our journal tables here so that they exist when we start our workers.
-    BedrockNode syncNode(data.args, -1, threads, data.server);
+    SQLiteNode syncNode(data.args, -1, threads, data.server);
     _syncNode = &syncNode;
     SINFO("Node created, ready for action.");
 
@@ -189,7 +312,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
         }
 
         // Did the sync node process any commands?
-        BedrockNode::Command* command = nullptr;
+        SQLiteNode::Command* command = nullptr;
         while ((command = syncNode.getProcessedCommand())) {
             // Finalize the response and add to the output queue
             SAUTOPREFIX(command->request["requestID"]);
@@ -201,27 +324,111 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
             syncNode.closeCommand(command);
         }
     }
+#endif
 
     // Update the state one last time when the writing replication thread exits.
-    SQLCState state = syncNode.getState();
-    if (state > SQLC_WAITING) {
+    SQLiteNode::State state = syncNode.getState();
+    if (state > SQLiteNode::WAITING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
         SWARN("Sync thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
-        state = SQLC_SEARCHING;
-        syncNode.setState(state);
+        state = SQLiteNode::SEARCHING;
     } else {
         SINFO("Sync thread exiting, setting state to: " << state);
     }
-    data.replicationState.store(state);
-    data.replicationCommitCount.store(syncNode.getCommitCount());
+    replicationState.store(state);
+    //replicationCommitCount.store(syncNode.getCommitCount());
+
+    // Wait for the worker threads to finish.
+    int threadId = 0;
+    for (auto& workerThread : workerThreadList) {
+        SINFO("Closing worker thread '" << "worker" << threadId << "'");
+        threadId++;
+        workerThread.join();
+    }
 }
 
-void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int threadCount)
+void BedrockServer::worker(SData& args,
+                           atomic<SQLiteNode::State>& _replicationState,
+                           atomic<bool>& nodeGracefulShutdown,
+                           CommandQueue& syncNodeQueuedCommands,
+                           BedrockServer& server,
+                           int threadId,
+                           int threadCount)
 {
-    SInitialize(data.name);
-    // This needs to be set because the constructor for BedrockNode depends on it.
+    SInitialize("worker" + to_string(threadId));
+    
+    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), threadId, threadCount - 1);
+    BedrockCore core(db);
+
+    // Command to work on. This default command is replaced when we find work to do.
+    BedrockCommand command;
+
+    while (true) {
+        try {
+            // If we can't find any work to do, this will throw.
+            command = server._commandQueue.get(1000000);
+
+            // We'll retry on conflict up to this many times.
+            int retry = 3;
+            bool commandComplete = true;
+            while (retry) {
+                // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
+                // the command at the bottom.
+                if (!core.peekCommand(command)) {
+                    // If the command opened an HTTPS request, the sync thread will poll for activity on its socket.
+                    // Also, only the sync thread can handle quorum commits.
+                    if (command.httpsRequest || command.writeConsistency != SQLiteNode::ASYNC) {
+                        syncNodeQueuedCommands.push(move(command));
+                        // We neither retry nor respond here.
+                        break;
+                    }  else {
+                        // There's nothing blocking us from committing this ourselves. Let's try it. If it returns
+                        // true, we need to commit it. Otherwise, there was nothing to commit, and we can jump straight
+                        // to responding to it.
+                        if (core.processCommand(command)) {
+                            // Ok, we need to commit, let's try it. If it succeeds, then we just have to respond.
+                            if (!core.commitCommand(command)) {
+                                // Commit failed. Conflict. :(
+                                commandComplete = false;
+                            }
+                        }
+                    }
+                }
+                // If we either didn't need to commit, or we committed successfully, we'll get here.
+                if (commandComplete) {
+                    if (command.initiator) {
+                        // Escalated command. Give it back to the sync thread to respond.
+                        syncNodeQueuedCommands.push(move(command));
+                    } else {
+                        // TODO: Respond to caller.
+                    }
+                    // Don't need to retry.
+                    break;
+                }
+                // We're about to retry, decrement the retry count.
+                retry--;
+            }
+            // We ran out of retries without finishing! We give it to the sync thread.
+            if (!retry) {
+                SWARN("Max retries hit, forwarding command to sync node.");
+                syncNodeQueuedCommands.push(move(command));
+            }
+        } catch(...) {
+            // Nothing after 1s.
+        }
+
+        // Ok, we're done, see if we should exit.
+        if (0 /* TODO: exit_condition */) {
+            break;
+        }
+    }
+    
+
+#if 0
+
+    // This needs to be set because the constructor for SQLiteNode depends on it.
     data.args["-worker"] = "true";
 
     // We erase this in a worker thread, because this value gets passed down the constructor stack for an SQLiteNode,
@@ -231,8 +438,8 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
     SINFO("Starting worker thread for '" << data.name << "'");
 
     // Create the actual node
-    SINFO("Starting BedrockNode: " << data.args.serialize());
-    BedrockNode workerNode(data.args, threadId, threadCount, data.server);
+    SINFO("Starting SQLiteNode: " << data.args.serialize());
+    SQLiteNode workerNode(data.args, threadId, threadCount, data.server);
     SINFO("Node created, ready for action.");
 
     while (true) {
@@ -267,7 +474,7 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
         // wait again.  So firt: are there any escalated commands that need
         // processing? If so, let's process those first.  This should always be
         // empty if we're not mastering.
-        BedrockNode::Command* command = data.escalatedCommands.pop();
+        SQLiteNode::Command* command = data.escalatedCommands.pop();
         bool escalatedCommand = false;
         bool closeCommand = true;
         if (command) {
@@ -417,28 +624,17 @@ void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int th
             workerNode.closeCommand(command);
         }
     }
+#endif
 }
 
-// --------------------------------------------------------------------------
 BedrockServer::BedrockServer(const SData& args)
-    : STCPServer(""), _args(args), _requestCount(0), _replicationState(SQLC_SEARCHING), _replicationCommitCount(0),
-      _nodeGracefulShutdown(false), _masterVersion(), _suppressCommandPort(false),
-      _suppressCommandPortManualOverride(false),
-      _syncThreadData("sync",
-                      _args,
-                      _replicationState,
-                      _replicationCommitCount,
-                      _nodeGracefulShutdown,
-                      _masterVersion,
-                      _queuedRequests,
-                      _processedResponses,
-                      _escalatedCommands,
-                      _peekedCommands,
-                      this) {
+  : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+    /*_replicationCommitCount(0),*/ _nodeGracefulShutdown(false), /*_masterVersion(),*/ _suppressCommandPort(false),
+    _suppressCommandPortManualOverride(false) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
-    // Output the list of plugins compiled in
+    // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;
     for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
         // Add one more plugin
@@ -466,43 +662,13 @@ BedrockServer::BedrockServer(const SData& args)
         httpsManagers.push_back(plugin->httpsManagers);
     }
 
-    // We'll pass the syncThread object (by reference) as the object to our
-    // actual thread, then reassign ownership and wait for it to complete
-    // initializing.
-    SINFO("Launching sync thread '" << _syncThreadData.name << "'");
-    thread syncThread(syncWorker, ref(_syncThreadData));
-    _syncThreadData.threadObject = move(syncThread);
-    SINFO("Waiting for sync thread to be ready to continue.");
-    _syncThreadReady = 0;
-    while (!_syncThreadReady) {
-        unique_lock<mutex> lock(_syncThreadInitMutex);
-        _syncThreadReadyCondition.wait(lock);
-    }
-
-    // Add as many read threads as requested
-    int workerThreads = max(1, _args.calc("-readThreads"));
-    SINFO("Starting " << workerThreads << " read threads (" << args["-readThreads"] << ")");
-    for (int c = 0; c < workerThreads; ++c) {
-        // Construct our ThreadData object for this thread in place at the back of the list.
-        _workerThreadDataList.emplace_back("worker" + SToStr(c),
-                                           _args,
-                                           _replicationState,
-                                           _replicationCommitCount,
-                                           _nodeGracefulShutdown,
-                                           _masterVersion,
-                                           _queuedRequests,
-                                           _processedResponses,
-                                           _escalatedCommands,
-                                           _peekedCommands,
-                                           this);
-
-        // We'll pass this object (by reference) as the object to our actual thread.
-        SINFO("Launching read thread '" << _workerThreadDataList.back().name << "'");
-        thread workerThread(worker, ref(_workerThreadDataList.back()), c, workerThreads);
-
-        // Now we give ownership of our thread to our ThreadData object.
-        _workerThreadDataList.back().threadObject = move(workerThread);
-    }
+    SINFO("Launching sync thread '" << syncThreadName << "'");
+    syncThread = thread(sync,
+                        ref(_args),
+                        ref(_replicationState),
+                        ref(_nodeGracefulShutdown),
+                        ref(_syncNodeQueuedCommands),
+                        this);
 }
 
 // --------------------------------------------------------------------------
@@ -520,15 +686,8 @@ BedrockServer::~BedrockServer() {
     }
 
     // Shut down the threads
-    SINFO("Closing sync thread '" << _syncThreadData.name << "'");
-    _syncThreadData.threadObject.join();
-
-    for (auto& threadData : _workerThreadDataList) {
-        // Close this thread
-        SINFO("Closing worker thread '" << threadData.name << "'");
-        threadData.threadObject.join();
-    }
-    _workerThreadDataList.clear();
+    SINFO("Closing sync thread '" << syncThreadName << "'");
+    syncThread.join();
     SINFO("Threads closed.");
 }
 
@@ -536,23 +695,23 @@ BedrockServer::~BedrockServer() {
 bool BedrockServer::shutdownComplete() {
     // Shut down if requested and in the right state
     bool gs = _nodeGracefulShutdown.load();
-    bool rs = (_replicationState.load() <= SQLC_WAITING);
-    bool qr = _queuedRequests.empty();
-    bool qe = _escalatedCommands.empty();
-    bool pr = _processedResponses.empty();
+    bool rs = (_replicationState.load() <= SQLiteNode::WAITING);
+    bool qr = _commandQueue.empty();
+    //bool qe = _escalatedCommands.empty();
+    //bool pr = _processedResponses.empty();
     bool retVal = false;
 
     // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
     // or that nothing is.
     if (gs) {
-        if (rs && qr && qe && pr) {
+        if (rs && qr/* && qe && pr*/) {
             retVal = true;
         } else {
             SINFO("Conditions that failed and are blocking shutdown: " <<
                   (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
                   (qr ? "" : "_queuedRequests.empty(), ") <<
-                  (qe ? "" : "_escalatedCommands.empty(), ") <<
-                  (pr ? "" : "_processedResponses.empty(), ") <<
+                  //(qe ? "" : "_escalatedCommands.empty(), ") <<
+                  //(pr ? "" : "_processedResponses.empty(), ") <<
                   "returning FALSE in shutdownComplete");
         }
     }
@@ -587,18 +746,18 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
     // Instead, we'll simply not respond and let this request get re-directed to another slave.
     string masterVersion = _masterVersion.load();
-    if (!_suppressCommandPort && state == SQLC_SLAVING && (masterVersion != _version)) {
+    if (!_suppressCommandPort && state == SQLiteNode::SLAVING && (masterVersion != _version)) {
         SINFO("Node " << _args["-nodeName"] << " slaving on version " << _version
                       << ", master is version: " << masterVersion << ", not opening command port.");
         suppressCommandPort(true);
 
         // If we become master, or if master's version resumes matching ours, open the command port again.
-    } else if (_suppressCommandPort && (state == SQLC_MASTERING || (masterVersion == _version))) {
+    } else if (_suppressCommandPort && (state == SQLiteNode::MASTERING || (masterVersion == _version))) {
         SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
         suppressCommandPort(false);
     }
 
-    if (!_suppressCommandPort && portList.empty() && (state == SQLC_MASTERING || state == SQLC_SLAVING) &&
+    if (!_suppressCommandPort && portList.empty() && (state == SQLiteNode::MASTERING || state == SQLiteNode::SLAVING) &&
         !_nodeGracefulShutdown.load()) {
         // Open the port
         SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
@@ -672,7 +831,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     Port* acceptPort = nullptr;
     while ((s = acceptSocket(acceptPort))) {
         // Accepted a new socket
-        // **NOTE: BedrockNode doesn't need to keep a new list; we'll just
+        // **NOTE: SQLiteNode doesn't need to keep a new list; we'll just
         //         reuse the STCPManager::socketList
 
         // Look up the plugin that owns this port (if any)
@@ -735,10 +894,13 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                         cancelRequest["requestCount"] = SToStr(requestCount);
                         for (auto& threadData : _workerThreadDataList) {
                             // Send it the cancel command
-                            threadData.directMessages.push(cancelRequest);
+                            // threadData.directMessages.push(cancelRequest);
                         }
                         // Send it the cancel command
-                        _syncThreadData.directMessages.push(cancelRequest);
+                        // _syncThreadData.directMessages.push(cancelRequest);
+                        // TODO: Cancel these locally. Current logs show 575 'abandoned request' where 573 of them are
+                        // the 'it might slip through the cracks.' message, and 2 are 'this *was* processed by the sync
+                        // thread'. Implement accordinly.
                     }
                 }
             }

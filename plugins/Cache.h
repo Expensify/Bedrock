@@ -12,10 +12,9 @@ class BedrockPlugin_Cache : public BedrockPlugin {
     // Implement base class interface
     virtual string getName() { return "Cache"; }
     virtual void initialize(const SData& args);
-    virtual void upgradeDatabase(BedrockNode* node, SQLite& db);
-    virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
-    virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
-    virtual void test(BedrockTester* tester);
+    virtual void upgradeDatabase(SQLiteNode* node, SQLite& db);
+    virtual bool peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command);
+    virtual bool processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command);
 
   private:
     // Bedrock Cache LRU map

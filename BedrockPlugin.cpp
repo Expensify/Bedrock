@@ -48,8 +48,7 @@ bool BedrockPlugin::enabled() { return _enabled; }
 STable BedrockPlugin::getInfo() { return STable(); }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
 void BedrockPlugin::initialize(const SData& args) {}
-bool BedrockPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
-bool BedrockPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
-void BedrockPlugin::test(BedrockTester* tester) {}
+bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) { return false; }
+bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) { return false; }
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
-void BedrockPlugin::upgradeDatabase(BedrockNode* node, SQLite& db) {}
+void BedrockPlugin::upgradeDatabase(SQLite& db) {}

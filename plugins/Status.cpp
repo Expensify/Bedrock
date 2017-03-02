@@ -11,7 +11,7 @@ const vector<string> BedrockPlugin_Status::statusCommandNames = {
 };
 
 // ==========================================================================
-bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_Status::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -33,10 +33,10 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         //                               4xx/5xx level responses as dead
         //
         //    Also we must prepend response status with HTTP/1.1
-        if (node->getState() == SQLC_SLAVING)
+        if (node->getState() == SQLiteNode::SLAVING)
             response.methodLine = "HTTP/1.1 200 Slaving";
         else
-            response.methodLine = "HTTP/1.1 500 Not slaving. State=" + (string)SQLCStateNames[node->getState()];
+            response.methodLine = "HTTP/1.1 500 Not slaving. State=" + SQLiteNode::stateNames[node->getState()];
         return true; // Successfully peeked
     }
 
@@ -54,8 +54,8 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         //                                4xx/5xx level responses as dead
         //
         //             Also we must prepend response status with HTTP/1.1
-        if (node->getState() != SQLC_SLAVING) {
-            response.methodLine = "HTTP/1.1 500 Not slaving. State=" + (string)SQLCStateNames[node->getState()];
+        if (node->getState() != SQLiteNode::SLAVING) {
+            response.methodLine = "HTTP/1.1 500 Not slaving. State=" + SQLiteNode::stateNames[node->getState()];
         } else if (node->getVersion() != node->getMasterVersion()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + node->getVersion();
         } else {
@@ -92,13 +92,13 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         }
         content["plugins"] = SComposeJSONArray(plugins);
 
-        content["state"] = SQLCStateNames[node->getState()];
+        content["state"] = SQLiteNode::stateNames[node->getState()];
         content["hash"] = node->getHash();
         content["commitCount"] = SToStr(node->getCommitCount());
         content["version"] = _args ? (*_args)["version"] : "";
         content["priority"] = SToStr(node->getPriority());
         list<string> peerList;
-        for (BedrockNode::Peer* peer : node->peerList) {
+        for (SQLiteNode::Peer* peer : node->peerList) {
             STable peerTable = peer->nameValueMap;
             peerTable["host"] = peer->host;
             peerList.push_back(SComposeJSONObject(peerTable));
@@ -107,7 +107,7 @@ bool BedrockPlugin_Status::peekCommand(BedrockNode* node, SQLite& db, BedrockNod
         content["queuedCommandList"] = SComposeJSONArray(node->getQueuedCommandList());
         content["escalatedCommandList"] = SComposeJSONArray(node->getEscalatedCommandList());
         content["processedCommandList"] = SComposeJSONArray(node->getProcessedCommandList());
-        content["isMaster"] = node->getState() == SQLC_MASTERING ? "true" : "false";
+        content["isMaster"] = node->getState() == SQLiteNode::MASTERING ? "true" : "false";
         return true; // Successfully peeked
     }
 

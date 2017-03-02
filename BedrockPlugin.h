@@ -1,5 +1,5 @@
 #pragma once
-#include "BedrockNode.h"
+#include "BedrockCommand.h"
 
 // BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
 // just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
@@ -35,21 +35,18 @@ class BedrockPlugin {
     virtual void initialize(const SData& args);
 
     // Optionally updates the schema as necessary to support this plugin
-    virtual void upgradeDatabase(BedrockNode* node, SQLite& db);
+    virtual void upgradeDatabase(SQLite& db);
 
     // Optionally "peeks" at a command to process it in a read-only manner
-    virtual bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
+    virtual bool peekCommand(SQLite& db, BedrockCommand& command);
 
     // Optionally "processes" a command in a read/write manner, triggering
     // a distributed transaction if necessary
-    virtual bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
+    virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
     // Enable this plugin for active operation
     virtual void enable(bool enabled);
     virtual bool enabled();
-
-    // Allow this node to do a self-test
-    virtual void test(BedrockTester* tester);
 
     // The plugin can add as many of these as it needs in it's initialize function. The server will then add those
     // to it's own global list. Note that this is the *only* time these can be added, once `initialize` completes,
