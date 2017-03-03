@@ -5,12 +5,8 @@ BedrockCore::BedrockCore(SQLite& db) :
 SQLiteCore(db)
 { }
 
-bool BedrockCore::peekCommand(SQLiteCommand& baseCommand)
+bool BedrockCore::peekCommand(BedrockCommand& command)
 {
-    // Bedrock will always create these as BedrockCommands, and even when accepting commands from an SQLiteNode, it
-    // converts them to the derived class before storing them.
-    BedrockCommand& command = static_cast<BedrockCommand&>(baseCommand);
-
     // Classify the message
     SData& request = command.request;
     SData& response = command.response;
@@ -81,12 +77,8 @@ void BedrockCore::upgradeDatabase()
     SINFO("Finished upgrading database");
 }
 
-bool BedrockCore::processCommand(SQLiteCommand& baseCommand)
+bool BedrockCore::processCommand(BedrockCommand& command)
 {
-    // Bedrock will always create these as BedrockCommands, and even when accepting commands from an SQLiteNode, it
-    // converts them to the derived class before storing them.
-    BedrockCommand& command = static_cast<BedrockCommand&>(baseCommand);
-
     // Classify the message
     SData& request = command.request;
     SData& response = command.response;
