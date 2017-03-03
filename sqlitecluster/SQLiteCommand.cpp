@@ -1,7 +1,8 @@
 #include "SQLiteCommand.h"
 
 SQLiteCommand::SQLiteCommand(SData&& _request) : 
-    initiator(nullptr),
+    initiatingPeerID(0),
+    initiatingClientID(0),
     request(move(_request)),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
@@ -29,7 +30,8 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
 }
 
 SQLiteCommand::SQLiteCommand() :
-    initiator(nullptr),
+    initiatingPeerID(0),
+    initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     creationTimestamp(0),

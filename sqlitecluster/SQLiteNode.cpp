@@ -41,7 +41,6 @@ atomic<int> SQLiteNode::_commandCount(0);
 // _CT_ : Container type
 // _C_  : Container
 // _I_  : Iterator
-#define SFOREACH(_CT_, _C_, _I_) for (_CT_::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
 
 // We've bumped these values back up to 5 minutes because some of the billing commands take over 1 minute to process.
 #define SQL_NODE_DEFAULT_RECV_TIMEOUT (STIME_US_PER_M * 5) // Receive timeout for 'normal' SQLiteNode messages
@@ -197,12 +196,13 @@ bool SQLiteNode::shutdownComplete() {
     }
 
     // If we have unsent data, not done
-    SFOREACH (list<Peer*>, peerList, peerIt)
-        if ((*peerIt)->s && !(*peerIt)->s->sendBuffer.empty()) {
+    for (auto peer : peerList) {
+        if (peer->s && !peer->s->sendBuffer.empty()) {
             // Still sending data
-            SINFO("Can't graceful shutdown yet because unsent data to peer '" << (*peerIt)->name << "'");
+            SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
         }
+    }
 
     // Finally, make sure nothing is blocking shutdown
     if (_isNothingBlockingShutdown()) {
@@ -247,9 +247,8 @@ void SQLiteNode::_sendOutstandingTransactions() {
         transaction.content = query;
 
         _sendToAllPeers(transaction, true); // subscribed only
-        SFOREACH (list<Peer*>, peerList, peerIt) {
+        for (auto peer : peerList) {
             // Clear the response flag from the last transaction
-            Peer* peer = *peerIt;
             (*peer)["TransactionResponse"].clear();
         }
 
@@ -411,9 +410,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
         Peer* freshestPeer = nullptr;
-        SFOREACH (list<Peer*>, peerList, peerIt) {
+        for (auto peer : peerList) {
             // Wait until all connected (or failed) and logged in
-            Peer* peer = *peerIt;
             bool permaSlave = peer->test("Permaslave");
             bool loggedIn = peer->test("LoggedIn");
 
@@ -557,9 +555,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         Peer* highestPriorityPeer = nullptr;
         Peer* freshestPeer = nullptr;
         Peer* currentMaster = nullptr;
-        SFOREACH (list<Peer*>, peerList, peerIt) {
+        for (auto peer : peerList) {
             // Make sure we're a full peer
-            Peer* peer = *peerIt;
             if (peer->params["Permaslave"] != "true") {
                 // Verify we're logged in
                 ++numFullPeers;
@@ -631,8 +628,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // last approval status as they're about to send them.
             SASSERT(_priority > 0); // Permaslave should never stand up
             SINFO("No master and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
-            SFOREACH (list<Peer*>, peerList, peerIt)
-                (*peerIt)->erase("StandupResponse");
+            for (auto peer : peerList) {
+                peer->erase("StandupResponse");
+            }
             _changeState(STANDINGUP);
             return true; // Re-update
         }
@@ -666,9 +664,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             _changeState(SEARCHING);
             return true; // Re-update
         }
-        SFOREACH (list<Peer*>, peerList, peerIt) {
+        for (auto peer : peerList) {
             // Check this peer; if not logged in, tacit approval
-            Peer* peer = *peerIt;
             if (peer->params["Permaslave"] != "true") {
                 ++numFullPeers;
                 if (SIEquals((*peer)["LoggedIn"], "true")) {
@@ -752,9 +749,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             int numFullSlaves = 0;    // Num full peers that are "subscribed"
             int numFullResponded = 0; // Num full peers that have responded approve/deny
             int numFullApproved = 0;  // Num full peers that have approved
-            SFOREACH (list<Peer*>, peerList, peerIt) {
+            for (auto peer : peerList) {
                 // Check this peer to see if it's full or a permaslave
-                Peer* peer = *peerIt;
                 if (peer->params["Permaslave"] != "true") {
                     // It's a full peer -- is it subscribed, and if so, how did it respond?
                     ++numFullPeers;
@@ -818,7 +814,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // If the initiating peer died, then abort the transaction:
             // either it doesn't need the result, or it will be
             // resubmitted.
-            bool initiatorSubscribed = (!_currentCommand->initiator || _currentCommand->initiator->test("Subscribed"));
+            Peer* peer = getPeerByID(_currentCommand->initiatingPeerID);
+            bool initiatorSubscribed = (!peer || peer->test("Subscribed"));
 
             // Record these for posterity
             SDEBUG("'" << _currentCommand->request.methodLine << "' (#" << _currentCommand->id << "): numFullPeers="
@@ -973,9 +970,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 _priority = 1;
             } else {
                 // Loop across peers
-                SFOREACH (list<Peer*>, peerList, peerIt) {
+                for (auto peer : peerList) {
                     // Check this peer
-                    Peer* peer = *peerIt;
                     if (SIEquals((*peer)["State"], "MASTERING")) {
                         // Hm... somehow we're in a multi-master scenario -- not
                         // good.  Let's get out of this as soon as possible.
@@ -1176,9 +1172,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 _currentCommand->transaction["ID"] = _currentCommand->id;
                                 _currentCommand->transaction.content = _db.getUncommittedQuery();
                                 _sendToAllPeers(_currentCommand->transaction, true); // subscribed only
-                                SFOREACH (list<Peer*>, peerList, peerIt) {
+                                for (auto peer : peerList) {
                                     // Clear the response flag from the last transaction
-                                    Peer* peer = *peerIt;
                                     (*peer)["TransactionResponse"].clear();
                                 }
 
@@ -1235,9 +1230,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (_state == STANDINGDOWN) {
             // Loop across and search for subscribed peers
             bool allUnsubscribed = true;
-            SFOREACH (list<Peer*>, peerList, peerIt) {
+            for (auto peer : peerList) {
                 // See if this peer is still subscribed
-                Peer* peer = *peerIt;
                 if (SIEquals((*peer)["Subscribed"], "true")) {
                     // Found one; keep waiting
                     allUnsubscribed = false;
@@ -1505,10 +1499,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 } else {
                     // Approve if nobody else is trying to stand up
                     response["Response"] = "approve"; // Optimistic; will override
-                    SFOREACH (list<Peer*>, peerList, otherPeerIt)
-                        if (*otherPeerIt != peer) {
+                    for (auto otherPeer : peerList) {
+                        if (otherPeer != peer) {
                             // See if it's trying to be master
-                            Peer* otherPeer = *otherPeerIt;
                             const string& state = (*otherPeer)["State"];
                             if (SIEquals(state, "STANDINGUP") || SIEquals(state, "MASTERING") ||
                                 SIEquals(state, "STANDINGDOWN")) {
@@ -1518,6 +1511,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                                 break;
                             }
                         }
+                    }
                 }
 
                 // Send the response
@@ -1901,7 +1895,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
             // Create a new Command and send to the server.
             SQLiteCommand command(move(request));
-            command.initiator = peer;
+            command.initiatingPeerID = peer->id;
             command.id = message["ID"];
             _server.acceptCommand(move(command));
         }
@@ -2077,7 +2071,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     //          the response; they might be in jeopardy of not being sent out.  Or..
     //          we'll know which had responses go out at the 56K layer -- perhaps
     //          in a crash verify it went out... Or just always verify?
-    if (_currentCommand && _currentCommand->initiator == peer) {
+    if (_currentCommand && getPeerByID(_currentCommand->initiatingPeerID) == peer) {
         // Clean up this command and notify everyone to roll it back
         PHMMM("Current command initiator disconnected, aborting '" << _currentCommand->request.methodLine << "' ("
                                                                    << _currentCommand->id << ") and rolling back.");
@@ -2088,13 +2082,13 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         SData rollback("ROLLBACK_TRANSACTION");
         rollback["ID"] = _currentCommand->id;
         SINFO("ROLLBACK on disconnect: " << _currentCommand->id);
-        SFOREACH (list<Peer*>, peerList, peerIt)
-            if ((**peerIt)["Subscribed"] == "true") {
+        for (auto peer : peerList) {
+            if ((*peer)["Subscribed"] == "true") {
                 // Send the rollback command
-                Peer* peer = *peerIt;
                 SASSERT(peer->s);
                 _sendToPeer(peer, rollback);
             }
+        }
         delete _currentCommand;
         _currentCommand = nullptr;
     }
@@ -2125,9 +2119,8 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
-    SFOREACH (list<Peer*>, peerList, peerIt) {
+    for (auto peer : peerList) {
         // Send either to everybody, or just subscribed peers.
-        Peer* peer = *peerIt;
         if (peer->s && (!subscribedOnly || SIEquals((*peer)["Subscribed"], "true"))) {
             // Send it now, without waiting for the outer event loop
             peer->s->send(serializedMessage);
@@ -2189,13 +2182,14 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } else if (newState == STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
             if (_currentCommand) {
-                if (_currentCommand->initiator) {
+                Peer* peer = getPeerByID(_currentCommand->initiatingPeerID);
+                if (peer) {
                     // No need to wait, explicitly abort
                     SINFO("STANDINGDOWN and aborting " << _currentCommand->id);
                     SData aborted("ESCALATE_ABORTED");
                     aborted["ID"] = _currentCommand->id;
                     aborted["Reason"] = "Standing down";
-                    _sendToPeer(_currentCommand->initiator, aborted);
+                    _sendToPeer(peer, aborted);
                     delete _currentCommand;
                 }
             }
@@ -2419,8 +2413,9 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
 // --------------------------------------------------------------------------
 void SQLiteNode::_reconnectAll() {
     // Loop across and reconnect
-    SFOREACH (list<Peer*>, peerList, peerIt)
-        _reconnectPeer(*peerIt);
+    for (auto peer : peerList) {
+        _reconnectPeer(peer);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -2429,12 +2424,14 @@ bool SQLiteNode::_majoritySubscribed(int& numFullPeersOut, int& numFullSlavesOut
     // one that *isn't* a permaslave.)
     int numFullPeers = 0;
     int numFullSlaves = 0;
-    SFOREACH (list<Peer*>, peerList, peerIt)
-        if ((*peerIt)->params["Permaslave"] != "true") {
+    for (auto peer : peerList) {
+        if (peer->params["Permaslave"] != "true") {
             ++numFullPeers;
-            if ((*peerIt)->test("Subscribed"))
-                numFullSlaves++;
+            if (peer->test("Subscribed")) {
+                ++numFullSlaves;
+            }
         }
+    }
 
     // Output the subscription status to the caller (using a copy in case the
     // caller is passing in the same variable and ignoring it)

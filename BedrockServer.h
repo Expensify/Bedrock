@@ -8,71 +8,54 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-#if 0
-    class MessageQueue : public SSynchronizedQueue<SData> {
-      public:
-        bool cancel(const string& name, const string& value) {
-            SAUTOLOCK(_queueMutex);
-            // Loop across and see if we can find it; if so, cancel
-            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
-                if ((*queueIt)[name] == value) {
-                    // Found it
-                    _queue.erase(queueIt);
-                    return true;
-                }
-            }
-
-            // Didn't find it
-            return false;
-        }
-    };
-#endif
+    // A command queue is just a SSynchronizedQueue of BedrockCommands. This is distinct from a `BedrockCommandQueue`,
+    // which is a more complex data structure.
     typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
 
+    // Our only constructor.
     BedrockServer(const SData& args);
+
+    // Destructor
     virtual ~BedrockServer();
 
     // Accept an incoming command from an SQLiteNode.
+    // SQLiteNode API.
     void acceptCommand(SQLiteCommand&& command);
 
     // Cancel a command.
+    // SQLiteNode API.
     void cancelCommand(const string& commandID);
 
-    // Ready to gracefully shut down
+    // Returns true when everything's ready to sutdown.
     bool shutdownComplete();
 
     // Flush the send buffers
+    // STCPNode API.
     int preSelect(fd_map& fdm);
 
     // Accept connections and dispatch requests
+    // STCPNode API.
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
-    // in which case that setting trumps the `suppress` setting.
+    // in which case the `suppress` setting will be forced.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
-
-    // Add a new request to our message queue.
-    void queueRequest(const SData& request);
-
-    // Returns the version string of the server.
-    const string& getVersion();
 
     // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
     // read loop on the sync thread.
+    // TODO: expose an `addHTTPSManagers` API to plugins, make this private.
     list<list<SHTTPSManager*>> httpsManagers;
 
   private:
-    // Attributes
+    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
     SData _args;
 
+    // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(BedrockCommand&);
-
-    // The queues in which we store commands.
-    // A map of priorities to commands ordered by timestamp.
 
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
@@ -82,34 +65,29 @@ class BedrockServer : public SQLiteServer {
     map<uint64_t, Socket*> _requestCountSocketMap;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
-    // reference to this object is passed to the sync thread.
+    // reference to this object is passed to the sync thread to allow this update.
     atomic<SQLiteNode::State> _replicationState;
-
-    //list<ThreadData> _workerThreadDataList;
-    //atomic<uint64_t> _replicationCommitCount;
 
     // This flag will be raised when we want to start shutting down. A reference is passed to the sync thread to allow
     // it to shut down its SQLiteNode.
     atomic<bool> _nodeGracefulShutdown;
 
+    // This is the current version of the master node, updated after every SQLiteNode::update() iteration. A
+    // reference to this object is passed to the sync thread to allow this update.
     atomic<string> _masterVersion;
-
-    // This exists to provide data to plugins. Refactor.
-    // MessageQueue _queuedRequests;
-    // MessageQueue _processedResponses;
-
-    // Two queues for communicating escalated requests out from the sync thread to workers, and then when
-    // completed, communicating those responses back to the sync thread.
-    // CommandQueue _escalatedCommands;
-    // CommandQueue _peekedCommands;
 
     // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
     // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
     // sync thread. A reference is passed to the sync thread.
     CommandQueue _syncNodeQueuedCommands;
 
+    // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
+
+    // This is a map of open listening ports to the plugin objects that created them.
+    // TODO: Tear this out and let the MySQL plugin, which is the only thing that uses this, manage its own special
+    // feature. We can expose _commandQueue so it can add it's own commands if it wants.
     map<Port*, BedrockPlugin*> _portPluginMap;
 
     // The server version. This may be fake if the args contain a `versionOverride` value.
@@ -120,19 +98,23 @@ class BedrockServer : public SQLiteServer {
     static void sync(SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& nodeGracefulShutdown,
+                     atomic<string>& masterVersion,
                      CommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
-    // Each worker thread runs this function. It receives the same data as the sync thread, plus its individual thread
-    // ID.
+    // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     static void worker(SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& nodeGracefulShutdown,
+                       atomic<string>& masterVersion,
                        CommandQueue& syncNodeQueuedCommands,
                        BedrockServer& server,
                        int threadId,
                        int threadCount);
 
-    static constexpr auto syncThreadName = "sync";
-    thread syncThread;
+    // The name of the sync thread.
+    static constexpr auto _syncThreadName = "sync";
+
+    // The actual thread object for the sync thread.
+    thread _syncThread;
 };
