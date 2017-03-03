@@ -1,6 +1,5 @@
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
-#include "../BedrockTest.h"
 
 // Declare the class we're going to implement below
 class BedrockPlugin_Cache : public BedrockPlugin {

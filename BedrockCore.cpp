@@ -1,6 +1,10 @@
 #include "BedrockCore.h"
 #include "BedrockPlugin.h"
-    
+
+BedrockCore::BedrockCore(SQLite& db) : 
+SQLiteCore(db)
+{ }
+
 bool BedrockCore::peekCommand(SQLiteCommand& baseCommand)
 {
     // Bedrock will always create these as BedrockCommands, and even when accepting commands from an SQLiteNode, it

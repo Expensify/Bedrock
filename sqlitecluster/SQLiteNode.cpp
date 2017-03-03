@@ -81,9 +81,9 @@ atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
 // --------------------------------------------------------------------------
-SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList, int priority,
-                       uint64_t firstTimeout, const string& version, int quorumCheckpoint,
-                       const string& synchronousCommands)
+SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
+                       const string& peerList, int priority, uint64_t firstTimeout, const string& version,
+                       int quorumCheckpoint)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db),
       _processTimer("process()"), _commitTimer("COMMIT"), _server(server)
@@ -99,8 +99,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _version = version;
     _commitsSinceCheckpoint = 0;
     _quorumCheckpoint = quorumCheckpoint;
-    _synchronousCommands = SParseList(SToLower(synchronousCommands));
-    _synchronousCommands.push_back("upgradedatabase");
 
     // Get this party started
     _changeState(SEARCHING);
@@ -123,9 +121,9 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
 // --------------------------------------------------------------------------
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    SASSERTWARN(_isQueuedCommandMapEmpty());
+    //SASSERTWARN(_isQueuedCommandMapEmpty());
     SASSERTWARN(_escalatedCommandMap.empty());
-    SASSERTWARN(processedCommandList.empty());
+    //SASSERTWARN(processedCommandList.empty());
 }
 
 // --------------------------------------------------------------------------
@@ -267,12 +265,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
     unsentTransactions.store(false);
 }
 
-bool SQLiteNode::Command_ptr_cmp::operator()(SQLiteCommand* lhs, SQLiteCommand* rhs) {
-    return lhs->priority > rhs->priority ||
-           (lhs->priority == rhs->priority && lhs->creationTimestamp < rhs->creationTimestamp);
-}
-
-// --------------------------------------------------------------------------
 void SQLiteNode::_escalateCommand(SQLiteCommand&& command) {
     // Send this to the MASTER
     SASSERT(_masterPeer);
@@ -788,23 +780,23 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Figure out how much consistency we need.  Go with whatever
             // is specified in the command, unless we're over our
             // checkpoint limit.
-            SQLCConsistencyLevel consistencyRequired =
-                (_commitsSinceCheckpoint >= _quorumCheckpoint) ? SQLC_QUORUM : _currentCommand->writeConsistency;
+            ConsistencyLevel consistencyRequired =
+                (_commitsSinceCheckpoint >= _quorumCheckpoint) ? QUORUM : _currentCommand->writeConsistency;
 
             // Figure out if we have enough consistency
             bool consistentEnough = false;
             switch (consistencyRequired) {
-            case SQLC_ASYNC:
+            case ASYNC:
                 // Always consistent enough if we don't care!
                 consistentEnough = true;
                 break;
 
-            case SQLC_ONE:
+            case ONE:
                 // So long at least one full approved (if we have any peers, that is), we're good
                 consistentEnough = !numFullPeers || (numFullApproved > 0);
                 break;
 
-            case SQLC_QUORUM:
+            case QUORUM:
                 // This one requires a majority
                 consistentEnough = majorityApproved;
                 break;
@@ -827,28 +819,17 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             bool initiatorSubscribed = (!_currentCommand->initiator || _currentCommand->initiator->test("Subscribed"));
 
             // Record these for posterity
-            SDEBUG("'" << _currentCommand->request.methodLine << "' (#" << _currentCommand->id << "): "
-                                                                                                  "numFullPeers="
-                       << numFullPeers << ", "
-                                          "numFullSlaves="
-                       << numFullSlaves << ", "
-                                           "numFullResponded="
-                       << numFullResponded << ", "
-                                              "numFullApproved="
-                       << numFullApproved << ", "
-                                             "majorityApproved="
-                       << majorityApproved << ", "
-                                              "writeConsistency="
-                       << SQLCConsistencyLevelNames[_currentCommand->writeConsistency] << ", "
-                                                                                          "consistencyRequired="
-                       << SQLCConsistencyLevelNames[consistencyRequired] << ", "
-                                                                            "consistentEnough="
-                       << consistentEnough << ", "
-                                              "everybodyResponded="
-                       << everybodyResponded << ", "
-                                                "initiatorSubscribed="
-                       << initiatorSubscribed << ", "
-                                                 "commitsSinceCheckpoint="
+            SDEBUG("'" << _currentCommand->request.methodLine << "' (#" << _currentCommand->id << "): numFullPeers="
+                       << numFullPeers << ", numFullSlaves="
+                       << numFullSlaves << ", numFullResponded="
+                       << numFullResponded << ", numFullApproved="
+                       << numFullApproved << ", majorityApproved="
+                       << majorityApproved << ", writeConsistency="
+                       << consistencyLevelNames[_currentCommand->writeConsistency] << ", consistencyRequired="
+                       << consistencyLevelNames[consistencyRequired] << ", consistentEnough="
+                       << consistentEnough << ", everybodyResponded="
+                       << everybodyResponded << ", initiatorSubscribed="
+                       << initiatorSubscribed << ", commitsSinceCheckpoint="
                        << _commitsSinceCheckpoint);
 
             // Ok, let's see if we have enough to finish this command
@@ -897,7 +878,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
                     // Make sure the response is empty, and re-open the command.
                     _currentCommand->response.clear();
-                    reopenCommand(_currentCommand);
+                    // reopenCommand(_currentCommand);
 
                     _currentCommand = nullptr;
                     return true;
@@ -912,7 +893,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                           << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
                           << _commitsSinceCheckpoint << " commits since quorum "
                                                         "(consistencyRequired="
-                          << SQLCConsistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
+                          << consistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
                           << numFullPeers << " approved "
                                              "("
                           << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
@@ -951,7 +932,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Did we finish the command:
             if (commandFinished) {
                 // Either way, we're done with this command
-                _finishCommand(_currentCommand);
+                //_finishCommand(_currentCommand);
                 _currentCommand = nullptr;
 
                 // If we haven't received majority approval, increment how
@@ -971,7 +952,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 // Still waiting
                 SINFO("Waiting to commit: '"
                       << _currentCommand->request.methodLine << "' (#" << _currentCommand->id
-                      << "): consistencyRequired=" << SQLCConsistencyLevelNames[consistencyRequired]
+                      << "): consistencyRequired=" << consistencyLevelNames[consistencyRequired]
                       << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
             }
         }
@@ -1021,7 +1002,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // commands to deal with at shutdown, we'll defer switching to STANDINGDOWN for another loop iteration to
             // handle those commands. And, once we do switch to STANDNGDOWN, we return `true` rather than `false` to
             // let the caller know it should clean up our command queues, as we may have processed some more commands.
-            if (!shuttingDown || _isQueuedCommandMapEmpty()) {
+            if (!shuttingDown || commitInProgress()) {
                 // Do we want to stand down, and can we?
                 if (!standDownReason.empty()) {
                     // Do it
@@ -1042,7 +1023,8 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // the peers are connected.  Otherwise we're in a live
             // environment but can't commit anything because we may cause a
             // split brain scenario.
-            if (!_isQueuedCommandMapEmpty() && _majoritySubscribed()) {
+            if (!commitInProgress() && _majoritySubscribed()) {
+            #if 0
                 // Have commands and a majority, so let's start a new one.
                 SFOREACHMAPREVERSE(int, list<SQLiteCommand*>, _queuedCommandMap, it) {
                     // **XXX: Using pointer to list because STL containers copy on assignment.
@@ -1057,8 +1039,6 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             // transaction.  If so, wait for it to complete.
                             list<SQLiteCommand*>::iterator commandIt = nextIt++;
                             SQLiteCommand* command = *commandIt;
-                            if (command->httpsRequest && !command->httpsRequest->response)
-                                continue;
                             SAUTOPREFIX(command->request["requestID"]);
 
                             // See if this command has a "Hold" on it.  If
@@ -1223,7 +1203,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                                                       << _currentCommand->id
                                                                       << "), nothing to commit.");
                                 SASSERT(!_db.insideTransaction());
-                                _finishCommand(_currentCommand);
+                                //_finishCommand(_currentCommand);
                                 _currentCommand = nullptr;
                             }
 
@@ -1245,6 +1225,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 }
 
                 // **NOTE: we've exhausted the current batch of queued commands and can continue
+            #endif
             }
         }
 
@@ -1321,46 +1302,15 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // Master stepping down
             SHMMM("Master stepping down, re-queueing commands and re-SEARCHING.");
 
-            // Get an ordered list of commands
-            list<SQLiteCommand*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
-            while (!escalatedCommandList.empty()) {
-                // Reschedule the escalated commands to the front of the pack.
-                SQLiteCommand* command = escalatedCommandList.back();
-                SHMMM("Re-queueing escalated command '" << command->request.methodLine << "' (" << command->id << ")");
-                _queuedCommandMap[command->priority].push_front(command);
-                escalatedCommandList.pop_back();
+            // If there were escalated commands, give them back to the server to retry.
+            for (auto& cmd : _escalatedCommandMap) {
+                _server.acceptCommand(move(cmd.second));
             }
             _escalatedCommandMap.clear();
             _changeState(SEARCHING);
             return true; // Re-update
         }
 
-        // If there are any commands, send to the master
-        SFOREACHMAPREVERSE(int, list<SQLiteCommand*>, _queuedCommandMap, it) {
-            // **XXX: Using a pointer to list because STL copies by value
-            list<SQLiteCommand*>* commandList = &it->second;
-            while (!commandList->empty()) {
-                // Just send on to the master.
-                SQLiteCommand* command = commandList->front();
-                if (command->httpsRequest) {
-                    // If a MASTER has oustanding commands with active httpsRequest
-                    // when it STANDSDOWN (such as as part of a graceful shutdown)
-                    // then it will escalate commands that have already been peeked
-                    // and have oustanding httpsRequests.  This isn't *too* bad, as
-                    // the new MASTER will just re-peek and re-issue the secondary
-                    // request.  So we'll just abort ours and hope for the best.
-                    // but this could be a problem if the secondary command itself
-                    // performs some action.  The worst case we can think of is we
-                    // might send multiple AUTHs, but even that's not so bad.
-                    SHMMM("Escalated command '"
-                          << command->request.methodLine << "' (" << command->id
-                          << ") has secondary request; cancelling and new MASTER will re-submit.");
-                    _cleanCommand(command);
-                }
-                commandList->pop_front();
-                _escalateCommand(move(command));
-            }
-        }
         break;
 
     default:
@@ -1805,13 +1755,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
 
         // Check our escalated commands and see if it's one being processed
-        CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
+        auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // We're starting the transaction for a given command; note this
             // so we know that this command might be corrupted if the master
             // crashes.
             SINFO("Master is processing our command " << message["ID"] << " (" << _currentTransactionCommand << ")");
-            commandIt->second->transaction = message;
+            commandIt->second.transaction = message;
         }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION")) {
         /// - APPROVE_TRANSACTION: Sent to the master by a slave when it confirms
@@ -1890,13 +1840,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
               << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
 
         // Look up in our escalated commands and see if it's one being processed
-        CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
+        auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // We're starting the transaction for a given command; note this
             // so we know that this command might be corrupted if the master
             // crashes.
             SINFO("Master has committed in response to our command " << message["ID"]);
-            commandIt->second->transaction = message;
+            commandIt->second.transaction = message;
         }
     } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         /// - ROLLBACK_TRANSACTION: Sent to all subscribed slaves by the master when
@@ -1914,13 +1864,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         _db.rollback();
 
         // Look through our escalated commands and see if it's one being processed
-        CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
+        auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // We're starting the transaction for a given command; note this
             // so we know that this command might be corrupted if the master
             // crashes.
             SINFO("Master has rolled back in response to our command " << message["ID"]);
-            commandIt->second->transaction = message;
+            commandIt->second.transaction = message;
         }
     } else if (SIEquals(message.methodLine, "ESCALATE")) {
         /// - ESCALATE: Sent to the master by a slave.  Is processed like a normal
@@ -1947,13 +1897,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 throw "missing ID";
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
-            // Create a new Command and send to a worker thread
-            SQLiteCommand command();
-            command->initiator = peer;
-            command->id = message["ID"];
-            command->request = request;
-            command->priority = message.calc("priority");
-            _server.acceptCommand(command);
+            // Create a new Command and send to the server.
+            SQLiteCommand command(move(request));
+            command.initiator = peer;
+            command.id = message["ID"];
+            _server.acceptCommand(move(command));
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
         /// - ESCALATE_CANCEL: Sent to the master by a slave.  Indicates that the
@@ -1981,19 +1929,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Received ESCALATE_CANCEL command for '" << commandID << "'");
 
             // See if there is a command with that ID
-            bool foundIt = false;
-            SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, queuedCommandIt)
-                SFOREACH (list<SQLiteCommand*>, queuedCommandIt->second, commandIt)
-                    if (SIEquals((*commandIt)->id, commandID)) {
-                        // Cancel that command
-                        SQLiteCommand* command = *commandIt;
-                        SINFO("Canceling escalated command " << command->id << " (" << command->request.methodLine
-                                                              << ")");
-                        closeCommand(command);
-                        foundIt = true;
-                        break;
-                    }
-            SASSERTWARN(foundIt);
+            if (_currentCommand && SIEquals(_currentCommand->id, commandID)) {
+                SINFO("Canceling escalated command " << _currentCommand->id << " (" << _currentCommand->request.methodLine << ")");
+                // TODO: ABORT
+            } else {
+                _server.cancelCommand(commandID);
+            }
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
         /// - ESCALATE_RESPONSE: Sent when the master processes the ESCALATE.
@@ -2008,15 +1949,17 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
         // Go find the escalated command
         PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
-        CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
+        auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
             SQLiteCommand& command = commandIt->second;
-            _escalatedCommandMap.erase(command->id);
-            command->response = response;
-            _finishCommand(command);
-        } else
+            _escalatedCommandMap.erase(command.id);
+            command.response = response;
+            command.complete = true;
+            _server.acceptCommand(move(command));
+        } else {
             SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
+        }
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         /// - ESCALATE_RESPONSE: Sent when the master aborts processing an
         ///     escalated command.  Re-submit to the new master.
@@ -2028,14 +1971,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         PINFO("Received ESCALATE_ABORTED for '" << message["ID"] << "' (" << message["Reason"] << ")");
 
         // Look for that command
-        CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
+        auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Re-queue this
-            SQLiteCommand* command = commandIt->second;
-            PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
-                                          << command->id << ")");
-            _queuedCommandMap[command->priority].push_front(command);
-            _escalatedCommandMap.erase(commandIt);
+            SQLiteCommand& command = commandIt->second;
+            PINFO("Re-queueing command '" << message["ID"] << "' (" << command.request.methodLine << ") ("
+                                          << command.id << ")");
+            _server.acceptCommand(move(command));
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
     } else
@@ -2096,27 +2038,17 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
             _db.rollback();
         }
 
-        // Get an ordered list of commands
-        list<SQLiteCommand*> escalatedCommandList = _getOrderedCommandListFromMap(_escalatedCommandMap);
-        while (!escalatedCommandList.empty()) {
-            // Reschedule the escalated commands to the front of the pack.
-            SQLiteCommand* command = escalatedCommandList.back();
-            if (command->transaction.methodLine.empty()) {
-                // Doesn't look like the master was processing this when it
-                // died, let's resubmit
-                PHMMM("Re-queueing escalated command '" << command->request.methodLine << "' (" << command->id << ")");
-                _queuedCommandMap[command->priority].push_front(command);
-            } else {
-                // The master was actively processing our command when it
-                // died.  That's a bummer -- let's not resubmit else we
-                // might submit it twice.
-                PWARN("Aborting escalated command '" << command->request.methodLine << "' (" << command->id
-                                                     << ") in transaction state '" << command->transaction.methodLine
-                                                     << "'");
-                _abortCommand(_db, command);
-                processedCommandList.push_back(command);
+        // If there were escalated commands, give them back to the server to retry, unless it looks like they were in
+        // progress when the master died, in which case we say they completed with a 500 Error.
+        for (auto& cmd : _escalatedCommandMap) {
+            // If this isn't set, the master hadn't actually started processing this, and we can re-queue it.
+            if (!cmd.second.transaction.methodLine.empty()) {
+                PWARN("Aborting escalated command '" << cmd.second.request.methodLine << "' (" << cmd.second.id
+                      << ") in transaction state '" << cmd.second.transaction.methodLine << "'");
+                cmd.second.complete = true;
+                cmd.second.response.methodLine = "500 Aborted";
             }
-            escalatedCommandList.pop_back();
+            _server.acceptCommand(move(cmd.second));
         }
         _escalatedCommandMap.clear();
         _changeState(SEARCHING);
@@ -2134,31 +2066,6 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         _changeState(SEARCHING);
     }
 
-    /// - Verify no queued commands were initiated by this peer.  This should only
-    ///   be possible if we're MASTERING or STANDINGDOWN.  If we did lose a
-    ///   command initiator (and it should only be possible if it's also SLAVING)
-    ///   then drop the command -- if the initiator is still alive it'll resubmit.
-    ///
-    SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, it) {
-        // **XXX: Using pointer to list because STL containers copy on assignment.
-        list<SQLiteCommand*>* commandList = &it->second;
-        list<SQLiteCommand*>::iterator nextCommandIt = commandList->begin();
-        while (nextCommandIt != commandList->end()) {
-            // Check this command and go to the next
-            list<SQLiteCommand*>::iterator commandIt = nextCommandIt++;
-            SQLiteCommand* command = *commandIt;
-            if (command->initiator == peer) {
-                // Drop this command
-                PHMMM("Queued command initiator disconnected, dropping '" << command->request.methodLine << "' ("
-                                                                          << command->id << ")");
-                SASSERTWARN(_state == MASTERING || _state == STANDINGDOWN);
-                SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
-                commandList->erase(commandIt);
-                delete command;
-            }
-        }
-    }
-
     /// - Verify the current command we're processing wasn't initiated by this
     ///   peer.  This should only be possible if we're MASTERING or STANDINGDOWN,
     ///   and if it's SLAVING.  If this happens, drop the command (it'll resubmit)
@@ -2174,7 +2081,6 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                                                                    << _currentCommand->id << ") and rolling back.");
         SASSERTWARN(_state == MASTERING || _state == STANDINGDOWN);
         SASSERTWARN(SIEquals((*peer)["State"], "SLAVING"));
-        _abortCommand(_db, _currentCommand);
         if (_db.insideTransaction())
             _db.rollback();
         SData rollback("ROLLBACK_TRANSACTION");
@@ -2230,7 +2136,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 // --------------------------------------------------------------------------
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Did we actually change _state?
-    SQLCState oldState = _state;
+    SQLiteNode::State oldState = _state;
     if (newState != oldState) {
         // Depending on the state, set a timeout
         SDEBUG("Switching from '" << stateNames[_state] << "' to '" << stateNames[newState] << "'");
@@ -2258,7 +2164,6 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             if (_currentCommand) {
                 // Abort this command
                 SWARN("No longer mastering, aborting current command");
-                closeCommand(_currentCommand);
                 _currentCommand = nullptr;
             }
         }
@@ -2279,33 +2184,17 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 // Clear these.
                 _db.getCommittedTransactions();
             }
-            // If we're switching to master, upgrade the database.
-            // **NOTE: We'll detect this special command on destruction and clean it
-            if (!gracefulShutdown()) {
-                SData upgrade("UpgradeDatabase");
-                upgrade["priority"] = to_string(SQLiteCommand::SPRIORITY_MAX);
-                openCommand(upgrade);
-            }
         } else if (newState == STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
-            SFOREACHMAP (int, list<SQLiteCommand*>, _queuedCommandMap, it) {
-                // **XXX: Using pointer to list because STL containers copy on assignment.
-                list<SQLiteCommand*>* commandList = &it->second;
-                list<SQLiteCommand*>::iterator nextIt = commandList->begin();
-                while (nextIt != commandList->end()) {
-                    // Check this command
-                    list<SQLiteCommand*>::iterator commandIt = nextIt++;
-                    SQLiteCommand* command = *commandIt;
-                    if (command->initiator) {
-                        // No need to wait, explicitly abort
-                        SINFO("STANDINGDOWN and aborting " << command->id);
-                        SData aborted("ESCALATE_ABORTED");
-                        aborted["ID"] = command->id;
-                        aborted["Reason"] = "Standing down";
-                        _sendToPeer(command->initiator, aborted);
-                        commandList->erase(commandIt);
-                        delete command;
-                    }
+            if (_currentCommand) {
+                if (_currentCommand->initiator) {
+                    // No need to wait, explicitly abort
+                    SINFO("STANDINGDOWN and aborting " << _currentCommand->id);
+                    SData aborted("ESCALATE_ABORTED");
+                    aborted["ID"] = _currentCommand->id;
+                    aborted["Reason"] = "Standing down";
+                    _sendToPeer(_currentCommand->initiator, aborted);
+                    delete _currentCommand;
                 }
             }
         } else if (newState == SEARCHING) {
@@ -2530,15 +2419,6 @@ void SQLiteNode::_reconnectAll() {
     // Loop across and reconnect
     SFOREACH (list<Peer*>, peerList, peerIt)
         _reconnectPeer(*peerIt);
-}
-
-// --------------------------------------------------------------------------
-list<SQLiteCommand*> SQLiteNode::_getOrderedCommandListFromMap(const map<string, SQLiteCommand*> commandMap) {
-    list<SQLiteCommand*> commandList;
-    SFOREACHMAPCONST(string, SQLiteCommand*, commandMap, cmdMapIt)
-    commandList.push_back(cmdMapIt->second);
-    commandList.sort(Command_ptr_cmp());
-    return commandList;
 }
 
 // --------------------------------------------------------------------------

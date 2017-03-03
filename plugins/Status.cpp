@@ -12,6 +12,7 @@ const vector<string> BedrockPlugin_Status::statusCommandNames = {
 
 // ==========================================================================
 bool BedrockPlugin_Status::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+#if 0
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -112,6 +113,7 @@ bool BedrockPlugin_Status::peekCommand(SQLiteNode* node, SQLite& db, BedrockComm
     }
 
     // Didn't recognize this command
+#endif
     return false;
 }
 

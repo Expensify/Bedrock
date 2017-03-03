@@ -10,6 +10,13 @@ class BedrockCommandQueue {
     // If timeout is non-zero, and an exception will be thrown after timeoutUS microseconds, if no work was available.
     BedrockCommand get(uint64_t timeoutUS = 0);
 
+    // Returns true if there are no queued commands.
+    bool empty();
+
+    // Looks for a command with the given ID and removes it.
+    // This will inspect every command in the case the command does not exist.
+    bool removeByID(const string& id);
+
   private:
     // Removes and returns the first workable command in the queue. A command is workable if:
     // 1. It's creationTimestamp is not in the future.

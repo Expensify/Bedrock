@@ -68,6 +68,30 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     }
 }
 
+bool BedrockCommandQueue::empty()  {
+    return _commandQueue.empty();
+}
+
+bool BedrockCommandQueue::removeByID(const string& id)
+{
+    SAUTOLOCK(_queueMutex);
+    int count = 0;
+    for (auto& queue : _commandQueue) {
+        auto it = queue.second.begin();
+        while (it != queue.second.end()) {
+            ++count;
+            if (it->second.id == id) {
+                // Found it!
+                queue.second.erase(it);
+                return true;
+            }
+        }
+    }
+
+    SWARN("Attempted to remove command '" << id << "' but not found. Inspected " << count << " commands.");
+    return false;
+}
+
 BedrockCommand BedrockCommandQueue::_dequeue() {
     SAUTOLOCK(_queueMutex);
 

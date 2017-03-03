@@ -27,30 +27,16 @@ class BedrockServer : public SQLiteServer {
         }
     };
 #endif
-
-    class CommandQueue : public SSynchronizedQueue<BedrockCommand> {
-      public:
-        bool cancel(const string& name, const string& value) {
-            SAUTOLOCK(_queueMutex);
-            // Loop across and see if we can find it; if so, cancel
-            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
-                if ((*queueIt).request[name] == value) {
-                    // Found it
-                    _queue.erase(queueIt);
-                    return true;
-                }
-            }
-
-            // Didn't find it
-            return false;
-        }
-    };
+    typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
 
     BedrockServer(const SData& args);
     virtual ~BedrockServer();
 
     // Accept an incoming command from an SQLiteNode.
     void acceptCommand(SQLiteCommand&& command);
+
+    // Cancel a command.
+    void cancelCommand(const string& commandID);
 
     // Ready to gracefully shut down
     bool shutdownComplete();
@@ -81,6 +67,10 @@ class BedrockServer : public SQLiteServer {
 
     BedrockCommandQueue _commandQueue;
 
+    // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
+    // then this is an error, as the command should have been sent back to a peer.
+    void _reply(BedrockCommand&);
+
     // The queues in which we store commands.
     // A map of priorities to commands ordered by timestamp.
 
@@ -102,8 +92,9 @@ class BedrockServer : public SQLiteServer {
     // it to shut down its SQLiteNode.
     atomic<bool> _nodeGracefulShutdown;
 
+    atomic<string> _masterVersion;
+
     // This exists to provide data to plugins. Refactor.
-    // atomic<string> _masterVersion;
     // MessageQueue _queuedRequests;
     // MessageQueue _processedResponses;
 

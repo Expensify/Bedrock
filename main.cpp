@@ -156,8 +156,6 @@ set<string> loadPlugins(SData& args) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-extern void BedrockTest(SData& trueArgs);
 int main(int argc, char* argv[]) {
     // Start libstuff
     SInitialize("main");
@@ -248,11 +246,6 @@ int main(int argc, char* argv[]) {
     } else if (args.isSet("-q")) {
         // Quiet logging
         SLogLevel(LOG_WARNING);
-    }
-    if (args.isSet("-test")) {
-        // Run the test
-        BedrockTest(args);
-        return 1;
     }
 
     // Fork if requested

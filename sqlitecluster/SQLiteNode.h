@@ -33,16 +33,9 @@ class SQLiteNode : public STCPNode {
     };
     static const string consistencyLevelNames[NUM_CONSISTENCY_LEVELS];
 
-    // Used to sort the escalated command map back into an ordered list
-    struct Command_ptr_cmp {
-        bool operator()(SQLiteCommand* lhs, SQLiteCommand* rhs);
-    };
-    typedef map<string, SQLiteCommand*>::iterator CommandMapIt;
-
     // Constructor
-    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList, int priority,
-               uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0,
-               const string& synchronousCommands = "");
+    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
+               int priority, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0);
     virtual ~SQLiteNode();
 
 
@@ -209,7 +202,6 @@ class SQLiteNode : public STCPNode {
     string _version;
     int _quorumCheckpoint; // Commits before requiring quorum.
     int _commitsSinceCheckpoint;
-    list<string> _synchronousCommands;
     string _masterVersion;
 
     // This will be set by either of the `startCommit` functions.
@@ -221,8 +213,8 @@ class SQLiteNode : public STCPNode {
     void _changeState(State newState);
     void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
-    //void _queueCommand(SQLiteCommand* command);
-    SQLiteCommand* _finishCommand(SQLiteCommand* command);
+    // void _queueCommand(SQLiteCommand* command);
+    // SQLiteCommand* _finishCommand(SQLiteCommand* command);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
     list<SQLiteCommand*> _getOrderedCommandListFromMap(const map<string, SQLiteCommand*> commandMap);

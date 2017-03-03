@@ -3,39 +3,27 @@
 
 class SQLiteCommand {
   public:
-    enum Priority {
-        PRIORITY_MIN = 0,
-        PRIORITY_LOW = 250,
-        PRIORITY_NORMAL = 500,
-        PRIORITY_HIGH = 750,
-        PRIORITY_MAX = 1000
-    };
-
-    // Attributes
+    // If this command was created via an escalation from a peer, this value will point to that peer object.
     SQLiteNode::Peer* initiator;
+
+    // Each command is given a unique id that can be serialized and passed back and forth across nodes. It's id must be
+    // uniquely identifiable for cases where, for instance, two peers escalate commands to the master, and master will
+    // need to  respond to them.
     string id;
     SData transaction;  // Used inside SQLiteNode
     SData request;      // Original request
     STable jsonContent; // Accumulated response content
     SData response;     // Final response
-    Priority priority;
-    uint64_t creationTimestamp;
-    uint64_t replicationStartTimestamp;
-    uint64_t processingTime;
     SQLiteNode::ConsistencyLevel writeConsistency;
     bool complete;
 
-    // Keep track of some state as we go through everything that needs to be done here.
-    int peekCount;
-    int processCount;
+    // Track timing information. TODO: Remove? Refactor?
+    uint64_t creationTimestamp;
+    uint64_t replicationStartTimestamp;
+    uint64_t processingTime;
 
-    // No longer the responsibility of SQLiteNode, goes to Server.
-    // **NOTE: httpsRequest is used to store a pointer to a
-    //         secondary SHTTPSManager request; this can be
-    //         initiated in _peekCommand(), and the command won't
-    //         be processed by _processCommand() until the request
-    //         has completed.
-    // SHTTPSManager::Transaction* httpsRequest;
+    // Construct that takes a request object.
+    SQLiteCommand(SData&& _request);
 
     // Default Constructor.
     SQLiteCommand();

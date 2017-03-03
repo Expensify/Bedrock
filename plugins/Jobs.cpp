@@ -282,7 +282,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLiteNode* node, SQLite& db, BedrockCom
                  " );");
 
         // Release workers waiting on this state
-        node->clearCommandHolds("Jobs:" + request["name"]);
+        // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
+        // node->clearCommandHolds("Jobs:" + request["name"]);
 
         // Return the new jobID
         const int64_t lastInsertRowID = db.getLastInsertRowID();

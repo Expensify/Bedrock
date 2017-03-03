@@ -15,7 +15,8 @@ class SSynchronizedQueue {
     void postSelect(fd_map& fdm, int bytesToRead = 1);
 
     // Synchronized interface to add/remove work
-    void push(T rhs);
+    //void push(T rhs);
+    void push(T&& rhs);
     T pop();
 
     bool empty();
@@ -56,11 +57,25 @@ int SSynchronizedQueue<T>::preSelect(fd_map& fdm) {
     return _pipeFD[0];
 }
 
+/*
 template<typename T>
 void SSynchronizedQueue<T>::push(T rhs) {
     SAUTOLOCK(_queueMutex);
     // Just add to the queue
     _queue.push_back(rhs);
+
+    // Write arbitrary buffer to the pipe so any subscribers will
+    // be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    SASSERT(write(_pipeFD[1], "A", 1));
+}
+*/
+
+template<typename T>
+void SSynchronizedQueue<T>::push(T&& rhs) {
+    SAUTOLOCK(_queueMutex);
+    // Just add to the queue
+    _queue.push_back(move(rhs));
 
     // Write arbitrary buffer to the pipe so any subscribers will
     // be awoken.
@@ -77,7 +92,8 @@ T SSynchronizedQueue<T>::pop() {
         _queue.pop_front();
         return item;
     }
-    throw std::out_of_range;
+    // TODO: Better exception.
+    throw "No items!";
 }
 
 template<typename T>
