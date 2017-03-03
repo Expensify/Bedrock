@@ -67,7 +67,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         Socket* socket = *socketIt;
         try {
             // Verify it's still alive
-            if (socket->state != STCP_CONNECTED)
+            if (socket->state != Socket::CONNECTED)
                 throw "premature disconnect";
 
             // Still alive; try to login
@@ -131,7 +131,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         if (peer->s) {
             // We have a socket; process based on its state
             switch (peer->s->state) {
-            case STCP_CONNECTED: {
+            case Socket::CONNECTED: {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures
                 SData message;
@@ -202,7 +202,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 break;
             }
 
-            case STCP_CLOSED: {
+            case Socket::CLOSED: {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 if (peer->s->connectFailure) {

@@ -1,8 +1,5 @@
 #pragma once
 
-// Life cycle of a socket
-enum STCPState { STCP_CONNECTING, STCP_CONNECTED, STCP_SHUTTINGDOWN, STCP_CLOSED };
-
 // Convenience base class for managing a series of TCP sockets.  This
 // includes filling receive buffers, emptying send buffers, completing
 // connections, performing graceful shutdowns, etc.
@@ -10,13 +7,14 @@ struct STCPManager {
     // Captures all the state for a single socket
     class Socket {
       public:
-        Socket(int sock = 0, STCPState state_ = STCP_CONNECTING);
+        enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
+        Socket(int sock = 0, State state_ = CONNECTING);
         // Attributes
         int s;
         sockaddr_in addr;
         string sendBuffer;
         string recvBuffer;
-        STCPState state;
+        State state;
         bool connectFailure;
         uint64_t openTime;
         uint64_t lastSendTime;
@@ -26,6 +24,10 @@ struct STCPManager {
         bool send();
         bool send(const string& buffer);
         bool recv();
+        uint64_t id;
+
+      private:
+        static atomic<uint64_t> socketCount;
     };
 
     // Cleans up outstanding sockets

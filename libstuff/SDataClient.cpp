@@ -75,7 +75,7 @@ void SDataClient::postSelect(fd_map& fdm) {
             connection->request.clear();
             activeConnectionList.erase(lastConnectionIt);
             idleConnectionList.push_back(connection);
-        } else if (connection->s->state == STCP_CLOSED) {
+        } else if (connection->s->state == Socket::CLOSED) {
             // Socket closed, clean it up.  But first, were we waiting on
             // response?
             if (!connection->request.empty()) {
@@ -100,7 +100,7 @@ void SDataClient::postSelect(fd_map& fdm) {
         // Verify it's still open
         Connection* connection = *connectionIt;
         list<Connection*>::iterator lastConnectionIt = connectionIt++;
-        if (connection->s->state == STCP_CLOSED) {
+        if (connection->s->state == Socket::CLOSED) {
             // Clean this up
             SDEBUG("Idle connection to '" << connection->host << "' died, closing.");
             closeSocket(connection->s);

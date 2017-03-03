@@ -69,7 +69,7 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
                 active->response = 500;
             }
-        } else if (active->s->state > STCP_CONNECTED || elapsed > TIMEOUT) {
+        } else if (active->s->state > Socket::CONNECTED || elapsed > TIMEOUT) {
             // Net problem. Did this transaction end in an inconsistent state?
             SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after "
                                 << elapsed / STIME_US_PER_MS << "ms");

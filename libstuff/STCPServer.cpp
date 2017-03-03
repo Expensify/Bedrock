@@ -55,7 +55,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
         if (s > 0) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            socket = new Socket(s, STCP_CONNECTED);
+            socket = new Socket(s, Socket::CONNECTED);
             socket->addr = addr;
             socketList.push_back(socket);
 

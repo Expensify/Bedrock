@@ -64,6 +64,11 @@ class BedrockServer : public SQLiteServer {
     // we could deliver responses in the wrong order.
     map<uint64_t, Socket*> _requestCountSocketMap;
 
+    // Each time we connect a new socket, we give it an ID, and we insert it in this set. When a socket disconnects, we
+    // remove that ID from this set.
+    uint64_t socketID = 0;
+    map <uint64_t, Socket*> _socketIDMap;
+
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
     atomic<SQLiteNode::State> _replicationState;

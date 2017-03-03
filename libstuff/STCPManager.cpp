@@ -1,5 +1,7 @@
 #include "libstuff.h"
 
+atomic<uint64_t> STCPManager::Socket::socketCount(1);
+
 // --------------------------------------------------------------------------
 STCPManager::~STCPManager() {
     // Verify clean shutdown
@@ -12,7 +14,7 @@ int STCPManager::preSelect(fd_map& fdm) {
     int maxS = 0;
     for (Socket* socket : socketList) {
         // Make sure it's not closed
-        if (socket->state != STCP_CLOSED) {
+        if (socket->state != Socket::CLOSED) {
             // Check and see if it looks like we're still valid.
             if (socket->s < 0) {
                 SWARN("Invalid FD number("
@@ -30,7 +32,7 @@ int STCPManager::preSelect(fd_map& fdm) {
             // complex.  If we've completed the handshake, then we only want to
             // send when we have data.  But if we're inside the handshake, leave
             // it up to the SSL engine to decide if it wants to send.
-            if (socket->state == STCP_CONNECTING) {
+            if (socket->state == Socket::CONNECTING) {
                 // We haven't yet connected -- send regardless of SSL
                 SFDset(fdm, socket->s, SWRITEEVTS);
             } else if (!socket->ssl) {
@@ -84,7 +86,7 @@ void STCPManager::postSelect(fd_map& fdm) {
     for (Socket* socket : socketList) {
         // Update this socket
         switch (socket->state) {
-        case STCP_CONNECTING: {
+        case Socket::CONNECTING: {
             // See if it connected or failed
             if (!SFDAnySet(fdm, socket->s, SWRITEEVTS | POLLHUP | POLLERR)) {
                 // Keep waiting for asynchronous connect result
@@ -98,7 +100,7 @@ void STCPManager::postSelect(fd_map& fdm) {
             if (result) {
                 // Asynchronous connect failed; close socket
                 SDEBUG("Connect to '" << socket->addr << "' failed with SO_ERROR #" << result << ", closing.");
-                socket->state = STCP_CLOSED;
+                socket->state = Socket::CLOSED;
                 socket->connectFailure = true;
                 break;
             }
@@ -106,11 +108,11 @@ void STCPManager::postSelect(fd_map& fdm) {
             // Asynchronous connect succeeded
             SDEBUG("Connect to '" << socket->addr << "' succeeded.");
             SASSERTWARN(SFDAnySet(fdm, socket->s, SWRITEEVTS));
-            socket->state = STCP_CONNECTED;
+            socket->state = Socket::CONNECTED;
             // **NOTE: Intentionally fall through to the connected state
         }
 
-        case STCP_CONNECTED: {
+        case Socket::CONNECTED: {
             // Connected -- see if we're ready to send
             bool aliveAfterRecv = true;
             bool aliveAfterSend = true;
@@ -148,15 +150,15 @@ void STCPManager::postSelect(fd_map& fdm) {
                 // How did we die?
                 SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv
                                          << ", send=" << aliveAfterSend << ")");
-                socket->state = STCP_CLOSED;
+                socket->state = Socket::CLOSED;
             }
             break;
         }
 
-        case STCP_SHUTTINGDOWN:
+        case Socket::SHUTTINGDOWN:
             // Is this a SSL socket?
             if (socket->ssl) {
-                // Always send/recv (see STCP_CONNECTED, above)
+                // Always send/recv (see Socket::CONNECTED, above)
                 // **FIXME: Add timeout.
                 bool aliveAfterRecv = socket->recv();
                 bool aliveAfterSend = socket->send();
@@ -172,7 +174,7 @@ void STCPManager::postSelect(fd_map& fdm) {
                         SWARN("Dirty shutdown of SSL socket '" << socket->addr << "' (" << socket->sendBuffer.size()
                                                                << " bytes remain)");
                     }
-                    socket->state = STCP_CLOSED;
+                    socket->state = Socket::CLOSED;
                     ::shutdown(socket->s, SHUT_RDWR);
                 }
             } else {
@@ -194,14 +196,14 @@ void STCPManager::postSelect(fd_map& fdm) {
                     if (!S_recvappend(socket->s, socket->recvBuffer)) {
                         // Done shutting down
                         SDEBUG("Graceful shutdown of socket '" << socket->addr << "'");
-                        socket->state = STCP_CLOSED;
+                        socket->state = Socket::CLOSED;
                         ::shutdown(socket->s, SHUT_RDWR);
                     }
                 }
             }
             break;
 
-        case STCP_CLOSED:
+        case Socket::CLOSED:
             // Ignore
             break;
 
@@ -211,9 +213,10 @@ void STCPManager::postSelect(fd_map& fdm) {
     }
 }
 
-STCPManager::Socket::Socket(int sock, STCPState state_)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr) { }
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++)
+{ }
 
 // --------------------------------------------------------------------------
 STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
@@ -225,8 +228,8 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     }
 
     // Create a new socket
-    Socket* socket = new Socket(s, STCP_CONNECTING);
-    socket->state = STCP_CONNECTING;
+    Socket* socket = new Socket(s, Socket::CONNECTING);
+    socket->state = Socket::CONNECTING;
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
     socketList.push_back(socket);
@@ -239,7 +242,7 @@ void STCPManager::shutdownSocket(Socket* socket, int how) {
     SASSERT(socket);
     SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
     ::shutdown(socket->s, how);
-    socket->state = STCP_SHUTTINGDOWN;
+    socket->state = Socket::SHUTTINGDOWN;
 }
 
 // --------------------------------------------------------------------------

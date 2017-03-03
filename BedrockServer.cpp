@@ -485,6 +485,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         //         reuse the STCPManager::socketList
 
         // Look up the plugin that owns this port (if any)
+        // Currently disabled, and will probably be removed.
+        #if 0
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
             // Allow the plugin to process this
@@ -495,130 +497,69 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             SASSERT(!s->data);
             s->data = plugin;
         }
+        #endif
     }
 
     // Process any new activity from incoming sockets
-    list<Socket*>::iterator socketIt = socketList.begin();
-    while (socketIt != socketList.end()) {
-        // Process this socket
-        Socket* s = *socketIt++;
-        if (s->state == STCP_CLOSED) {
-            // The socket has died; close it.  The command will get cleaned up later.
-            closeSocket(s);
-            map<uint64_t, Socket*>::iterator nextIt = _requestCountSocketMap.begin();
-            while (nextIt != _requestCountSocketMap.end()) {
-                // Is this the socket that died?
-                map<uint64_t, Socket*>::iterator mapIt = nextIt++;
-                if (mapIt->second == s) {
-                    // This socket has died while we're processing its request.
-                    uint64_t requestCount = mapIt->first;
-                    SHMMM("Abandoning request #" << requestCount << " to '" << s->addr << "'");
-                    _requestCountSocketMap.erase(mapIt);
-
-                    // Remove from the processed queue, if it's in there
-                    /*if (_queuedRequests.cancel("requestCount", SToStr(requestCount))) {
-                        SINFO("Cancelling abandoned request #"
-                              << requestCount << " in queuedRequests; was never processed by read thread.");
-                    } else if (_peekedCommands.cancel("requestCount", SToStr(requestCount))) {
-                        SINFO("Cancelling abandoned request #"
-                              << requestCount << " in queuedEscalatedRequests; was never processed by sync thread.");
-                    } else if (_processedResponses.cancel("request.requestCount", SToStr(requestCount))) {
-                        SWARN("Can't cancel abandoned request #"
-                              << requestCount
-                              << " in processedResponses; this *was* processed by the sync thread, but too late now.");
-                    } else {
-                    */
-                        // Doesn't seem to be in any of the queues, meaning it's actively being processed by one of the
-                        // threads.
-                        // Send a cancel command to all threads.  This will *probably* work, but it's possible that the
-                        // thread will
-                        // finish processing this command before it gets to processing our cancel request.  But that's
-                        // fine -- this
-                        // doesn't need to be airtight.  There will always be scenarios where the server processes a
-                        // command that
-                        // the client has abandoned (eg, if the socket dies while sending the response), so the client
-                        // already needs
-                        // to handle this scenario.  We just want to minimize it wherever possible.
-                        SHMMM("Attempting to cancel abandoned request #"
-                              << requestCount << " being processed by some thread; it might slip through the cracks.");
-                        SData cancelRequest("CANCEL_REQUEST");
-                        cancelRequest["requestCount"] = SToStr(requestCount);
-                        //for (auto& threadData : _workerThreadDataList) {
-                            // Send it the cancel command
-                            // threadData.directMessages.push(cancelRequest);
-                        //}
-                        // Send it the cancel command
-                        // _syncThreadData.directMessages.push(cancelRequest);
-                        // TODO: Cancel these locally. Current logs show 575 'abandoned request' where 573 of them are
-                        // the 'it might slip through the cracks.' message, and 2 are 'this *was* processed by the sync
-                        // thread'. Implement accordinly.
-                    //}
-                }
+    for (auto s : socketList) {
+        switch (s->state) {
+            case STCPManager::Socket::CLOSED:
+            {
+                _socketIDMap.erase(s->id);
+                closeSocket(s);
+                // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
+                // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
+                // able to have their responses returned.
             }
-        } else if (s->state == STCP_CONNECTED) {
-            // Is this socket owned by a plugin?
-            BedrockPlugin* plugin = (BedrockPlugin*)s->data;
-            if (plugin) {
-            #if 0
-                // Let the plugin handle it
-                SData request;
-                bool keepAlive = plugin->onPortRecv(s, request);
-
-                // Did it trigger an internal request?
-                if (!request.empty()) {
-                    // Queue the request, and note that it came from this plugin
-                    // such that we can pass it back to it when done
-                    SINFO("Plugin '" << plugin->getName() << "' queuing internal request '" << request.methodLine
-                                     << "'");
-                    uint64_t requestCount = ++_requestCount;
-                    request["plugin"] = plugin->getName();
-                    request["requestCount"] = SToStr(requestCount);
-                    _queuedRequests.push(request);
-
-                    // Are we keeping this socket alive for the response?
-                    if (keepAlive) {
-                        // Remember which socket on which to send the response
-                        _requestCountSocketMap[requestCount] = s;
+            break;
+            case STCPManager::Socket::CONNECTED:
+            {
+                // If nothing's been received, break early.
+                if (s->recvBuffer.empty()) {
+                    break;
+                } else {
+                    // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
+                    // pipelining requests well. We process commands in no particular order, so we can't dequeue two
+                    // requests off the same socket at one time, or we don't guarantee their return order.
+                    auto socketIt = _socketIDMap.find(s->id);
+                    if (socketIt != _socketIDMap.end()) {
+                        SWARN("Can't dequeue a request while one is pending, or they could end up out-of-order.");
+                        break;
                     }
                 }
 
-                // Do we keep this connection alive or shut it down?
-                if (!keepAlive) {
-                    // Begin shutting down the socket
-                    SINFO("Plugin '" << plugin->getName() << "' shutting down socket to '" << s->addr << "'");
-                    shutdownSocket(s, SHUT_WR);
-                }
-            #endif
-            } else {
-                // Get any new requests
-                int requestSize = 0;
+                // If there's a request, we'll dequeue it (but only the first one).
                 SData request;
-                while ((requestSize = request.deserialize(s->recvBuffer))) {
+                int requestSize = request.deserialize(s->recvBuffer);
+                if (requestSize) {
                     SConsumeFront(s->recvBuffer, requestSize);
-
-                    // Add requestCount and queue it.
-                    uint64_t requestCount = ++_requestCount;
-                    request["requestCount"] = to_string(requestCount);
 
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     uint64_t creationTimestamp = request.calc64("commandExecuteTime");
                     if (SIEquals(request["Connection"], "forget") || creationTimestamp > STimeNow()) {
-                        // Respond immediately to make it clear we successfully
-                        // queued it, but don't add to the socket map as we don't
-                        // care about the answer
+                        // Respond immediately to make it clear we successfully queued it, but don't add to the socket
+                        // map as we don't care about the answer.
                         SINFO("Firing and forgetting '" << request.methodLine << "'");
                         SData response("202 Successfully queued");
                         s->send(response.serialize());
                     } else {
                         // Queue for later response
                         SINFO("Waiting for '" << request.methodLine << "' to complete.");
-                        _requestCountSocketMap[requestCount] = s;
+                        _socketIDMap[s->id] = s;
                     }
 
                     // Create a command and queue it.
-                    _commandQueue.push(BedrockCommand(request));
+                    BedrockCommand command(request);
+                    command.initiatingClientID = s->id;
+                    _commandQueue.push(move(command));
                 }
             }
+            break;
+            default:
+            {
+                SWARN("Socket in unhandled state: " << s->state);
+            }
+            break;
         }
     }
 
@@ -634,121 +575,21 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
 void BedrockServer::_reply(BedrockCommand& command)
 {
+    // TODO: This needs to be synchronized if multiple worker threads can call it.
 
-    // The multi-threaded queues work on SDatas of either requests or
-    // responses.  The response needs to know a few things about the original
-    // request, like the requestCount, connect (so it knows whether to shut
-    // down the socket), etc so copy all the request details into the response
-    // so when the main thread is ready to write back to the original socket,
-    // it has some insight.
-    SData& request = command.request;
-    SData& response = command.response;
-    for (auto& row : request.nameValueMap) {
-        response["request." + row.first] = row.second;
-    }
-
-    // Add a few others
-    response["request.processingTime"] = SToStr(command.processingTime);
-    response["request.creationTimestamp"] = SToStr(command.creationTimestamp);
-    response["request.methodLine"] = request.methodLine;
-
-    // Calculate how long it took to process this command
-    uint64_t totalTime = STimeNow() - response.calc64("request.creationTimestamp");
-    uint64_t processingTime = response.calc64("request.processingTime");
-    uint64_t waitTime = totalTime - processingTime;
-
-    // See if we still have a socket for this command (assuming we ever did)
-    const int64_t requestCount = response.calc64("request.requestCount");
-    map<uint64_t, Socket*>::iterator socketIt = _requestCountSocketMap.find(requestCount);
-    Socket* s = (socketIt != _requestCountSocketMap.end() ? socketIt->second : 0);
-
-    // **FIXME: Abandon requests are mistaken for being internal; somehow detect this and give plugins
-    //          a chance to repair the problem.  Specifically, the Jobs plugin doesn't want to send a
-    //          job to a dead socket -- that job will never get done.
-
-    // Log some performance and diagnostic data
-    const string& commandStatus = "'" + response["request.methodLine"] + "' "
-                                                                         "#" +
-                                  SToStr(requestCount) + " "
-                                                         "(result '" +
-                                  response.methodLine + "') "
-                                                        "from '" +
-                                  (s ? SToStr(s->addr) : "internal") + "' "
-                                                                       "in " +
-                                  SToStr(totalTime / STIME_US_PER_MS) + "=" + SToStr(waitTime / STIME_US_PER_MS) +
-                                  "+" + SToStr(processingTime / STIME_US_PER_MS) + " ms";
-    SINFO("Processed command " << commandStatus);
-
-    // Put the timing data into the response
-    // Only slaves need this info.
-    /*
-    response["totalTime"] = SToStr(totalTime / STIME_US_PER_MS);
-    response["waitTime"] = SToStr(waitTime / STIME_US_PER_MS);
-    response["processingTime"] = SToStr(processingTime / STIME_US_PER_MS);
-    response["nodeName"] = _args["-nodeName"];
-    response["commitCount"] = SToStr(_replicationCommitCount.load());
-    */
-    // Warn on slow commands.
-    if (processingTime > 2000 * STIME_US_PER_MS)
-        SWARN("Slow command (bedrock blocking) " << commandStatus);
-
-    // Warn on high latency commands.
-    // Let's not include ones that needed to send out other requests, or that specifically told us they're slow.
-    if (totalTime > 4000 * STIME_US_PER_MS
-        && !SIEquals(response["request.Connection"], "wait")
-        && !SIEquals(response["latency"],            "high"))
-    {
-        SWARN("Slow command (high latency) " << commandStatus);
-    }
-
-    // Was this command queued by plugin?
-    BedrockPlugin* plugin = BedrockPlugin::getPlugin(response["request.plugin"]);
-    if (plugin) {
-        if (s) {
-            // Let the plugin handle it
-            SINFO("Plugin '" << plugin->getName() << "' handling response '" << response.methodLine << "' to request '"
-                             << response["request.methodLine"] << "'");
-            if (!plugin->onPortRequestComplete(response, s)) {
-                // Begin shutting down the socket
-                SINFO("Plugin '" << plugin->getName() << "' shutting down connection to '" << s->addr << "'");
-                shutdownSocket(s, SHUT_RD);
-            }
-        } else {
-            SWARN("Cannot deliver response from plugin" << plugin->getName() << "' for request '"
-                                                        << response["request.methodLine"] << "' #" << requestCount);
+    // Do we have a socket for this command?
+    auto socketIt = _socketIDMap.find(command.initiatingClientID);
+    if (socketIt != _socketIDMap.end()) {
+        socketIt->second->send(command.response.serialize());
+        if (SIEquals(command.request["Connection"], "close")) {
+            shutdownSocket(socketIt->second, SHUT_RD);
         }
-    } else {
-        // No plugin, use default behavior.  If we have a socket, deliver the response
-        if (s) {
-            // Deliver the response and close the connection if requested.
-            // Also scrub the request.* headers in the response. Those were put
-            // there so when dealing with the Response SData we has some insight
-            // into the original request.
-            // **FIXME: This is a bit of a hack; find another way
-            bool closeSocket = SIEquals(response["request.Connection"], "close");
-            for (map<string, string>::iterator it = response.nameValueMap.begin();
-                 it != response.nameValueMap.end();
-                 /* no inc. handled in loop body*/)
-                if (SStartsWith(it->first, "request."))
-                    response.nameValueMap.erase(it++); // Notice post inc.
-                else
-                    ++it;
-            s->send(response.serialize());
-            if (closeSocket)
-                shutdownSocket(s, SHUT_RD);
-        } else {
-            // We have no socket.  This is fine if it's "Connection: forget",
-            // otherwise it could be a problem -- even a premature
-            // disconnect should clean it up before it gets here.
-            if (!SIEquals(response["request.Connection"], "forget"))
-                SWARN("Cannot deliver response for request '" << response["request.methodLine"] << "' #"
-                                                              << requestCount);
-        }
-    }
 
-    // If there is a socket, it's no longer associated with this request
-    if (socketIt != _requestCountSocketMap.end()) {
-        _requestCountSocketMap.erase(socketIt);
+        // We only keep track of sockets with pending commands.
+        _socketIDMap.erase(socketIt->second->id);
+    }
+    else if (!SIEquals(command.request["Connection"], "forget")) {
+        SWARN("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
     }
 }
 
