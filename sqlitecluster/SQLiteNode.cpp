@@ -42,26 +42,13 @@ atomic<int> SQLiteNode::_commandCount(0);
 // _C_  : Container
 // _I_  : Iterator
 #define SFOREACH(_CT_, _C_, _I_) for (_CT_::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHREVERSE(_CT_, _C_, _I_) for (_CT_::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
-#define SFOREACHCONST(_CT_, _C_, _I_) for (_CT_::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHMAP(_CT0_, _CT1_, _C_, _I_)                                                                            \
-    for (map<_CT0_, _CT1_>::iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-#define SFOREACHMAPREVERSE(_CT0_, _CT1_, _C_, _I_)                                                                     \
-    for (map<_CT0_, _CT1_>::reverse_iterator _I_ = (_C_).rbegin(); _I_ != (_C_).rend(); ++_I_)
-#define SFOREACHMAPCONST(_CT0_, _CT1_, _C_, _I_)                                                                       \
-    for (map<_CT0_, _CT1_>::const_iterator _I_ = (_C_).begin(); _I_ != (_C_).end(); ++_I_)
-
-// Convenience macro for iterating over a priorty queue that is map of priority -> ordered list. Abstracts away map and
-// list iteration into one loop.
-#define SFOREACHPRIORITYQUEUE(_CT_, _C_, _I_)                                                                          \
-    for (map<int, list<_CT_>>::reverse_iterator i = (_C_).rbegin(); i != (_C_).rend(); ++i)                            \
-        for (list<_CT_>::iterator _I_ = (i)->second.begin(); _I_ != (i)->second.end(); ++_I_)
 
 // We've bumped these values back up to 5 minutes because some of the billing commands take over 1 minute to process.
-#define SQL_NODE_DEFAULT_RECV_TIMEOUT STIME_US_PER_M * 5 // Receive timeout for 'normal' SQLiteNode messages
-#define SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT                                                                            \
-    STIME_US_PER_S * 60 // Seperate timeout for receiving and applying synchronization commits
-                        // Increase me during a rekey if you need larger commits to have more time
+#define SQL_NODE_DEFAULT_RECV_TIMEOUT (STIME_US_PER_M * 5) // Receive timeout for 'normal' SQLiteNode messages
+
+// Seperate timeout for receiving and applying synchronization commits
+// Increase me during a rekey if you need larger commits to have more time
+#define SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT (STIME_US_PER_S * 60)
 
 const string SQLiteNode::stateNames[] = {"SEARCHING",
                                          "SYNCHRONIZING",
@@ -121,9 +108,24 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
 // --------------------------------------------------------------------------
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    //SASSERTWARN(_isQueuedCommandMapEmpty());
     SASSERTWARN(_escalatedCommandMap.empty());
-    //SASSERTWARN(processedCommandList.empty());
+    SASSERTWARN(!commitInProgress());
+}
+
+
+void SQLiteNode::startCommit(SQLiteCommand& command)
+{
+    SASSERT(false);
+}
+
+void SQLiteNode::startCommit()
+{
+    SASSERT(false);
+}
+
+void SQLiteNode::queueResponse(SQLiteCommand&& command)
+{
+    SASSERT(false);
 }
 
 // --------------------------------------------------------------------------

@@ -120,12 +120,12 @@ class SQLiteNode : public STCPNode {
 
     // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
     // acknowledged by) peers.
-    bool commitInProgress();
+    bool commitInProgress() { return _commitInProgress; }
 
     // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns
     // the success of the last *completed* commit. If called before `startCommit` is ever called, the return value is
     // unspecified.
-    bool commitSucceeded();
+    bool commitSucceeded() { return _commitSucceeded; }
 
     // This takes a completed command and prepares to send it back to the originating peer. If this command doesn't
     // have an `originator`, then it's an error to pass it to this function.
@@ -206,6 +206,8 @@ class SQLiteNode : public STCPNode {
 
     // This will be set by either of the `startCommit` functions.
     bool _commitInProgress;
+    bool _commitSucceeded;
+
 
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);
