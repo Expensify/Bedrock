@@ -110,26 +110,31 @@ class SQLiteNode : public STCPNode {
     // Updates the internal state machine; returns true if it wants immediate re-updating.
     bool update(uint64_t& nextActivity);
 
-    // Begins the process of committing a command.
+    // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
+    // commitInProgress() will continue to return true until it completes.
     void startCommit(SQLiteCommand& command);
 
-    // Similar to the above version, but with no explicit command. This can be used when the database has changed in a
-    // way that needs to be replicated, but doesn't need to be sent back to anyone when completed. For example, a cron
-    // job could update the database to contain the current free space on disk, but not need to hear the result.
-    void startCommit();
+    // These are the possible states a transaction can be in.
+    enum CommitState {
+        UNKNOWN,
+        WAITING,
+        COMMITTING,
+        SUCCESS,
+        FAILED
+    };
 
     // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
     // acknowledged by) peers.
-    bool commitInProgress() { return _commitInProgress; }
+    bool commitInProgress() { return (_commitState == WAITING || _commitState == COMMITTING); }
 
     // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns
     // the success of the last *completed* commit. If called before `startCommit` is ever called, the return value is
     // unspecified.
-    bool commitSucceeded() { return _commitSucceeded; }
+    bool commitSucceeded() { return _commitState == SUCCESS; }
 
-    // This takes a completed command and prepares to send it back to the originating peer. If this command doesn't
-    // have an `originator`, then it's an error to pass it to this function.
-    void queueResponse(SQLiteCommand&& command);
+    // This takes a completed command and sends the response back to the originating peer. If this command doesn't have
+    // an `initiatingPeerID`, then it's an error to pass it to this function.
+    void sendResponse(SQLiteCommand&& command);
 
     // This is a utility function that we call when we finish processing a command to hand it back to the caller that
     // gave it to us in the first place. If `complete` is true, the corresponding field in the command object will also
@@ -205,9 +210,7 @@ class SQLiteNode : public STCPNode {
     string _masterVersion;
 
     // This will be set by either of the `startCommit` functions.
-    bool _commitInProgress;
-    bool _commitSucceeded;
-
+    CommitState _commitState;
 
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);

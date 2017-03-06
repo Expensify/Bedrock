@@ -116,7 +116,7 @@ void BedrockServer::sync(SData& args,
                     SASSERT(!command.initiatingClientID);
                     // This is complete, we just need to return a response to a peer. Run through these in order
                     // until we find something we need to commit.
-                    syncNode.queueResponse(move(command));
+                    syncNode.sendResponse(move(command));
                     command = syncNodeQueuedCommands.pop();
                 }
                 hasWork = true;
@@ -170,7 +170,7 @@ void BedrockServer::sync(SData& args,
             // This should be true unless we conflicted (or even if we did, if we hit the limit).
             if (commandComplete) {
                 if (command.initiatingPeerID) {
-                    syncNode.queueResponse(move(command));
+                    syncNode.sendResponse(move(command));
                 } else {
                     server._reply(command);
                 }

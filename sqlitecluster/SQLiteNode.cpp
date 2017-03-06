@@ -111,20 +111,22 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 }
 
-
-void SQLiteNode::startCommit(SQLiteCommand& command)
-{
-    SASSERT(false);
-}
-
 void SQLiteNode::startCommit()
 {
-    SASSERT(false);
+    // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
+    // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
+    SASSERT(_commitState == UNKNOWN || _commitState == SUCCESS || _commitState == FAILED);
+    _commitState = WAITING;
 }
 
-void SQLiteNode::queueResponse(SQLiteCommand&& command)
+void SQLiteNode::sendResponse(SQLiteCommand&& command)
 {
-    SASSERT(false);
+    Peer* peer = getPeerByID(command.initiatingPeerID);
+    SASSERT(peer);
+    SData escalate("ESCALATE_RESPONSE");
+    escalate["ID"] = command.id;
+    escalate.content = command.response.serialize();
+    _sendToPeer(peer, escalate);
 }
 
 // --------------------------------------------------------------------------
@@ -734,15 +736,14 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
 
-        // If there are outstanding transactions to send, then we'll do that, but only if we're not waiting on a
-        // synchronous command to complete. However, it should be impossible for there to be any outstanding
-        // transactions while we wait for a synchronous command to complete
-        if (!_currentCommand) {
+        // If there's no commit in progress, we'll send any outstanding transactions that exist. We won't send them
+        // mid-commit, as they'd end up as nested transactions interleaved with the one in progress.
+        if (!commitInProgress()) {
             _sendOutstandingTransactions();
         }
 
-        // Are we waiting for approval of a distributed transaction?
-        if (_currentCommand && !_currentCommand->transaction.empty()) {
+        // This means we've started a distributed transaction and need to get a response from peers.
+        if (_commitState == COMMITTING) {
             // Loop across all peers configured to see how many are:
             SAUTOPREFIX(_currentCommand->request["requestID"]);
             int numFullPeers = 0;     // Num non-permaslaves configured
@@ -775,189 +776,136 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // reset the checkpoint limit either way.
             bool majorityApproved = (numFullApproved * 2 >= numFullPeers);
 
-            // Figure out how much consistency we need.  Go with whatever
-            // is specified in the command, unless we're over our
-            // checkpoint limit.
+            // Figure out how much consistency we need.  Go with whatever is specified in the command, unless we're
+            // over our checkpoint limit.
             ConsistencyLevel consistencyRequired =
                 (_commitsSinceCheckpoint >= _quorumCheckpoint) ? QUORUM : _currentCommand->writeConsistency;
 
             // Figure out if we have enough consistency
             bool consistentEnough = false;
             switch (consistencyRequired) {
-            case ASYNC:
-                // Always consistent enough if we don't care!
-                consistentEnough = true;
-                break;
+                case ASYNC:
+                    // Always consistent enough if we don't care!
+                    consistentEnough = true;
+                    break;
 
-            case ONE:
-                // So long at least one full approved (if we have any peers, that is), we're good
-                consistentEnough = !numFullPeers || (numFullApproved > 0);
-                break;
+                case ONE:
+                    // So long at least one full approved (if we have any peers, that is), we're good.
+                    consistentEnough = !numFullPeers || (numFullApproved > 0);
+                    break;
 
-            case QUORUM:
-                // This one requires a majority
-                consistentEnough = majorityApproved;
-                break;
+                case QUORUM:
+                    // This one requires a majority
+                    consistentEnough = majorityApproved;
+                    break;
 
-            default:
-                SERROR("Invalid write consistency.");
-                break;
+                default:
+                    SERROR("Invalid write consistency.");
+                    break;
             }
 
             // See if all active non-permaslaves have responded.
-            // **NOTE: This can be true if nobody responds if numFullSlaves=0
+            // NOTE: This can be true if nobody responds if there are no full slaves.
             bool everybodyResponded = numFullResponded >= numFullSlaves;
 
-            // Only approve if the peer who initiated the transaction is
-            // still alive.  (If there is no initiator, then it's assumed
-            // to be us -- and we're implicitly subscribed to ourselves.)
-            // If the initiating peer died, then abort the transaction:
-            // either it doesn't need the result, or it will be
-            // resubmitted.
+            // Only approve if the peer who initiated the transaction is still alive. (If there is no initiatingPeerID,
+            // then it's assumed to be us -- and we're implicitly subscribed to ourselves.) If the initiating peer
+            // died, then abort the transaction: either it doesn't need the result, or it will be resubmitted.
             Peer* peer = getPeerByID(_currentCommand->initiatingPeerID);
             bool initiatorSubscribed = (!peer || peer->test("Subscribed"));
 
             // Record these for posterity
-            SDEBUG("'" << _currentCommand->request.methodLine << "' (#" << _currentCommand->id << "): numFullPeers="
-                       << numFullPeers << ", numFullSlaves="
-                       << numFullSlaves << ", numFullResponded="
-                       << numFullResponded << ", numFullApproved="
-                       << numFullApproved << ", majorityApproved="
-                       << majorityApproved << ", writeConsistency="
-                       << consistencyLevelNames[_currentCommand->writeConsistency] << ", consistencyRequired="
-                       << consistencyLevelNames[consistencyRequired] << ", consistentEnough="
-                       << consistentEnough << ", everybodyResponded="
-                       << everybodyResponded << ", initiatorSubscribed="
-                       << initiatorSubscribed << ", commitsSinceCheckpoint="
-                       << _commitsSinceCheckpoint);
+            SDEBUG(      "numFullPeers="          << numFullPeers
+                   << ", numFullSlaves="          << numFullSlaves
+                   << ", numFullResponded="       << numFullResponded
+                   << ", numFullApproved="        << numFullApproved
+                   << ", majorityApproved="       << majorityApproved
+                   << ", writeConsistency="       << consistencyLevelNames[_currentCommand->writeConsistency]
+                   << ", consistencyRequired="    << consistencyLevelNames[consistencyRequired]
+                   << ", consistentEnough="       << consistentEnough
+                   << ", everybodyResponded="     << everybodyResponded
+                   << ", initiatorSubscribed="    << initiatorSubscribed
+                   << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
 
-            // Ok, let's see if we have enough to finish this command
-            bool commandFinished = false;
             if (!initiatorSubscribed || (everybodyResponded && !consistentEnough)) {
-                // Abort this distributed transaction.  Either happen
-                // because the initiator disappeard, or everybody has
-                // responded without enough consistency (indicating it'll
-                // never come).  Failed, tell everyone to rollback.
-                SWARN("Rolling back transaction for '"
-                      << _currentCommand->request.methodLine << "' because initiatorSubscribed=" << initiatorSubscribed
+                // Abort this distributed transaction. Happened either because the initiator disappeared, or everybody
+                // has responded without enough consistency (indicating it'll never come). Failed, tell everyone to
+                // rollback.
+                SWARN("Rolling back transaction because initiatorSubscribed=" << initiatorSubscribed
                       << ", everybodyResponded=" << everybodyResponded << ", consistentEnough=" << consistentEnough);
                 _db.rollback();
-                _commitTimer.stop();
-                commandFinished = true;
 
                 // Notify everybody to rollback
-                SWARN("[TY2] ROLLBACK, not approved: " << _currentCommand->id);
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback["ID"] = _currentCommand->id;
-                _sendToAllPeers(rollback, true); // subscribed only
+                _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
 
-                // Notify the caller that this command failed
-                _currentCommand->response.clear();
-                _currentCommand->response.methodLine = "500 Failed to get adequate consistency";
+                // Finished, but failed.
+                _commitState = FAILED;
+                SQLite::commitLock.unlock();
             } else if (consistentEnough) {
-                // Commit this distributed transaction.  Either we have quorum, or we don't need it.
-                uint64_t start = STimeNow();
+                // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 int result = _db.commit();
 
+                // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
                     _db.rollback();
                     _commitTimer.stop();
 
-                    // Notify everybody to rollback
-                    SWARN("ROLLBACK, conflicted on sync: " << _currentCommand->id << " : "
-                          << _currentCommand->request.methodLine);
+                    // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
+                    // roll back.
+                    SWARN("Conflict committing in SQLiteNode, ROLLBACK");
                     SData rollback("ROLLBACK_TRANSACTION");
+                    // TODO: Well, fuck sticks, what do we use for this?
                     rollback["ID"] = _currentCommand->id;
-                    _sendToAllPeers(rollback, true); // subscribed only
+                    _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
 
-                    // We're done with this, we'll re-open it, and then return from `update` indicating we need to run
-                    // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
-                    // caller.
+                    // Ok, we're no longer committing.
+                    _commitState = FAILED;
                     SQLite::commitLock.unlock();
-
-                    // Make sure the response is empty, and re-open the command.
-                    _currentCommand->response.clear();
-                    // reopenCommand(_currentCommand);
-
-                    _currentCommand = nullptr;
-                    return true;
                 } else {
+                    // Hey, our commit succeeded!
+
                     // Record how long it took
                     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
                     uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed master transaction for '"
-                          << _currentCommand->request.methodLine << "' (" << _currentCommand->id << ") "
-                                                                                                    "#"
                           << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
-                          << _commitsSinceCheckpoint << " commits since quorum "
-                                                        "(consistencyRequired="
+                          << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
                           << consistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
-                          << numFullPeers << " approved "
-                                             "("
-                          << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
+                          << numFullPeers << " approved (" << peerList.size() << " total) in "
+                          << totalElapsed / STIME_US_PER_MS << " ms ("
                           << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
                           << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
                           << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
 
-                    // Try to flush the send buffer here in order to
-                    // prevent the case of the master sending out the
-                    // commits but the next command taking for ever and
-                    // causing the other nodes to timeout.  Note that
-                    // no flush happens before we start processing the
-                    // next commands below.  That situation can result in
-                    // an out of sync db on the master due to the master
-                    // committing and the slaves rolling back on disconnect.
-                    _lastSentTransactionID = getCommitCount();
-
                     // clear the unsent transactions, we've sent them all (including this one);
                     _db.getCommittedTransactions();
 
-                    SINFO("Successfully committed: " << _currentCommand->id << ":"
-                          << _currentCommand->request.methodLine
-                          << ". Sending COMMIT_TRANSACTION to peers. Updated _lastSentTransactionID to "
+                    // Update the last sent transaction ID.
+                    _lastSentTransactionID = getCommitCount();
+
+                    SINFO("Successfully committed. Sending COMMIT_TRANSACTION to peers. Updated _lastSentTransactionID to "
                           << _lastSentTransactionID);
                     SData commit("COMMIT_TRANSACTION");
+                    // TODO: Also here.
                     commit["ID"] = _currentCommand->id;
-                    _sendToAllPeers(commit, true); // subscribed only
+                    _sendToAllPeers(commit, true); // true: Only to subscribed peers.
+
+                    // Done!
+                    _commitState = SUCCESS;
+                    SQLite::commitLock.unlock();
                 }
-
-                // OK, this might fail.
-                _commitTimer.stop();
-                _currentCommand->processingTime += STimeNow() - start;
-                commandFinished = true;
-            }
-
-            // Did we finish the command:
-            if (commandFinished) {
-                // Either way, we're done with this command
-                //_finishCommand(_currentCommand);
-                _currentCommand = nullptr;
-
-                // If we haven't received majority approval, increment how
-                // many commits we've had without a "checkpoint"
-                if (majorityApproved) {
-                    // Safe!
-                    SINFO("Commit checkpoint achieved, resetting uncheckpointed commit count to 0.");
-                    _commitsSinceCheckpoint = 0;
-                } else {
-                    // We're going further out on a limb...
-                    _commitsSinceCheckpoint++;
-                }
-
-                // Done with this.
-                SQLite::commitLock.unlock();
             } else {
-                // Still waiting
-                SINFO("Waiting to commit: '"
-                      << _currentCommand->request.methodLine << "' (#" << _currentCommand->id
-                      << "): consistencyRequired=" << consistencyLevelNames[consistencyRequired]
+                // Not consistent enough, but not everyone's responded yet, so we'll wait.
+                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[consistencyRequired]
                       << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
             }
         }
 
-        // If we're the master, see if we're to stand down (and if not, start a new command)
-        if (_state == MASTERING && !_currentCommand) {
+        // If we're not trying to  stand down, and there's a commit waiting.
+        if (_state == MASTERING && _commitState == WAITING) {
             // See if it's time to stand down
             string standDownReason;
             bool shuttingDown = false;
