@@ -31,6 +31,7 @@ void SInitialize();
 // Standard Template Library stuff
 // --------------------------------------------------------------------------
 // Include the files
+#include <atomic>
 #include <map>
 #include <string>
 #include <list>
@@ -701,12 +702,15 @@ template <typename Container> string SQList(const Container& valueList) {
 
 void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
-bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
-                   int64_t warnThreshold = 1000 * STIME_US_PER_MS);
-inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
+
+// Returns an SQLite result code.
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
+           int64_t warnThreshold = 1000 * STIME_US_PER_MS);
+inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
     SQResult ignore;
     return SQuery(db, e, sql, ignore, warnThreshold);
 }
+
 #define SSTR(_val_) #_val_
 #define __SLINE__ SSTR(__LINE__)
 #define SQUERY(_db_, _query_, _result_) SQuery(_db_, __FILE__ __SLINE__, (string)_query_, _result_)
@@ -714,6 +718,7 @@ inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnTh
 #define SASSERTQUERY(_db_, _query_, _result_) SASSERT(SQUERY(_db_, _query_, _result_))
 #define SASSERTQUERYIGNORE(_db_, _query_) SASSERT(SQUERYIGNORE(_db_, _query_))
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
+bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
 // --------------------------------------------------------------------------
 inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }
@@ -803,5 +808,6 @@ struct STestTimer {
 // Other libstuff headers.
 #include "SRandom.h"
 #include "SPerformanceTimer.h"
+#include "SLockTimer.h"
 
 #endif	// LIBSTUFF_H

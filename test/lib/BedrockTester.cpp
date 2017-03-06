@@ -54,14 +54,14 @@ BedrockTester::~BedrockTester() {
 
 SQLite& BedrockTester::getSQLiteDB() {
     if (!db) {
-        db = new TestSQLite(dbFile, 1000000, false, true, 3000000);
+        db = new SQLite(dbFile, 1000000, 100, 3000000, -1, -1);
     }
     return *db;
 }
 
 SQLite& BedrockTester::getWritableSQLiteDB() {
     if (!writableDB) {
-        writableDB = new TestSQLite(dbFile, 1000000, false, false, 3000000);
+        writableDB = new SQLite(dbFile, 1000000, 100, 3000000, -1, -1);
     }
     return *writableDB;
 }
