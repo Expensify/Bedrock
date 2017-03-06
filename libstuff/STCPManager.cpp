@@ -226,7 +226,6 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
 
     // Create a new socket
     Socket* socket = new Socket(s, STCP_CONNECTING);
-    socket->state = STCP_CONNECTING;
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
     socketList.push_back(socket);
