@@ -13,13 +13,12 @@
 bool SQLite::sqliteInitialized = false;
 recursive_mutex SQLite::_commitLock;
 SLockTimer<recursive_mutex> SQLite::commitLock("Commit Lock", _commitLock);
-recursive_mutex SQLite::_hashLock;
 atomic<uint64_t> SQLite::_commitCount(0);
 atomic<int> SQLite::_dbInitialized(0);
 
 map<uint64_t, pair<string, string>> SQLite::_inFlightTransactions;
 set<uint64_t> SQLite::_committedtransactionIDs;
-string SQLite::_lastCommittedHash;
+atomic<string> SQLite::_lastCommittedHash;
 
 void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
@@ -109,9 +108,10 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // If we're the first thread to get to it, we'll initialize the DB.
 
-    // First we grab the commit and hash locks so nobody else can try to commit, or read the last hash.
+    // First we grab the commit lock, so nobody can try and commit until we've completed initializing. The first
+    // constructor that gets here will grab this lock and hold it until initialization is complete, keeping any other
+    // objects from doing any commits (or even finishing their constructors) until that point.
     SQLITE_COMMIT_AUTOLOCK;
-    lock_guard<recursive_mutex> h_lock(_hashLock);
 
     // Now we'll see if the DB's initialized.
     int alreadyInitialized = _dbInitialized.fetch_add(1);
@@ -125,7 +125,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         // And then read the hash for that transaction.
         string lastCommittedHash, ignore;
         getCommit(commitCount, ignore, lastCommittedHash);
-        _lastCommittedHash = lastCommittedHash;
+        _lastCommittedHash.store(lastCommittedHash);
 
         // If we have a commit count, we should have a hash as well.
         if (commitCount && lastCommittedHash.empty()) {
@@ -384,11 +384,7 @@ int SQLite::commit() {
         _journalSize += !truncating; // Only increase if we didn't truncate by a row
 
         _committedtransactionIDs.insert(_uncommittedID);
-        {
-            // Update atomically.
-            lock_guard<recursive_mutex> lock(_hashLock);
-            _lastCommittedHash = _uncommittedHash;
-        }
+        _lastCommittedHash.store(_uncommittedHash);
 
         // Ok, someone else can commit now.
         // Incrementing the commit count.
@@ -412,16 +408,23 @@ int SQLite::commit() {
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
+    // Maps a committed transaction ID to the correct query and hash for that transaction.
     map<uint64_t, pair<string,string>> result;
+
+    // If nothing's been committed, nothing to return.
     if (_committedtransactionIDs.empty()) {
         return result;
     }
 
+    // For each transaction that we've committed, we'll remove the that transaction from the "in flight" list, and
+    // return that to the caller. This lets SQLiteNode get a list of transactions that have been committed since the
+    // last time it called this function, so that it can replicate them to peers.
     for (uint64_t key : _committedtransactionIDs) {
         result[key] = move(_inFlightTransactions.at(key));
         _inFlightTransactions.erase(key);
     }
 
+    // There are no longer any outstanding transactions, so we can clear this.
     _committedtransactionIDs.clear();
     return result;
 }
@@ -485,8 +488,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() { 
-    lock_guard<recursive_mutex> lock(_hashLock);
-    return _lastCommittedHash;
+    return _lastCommittedHash.load();
 }
 
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {

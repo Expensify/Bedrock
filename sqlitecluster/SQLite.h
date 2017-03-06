@@ -131,7 +131,9 @@ class SQLite {
     //  this limitation.
     string getJournalQuery(const list<string>& queryParts, bool append = false);
 
-    // This atomically removes and returns committed transactions from our inflight list.
+    // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
+    // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
+    // out to peers.
     map<uint64_t, pair<string,string>> getCommittedTransactions();
 
   protected:
@@ -153,7 +155,7 @@ class SQLite {
     int _minJournalTables;
 
     // This is the last committed hash by *any* thread.
-    static string _lastCommittedHash;
+    static atomic<string> _lastCommittedHash;
 
     // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
     // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
@@ -236,7 +238,6 @@ class SQLite {
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value.
     static recursive_mutex _commitLock;
-    static recursive_mutex _hashLock;
 
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
     // any transactions.
