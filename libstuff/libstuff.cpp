@@ -59,8 +59,8 @@
 // Initializes signal handling; only call in SInitialize()
 extern void _SInitializeSignals();
 
-thread_local string SThreadLogPrefix;
-thread_local string SThreadLogName;
+thread_local string g_SThreadLogPrefix;
+thread_local string g_SThreadLogName;
 
 void SInitialize(string threadName) {
     // Initialize signal handling
@@ -71,11 +71,11 @@ void SInitialize(string threadName) {
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix) {
-    SThreadLogPrefix = logPrefix;
+    g_SThreadLogPrefix = logPrefix;
 }
 
 void SLogSetThreadName(const string& logName) {
-    SThreadLogName = logName;
+    g_SThreadLogName = logName;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2151,6 +2151,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SDEBUG(sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
+
+        // Return of we got anything other than busy (i.e., success), OR if we got busy, with the extended error
+        // SQLITE_BUSY_SNAPSHOT, meaning we had a commit conflict. We only retry if we're busy but not conflicted.
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
@@ -2186,7 +2189,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[concurrent] commit conflict.");
+        SHMMM("[concurrent] commit conflict.");
         return extErr;
     }
     return error;

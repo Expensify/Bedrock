@@ -238,7 +238,7 @@ void SLogStackTrace();
     } while (false)
 
 #define SWHEREAMI                                                                                                      \
-    SThreadLogPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << SThreadLogName \
+    g_SThreadLogPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << g_SThreadLogName \
                    << "] "
 
 #define SLOGPREFIX ""
@@ -268,8 +268,8 @@ void SLogStackTrace();
 // --------------------------------------------------------------------------
 
 // Each thread gets its own thread-local log prefix.
-extern thread_local string SThreadLogPrefix;
-extern thread_local string SThreadLogName;
+extern thread_local string g_SThreadLogPrefix;
+extern thread_local string g_SThreadLogName;
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
@@ -279,7 +279,7 @@ struct SAutoThreadPrefix {
     // Set on construction; reset on destruction
     SAutoThreadPrefix(const string& prefix) {
         // Retain the old prefix
-        oldPrefix = SThreadLogPrefix;
+        oldPrefix = g_SThreadLogPrefix;
 
         // Only change if we have something
         if (!prefix.empty()) {

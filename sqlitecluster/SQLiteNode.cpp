@@ -2589,7 +2589,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
             _db.rollback();
         SData rollback("ROLLBACK_TRANSACTION");
         rollback["ID"] = _currentCommand->id;
-        SINFO("ROLLBACK on disconnect: " << _currentCommand->id);
+        SHMMM("ROLLBACK on disconnect: " << _currentCommand->id);
         SFOREACH (list<Peer*>, peerList, peerIt)
             if ((**peerIt)["Subscribed"] == "true") {
                 // Send the rollback command

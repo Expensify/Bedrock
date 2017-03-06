@@ -73,6 +73,7 @@ void BedrockServer_WorkerThread_ProcessDirectMessages(BedrockNode& node, Bedrock
 void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 {
     SInitialize(data.name);
+
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-worker"] = "false";
     SINFO("Starting sync thread for '" << data.name << "'");
@@ -221,6 +222,7 @@ void BedrockServer::syncWorker(BedrockServer::ThreadData& data)
 void BedrockServer::worker(BedrockServer::ThreadData& data, int threadId, int threadCount)
 {
     SInitialize(data.name);
+
     // This needs to be set because the constructor for BedrockNode depends on it.
     data.args["-worker"] = "true";
 
