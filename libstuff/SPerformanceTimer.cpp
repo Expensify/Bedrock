@@ -6,9 +6,6 @@ SPerformanceTimer::SPerformanceTimer(string description, bool reverse, uint64_t 
       _lastLogStart(0), _timeLogged(0), _timeNotLogged(0), _description(description) {}
 
 SPerformanceTimer::~SPerformanceTimer() {
-    // TODO: We'd like to do one final log at shutdown, but this breaks for statically allocated timers, because we
-    // won't have SINFO available when this destructor is called. Thus, this is currently disabled.
-    // log();
 }
 
 void SPerformanceTimer::start() {
