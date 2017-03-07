@@ -116,7 +116,7 @@ void BedrockServer::sync(SData& args,
                     SASSERT(!command.initiatingClientID);
                     // This is complete, we just need to return a response to a peer. Run through these in order
                     // until we find something we need to commit.
-                    syncNode.sendResponse(move(command));
+                    syncNode.sendResponse(command);
                     command = syncNodeQueuedCommands.pop();
                 }
                 hasWork = true;
@@ -125,16 +125,23 @@ void BedrockServer::sync(SData& args,
             }
         }
 
+        SQLiteNode::State state = syncNode.getState();
+
+        // TODO: This is totally wrong, but here as a placeholder.
+        // SAUTOPREFIX(command.request["prefix"]);
+
         // We found some work to do, let's start on it.
         if (hasWork) {
-            core.peekCommand(command);
-            core.processCommand(command);
-            // Command is now invalidated, and the sync node owns the copy.
-            syncNode.startCommit(command);
+            if (state == SQLiteNode::MASTERING) {
+                core.peekCommand(command);
+                core.processCommand(command);
+                syncNode.startCommit(command.writeConsistency);
+            } else if (state == SQLiteNode::SLAVING) {
+                syncNode.escalateCommand(move(command));
+            }
         }
 
         // Let the update loop run as long as it needs.
-        SQLiteNode::State state = syncNode.getState();
         while (syncNode.update(nextActivity)) {
             SQLiteNode::State newState = syncNode.getState();
             replicationState.store(newState);
@@ -144,7 +151,7 @@ void BedrockServer::sync(SData& args,
                 // If we changed just changed states to mastering, this should be impossible.
                 SASSERT(!syncNode.commitInProgress());
                 core.upgradeDatabase();
-                syncNode.startCommit();
+                syncNode.startCommit(SQLiteNode::QUORUM);
             }
             state = newState;
         }
@@ -170,7 +177,7 @@ void BedrockServer::sync(SData& args,
             // This should be true unless we conflicted (or even if we did, if we hit the limit).
             if (commandComplete) {
                 if (command.initiatingPeerID) {
-                    syncNode.sendResponse(move(command));
+                    syncNode.sendResponse(command);
                 } else {
                     server._reply(command);
                 }
@@ -228,6 +235,7 @@ void BedrockServer::worker(SData& args,
                 // If it has an initiator, it should be returned to a peer by a sync node instead.
                 SASSERT(!command.initiatingPeerID);
                 SASSERT(command.initiatingClientID);
+                server._reply(command);
             }
 
             // We'll retry on conflict up to this many times.

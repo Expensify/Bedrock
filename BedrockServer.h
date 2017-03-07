@@ -2,6 +2,7 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 

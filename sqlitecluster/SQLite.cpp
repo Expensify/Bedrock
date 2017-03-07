@@ -2,6 +2,7 @@
 /// =================================
 #include <libstuff/libstuff.h>
 #include "SQLite.h"
+#include "SQLiteNode.h"
 
 // --------------------------------------------------------------------------
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
@@ -383,6 +384,9 @@ int SQLite::commit() {
             lock_guard<recursive_mutex> lock(_hashLock);
             _lastCommittedHash = _uncommittedHash;
         }
+
+        // Notify any SQLiteNode that it has something to replicate.
+        SQLiteNode::unsentTransactions.store(true);
 
         // Ok, someone else can commit now.
         // Incrementing the commit count.
