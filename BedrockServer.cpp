@@ -539,13 +539,15 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         #endif
     }
 
-    // Process any new activity from incoming sockets
+    // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
+    // over it, we'll keep a list of sockets that need closing.
+    list<STCPManager::Socket*> socketsToClose;
     for (auto s : socketList) {
         switch (s->state) {
             case STCPManager::Socket::CLOSED:
             {
                 _socketIDMap.erase(s->id);
-                closeSocket(s);
+                socketsToClose.push_back(s);
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
                 // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
                 // able to have their responses returned.
@@ -608,6 +610,11 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             }
             break;
         }
+    }
+
+    // Now we can close any sockets that we need to.
+    for (auto s: socketsToClose) {
+        closeSocket(s);
     }
 
     // If any plugin timers are firing, let the plugins know.
