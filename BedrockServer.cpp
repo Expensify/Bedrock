@@ -117,9 +117,9 @@ void BedrockServer::sync(SData& args,
         // like a regular distributed commit.
         if (preUpdateState != SQLiteNode::MASTERING && replicationState.load() == SQLiteNode::MASTERING) {
             // TODO: Upgrade the DB.
-            upgradeInProgress.store(true);
-            committingCommand = true;
             if (server._upgradeDB(db)) {
+                upgradeInProgress.store(true);
+                committingCommand = true;
                 syncNode.startCommit(SQLiteNode::QUORUM);
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -392,7 +392,8 @@ void BedrockServer::worker(SData& args,
 
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
-    _nodeGracefulShutdown(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false) {
+    _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
+    _suppressCommandPortManualOverride(false) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
