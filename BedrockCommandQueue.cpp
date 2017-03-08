@@ -2,8 +2,7 @@
 #include "BedrockCommand.h"
 #include "BedrockCommandQueue.h"
 
-void BedrockCommandQueue::push(BedrockCommand&& item)
-{
+void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     queue.emplace(item.priority, move(item));
@@ -37,10 +36,10 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 
     // Otherwise, we'll wait for some.
     if (timeoutUS) {
-        auto start = std::chrono::steady_clock::now();
+        auto timeout = chrono::steady_clock::now() + chrono::microseconds(timeoutUS);
         while (true) {
             // Wait until we hit our timeout, or someone gives us some work.
-            _queueCondition.wait_until(queueLock, start + chrono::microseconds(timeoutUS));
+            _queueCondition.wait_until(queueLock, timeout);
             
             // Did we get any work? If so, return it.
             try {
@@ -49,8 +48,8 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
                 // Still nothing available.
             }
 
-            // Did we go past our timeout? If so, we give up.
-            if (std::chrono::steady_clock::now() < start + chrono::microseconds(timeoutUS)) {
+            // Did we go past our timeout? If so, we give up. Otherwise, we awoke spuriously, and will retry.
+            if (chrono::steady_clock::now() > timeout) {
                 // TODO: Better exception type.
                 throw "Timeout";
             }
@@ -69,11 +68,11 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 }
 
 bool BedrockCommandQueue::empty()  {
+    SAUTOLOCK(_queueMutex);
     return _commandQueue.empty();
 }
 
-bool BedrockCommandQueue::removeByID(const string& id)
-{
+bool BedrockCommandQueue::removeByID(const string& id) {
     SAUTOLOCK(_queueMutex);
     int count = 0;
     for (auto& queue : _commandQueue) {
@@ -87,19 +86,20 @@ bool BedrockCommandQueue::removeByID(const string& id)
             }
         }
     }
-
     SWARN("Attempted to remove command '" << id << "' but not found. Inspected " << count << " commands.");
     return false;
 }
 
 BedrockCommand BedrockCommandQueue::_dequeue() {
-    SAUTOLOCK(_queueMutex);
+    // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
+    // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
+    // private).
 
     // We'll check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 
     // Look at each priority queue, starting from the highest priority.
-    for (auto queueMapIt = _commandQueue.rbegin(); queueMapIt != _commandQueue.rbegin(); ++queueMapIt) {
+    for (auto queueMapIt = _commandQueue.rbegin(); queueMapIt != _commandQueue.rend(); ++queueMapIt) {
         
         // Look at the first item in the list, this is the one with the lowest timestamp. If this one isn't suitable,
         // none of the others will be, either.
@@ -108,7 +108,7 @@ BedrockCommand BedrockCommandQueue::_dequeue() {
             // Pull out the command we want to return.
             BedrockCommand command = move(commandMapIt->second);
 
-            // And delete the copy in the queue.
+            // And delete the entry in the queue.
             queueMapIt->second.erase(commandMapIt);
 
             // If the whole queue is empty, delete that too.

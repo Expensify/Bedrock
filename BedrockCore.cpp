@@ -60,6 +60,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
     }
 
     // If we get here, it means the command is fully completed.
+    command.complete = true;
     return true;
 }
 
@@ -165,7 +166,8 @@ bool BedrockCore::processCommand(BedrockCommand& command)
         _handleCommandException(command, "", true);
     }
 
-    // Done, return whether or not we need the parent to commit our transaction
+    // Done, return whether or not we need the parent to commit our transaction.
+    command.complete = !needsCommit;
     return needsCommit;
 }
 

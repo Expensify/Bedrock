@@ -14,6 +14,7 @@ void BedrockServer::cancelCommand(const string& commandID) {
 
 void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
+                         atomic<bool>& upgradeInProgress,
                          atomic<bool>& nodeGracefulShutdown,
                          atomic<string>& masterVersion,
                          CommandQueue& syncNodeQueuedCommands,
@@ -50,6 +51,7 @@ void BedrockServer::sync(SData& args,
         workerThreadList.emplace_back(worker,
                                       ref(args),
                                       ref(replicationState),
+                                      ref(upgradeInProgress),
                                       ref(nodeGracefulShutdown),
                                       ref(masterVersion),
                                       ref(syncNodeQueuedCommands),
@@ -96,6 +98,7 @@ void BedrockServer::sync(SData& args,
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state along the way.
+        SQLiteNode::State preUpdateState = syncNode.getState();
         while (syncNode.update()) {
             replicationState.store(syncNode.getState());
             masterVersion.store(syncNode.getMasterVersion());
@@ -104,7 +107,24 @@ void BedrockServer::sync(SData& args,
         // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
         // main loop over. This can let us wait for logins from peers (for example).
         if (!syncNode.ready()) {
+            // TODO: This causes us to stop processing any commands that were in progress as we switched from MASTERING
+            // to STANDINGDOWN. We probably want to recognize that case as well.
             continue;
+        }
+
+        // If we've just switched to the mastering state, we want to upgrade the DB. We'll set a global flag to let
+        // worker threads know that a DB upgrade is in progress, and start the upgrade process, which works basically
+        // like a regular distributed commit.
+        if (preUpdateState != SQLiteNode::MASTERING && replicationState.load() == SQLiteNode::MASTERING) {
+            // TODO: Upgrade the DB.
+            upgradeInProgress.store(true);
+            committingCommand = true;
+            if (server._upgradeDB(db)) {
+                syncNode.startCommit(SQLiteNode::QUORUM);
+
+                // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
+                continue;
+            }
         }
 
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
@@ -113,6 +133,14 @@ void BedrockServer::sync(SData& args,
             // It should be impossible to get here if we're not mastering.
             SASSERT(replicationState.load() == SQLiteNode::MASTERING);
             if (syncNode.commitSucceeded()) {
+                // If we were upgrading, there's no response to send, we're just done.
+                if (upgradeInProgress.load()) {
+                    committingCommand = false;
+                    upgradeInProgress.store(false);
+                    continue;
+                }
+                // Otherwise, mark this command as complete and return.
+                command.complete = true;
                 if (command.initiatingPeerID) {
                     // This is a command that came from a peer. Have the server send the response back to the peer.
                     syncNode.sendResponse(command);
@@ -240,7 +268,8 @@ void BedrockServer::sync(SData& args,
 }
 
 void BedrockServer::worker(SData& args,
-                           atomic<SQLiteNode::State>& _replicationState,
+                           atomic<SQLiteNode::State>& replicationState,
+                           atomic<bool>& upgradeInProgress,
                            atomic<bool>& nodeGracefulShutdown,
                            atomic<string>& masterVersion,
                            CommandQueue& syncNodeQueuedCommands,
@@ -256,47 +285,81 @@ void BedrockServer::worker(SData& args,
     // Command to work on. This default command is replaced when we find work to do.
     BedrockCommand command;
 
+    // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
+    // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
 
+            while (upgradeInProgress.load()) {
+                // TODO: Make this less shitty.
+                // Also, there's a race condition here if we start an upgrade after this point. What happens then? It
+                // means we've switched from SLAVING to MASTERING in the middle of handling a command in a worker. The
+                // worker can probably try and continue handling the command as if it were a slave.
+                usleep(10000);
+            }
+
+            // We'll use the state right now for the duration of this loop. If we're promoted to master, mid loop, this
+            // should be fine, we'll either complete a `peek` and respond to a client, or we'll end up escalating the
+            // command to the sync node which will start with it in the MASTERING state. If we move from MASTERING to
+            // STANDINGDOWN, we'll finish up processing the command as if we were master, which is the intention of the
+            // STANDINGDOWN state.
+            // TODO: But if we change states again from STANDINGDOWN to SLAVING (or anything else), we'll probably be
+            // in an ambiguous state. We may need to let SQLiteNode ask the server if it's done standing down so that
+            // we can communicate if there are any commands being handled, to prevent stand-down completing until
+            // they've finished.
+            SQLiteNode::State state = replicationState.load();
+
+            // If this command is already complete, then we should be a slave, and the sync node got a response back
+            // from a command that had been escalated to master, and queued it for a worker to respond to. We'll send
+            // that response now.
             if (command.complete) {
                 // If this command is already complete, we can return it to the caller.
                 // If it has an initiator, it should be returned to a peer by a sync node instead.
                 SASSERT(!command.initiatingPeerID);
                 SASSERT(command.initiatingClientID);
+                SASSERT(state == SQLiteNode::SLAVING);
                 server._reply(command);
+
+                // This command is done, move on to the next one.
+                continue;
             }
 
             // We'll retry on conflict up to this many times.
             int retry = 3;
-            bool commandComplete = true;
             while (retry) {
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
                 if (!core.peekCommand(command)) {
-                    // If the command opened an HTTPS request, the sync thread will poll for activity on its socket.
-                    // Also, only the sync thread can handle quorum commits.
-                    if (command.httpsRequest || command.writeConsistency != SQLiteNode::ASYNC) {
+                    // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
+                    // it, or if we should send it off to the sync node.
+                    if (state == SQLiteNode::SLAVING ||
+                        command.httpsRequest         ||
+                        command.writeConsistency != SQLiteNode::ASYNC)
+                    {
                         syncNodeQueuedCommands.push(move(command));
-                        // We neither retry nor respond here.
+
+                        // We'll break out of our retry loop here, as we don't need to do anything else, we can just
+                        // look for another command to work on.
                         break;
                     }  else {
-                        // There's nothing blocking us from committing this ourselves. Let's try it. If it returns
-                        // true, we need to commit it. Otherwise, there was nothing to commit, and we can jump straight
-                        // to responding to it.
+                        // In this case, there's nthing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
-                            // Ok, we need to commit, let's try it. If it succeeds, then we just have to respond.
-                            if (!core.commitCommand(command)) {
-                                // Commit failed. Conflict. :(
-                                commandComplete = false;
+                            // If processCommand returned true, then we need to do a commit. Otherwise, the command is
+                            // done, and we just need to respond.
+                            if (core.commitCommand(command)) {
+                                // If the commit succeeded, we'll mark the command as complete, and there's nothing
+                                // else to do!
+                                command.complete = true;
                             }
                         }
                     }
                 }
-                // If we either didn't need to commit, or we committed successfully, we'll get here.
-                if (commandComplete) {
+
+                // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
+                // a conflict, and we'll retry.
+                if (command.complete) {
                     if (command.initiatingPeerID) {
                         // Escalated command. Give it back to the sync thread to respond.
                         syncNodeQueuedCommands.push(move(command));
@@ -306,19 +369,21 @@ void BedrockServer::worker(SData& args,
                     // Don't need to retry.
                     break;
                 }
+
                 // We're about to retry, decrement the retry count.
-                retry--;
+                --retry;
             }
+
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
                 SWARN("Max retries hit, forwarding command to sync node.");
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {
-            // Nothing after 1s.
+            // No commands to process after 1 second.
         }
 
-        // Ok, we're done, see if we should exit.
+        // Ok, we're done with this loop, see if we should exit.
         if (0 /* TODO: exit_condition */) {
             break;
         }
@@ -327,8 +392,7 @@ void BedrockServer::worker(SData& args,
 
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
-    /*_replicationCommitCount(0),*/ _nodeGracefulShutdown(false), /*_masterVersion(),*/ _suppressCommandPort(false),
-    _suppressCommandPortManualOverride(false) {
+    _nodeGracefulShutdown(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -364,6 +428,7 @@ BedrockServer::BedrockServer(const SData& args)
     _syncThread = thread(sync,
                          ref(_args),
                          ref(_replicationState),
+                         ref(_upgradeInProgress),
                          ref(_nodeGracefulShutdown),
                          ref(_masterVersion),
                          ref(_syncNodeQueuedCommands),
@@ -627,10 +692,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
-void BedrockServer::_reply(BedrockCommand& command)
-{
+void BedrockServer::_reply(BedrockCommand& command) {
     // TODO: This needs to be synchronized if multiple worker threads can call it.
-
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
@@ -758,4 +821,9 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["processedCommandList"] = SComposeJSONArray(node->getProcessedCommandList());
         */
     }
+}
+
+bool BedrockServer::_upgradeDB(SQLite& db) {
+    // TODO: Implement.
+    return !db.getUncommittedQuery().empty();
 }

@@ -74,6 +74,9 @@ class BedrockServer : public SQLiteServer {
     // reference to this object is passed to the sync thread to allow this update.
     atomic<SQLiteNode::State> _replicationState;
 
+    // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
+    atomic<bool> _upgradeInProgress;
+
     // This flag will be raised when we want to start shutting down. A reference is passed to the sync thread to allow
     // it to shut down its SQLiteNode.
     atomic<bool> _nodeGracefulShutdown;
@@ -102,10 +105,15 @@ class BedrockServer : public SQLiteServer {
     // The actual thread object for the sync thread.
     thread _syncThread;
 
+    // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
+    // becomes master. It will return true if the DB has changed and needs to be committed.
+    bool _upgradeDB(SQLite& db);
+
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
     static void sync(SData& args,
                      atomic<SQLiteNode::State>& replicationState,
+                     atomic<bool>& upgradeInProgress,
                      atomic<bool>& nodeGracefulShutdown,
                      atomic<string>& masterVersion,
                      CommandQueue& syncNodeQueuedCommands,
@@ -114,6 +122,7 @@ class BedrockServer : public SQLiteServer {
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     static void worker(SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
+                       atomic<bool>& upgradeInProgress,
                        atomic<bool>& nodeGracefulShutdown,
                        atomic<string>& masterVersion,
                        CommandQueue& syncNodeQueuedCommands,
