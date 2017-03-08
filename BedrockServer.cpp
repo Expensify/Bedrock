@@ -710,7 +710,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
         }
 
         // We only keep track of sockets with pending commands.
-        _socketIDMap.erase(socketIt->second->id);
+        _socketIDMap.erase(socketIt);
     }
     else if (!SIEquals(command.request["Connection"], "forget")) {
         SWARN("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);

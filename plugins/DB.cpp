@@ -1,12 +1,12 @@
 #include "DB.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
+#define SLOGPREFIX "{" << _args["-nodeName"] << ":" << getName() << "} "
 
-bool BedrockPlugin_DB::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    SData& response = command->response;
+    SData& request = command.request;
+    SData& response = command.response;
 
     // ----------------------------------------------------------------------
     // The "full" syntax of a query request is:
@@ -87,10 +87,10 @@ bool BedrockPlugin_DB::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand*
     return false;
 }
 
-bool BedrockPlugin_DB::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    SData& response = command->response;
+    SData& request = command.request;
+    SData& response = command.response;
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "Query")) {
