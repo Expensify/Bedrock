@@ -66,6 +66,11 @@ void BedrockServer::sync(SData& args,
     bool committingCommand = false;
     while (!syncNode.shutdownComplete()) {
 
+        // If we've been instructed to shutdown and we haven't yet, do it.
+        if (nodeGracefulShutdown.load()) {
+            syncNode.beginShutdown();
+        }
+
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
         // activity. Once any of them has activity (or the timeout ends), poll will return.
         fd_map fdm;
@@ -261,7 +266,7 @@ void BedrockServer::sync(SData& args,
     // Wait for the worker threads to finish.
     int threadId = 0;
     for (auto& workerThread : workerThreadList) {
-        SINFO("Closing worker thread '" << "worker" << threadId << "'");
+        SINFO("Joining worker thread '" << "worker" << threadId << "'");
         threadId++;
         workerThread.join();
     }
@@ -384,7 +389,8 @@ void BedrockServer::worker(SData& args,
         }
 
         // Ok, we're done with this loop, see if we should exit.
-        if (0 /* TODO: exit_condition */) {
+        if (nodeGracefulShutdown.load() && server._commandQueue.empty()) {
+            SINFO("Shutdown flag set and nothing left in queue. worker" << to_string(threadId) << " exiting.");
             break;
         }
     }
