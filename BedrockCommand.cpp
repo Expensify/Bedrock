@@ -31,7 +31,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
 }
 
 BedrockCommand::BedrockCommand(SData _request) :
-    SQLiteCommand(move(request)),
+    SQLiteCommand(move(_request)),
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),

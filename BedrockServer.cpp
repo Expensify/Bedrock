@@ -4,9 +4,6 @@
 #include "BedrockPlugin.h"
 #include "BedrockCore.h"
 
-// Status is special - it has commands that need to be handled by the sync node.
-#include <plugins/Status.h>
-
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     _commandQueue.push(BedrockCommand(move(command)));
 }
@@ -101,6 +98,7 @@ void BedrockServer::sync(SData& args,
         // state along the way.
         while (syncNode.update()) {
             replicationState.store(syncNode.getState());
+            masterVersion.store(syncNode.getMasterVersion());
         }
 
         // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
@@ -262,7 +260,6 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
-            cout << "Got a command!" << endl;
 
             if (command.complete) {
                 // If this command is already complete, we can return it to the caller.
@@ -318,7 +315,6 @@ void BedrockServer::worker(SData& args,
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {
-            cout << "No command, try again." << endl;
             // Nothing after 1s.
         }
 
@@ -594,7 +590,14 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     // Create a command and queue it.
                     BedrockCommand command(request);
                     command.initiatingClientID = s->id;
-                    _commandQueue.push(move(command));
+
+                    // Status requests are handled specially.
+                    if (_isStatusCommand(command)) {
+                        _status(command);
+                        _reply(command);
+                    } else {
+                        _commandQueue.push(move(command));
+                    }
                 }
             }
             break;
@@ -658,5 +661,92 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
         // Clearing past suppression, but don't reopen.  (It's always safe
         // to close, but not always safe to open.)
         SHMMM("Clearing command port suppression");
+    }
+}
+
+bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
+    if (command.request.methodLine == STATUS_IS_SLAVE          ||
+        command.request.methodLine == STATUS_HANDLING_COMMANDS ||
+        command.request.methodLine == STATUS_PING              ||
+        command.request.methodLine == STATUS_STATUS) {
+        return true;
+    }
+    return false;
+}
+
+void BedrockServer::_status(BedrockCommand& command) {
+    SData& request  = command.request;
+    SData& response = command.response;
+    STable& content = command.jsonContent;
+
+    // We'll return whether or not this server is slaving.
+    if (request.methodLine == STATUS_IS_SLAVE) {
+        // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
+        // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
+        //
+        // HAProxy interprets 2xx/3xx level responses as alive, 4xx/5xx level responses as dead.
+        SQLiteNode::State state = _replicationState.load();
+        if (state == SQLiteNode::SLAVING) {
+            response.methodLine = "HTTP/1.1 200 Slaving";
+        } else {
+            response.methodLine = "HTTP/1.1 500 Not slaving. State="
+                                  + SQLiteNode::stateNames[state];
+        }
+    }
+
+    // TODO: The following is incomplete at best, and should check, if nothing else, whether the command port is open.
+    else if (request.methodLine == STATUS_HANDLING_COMMANDS) {
+        // This is similar to the above check, and is used for letting HAProxy load-balance commands.
+        SQLiteNode::State state = _replicationState.load();
+        if (state != SQLiteNode::SLAVING) {
+            response.methodLine = "HTTP/1.1 500 Not slaving. State=" + SQLiteNode::stateNames[state];
+        } else if (_version != _masterVersion.load()) {
+            response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
+        } else {
+            response.methodLine = "HTTP/1.1 200 Slaving";
+        }
+    }
+
+    // All a ping message requires is some response.
+    else if (request.methodLine == STATUS_PING) {
+        response.methodLine = "200 OK";
+    }
+
+    // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
+    else if (request.methodLine == STATUS_STATUS) {
+        SQLiteNode::State state = _replicationState.load();
+        list<string> plugins;
+        for (auto plugin : *BedrockPlugin::g_registeredPluginList) {
+            STable pluginData;
+            pluginData["name"] = plugin->getName();
+            STable pluginInfo  = plugin->getInfo();
+            for (auto row : pluginInfo) {
+                pluginData[row.first] = row.second;
+            }
+            plugins.push_back(SComposeJSONObject(pluginData));
+        }
+        content["isMaster"]    = state == SQLiteNode::MASTERING ? "true" : "false";
+        content["plugins"]     = SComposeJSONArray(plugins);
+        content["state"]       = SQLiteNode::stateNames[state];
+        content["version"]     = _version;
+
+        /*
+        TODO: Re-expose these.
+        content["priority"]    = SToStr(node->getPriority());
+        content["hash"]        = node->getHash();
+        content["commitCount"] = SToStr(node->getCommitCount());
+
+        // Retrieve information about our peers.
+        list<string> peerList;
+        for (SQLiteNode::Peer* peer : node->peerList) {
+            STable peerTable = peer->nameValueMap;
+            peerTable["host"] = peer->host;
+            peerList.push_back(SComposeJSONObject(peerTable));
+        }
+        content["peerList"]             = SComposeJSONArray(peerList);
+        content["queuedCommandList"]    = SComposeJSONArray(node->getQueuedCommandList());
+        content["escalatedCommandList"] = SComposeJSONArray(node->getEscalatedCommandList());
+        content["processedCommandList"] = SComposeJSONArray(node->getProcessedCommandList());
+        */
     }
 }

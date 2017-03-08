@@ -48,15 +48,15 @@ class BedrockServer : public SQLiteServer {
     list<list<SHTTPSManager*>> httpsManagers;
 
   private:
+
+    // The name of the sync thread.
+    static constexpr auto _syncThreadName = "sync";
+
     // Arguments passed on the command line. This is modified internally and used as a general attribute store.
     SData _args;
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
-
-    // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
-    // then this is an error, as the command should have been sent back to a peer.
-    void _reply(BedrockCommand&);
 
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
@@ -99,6 +99,9 @@ class BedrockServer : public SQLiteServer {
     // The server version. This may be fake if the args contain a `versionOverride` value.
     string _version;
 
+    // The actual thread object for the sync thread.
+    thread _syncThread;
+
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
     static void sync(SData& args,
@@ -118,9 +121,18 @@ class BedrockServer : public SQLiteServer {
                        int threadId,
                        int threadCount);
 
-    // The name of the sync thread.
-    static constexpr auto _syncThreadName = "sync";
+    // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
+    // then this is an error, as the command should have been sent back to a peer.
+    void _reply(BedrockCommand&);
 
-    // The actual thread object for the sync thread.
-    thread _syncThread;
+
+    // The following are constants used as methodlines by status command requests.
+    static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
+    static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
+    static constexpr auto STATUS_PING              = "Ping";
+    static constexpr auto STATUS_STATUS            = "Status";
+
+    // Functions for checking for and responding to status commands.
+    bool _isStatusCommand(BedrockCommand& command);
+    void _status(BedrockCommand& command);
 };

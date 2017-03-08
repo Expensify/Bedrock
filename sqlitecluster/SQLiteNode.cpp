@@ -1,9 +1,7 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
 #include "SQLiteServer.h"
-
-// This is a hack so that we can support 'special' Status commands, but it really breaks encapsulation entirely.
-#include <plugins/Status.h>
+#include "SQliteCommand.h"
 
 /// Introduction
 /// ------------
@@ -14,14 +12,14 @@
 /// distributed database state machine.
 ///
 /// **FIXME**: Assertion in WAITING for no currentMaster is sometimes false;
-///          appears to block the STANDUP
+///            appears to block the STANDUP
 ///
 /// **FIXME**: Handle the case where two nodes have conflicting databases;
-///          should find where they fork, tag the affected accounts for manual
-///          review, and adopt the higher-priority
+///            should find where they fork, tag the affected accounts for manual
+///            review, and adopt the higher-priority
 ///
 /// **FIXME**: Master should detect whether any slaves fall out of sync for any
-///          reason, identify/tag affected accounts, and resynchronize.
+///            reason, identify/tag affected accounts, and resynchronize.
 ///
 /// **FIXME**: Add test to measure how long it takes for master to stabalize
 ///

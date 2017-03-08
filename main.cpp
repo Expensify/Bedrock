@@ -9,7 +9,6 @@
 #include "plugins/Cache.h"
 #include "plugins/DB.h"
 #include "plugins/Jobs.h"
-#include "plugins/Status.h"
 #include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
@@ -84,7 +83,6 @@ set<string> loadPlugins(SData& args) {
     // Instantiate all of our built-in plugins.
     map<string, BedrockPlugin*> standardPluginMap = {
         {"DB",     new BedrockPlugin_DB()},
-        {"STATUS", new BedrockPlugin_Status()},
         {"JOBS",   new BedrockPlugin_Jobs()},
         {"CACHE",  new BedrockPlugin_Cache()},
         {"MYSQL",  new BedrockPlugin_MySQL()}

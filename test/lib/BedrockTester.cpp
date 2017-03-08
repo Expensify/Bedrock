@@ -152,7 +152,7 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
         {"-nodeName",    "bedrock_test"},
         {"-nodeHost",    "localhost:9889"},
         {"-priority",    "200"},
-        {"-plugins",     "status,db,cache"},
+        {"-plugins",     "db,cache"},
         {"-readThreads", "8"},
         {"-v",           ""},
         {"-cache",       "10001"},
