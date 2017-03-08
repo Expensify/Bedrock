@@ -119,6 +119,22 @@ struct SData {
     string& operator[](const string& name);
     string operator[](const string& name) const;
 
+    // Two templated versions of `set` are provided. One for arithmetic types, and one for other types (which must be
+    // convertible to 'string'). These allow you to do the following:
+    // SData.set("count", 7);
+    // SData.set("name", "Tyler");
+    // for all string and integer types.
+    template <typename T>
+    typename enable_if<is_arithmetic<T>::value, void>::type set(const string& key, const T item)
+    {
+        nameValueMap[key] = to_string(item);
+    }
+    template <typename T>
+    typename enable_if<!is_arithmetic<T>::value, void>::type set(const string& key, const T item)
+    {
+        nameValueMap[key] = item;
+    }
+
     // Mutators
     void clear();
     void erase(const string& name);
