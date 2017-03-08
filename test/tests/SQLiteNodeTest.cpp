@@ -9,6 +9,10 @@ class SQLiteNodeTester {
     static SQLiteNode::Peer* getSyncPeer(SQLiteNode& node) {
         return node._syncPeer;
     }
+
+    static void updateSyncPeer(SQLiteNode& node) {
+        node._updateSyncPeer();
+    }
 };
 
 class TestServer : public SQLiteServer {
@@ -51,7 +55,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.update();
+        SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // See what happens when another peer becomes faster.
@@ -62,7 +66,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.update();
+        SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And see what happens if our fastest peer logs out.
@@ -77,7 +81,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.update();
+        SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And then if our previously 0 latency peer gets (fast) latency data.
@@ -88,7 +92,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.update();
+        SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // Now none of our peers have latency data, but one has more commits.
@@ -100,7 +104,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.update();
+        SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
     }
 
