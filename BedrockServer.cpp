@@ -587,7 +587,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                         _socketIDMap[s->id] = s;
                     }
 
-                    // Create a command and queue it.
+                    // Create a command.
                     BedrockCommand command(request);
                     command.initiatingClientID = s->id;
 
@@ -596,6 +596,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                         _status(command);
                         _reply(command);
                     } else {
+                        // Otherwise we queue it for later processing.
                         _commandQueue.push(move(command));
                     }
                 }
@@ -714,6 +715,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 
     // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
     else if (request.methodLine == STATUS_STATUS) {
+        response.methodLine = "200 OK";
         SQLiteNode::State state = _replicationState.load();
         list<string> plugins;
         for (auto plugin : *BedrockPlugin::g_registeredPluginList) {

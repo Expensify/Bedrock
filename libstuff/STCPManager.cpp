@@ -37,8 +37,9 @@ int STCPManager::preSelect(fd_map& fdm) {
                 SFDset(fdm, socket->s, SWRITEEVTS);
             } else if (!socket->ssl) {
                 // No SSL, just send if we have anything buffered
-                if (!socket->sendBuffer.empty())
+                if (!socket->sendBuffer.empty()) {
                     SFDset(fdm, socket->s, SWRITEEVTS);
+                }
             } else {
                 // Have we completed the handshake?
 
