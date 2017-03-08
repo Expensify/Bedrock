@@ -136,25 +136,30 @@ void BedrockServer::sync(SData& args,
         // be other finished work to handle while we wait for that to complete. Let's see if we can handle any of that
         // work.
         try {
-            // initialize this to the front of the list. If there's nothing in the list, that's fine, this will throw
-            // and we'll try poll() again. Otherwise, we'll look through all the commands at the beginning of the list
-            // that are completed and handle those.
-            // TODO: We should handle completed commands at other places in the list, too, or we could have a separate
-            // queue for completed commands.
+            // Continually look at the front of the queue, and as long as that command is complete, send a response
+            // and remove it from the queue. If we find an incomplete command, we'll move on to processing it. If we
+            // find no command, `front()` will throw `out_of_range` and we'll start the main loop over again, calling
+            // poll().
+            // TODO: We should handle completed commands at other places in the queue, too (besides at the front), or we
+            // could have a separate queue for completed commands.
             // TODO: We should skip commands with unfinished HTTPS requests.
-            const BedrockCommand* localCommand = &syncNodeQueuedCommands.front();
-            while (localCommand->complete) {
-                // Make sure this came from a peer rather than a client, if it came from a client it shouldn't be in
-                // this queue completed.
-                SASSERT(localCommand->initiatingPeerID);
-                SASSERT(!localCommand->initiatingClientID);
+            while (true) {
+                const BedrockCommand& localCommand = syncNodeQueuedCommands.front();
+                if (localCommand.complete) {
+                    // Make sure this came from a peer rather than a client, if it came from a client it shouldn't be in
+                    // this queue completed.
+                    SASSERT(localCommand.initiatingPeerID);
+                    SASSERT(!localCommand.initiatingClientID);
 
-                // Now we can pull it off the queue and respond to it.
-                syncNode.sendResponse(syncNodeQueuedCommands.pop());
-
-                // Move on to the next one.
-                localCommand = &syncNodeQueuedCommands.front();
+                    // Now we can pull it off the queue and respond to it.
+                    syncNode.sendResponse(syncNodeQueuedCommands.pop());
+                } else {
+                    // This command isn't complete, so we can't just send a response and be done with it. We'll break
+                    // here and move on to the processing stage.
+                    break;
+                }
             }
+
             // The next command in the queue is incomplete, so we'll need to process it (if there were no next
             // command, then the above block would have thrown out_of-range), but we don't start processing a new
             // command until we've completed any existing ones.
