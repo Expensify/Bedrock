@@ -35,7 +35,7 @@ INTERMEDIATEDIR = .build
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 #all: bedrock test clustertest
-all: bedrock
+all: bedrock test
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 

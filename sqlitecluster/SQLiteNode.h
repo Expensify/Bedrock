@@ -7,6 +7,9 @@ class SQLiteServer;
 
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
+    // This exists to expose internal state to a test harness. It is not used otherwise.
+    friend class SQLiteNodeTester;
+
   public:
 
     // Possible states of a node in a DB cluster
@@ -74,7 +77,7 @@ class SQLiteNode : public STCPNode {
 
     // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
     // would be a good idea for the caller to read any new commands or traffic from the network.
-    bool update(uint64_t& nextActivity);
+    bool update();
 
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
@@ -88,7 +91,7 @@ class SQLiteNode : public STCPNode {
     // This takes a completed command and sends the response back to the originating peer. If this command doesn't have
     // an `initiatingPeerID`, then it's an error to pass it to this function, or if we're not the master node, it's an
     // error to call this method.
-    void sendResponse(SQLiteCommand& command);
+    void sendResponse(const SQLiteCommand& command);
 
     // This is a static and thus *global* indicator of whether or not we have transactions that need replicating to
     // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
@@ -115,7 +118,6 @@ class SQLiteNode : public STCPNode {
     // any new committed transactions to peers, and update this value.
     static uint64_t _lastSentTransactionID;
 
-  private:
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the MASTER.
     int _priority;

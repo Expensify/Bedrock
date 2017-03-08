@@ -118,7 +118,7 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
     _commitConsistency = consistency;
 }
 
-void SQLiteNode::sendResponse(SQLiteCommand& command)
+void SQLiteNode::sendResponse(const SQLiteCommand& command)
 {
     Peer* peer = getPeerByID(command.initiatingPeerID);
     SASSERT(peer);
@@ -321,7 +321,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
 // State Transitions
 // -----------------
 // Each state transitions according to the following events and operates as follows:
-bool SQLiteNode::update(uint64_t& nextActivity) {
+bool SQLiteNode::update() {
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known
@@ -883,7 +883,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             // We we're commiting, but now we're not. The only code path through here that doesn't lead to the point is
             // the 'return false' immediately above here, everything else completes the transaction (even if it was a
             // failed transaction), so we can safely unlock now.
-            SQLite::commitLock.unlock();
+            SQLite::g_commitLock.unlock();
         }
 
         // At this point, we're no longer committing. We'll have returned false above, or we'll have completed any
@@ -920,7 +920,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         // At this point, we must be mastering, or we'd have returned. Let's see if there's a new transaction to start.
         if (_commitState == CommitState::WAITING) {
             // Lock the database. We'll unlock it when we complete in a future update cycle.
-            SQLite::commitLock.lock();
+            SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
 
             // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
@@ -953,6 +953,10 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
 
             // And send it to everyone who's subscribed.
             _sendToAllPeers(transaction, true);
+
+            // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
+            // asynchronous.
+            return true;
         }
         break;
     }

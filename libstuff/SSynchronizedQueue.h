@@ -15,16 +15,20 @@ class SSynchronizedQueue {
     void postSelect(fd_map& fdm, int bytesToRead = 1);
 
     // Synchronized interface to add/remove work
-    //void push(T rhs);
     void push(T&& rhs);
     T pop();
 
-    bool empty();
+    // Return a const reference to the front item in the list, for inspection.
+    // throws out_of_range if nothing.
+    const T& front() const;
+
+    // Returns true if the queue is empty.
+    bool empty() const;
 
   protected:
     // Private state
     list<T> _queue;
-    recursive_mutex _queueMutex;
+    mutable recursive_mutex _queueMutex;
     int _pipeFD[2] = {-1, -1};
 };
 
@@ -57,20 +61,6 @@ int SSynchronizedQueue<T>::preSelect(fd_map& fdm) {
     return _pipeFD[0];
 }
 
-/*
-template<typename T>
-void SSynchronizedQueue<T>::push(T rhs) {
-    SAUTOLOCK(_queueMutex);
-    // Just add to the queue
-    _queue.push_back(rhs);
-
-    // Write arbitrary buffer to the pipe so any subscribers will
-    // be awoken.
-    // **NOTE: 1 byte so write is atomic.
-    SASSERT(write(_pipeFD[1], "A", 1));
-}
-*/
-
 template<typename T>
 void SSynchronizedQueue<T>::push(T&& rhs) {
     SAUTOLOCK(_queueMutex);
@@ -92,12 +82,20 @@ T SSynchronizedQueue<T>::pop() {
         _queue.pop_front();
         return item;
     }
-    // TODO: Better exception.
-    throw "No items!";
+    throw out_of_range("No commands");
 }
 
 template<typename T>
-bool SSynchronizedQueue<T>::empty() {
+const T& SSynchronizedQueue<T>::front() const {
+    SAUTOLOCK(_queueMutex);
+    if (!_queue.empty()) {
+        return _queue.front();
+    }
+    throw out_of_range("No commands");
+}
+
+template<typename T>
+bool SSynchronizedQueue<T>::empty() const {
     SAUTOLOCK(_queueMutex);
     // Just return the state of the queue
     return _queue.empty();

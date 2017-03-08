@@ -64,7 +64,9 @@ void BedrockServer::sync(SData& args,
     // Now we jump into our main command processing loop.
     uint64_t nextActivity = STimeNow();
     BedrockCommand command;
+    bool committingCommand = false;
     while (!syncNode.shutdownComplete()) {
+
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
         // activity. Once any of them has activity (or the timeout ends), poll will return.
         fd_map fdm;
@@ -79,17 +81,9 @@ void BedrockServer::sync(SData& args,
         // Pre-process any sockets the sync node is managing.
         syncNode.preSelect(fdm);
 
-        // Add the Unix pipe from the shared queues to the fdm
-        // data.peekedCommands.preSelect(fdm);
-        // data.directMessages.preSelect(fdm);
-
-        // Ok, so the challenge here is: How can I interrupt poll() if it's sitting waiting with nothing happening, and
-        // I get a new command to process?
-        // We can add an FD to the poll() set, and kick it when we queue activity for the sync node (which is what
-        // command queue already does).
-
         // Wait for activity on any of those FDs, up to a timeout
         const uint64_t now = STimeNow();
+        // If we've 
         S_poll(fdm, max(nextActivity, now) - now);
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
@@ -103,101 +97,135 @@ void BedrockServer::sync(SData& args,
         // Process any network traffic that happened in the sync thread.
         syncNode.postSelect(fdm, nextActivity);
 
-        // See if there's any work to process, unless we're already mid-commit, in which case, we'll wait until
-        // that one completes.
-        bool hasWork = false;
-        if (!syncNode.commitInProgress()) {
-            try {
-                // TODO: We should skip commands with unfinished HTTPS requests.
-                command = syncNodeQueuedCommands.pop();
-                while (command.complete) {
-                    // If there's no initiator, this should be returned to a client instead.
-                    SASSERT(command.initiatingPeerID);
-                    SASSERT(!command.initiatingClientID);
-                    // This is complete, we just need to return a response to a peer. Run through these in order
-                    // until we find something we need to commit.
-                    syncNode.sendResponse(command);
-                    command = syncNodeQueuedCommands.pop();
-                }
-                hasWork = true;
-            } catch (out_of_range) {
-                // No commands to process.
-            }
+        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
+        // state along the way.
+        while (syncNode.update()) {
+            replicationState.store(syncNode.getState());
         }
 
-        SQLiteNode::State state = syncNode.getState();
-
-        // TODO: This is totally wrong, but here as a placeholder.
-        // SAUTOPREFIX(command.request["prefix"]);
-
-        // We found some work to do, let's start on it.
-        if (hasWork) {
-            if (state == SQLiteNode::MASTERING) {
-                core.peekCommand(command);
-                core.processCommand(command);
-                syncNode.startCommit(command.writeConsistency);
-            } else if (state == SQLiteNode::SLAVING) {
-                syncNode.escalateCommand(move(command));
-            }
+        // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
+        // main loop over. This can let us wait for logins from peers (for example).
+        if (!syncNode.ready()) {
+            continue;
         }
 
-        // Let the update loop run as long as it needs.
-        while (syncNode.update(nextActivity)) {
-            SQLiteNode::State newState = syncNode.getState();
-            replicationState.store(newState);
-            masterVersion.store(syncNode.getMasterVersion());
-            // Check if we've become the master. We'll need to let our plugins do their database upgrades.
-            if (newState != state && newState == SQLiteNode::MASTERING) {
-                // If we changed just changed states to mastering, this should be impossible.
-                SASSERT(!syncNode.commitInProgress());
-                core.upgradeDatabase();
-                syncNode.startCommit(SQLiteNode::QUORUM);
-            }
-            state = newState;
-        }
-
-        // Update finished, did the command complete?
-        // TODO: This is only valid of we even started a command
-        if (!syncNode.commitInProgress()) {
-            bool commandComplete = true;
-            // TODO: this? command = syncNode.completedCommand();
-            // Or this whole block gets replaced.
-            if (!syncNode.commitSucceeded()) {
-                // Try it again in a bit, unless we hit a limit.
-                if (command.processCount < 10) {
-                    syncNodeQueuedCommands.push(move(command));
-                    commandComplete = false;
-                } else {
-                    SWARN("10 conflicts in a row on the sync thread. Abandoning command.");
-                    command.complete = true;
-                    command.response.clear();
-                    command.response.methodLine = "500 Too Many Conflicts";
-                }
-            }
-            // This should be true unless we conflicted (or even if we did, if we hit the limit).
-            if (commandComplete) {
+        // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
+        // stick it back in the appropriate queue.
+        if (committingCommand && !syncNode.commitInProgress()) {
+            // It should be impossible to get here if we're not mastering.
+            SASSERT(replicationState.load() == SQLiteNode::MASTERING);
+            if (syncNode.commitSucceeded()) {
                 if (command.initiatingPeerID) {
+                    // This is a command that came from a peer. Have the server send the response back to the peer.
                     syncNode.sendResponse(command);
                 } else {
+                    // The only other option is this came from a client, so respond via the server.
                     server._reply(command);
                 }
+            } else {
+                // If the commit failed, then it must have conflicted, so we'll requeue it to try again.
+                SWARN("Conflicting commit on sync thread, will retry command '" << command.request.methodLine << "'.");
+                syncNodeQueuedCommands.push(move(command));
             }
+            
+            // Not committing any more.
+            committingCommand = false;
+        }
+
+        // We're either mastering, or slaving. There could be a commit in progress on `command`, but there could also
+        // be other finished work to handle while we wait for that to complete. Let's see if we can handle any of that
+        // work.
+        try {
+            // initialize this to the front of the list. If there's nothing in the list, that's fine, this will throw
+            // and we'll try poll() again. Otherwise, we'll look through all the commands at the beginning of the list
+            // that are completed and handle those.
+            // TODO: We should handle completed commands at other places in the list, too, or we could have a separate
+            // queue for completed commands.
+            // TODO: We should skip commands with unfinished HTTPS requests.
+            const BedrockCommand* localCommand = &syncNodeQueuedCommands.front();
+            while (localCommand->complete) {
+                // Make sure this came from a peer rather than a client, if it came from a client it shouldn't be in
+                // this queue completed.
+                SASSERT(localCommand->initiatingPeerID);
+                SASSERT(!localCommand->initiatingClientID);
+
+                // Now we can pull it off the queue and respond to it.
+                syncNode.sendResponse(syncNodeQueuedCommands.pop());
+
+                // Move on to the next one.
+                localCommand = &syncNodeQueuedCommands.front();
+            }
+            // The next command in the queue is incomplete, so we'll need to process it (if there were no next
+            // command, then the above block would have thrown out_of-range), but we don't start processing a new
+            // command until we've completed any existing ones.
+            if (committingCommand) {
+                continue;
+            }
+
+            // Now we can pull the next one off the queue and start on it.
+            command = syncNodeQueuedCommands.pop();
+
+            // We got a command to work on! Set our log prefix to the request ID.
+            // TODO: This is totally wrong, but here as a placeholder.
+            // SAUTOPREFIX(command.request["prefix"]);
+
+            // And now we'll decide how to handle it.
+            if (replicationState.load() == SQLiteNode::MASTERING) {
+                // If we're getting it on the sync thread, that means it's already been `peeked` unsuccessfully, and it
+                // needed to be processed. If it were `peeked` successfully, then the worker thread wouldn't have given
+                // it back to us.
+                if (core.processCommand(command)) {
+                    // The processor says we need to commit this, so let's start that process.
+                    committingCommand = true;
+                    syncNode.startCommit(command.writeConsistency);
+
+                    // And we'll start the next main loop.
+                    // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
+                    // performance problems in the past trying to do something similar on every commit. This may be
+                    // alleviated now that we're only doing this on *sync* commits instead of all commits, which should
+                    // be a much smaller fraction of all our traffic. We set nextActivity here so that there's no
+                    // timeout before we'll give up on poll() if there's nothing to read.
+                    nextActivity = STimeNow();
+                    continue;
+                } else {
+                    // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
+                    // to do. We'll just respond.
+                    if (command.initiatingPeerID) {
+                        syncNode.sendResponse(command);
+                    } else {
+                        server._reply(command);
+                    }
+                }
+            } else if (replicationState.load() == SQLiteNode::SLAVING) {
+                if (core.peekCommand(command)) {
+                    // If peek is successful on a slave, all we have to do is send a reply to the caller, and we're
+                    // done.
+                    server._reply(command);
+                } else {
+                    // Otherwise, we'll have to send the command to the master. When the escalation is complete,
+                    // SQLiteNode will call _acceptCommand() and pass it back to the server, which will give it to a
+                    // worker thread to respond to.
+                    syncNode.escalateCommand(move(command));
+                }
+            }
+        } catch (out_of_range e) {
+            // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
+            continue;
         }
     }
 
-    // Update the state one last time when the writing replication thread exits.
-    SQLiteNode::State state = syncNode.getState();
-    if (state > SQLiteNode::WAITING) {
+    // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
+    // the writing replication thread exits.
+    replicationState.store(syncNode.getState());
+    if (replicationState.load() > SQLiteNode::WAITING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Sync thread exiting in state " << state << ". Setting to SQLC_SEARCHING.");
-        state = SQLiteNode::SEARCHING;
+        SWARN("Sync thread exiting in state " << replicationState.load() << ". Setting to SQLC_SEARCHING.");
+        replicationState.store(SQLiteNode::SEARCHING);
     } else {
-        SINFO("Sync thread exiting, setting state to: " << state);
+        SINFO("Sync thread exiting, setting state to: " << replicationState.load());
     }
-    replicationState.store(state);
-    //replicationCommitCount.store(syncNode.getCommitCount());
 
     // Wait for the worker threads to finish.
     int threadId = 0;
@@ -229,6 +257,7 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
+            cout << "Got a command!" << endl;
 
             if (command.complete) {
                 // If this command is already complete, we can return it to the caller.
@@ -284,6 +313,7 @@ void BedrockServer::worker(SData& args,
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {
+            cout << "No command, try again." << endl;
             // Nothing after 1s.
         }
 

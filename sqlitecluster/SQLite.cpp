@@ -1,44 +1,33 @@
-/// /svn/src/sqlitecluster/SQLite.cpp
-/// =================================
 #include <libstuff/libstuff.h>
 #include "SQLite.h"
-#include "SQLiteNode.h"
 
-// --------------------------------------------------------------------------
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
-#define DBWARN(_MSG_) SWARN("{" << _filename << "} " << _MSG_)
 
-#define DB_WRITE_OPEN_FLAGS SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
-#define DB_READ_OPEN_FLAGS SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
-
-bool SQLite::sqliteInitialized = false;
-recursive_mutex SQLite::_commitLock;
-SLockTimer<recursive_mutex> SQLite::commitLock("Commit Lock", _commitLock);
-recursive_mutex SQLite::_hashLock;
-atomic<uint64_t> SQLite::_commitCount(0);
-atomic<int> SQLite::_dbInitialized(0);
-
+// Create all of our static variables.
+atomic<uint64_t>                    SQLite::_commitCount(0);
+recursive_mutex                     SQLite::_commitLock;
+set<uint64_t>                       SQLite::_committedTransactionIDs;
 map<uint64_t, pair<string, string>> SQLite::_inFlightTransactions;
-set<uint64_t> SQLite::_committedtransactionIDs;
-string SQLite::_lastCommittedHash;
+atomic<string>                      SQLite::_lastCommittedHash;
+atomic_flag                         SQLite::_sqliteInitialized = ATOMIC_FLAG_INIT;
 
-void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
-    SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
-                                << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
-}
+// This is our only public static variable. It needs to be initialized after `_commitLock`.
+SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
-               int minJournalTables) {
+               int maxRequiredJournalTableID)
+  // TODO: The following line can be removed when we have real multi-write, see note in 'prepare()'.
+  :  _maxRequiredJournalTableID(maxRequiredJournalTableID)
+{
     // Initialize
-    SINFO("Opening sqlite connection");
+    SINFO("Opening sqlite database");
     SASSERT(!filename.empty());
     SASSERT(cacheSize > 0);
     SASSERT(autoCheckpoint >= 0);
     SASSERT(maxJournalSize > 0);
     _filename = filename;
     _insideTransaction = false;
-    _lastWriteChanged = false;
-    _maxJournalSize = maxJournalSize;
+    _maxJournalSize = maxJournalSize / (maxRequiredJournalTableID + 2);
     _beginElapsed = 0;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -46,77 +35,80 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     _commitElapsed = 0;
     _rollbackElapsed = 0;
 
-    // Initialize logging on first use.
-    if (!sqliteInitialized) {
-        sqlite3_config(SQLITE_CONFIG_LOG, sqliteLogCallback, 0);
-        sqlite3_initialize();
-        sqliteInitialized = true;
-    }
-
-    // Initialize sqlite multithreaded magic.
-    // **NOTE: each thread will need to open its own connection.
-    SASSERT(sqlite3_threadsafe()); // Make sure sqlite is compiled in threadsafe mode.
-
-    // Disabled by default, but lets really beat it in.  This way checkpointing
-    // does not need to wait on locks created in this thread.
-    SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
-
     // Set our journal table name.
-    _journalName = getJournalTableName(journalTable);
+    _journalName = _getJournalTableName(journalTable);
 
-    // Open or create the database
-    if (SFileExists(_filename)) {
-        DBINFO("Opening database '" << _filename << "'");
-    } else {
-        DBINFO("Creating new database '" << _filename << "'");
+    // There are several initialization tasks that need to be performed only by the *first* thread to initialize the
+    // DB. We grab this lock and set a flag so that only the first thread to reach this point can perform this
+    // operation, and any other threads will be blocked until it's complete.
+    SQLITE_COMMIT_AUTOLOCK;
+    bool initializer = !_sqliteInitialized.test_and_set();
+    
+    // We need to initialize sqlite. Only the first thread to get here will do this.
+    if (initializer) {
+        sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
+        sqlite3_initialize();
+        SASSERT(sqlite3_threadsafe());
+
+        // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
+        // created in this thread.
+        SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
     }
-    // Open a read/write database
+
+    // Open the DB in read-write mode.
+    DBINFO((SFileExists(_filename) ? "Opening" : "Creating") << " database '" << _filename << "'.");
+    const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
     SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
-    _setPragmas(_db, autoCheckpoint);
-    for (int i = -1; i <= minJournalTables; i++) {
-        if (SQVerifyTable(_db, getJournalTableName(i), "CREATE TABLE " + getJournalTableName(i) +
-                          " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-            SHMMM("Created " << getJournalTableName(i) << " table.");
-        }
-    }
-
-    // Figure out which journal tables actually exist. They must be sequential.
-    int currentJounalTable = -1;
-    while(true) {
-        string name = getJournalTableName(currentJounalTable);
-        if (SQVerifyTableExists(_db, name)) {
-            _allJournalNames.push_back(name);
-            currentJounalTable++;
-        } else {
-            // That's all of them.
-            break;
-        }
-    }
 
     // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
     sqlite3_busy_timeout(_db, 1000);
 
-    // Update the cache
-    SINFO("Setting cache_size to " << cacheSize << "KB");
-    SQuery(_db, "increasing cache size",
-           "PRAGMA cache_size = -" + SQ(cacheSize) + ";"); // -size means KB; +size means pages
+    // WAL is what allows simultaneous read/writing.
+    SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
-    // We just keep track of the number of rows in each journal, and delete if we have too many.
+    // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
+    // any tables to be effective.
+    SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
+
+    // These other pragmas only relate to read/write databases.
+    SASSERT(!SQuery(_db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
+    SASSERT(!SQuery(_db, "disabling change counting", "PRAGMA count_changes = OFF;"));
+    DBINFO("Enabling automatic checkpointing every " << to_string(autoCheckpoint) << " pages.");
+    SASSERT(!SQuery(_db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
+
+    // Update the cache. -size means KB; +size means pages
+    SINFO("Setting cache_size to " << cacheSize << "KB");
+    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
+
+    // Now we verify (and create if non-existent) all of our required journal tables.
+    for (int i = -1; i <= maxRequiredJournalTableID; i++) {
+        if (SQVerifyTable(_db, _getJournalTableName(i), "CREATE TABLE " + _getJournalTableName(i) +
+                          " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
+            SHMMM("Created " << _getJournalTableName(i) << " table.");
+        }
+    }
+
+    // And we'll figure out which journal tables actually exist, which may be more than we require. They must be
+    // sequential.
+    int currentJounalTable = -1;
+    while(true) {
+        string name = _getJournalTableName(currentJounalTable);
+        if (SQVerifyTableExists(_db, name)) {
+            _allJournalNames.push_back(name);
+            currentJounalTable++;
+        } else {
+            break;
+        }
+    }
+
+    // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
+    // limit.
     SQResult result;
     SASSERT(!SQuery(_db, "getting commit count", "SELECT COUNT(*) FROM " + _journalName + ";", result));
     _journalSize = SToUInt64(result[0][0]);
 
-    // If we're the first thread to get to it, we'll initialize the DB.
-
-    // First we grab the commit and hash locks so nobody else can try to commit, or read the last hash.
-    SQLITE_COMMIT_AUTOLOCK;
-    lock_guard<recursive_mutex> h_lock(_hashLock);
-
-    // Now we'll see if the DB's initialized.
-    int alreadyInitialized = _dbInitialized.fetch_add(1);
-
-    // Nobody'd initialized this before! Let's do it now.
-    if (!alreadyInitialized) {
+    // Now that the DB's all up and running, we can load our global data from it, if we're the initializer thread.
+    if (initializer) {
         // Read the highest commit count from the database, and store it in _commitCount.
         uint64_t commitCount = _getCommitCount();
         _commitCount.store(commitCount);
@@ -124,18 +116,20 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         // And then read the hash for that transaction.
         string lastCommittedHash, ignore;
         getCommit(commitCount, ignore, lastCommittedHash);
-        _lastCommittedHash = lastCommittedHash;
+        _lastCommittedHash.store(lastCommittedHash);
 
         // If we have a commit count, we should have a hash as well.
         if (commitCount && lastCommittedHash.empty()) {
             SWARN("Loaded commit count " << commitCount << " with empty hash.");
         }
     }
-
-    // Alright, done, we'll release locks and continue on!
 }
 
-string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
+void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
+    SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
+}
+
+string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
     list<string> queries;
     for (string& name : _allJournalNames) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
@@ -144,8 +138,7 @@ string SQLite::getJournalQuery(const list<string>& queryParts, bool append) {
     return query;
 }
 
-string SQLite::getJournalTableName(int journalTableID)
-{
+string SQLite::_getJournalTableName(int journalTableID) {
     if (journalTableID < 0) {
         return "journal";
     }
@@ -155,15 +148,14 @@ string SQLite::getJournalTableName(int journalTableID)
 }
 
 SQLite::~SQLite() {
-    // Close the database -- first rollback any incomplete transaction
+    // First rollback any incomplete transaction
     if (!_uncommittedQuery.empty()) {
         rollback();
     }
 
+    // Close the DB.
     DBINFO("Closing database '" << _filename << ".");
     SASSERTWARN(_uncommittedQuery.empty());
-
-    // Close the DB.
     SASSERT(!sqlite3_close(_db));
     DBINFO("Database closed.");
 }
@@ -172,7 +164,6 @@ bool SQLite::beginTransaction() {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
-    // Begin the next transaction
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
@@ -189,10 +180,8 @@ bool SQLite::beginConcurrentTransaction() {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
-    // Begin the next transaction
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
-    // This breaks for a variety of tests we'll need to fix.
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
@@ -204,7 +193,9 @@ bool SQLite::beginConcurrentTransaction() {
 }
 
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
-    SASSERT(!SEndsWith(sql, ";")); // sqlite trims semicolon, so let's not supply it else we get confused later
+    // sqlite trims semicolon, so let's not supply it else we get confused later
+    SASSERT(!SEndsWith(sql, ";"));
+
     // First, see if it's there
     SQResult result;
     SASSERT(read("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name=" + SQ(tableName) + ";", result));
@@ -251,10 +242,12 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
 string SQLite::read(const string& query) {
     // Execute the read-only query
     SQResult result;
-    if (!read(query, result))
+    if (!read(query, result)) {
         return "";
-    if (result.empty() || result[0].empty())
+    }
+    if (result.empty() || result[0].empty()) {
         return "";
+    }
     return result[0][0];
 }
 
@@ -263,6 +256,7 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
     SASSERTWARN(!SContains(SToUpper(query), "UPDATE "));
     SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
+    SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _readElapsed += STimeNow() - before;
@@ -273,14 +267,12 @@ bool SQLite::write(const string& query) {
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
+
     // First, check our current state
     SQResult results;
-    uint64_t schemaBefore = 0;
-    uint64_t schemaAfter = 0;
-
     SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
-    schemaBefore = SToUInt64(results[0][0]);
+    uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
 
     // Try to execute the query
@@ -294,17 +286,13 @@ bool SQLite::write(const string& query) {
     // See if the query changed anything
     SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
-    schemaAfter = SToUInt64(results[0][0]);
+    uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
     // Did something change.
     if (schemaAfter > schemaBefore || changesAfter > changesBefore) {
         // Changed, add to the uncommitted query
         _uncommittedQuery += query;
-        _lastWriteChanged = true;
-    } else {
-        // Nothing changed
-        _lastWriteChanged = false;
     }
     return true;
 }
@@ -313,7 +301,7 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    commitLock.lock();
+    g_commitLock.lock();
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -322,14 +310,17 @@ bool SQLite::prepare() {
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash();
     _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
-    _uncommittedTransaction = true;
     uint64_t before = STimeNow();
 
-    // Let the DB auto-increment this.
+    // TODO: This is a hack to write to multiple journals from a single thread. It exists only for testing purposes,
+    // and should be removed when adding real multi-threaded writes.
+    int table = (SRandom::rand64() % (_maxRequiredJournalTableID + 2)) - 1;
+    _journalName = _getJournalTableName(table);
+
+    // This is no longer part of the hack above. Crete our query.
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
-    _uncommittedID = commitCount + 1;
     _inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
 
     int result = SQuery(_db, "updating journal", query);
@@ -338,7 +329,7 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        commitLock.unlock();
+        g_commitLock.unlock();
         return false;
     }
 
@@ -352,8 +343,8 @@ bool SQLite::prepare() {
 int SQLite::commit() {
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
-
     int result = 0;
+
     // Do we need to truncate as we go?
     bool truncating = false;
     if (_journalSize + 1 > _maxJournalSize) {
@@ -372,35 +363,25 @@ int SQLite::commit() {
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
-
     if (result == SQLITE_OK) {
         _commitElapsed += STimeNow() - before;
-        // Successful commit
-        _journalSize += !truncating; // Only increase if we didn't truncate by a row
-
-        _committedtransactionIDs.insert(_uncommittedID);
-        {
-            // Update atomically.
-            lock_guard<recursive_mutex> lock(_hashLock);
-            _lastCommittedHash = _uncommittedHash;
-        }
-
-        // Notify any SQLiteNode that it has something to replicate.
-        SQLiteNode::unsentTransactions.store(true);
-
-        // Ok, someone else can commit now.
-        // Incrementing the commit count.
+        _journalSize += truncating ? 0 : 1;
         _commitCount++;
+        _committedTransactionIDs.insert(_commitCount.load());
+        _lastCommittedHash.store(_uncommittedHash);
         SINFO("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
-
         _insideTransaction = false;
-        _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        commitLock.unlock();
+        g_commitLock.unlock();
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
+
+    // TODO: THIS IS A HACK! Because we expect SQLiteNode to call this and retrieve transactions that it needs to
+    // replicate, we continually grow this list, but in this test version of this code, SQLiteNode never calls this, so
+    // we call it to clear the list after each commit.
+    getCommittedTransactions();
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
@@ -410,17 +391,24 @@ int SQLite::commit() {
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
+    // Maps a committed transaction ID to the correct query and hash for that transaction.
     map<uint64_t, pair<string,string>> result;
-    if (_committedtransactionIDs.empty()) {
+
+    // If nothing's been committed, nothing to return.
+    if (_committedTransactionIDs.empty()) {
         return result;
     }
 
-    for (uint64_t key : _committedtransactionIDs) {
+    // For each transaction that we've committed, we'll remove the that transaction from the "in flight" list, and
+    // return that to the caller. This lets SQLiteNode get a list of transactions that have been committed since the
+    // last time it called this function, so that it can replicate them to peers.
+    for (uint64_t key : _committedTransactionIDs) {
         result[key] = move(_inFlightTransactions.at(key));
         _inFlightTransactions.erase(key);
     }
 
-    _committedtransactionIDs.clear();
+    // There are no longer any outstanding transactions, so we can clear this.
+    _committedTransactionIDs.clear();
     return result;
 }
 
@@ -435,11 +423,10 @@ void SQLite::rollback() {
 
         // Finally done with this.
         _insideTransaction = false;
-        _uncommittedTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
         SINFO("Rollback successful.");
-        commitLock.unlock();
+        g_commitLock.unlock();
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }
@@ -457,17 +444,13 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
     return begin + read + write + prepare + commit + rollback;
 }
 
-
-
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
-
-    // TODO: This can fail if called after `BEGIN TRANSACTION`.
-
+    // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
+    // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit
-    string q= getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)}); 
+    string q= _getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)}); 
     SQResult result;
     SASSERT(!SQuery(_db, "getting commit", q, result));
-
     if (!result.empty()) {
         query = result[0][0];
         hash = result[0][1];
@@ -483,17 +466,14 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() { 
-    lock_guard<recursive_mutex> lock(_hashLock);
-    return _lastCommittedHash;
+    return _lastCommittedHash.load();
 }
 
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
-
+    // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-
-    string query = getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = _getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
-
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     return !SQuery(_db, "getting commits", query, result);
 }
@@ -511,37 +491,14 @@ uint64_t SQLite::getCommitCount() {
 }
 
 uint64_t SQLite::_getCommitCount() {
-    string query = getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
-    query = "SELECT MAX(maxIDs) FROM (" + query + ") ORDER BY maxIDs desc";
+    string query = _getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
+    query = "SELECT MAX(maxIDs) FROM (" + query + ")";
     SQResult result;
     SASSERT(!SQuery(_db, "getting commit count", query, result));
-
     if (result.empty()) {
         return 0;
     }
     return SToUInt64(result[0][0]);
-}
-
-void SQLite::_setPragmas(sqlite3* db, int autoCheckpoint) {
-    // Occasionally a read-only thread will complain that the database is locked. This is only seems to
-    // happen at startup when we open many sqlite3 connections at once.  SQLite will use an exponential
-    // backoff to keep trying to query until 1000ms has passed. At that point SQLITE_BUSY is returned.
-    SASSERT(!SQuery(db, "Setting busy timeout to 1000ms", "PRAGMA busy_timeout = 1000;"));
-
-    // WAL is what allows simultanous read/writing.
-    SASSERT(!SQuery(db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
-
-    // PRAGMA legacy_file_format=OFF sets the default for creating new
-    // databases, so it must be called before creating any tables to be
-    // effective.
-    SASSERT(!SQuery(db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
-
-    // These other pragma only relate to read/write databases.
-    SASSERT(!SQuery(db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
-    SASSERT(!SQuery(db, "disabling change counting", "PRAGMA count_changes = OFF;"));
-    SASSERT(autoCheckpoint >= 0);
-    DBINFO("Enabling automatic checkpointing every " << SToStr(autoCheckpoint) << " pages.");
-    SASSERT(!SQuery(db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
 }
 
 size_t SQLite::getLastWriteChangeCount() {
