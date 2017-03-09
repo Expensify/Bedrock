@@ -618,6 +618,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         switch (s->state) {
             case STCPManager::Socket::CLOSED:
             {
+                SAUTOLOCK(_socketIDMutex);
                 _socketIDMap.erase(s->id);
                 socketsToClose.push_back(s);
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
@@ -634,6 +635,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
                     // pipelining requests well. We process commands in no particular order, so we can't dequeue two
                     // requests off the same socket at one time, or we don't guarantee their return order.
+                    SAUTOLOCK(_socketIDMutex);
                     auto socketIt = _socketIDMap.find(s->id);
                     if (socketIt != _socketIDMap.end()) {
                         SWARN("Can't dequeue a request while one is pending, or they could end up out-of-order.");
@@ -658,6 +660,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     } else {
                         // Queue for later response
                         SINFO("Waiting for '" << request.methodLine << "' to complete.");
+                        SAUTOLOCK(_socketIDMutex);
                         _socketIDMap[s->id] = s;
                     }
 
@@ -700,7 +703,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 }
 
 void BedrockServer::_reply(BedrockCommand& command) {
-    // TODO: This needs to be synchronized if multiple worker threads can call it.
+    SAUTOLOCK(_socketIDMutex);
+
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {

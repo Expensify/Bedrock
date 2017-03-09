@@ -66,6 +66,14 @@ struct WriteTest : tpunit::TestFixture {
         }
 
         ASSERT_EQUAL(success, numCommands);
-    }
 
+        // Verify there's actually data there.
+        SData status("Query");
+        status["query"] = "SELECT COUNT(*) FROM stuff;";
+        string response = tester->executeWait(status);
+        // Skip the header line.
+        string secondLine = response.substr(response.find('\n') + 1);
+        int val = SToInt(secondLine);
+        ASSERT_EQUAL(val, numCommands);
+    }
 } __WriteTest;

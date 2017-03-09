@@ -67,8 +67,10 @@ class BedrockServer : public SQLiteServer {
 
     // Each time we connect a new socket, we give it an ID, and we insert it in this set. When a socket disconnects, we
     // remove that ID from this set.
-    uint64_t socketID = 0;
     map <uint64_t, Socket*> _socketIDMap;
+
+    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
+    mutex _socketIDMutex;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
@@ -133,7 +135,6 @@ class BedrockServer : public SQLiteServer {
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(BedrockCommand&);
-
 
     // The following are constants used as methodlines by status command requests.
     static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
