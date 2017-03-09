@@ -105,12 +105,11 @@ void BedrockServer::sync(SData& args,
         syncNode.postSelect(fdm, nextActivity);
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
-        // state along the way.
+        // state when it's finished.
         SQLiteNode::State preUpdateState = syncNode.getState();
-        while (syncNode.update()) {
-            replicationState.store(syncNode.getState());
-            masterVersion.store(syncNode.getMasterVersion());
-        }
+        while (syncNode.update()) {}
+        replicationState.store(syncNode.getState());
+        masterVersion.store(syncNode.getMasterVersion());
 
         // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
         // main loop over. This can let us wait for logins from peers (for example).

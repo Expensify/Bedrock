@@ -15,8 +15,8 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     virtual string getName() { return "TestPlugin"; }
     void initialize(const SData& args);
 
-    bool peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
-    bool processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command);
+    bool peekCommand(SQLite& db, BedrockCommand& command);
+    bool processCommand(SQLite& db, BedrockCommand& command);
 
   private:
     TestHTTPSMananager httpsManager;

@@ -56,7 +56,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-priority",   priority},
             {"-nodeName",   nodeName},
             {"-peerList",   peerString},
-            {"-plugins",    "status,db,cache," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-plugins",    "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
 
         // save this map for later.

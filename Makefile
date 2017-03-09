@@ -34,8 +34,7 @@ INTERMEDIATEDIR = .build
 .PHONY: all test clustertest clean testplugin
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-#all: bedrock test clustertest
-all: bedrock test
+all: bedrock test clustertest
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 

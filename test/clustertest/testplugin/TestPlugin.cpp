@@ -37,40 +37,40 @@ TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, con
 }
 
 
-bool BedrockPlugin_TestPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     // This should never exist when calling peek.
-    SASSERT(!command->httpsRequest);
-    if (command->request.methodLine == "testcommand") {
-        command->response.methodLine = "200 OK";
-        command->response.content = "this is a test response";
+    SASSERT(!command.httpsRequest);
+    if (command.request.methodLine == "testcommand") {
+        command.response.methodLine = "200 OK";
+        command.response.content = "this is a test response";
         return true;
-    } else if (command->request.methodLine == "sendrequest") {
+    } else if (command.request.methodLine == "sendrequest") {
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.expensify.com";
-        command->request["httpsRequests"] = to_string(command->request.calc("httpsRequests") + 1);
-        command->httpsRequest = httpsManager.send("https://www.expensify.com/", request);
+        command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
+        command.httpsRequest = httpsManager.send("https://www.expensify.com/", request);
         return false; // Not complete.
     }
 
     return false;
 }
 
-bool BedrockPlugin_TestPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
-    if (command->request.methodLine == "sendrequest") {
-        if (command->httpsRequest) {
+bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& command) {
+    if (command.request.methodLine == "sendrequest") {
+        if (command.httpsRequest) {
             // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(command->httpsRequest->finished);
-            command->response.methodLine = to_string(command->httpsRequest->response);
+            SASSERT(command.httpsRequest->finished);
+            command.response.methodLine = to_string(command.httpsRequest->response);
             // return the number of times we made an HTTPS request on this command.
-            int tries = SToInt(command->request["httpsRequests"]);
+            int tries = SToInt(command.request["httpsRequests"]);
             if (tries != 1) {
                 throw "500 Retried HTTPS request!";
             }
-            command->response.content = " " + command->httpsRequest->fullResponse.content;
+            command.response.content = " " + command.httpsRequest->fullResponse.content;
 
             // Update the DB so we can test conflicts.
-            if (!command->request["Query"].empty()) {
-                if (!db.write(command->request["Query"])) {
+            if (!command.request["Query"].empty()) {
+                if (!db.write(command.request["Query"])) {
                     throw "502 Query failed.";
                 }
             }
