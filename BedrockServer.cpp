@@ -88,6 +88,9 @@ void BedrockServer::sync(SData& args,
         // Pre-process any sockets the sync node is managing.
         syncNode.preSelect(fdm);
 
+        // Add our command queue to our fd_map.
+        syncNodeQueuedCommands.preSelect(fdm);
+
         // Wait for activity on any of those FDs, up to a timeout
         const uint64_t now = STimeNow();
         // If we've 
