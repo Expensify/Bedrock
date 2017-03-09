@@ -42,6 +42,9 @@ void BedrockServer::sync(SData& args,
     SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"), firstTimeout,
                         server._version, args.calc("-quorumCheckpoint"));
 
+    // We expose the sync node to the server, because it needs it to respond to certain (Status) requests.
+    server._syncNode = &syncNode;
+
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
@@ -759,7 +762,6 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
-    STable& content = command.jsonContent;
 
     // We'll return whether or not this server is slaving.
     if (request.methodLine == STATUS_IS_SLAVE) {
@@ -796,41 +798,55 @@ void BedrockServer::_status(BedrockCommand& command) {
 
     // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
     else if (request.methodLine == STATUS_STATUS) {
-        response.methodLine = "200 OK";
+        STable content;
         SQLiteNode::State state = _replicationState.load();
         list<string> plugins;
         for (auto plugin : *BedrockPlugin::g_registeredPluginList) {
             STable pluginData;
             pluginData["name"] = plugin->getName();
+
+            // TODO: This is another thing that isn't synchronized, but should be, we have no idea when plugins might
+            // want to update this (in practice, currently, it's never).
             STable pluginInfo  = plugin->getInfo();
             for (auto row : pluginInfo) {
                 pluginData[row.first] = row.second;
             }
             plugins.push_back(SComposeJSONObject(pluginData));
         }
-        content["isMaster"]    = state == SQLiteNode::MASTERING ? "true" : "false";
-        content["plugins"]     = SComposeJSONArray(plugins);
-        content["state"]       = SQLiteNode::stateNames[state];
-        content["version"]     = _version;
+        content["isMaster"] = state == SQLiteNode::MASTERING ? "true" : "false";
+        content["plugins"]  = SComposeJSONArray(plugins);
+        content["state"]    = SQLiteNode::stateNames[state];
+        content["version"]  = _version;
 
+        // Retrieve information about our peers.
+        list<STable> peerData;
+        // TODO: This is broken because there's nothing guaranteeing that the sync thread isn't modifying these values
+        // as we read them. We could add a 'status' lock before calling SQLiteNode::update(), and also lock that here.
+        for (SQLiteNode::Peer* peer : _syncNode->peerList) {
+            peerData.emplace_back(peer->nameValueMap);
+            peerData.back()["host"] = peer->host;
+        }
+
+        // Coalesce all of this into one value to return.
+        list<string> peerList;
+        for (const STable& peerTable : peerData) {
+            peerList.push_back(SComposeJSONObject(peerTable));
+        }
+        content["peerList"]          = SComposeJSONArray(peerList);
+        content["queuedCommandList"] = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         /*
-        TODO: Re-expose these.
+        TODO: Re-expose these, if we even care.
         content["priority"]    = SToStr(node->getPriority());
         content["hash"]        = node->getHash();
         content["commitCount"] = SToStr(node->getCommitCount());
-
-        // Retrieve information about our peers.
-        list<string> peerList;
-        for (SQLiteNode::Peer* peer : node->peerList) {
-            STable peerTable = peer->nameValueMap;
-            peerTable["host"] = peer->host;
-            peerList.push_back(SComposeJSONObject(peerTable));
-        }
-        content["peerList"]             = SComposeJSONArray(peerList);
         content["queuedCommandList"]    = SComposeJSONArray(node->getQueuedCommandList());
         content["escalatedCommandList"] = SComposeJSONArray(node->getEscalatedCommandList());
         content["processedCommandList"] = SComposeJSONArray(node->getProcessedCommandList());
         */
+
+        // Done, compose the response.
+        response.methodLine = "200 OK";
+        response.content = SComposeJSONObject(content);
     }
 }
 

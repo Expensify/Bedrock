@@ -9,6 +9,16 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     _queueCondition.notify_one();
 }
 
+list<string> BedrockCommandQueue::getRequestMethodLines() {
+    list<string> returnVal;
+    for (auto& queue : _commandQueue) {
+        for (auto& entry : queue.second) {
+            returnVal.push_back(entry.second.request.methodLine);
+        }
+    }
+    return returnVal;
+}
+
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     unique_lock<mutex> queueLock(_queueMutex);
 

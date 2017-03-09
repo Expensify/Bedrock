@@ -17,6 +17,10 @@ class BedrockCommandQueue {
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
 
+    // Returns a list of all the method lines for all the requests currently queued. This function exists for state
+    // reporting, and is called when we receive a `Status` command.
+    list<string> getRequestMethodLines();
+
   private:
     // Removes and returns the first workable command in the queue. A command is workable if:
     // 1. It's creationTimestamp is not in the future.

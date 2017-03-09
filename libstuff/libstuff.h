@@ -542,28 +542,21 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
 // --------------------------------------------------------------------------
 // JSON message management
 string SToJSON(const string& value, const bool forceString = false);
-inline string SComposeJSONArray(const vector<string>& valueList) {
-    if (valueList.empty())
+
+template <typename T>
+string SComposeJSONArray(const T& valueList) {
+    if (valueList.empty()) {
         return "[]";
+    }
     string working = "[";
-    for (const string& value : valueList) {
+    for (auto value : valueList) {
         working += SToJSON(value) + ",";
     }
     working.resize(working.size() - 1);
     working += "]";
     return working;
 }
-inline string SComposeJSONArray(const list<string>& valueList) {
-    if (valueList.empty())
-        return "[]";
-    string working = "[";
-    for (const string& value : valueList) {
-        working += SToJSON(value) + ",";
-    }
-    working.resize(working.size() - 1);
-    working += "]";
-    return working;
-}
+
 string SComposeJSONObject(const STable& nameValueMap, const bool forceString = false);
 STable SParseJSONObject(const string& object);
 list<string> SParseJSONArray(const string& array);
