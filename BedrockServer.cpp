@@ -157,7 +157,6 @@ void BedrockServer::sync(SData& args,
                 }
             } else {
                 // If the commit failed, then it must have conflicted, so we'll requeue it to try again.
-                SWARN("Conflicting commit on sync thread, will retry command '" << command.request.methodLine << "'.");
                 syncNodeQueuedCommands.push(move(command));
             }
             
@@ -206,6 +205,7 @@ void BedrockServer::sync(SData& args,
             // We got a command to work on! Set our log prefix to the request ID.
             // TODO: This is totally wrong, but here as a placeholder.
             // SAUTOPREFIX(command.request["prefix"]);
+            SAUTOPREFIX(args["-nodeName"]);
 
             // And now we'll decide how to handle it.
             if (replicationState.load() == SQLiteNode::MASTERING) {
@@ -298,6 +298,9 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
+
+            // TODO: Change to the prefix of the request.
+            SAUTOPREFIX(args["-nodeName"]);
 
             while (upgradeInProgress.load()) {
                 // TODO: Make this less shitty.

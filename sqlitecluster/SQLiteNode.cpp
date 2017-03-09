@@ -1657,10 +1657,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
             SQLiteCommand& command = commandIt->second;
-            _escalatedCommandMap.erase(command.id);
             command.response = response;
             command.complete = true;
             _server.acceptCommand(move(command));
+            _escalatedCommandMap.erase(command.id);
         } else {
             SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
         }

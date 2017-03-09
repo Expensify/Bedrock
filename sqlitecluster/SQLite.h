@@ -198,9 +198,6 @@ class SQLite {
     // A list of all the journal tables names.
     list<string> _allJournalNames;
 
-    // TODO: Remove alongside hack to insert in random journals (see prepare() in .cpp file).
-    int _maxRequiredJournalTableID;
-
     // Timing information.
     uint64_t _beginElapsed;
     uint64_t _readElapsed;
