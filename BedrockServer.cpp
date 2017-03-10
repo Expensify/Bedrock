@@ -652,8 +652,8 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     SConsumeFront(s->recvBuffer, requestSize);
 
                     // Either shut down the socket or store it so we can eventually sync out the response.
-                    uint64_t creationTimestamp = request.calc64("commandExecuteTime");
-                    if (SIEquals(request["Connection"], "forget") || creationTimestamp > STimeNow()) {
+                    if (SIEquals(request["Connection"], "forget") ||
+                        (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
                         // Respond immediately to make it clear we successfully queued it, but don't add to the socket
                         // map as we don't care about the answer.
                         SINFO("Firing and forgetting '" << request.methodLine << "'");

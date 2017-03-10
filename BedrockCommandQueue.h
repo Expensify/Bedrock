@@ -23,9 +23,9 @@ class BedrockCommandQueue {
 
   private:
     // Removes and returns the first workable command in the queue. A command is workable if:
-    // 1. It's creationTimestamp is not in the future.
+    // 1. It's executeTimestamp is not in the future.
     //
-    // First means: Starting from the highest priority queue, the command with the oldest creationTimestamp.
+    // First means: Starting from the highest priority queue, the command with the oldest executeTimestamp.
     // all commands of priority N+1 are before commands of priority N, regardless of timestamp.
     //
     // This function throws if no workable commands are available.

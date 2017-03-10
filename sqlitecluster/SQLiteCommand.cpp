@@ -6,7 +6,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     request(move(_request)),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    creationTimestamp(0),
+    executeTimestamp(SToUInt64(request["commandExecuteTime"]) ?: STimeNow()),
     replicationStartTimestamp(0),
     processingTime(0)
 {
@@ -34,7 +34,7 @@ SQLiteCommand::SQLiteCommand() :
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    creationTimestamp(0),
+    executeTimestamp(0),
     replicationStartTimestamp(0),
     processingTime(0)
 { }

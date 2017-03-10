@@ -25,9 +25,9 @@ class SQLiteCommand {
     SData response;     // Final response
     SQLiteNode::ConsistencyLevel writeConsistency;
     bool complete;
+    uint64_t executeTimestamp; // Specified in microseconds.
 
     // Track timing information. TODO: Remove? Refactor?
-    uint64_t creationTimestamp;
     uint64_t replicationStartTimestamp;
     uint64_t processingTime;
 

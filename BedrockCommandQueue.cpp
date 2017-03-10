@@ -5,7 +5,7 @@
 void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
-    queue.emplace(item.priority, move(item));
+    queue.emplace(item.executeTimestamp, move(item));
     _queueCondition.notify_one();
 }
 

@@ -13,6 +13,7 @@ struct e_futureExecutionTest : tpunit::TestFixture {
 
         // Let's run a command in the future.
         SData query("Query");
+
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
         query["Query"] = "INSERT INTO test VALUES(" + SQ(500) + ", " + SQ("sent_by_master") + ");";
@@ -26,7 +27,6 @@ struct e_futureExecutionTest : tpunit::TestFixture {
         query.methodLine = "Query";
         query["Query"] = "SELECT * FROM test WHERE id >= 500;";
         result = brtester->executeWait(query);
-
         ASSERT_FALSE(SContains(result, "500"));
 
         // Then sleep three more seconds, it *should* be there now.
@@ -34,7 +34,6 @@ struct e_futureExecutionTest : tpunit::TestFixture {
 
         // And now it should be there.
         result = brtester->executeWait(query);
-
         ASSERT_TRUE(SContains(result, "500"));
     }
 
