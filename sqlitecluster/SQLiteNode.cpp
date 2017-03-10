@@ -878,9 +878,9 @@ bool SQLiteNode::update() {
                 return false;
             }
 
-            // We we're commiting, but now we're not. The only code path through here that doesn't lead to the point is
-            // the 'return false' immediately above here, everything else completes the transaction (even if it was a
-            // failed transaction), so we can safely unlock now.
+            // We we're committing, but now we're not. The only code path through here that doesn't lead to the point
+            // is the 'return false' immediately above here, everything else completes the transaction (even if it was
+            // a failed transaction), so we can safely unlock now.
             SQLite::g_commitLock.unlock();
         }
 
@@ -939,9 +939,9 @@ bool SQLiteNode::update() {
             SData transaction("BEGIN_TRANSACTION");
             SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
                   << _db.getUncommittedHash() << ")");
-            transaction["NewCount"] = SToStr(commitCount + 1);
-            transaction["NewHash"] = _db.getUncommittedHash();
-            transaction["ID"] = _lastSentTransactionID + 1;
+            transaction.set("NewCount", commitCount + 1);
+            transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
 
             for (auto peer : peerList) {
@@ -1451,14 +1451,19 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
         // Are we participating in quorum?
         if (_priority) {
-            // Not a permaslave, approve the transaction
-            PINFO("Approving transaction #" << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-                                            << ") for command '" << message["Command"] << "'");
-            SData approve("APPROVE_TRANSACTION");
-            approve["NewCount"] = SToStr(_db.getCommitCount() + 1);
-            approve["NewHash"] = _db.getUncommittedHash();
-            approve["ID"] = message["ID"];
-            _sendToPeer(_masterPeer, approve);
+            // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
+            if (!SStartsWith(message["ID"], "ASYNC_")) {
+                // Not a permaslave, approve the transaction
+                PINFO("Approving transaction #" << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
+                                                << ") for command '" << message["Command"] << "'");
+                SData approve("APPROVE_TRANSACTION");
+                approve["NewCount"] = SToStr(_db.getCommitCount() + 1);
+                approve["NewHash"] = _db.getUncommittedHash();
+                approve["ID"] = message["ID"];
+                _sendToPeer(_masterPeer, approve);
+            } else {
+                PINFO("Skipping APPROVE_TRANSACTION for ASYNC command.");
+            }
         } else {
             PINFO("Would approve transaction #" << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
                                                 << ") for command '" << message["Command"]
@@ -1501,10 +1506,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     throw "permaslaves shouldn't approve";
                 PINFO("Peer approved transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
                 (*peer)["TransactionResponse"] = "approve";
-            } else
+            } else {
                 // Old command.  Nothing to do.  We already sent a commit or rollback.
                 PINFO("Peer approved transaction #" << message["NewCount"] << " (" << message["NewHash"]
                                                     << ") after commit.");
+            }
         } catch (const char* e) {
             // Doesn't correspond to the outstanding transaction not necessarily
             // fatal.  This can happen if, for example, a command is escalated from

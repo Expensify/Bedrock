@@ -238,16 +238,10 @@ void BedrockServer::sync(SData& args,
                     }
                 }
             } else if (replicationState.load() == SQLiteNode::SLAVING) {
-                if (core.peekCommand(command)) {
-                    // If peek is successful on a slave, all we have to do is send a reply to the caller, and we're
-                    // done.
-                    server._reply(command);
-                } else {
-                    // Otherwise, we'll have to send the command to the master. When the escalation is complete,
-                    // SQLiteNode will call _acceptCommand() and pass it back to the server, which will give it to a
-                    // worker thread to respond to.
-                    syncNode.escalateCommand(move(command));
-                }
+                // If we're slaving, we just escalate directly to master without peeking. We can only get an incomplete
+                // command on the slave sync thread if a slave worker thread peeked it unsuccessfully, so we don't
+                // bother peeking it again.
+                syncNode.escalateCommand(move(command));
             }
         } catch (out_of_range e) {
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
@@ -389,7 +383,7 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                SWARN("Max retries hit, forwarding command to sync node.");
+                SWARN("Max retries hit in worker, forwarding command to sync node.");
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {
@@ -674,6 +668,12 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     BedrockCommand command(request);
+
+                    // This is important! All commands passed through the entire cluster must have unique IDs, or they
+                    // won't get routed properly from slave to master and back.
+                    command.id = _args["-nodeName"] + "#" + to_string(_requestCount++);
+
+                    // And we and keep track of the client that initiated this command, so we can respond later.
                     command.initiatingClientID = s->id;
 
                     // Status requests are handled specially.
