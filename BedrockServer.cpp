@@ -35,15 +35,25 @@ void BedrockServer::sync(SData& args,
     SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1);
 
     // And the command processor.
-    BedrockCore core(db);
+    BedrockCore core(db, server);
 
     // And the sync node.
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
     SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"), firstTimeout,
                         server._version, args.calc("-quorumCheckpoint"));
 
-    // We expose the sync node to the server, because it needs it to respond to certain (Status) requests.
+    // We expose the sync node to the server, because it needs it to respond to certain (Status) requests with data
+    // about the sync node.
     server._syncNode = &syncNode;
+
+    // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
+    // that jsut needs to be returned to a peer.
+    CommandQueue completedCommands;
+
+    // And we keep a list of commands with outstanding HTTPS requests. This is not synchronized because it's only used
+    // internally in this thread. We temporarily move commands here while we wait for their HTTPS requests to complete,
+    // so that we don't clog up the regular command queue with commands that are waiting.
+    list<BedrockCommand> httpsCommands;
 
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
@@ -58,6 +68,7 @@ void BedrockServer::sync(SData& args,
                                       ref(nodeGracefulShutdown),
                                       ref(masterVersion),
                                       ref(syncNodeQueuedCommands),
+                                      ref(completedCommands),
                                       ref(server),
                                       threadId,
                                       workerThreads);
@@ -68,6 +79,8 @@ void BedrockServer::sync(SData& args,
     BedrockCommand command;
     bool committingCommand = false;
     while (!syncNode.shutdownComplete()) {
+        // We lock the global sync lock, so that 'Status' doesn't conflict with this.
+        SAUTOLOCK(server._syncMutex);
 
         // If we've been instructed to shutdown and we haven't yet, do it.
         if (nodeGracefulShutdown.load()) {
@@ -78,34 +91,38 @@ void BedrockServer::sync(SData& args,
         // activity. Once any of them has activity (or the timeout ends), poll will return.
         fd_map fdm;
 
-        // Pre-process any HTTPS reqeusts that need handling.
-        for (list<SHTTPSManager*>& managerList : server.httpsManagers) {
-            for (SHTTPSManager* manager : managerList) {
-                manager->preSelect(fdm);
-            }
-        }
+        // Prepare our plugins for `poll` (for instance, in case they're making HTTP requests).
+        server._preSelectPlugins(fdm);
 
-        // Pre-process any sockets the sync node is managing.
+        // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         syncNode.preSelect(fdm);
 
-        // Add our command queue to our fd_map.
+        // Add our command queues to our fd_map.
         syncNodeQueuedCommands.preSelect(fdm);
+        completedCommands.preSelect(fdm);
 
-        // Wait for activity on any of those FDs, up to a timeout
+        // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
-        // If we've 
         S_poll(fdm, max(nextActivity, now) - now);
         nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
 
-        // Process any network traffic that happened in the plugin HTTPS managers.
-        for (list<SHTTPSManager*>& managerList : server.httpsManagers) { 
-            for (SHTTPSManager* manager : managerList) {
-                manager->postSelect(fdm, nextActivity);
-            }
-        }
+        // Process any activity in our plugins.
+        server._postSelectPlugins(fdm, nextActivity);
 
         // Process any network traffic that happened in the sync thread.
         syncNode.postSelect(fdm, nextActivity);
+
+        // If any of our plugins finished any outstanding HTTPS requests, we'll move those commands back into the
+        // regular queue. This code modifies a list while iterating over it.
+        auto httpsIt = httpsCommands.begin();
+        while (httpsIt != httpsCommands.end()) {
+            if (httpsIt->httpsRequest->finished) {
+                syncNodeQueuedCommands.push(move(*httpsIt));
+                httpsIt = httpsCommands.erase(httpsIt);
+            } else {
+                httpsIt++;
+            }
+        }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
@@ -126,7 +143,6 @@ void BedrockServer::sync(SData& args,
         // worker threads know that a DB upgrade is in progress, and start the upgrade process, which works basically
         // like a regular distributed commit.
         if (preUpdateState != SQLiteNode::MASTERING && replicationState.load() == SQLiteNode::MASTERING) {
-            // TODO: Upgrade the DB.
             if (server._upgradeDB(db)) {
                 upgradeInProgress.store(true);
                 committingCommand = true;
@@ -171,39 +187,34 @@ void BedrockServer::sync(SData& args,
         // be other finished work to handle while we wait for that to complete. Let's see if we can handle any of that
         // work.
         try {
-            // Continually look at the front of the queue, and as long as that command is complete, send a response
-            // and remove it from the queue. If we find an incomplete command, we'll move on to processing it. If we
-            // find no command, `front()` will throw `out_of_range` and we'll start the main loop over again, calling
-            // poll().
-            // TODO: We should handle completed commands at other places in the queue, too (besides at the front), or we
-            // could have a separate queue for completed commands.
-            // TODO: We should skip commands with unfinished HTTPS requests.
-            while (true) {
-                const BedrockCommand& localCommand = syncNodeQueuedCommands.front();
-                if (localCommand.complete) {
-                    // Make sure this came from a peer rather than a client, if it came from a client it shouldn't be in
-                    // this queue completed.
-                    SASSERT(localCommand.initiatingPeerID);
-                    SASSERT(!localCommand.initiatingClientID);
-
-                    // Now we can pull it off the queue and respond to it.
-                    syncNode.sendResponse(syncNodeQueuedCommands.pop());
-                } else {
-                    // This command isn't complete, so we can't just send a response and be done with it. We'll break
-                    // here and move on to the processing stage.
-                    break;
+            // If there are any completed commands to respond to, we'll do that first.
+            try {
+                while (true) {
+                    BedrockCommand completedCommand = completedCommands.pop();
+                    SASSERT(completedCommand.complete);
+                    SASSERT(completedCommand.initiatingPeerID);
+                    SASSERT(!completedCommand.initiatingClientID);
+                    syncNode.sendResponse(completedCommand);
                 }
+            } catch (out_of_range e) {
+                // when completedCommands.pop() throws for running out of commands, we fall out of the loop.
             }
 
-            // The next command in the queue is incomplete, so we'll need to process it (if there were no next
-            // command, then the above block would have thrown out_of-range), but we don't start processing a new
-            // command until we've completed any existing ones.
+            // We don't start processing a new command until we've completed any existing ones.
             if (committingCommand) {
                 continue;
             }
 
             // Now we can pull the next one off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
+
+            // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
+            // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
+            // command.
+            if (command.httpsRequest && !command.httpsRequest->finished) {
+                httpsCommands.push_back(move(command));
+                continue;
+            }
 
             // We got a command to work on! Set our log prefix to the request ID.
             // TODO: This is totally wrong, but here as a placeholder.
@@ -277,6 +288,7 @@ void BedrockServer::worker(SData& args,
                            atomic<bool>& nodeGracefulShutdown,
                            atomic<string>& masterVersion,
                            CommandQueue& syncNodeQueuedCommands,
+                           CommandQueue& syncNodeCompletedCommands,
                            BedrockServer& server,
                            int threadId,
                            int threadCount)
@@ -284,7 +296,7 @@ void BedrockServer::worker(SData& args,
     SInitialize("worker" + to_string(threadId));
     
     SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), threadId, threadCount - 1);
-    BedrockCore core(db);
+    BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
     BedrockCommand command;
@@ -339,6 +351,11 @@ void BedrockServer::worker(SData& args,
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
                 if (!core.peekCommand(command)) {
+                    if (command.httpsRequest) {
+                        // It's an error to open an HTTPS request on a slave, since we won't be able to record the
+                        // response.
+                        SASSERT(state == SQLiteNode::MASTERING);
+                    }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
                     if (state == SQLiteNode::SLAVING ||
@@ -369,7 +386,7 @@ void BedrockServer::worker(SData& args,
                 if (command.complete) {
                     if (command.initiatingPeerID) {
                         // Escalated command. Give it back to the sync thread to respond.
-                        syncNodeQueuedCommands.push(move(command));
+                        syncNodeCompletedCommands.push(move(command));
                     } else {
                         server._reply(command);
                     }
@@ -401,7 +418,7 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
-    _suppressCommandPortManualOverride(false) {
+    _suppressCommandPortManualOverride(false), _syncNode(nullptr) {
 
     _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
 
@@ -412,25 +429,17 @@ BedrockServer::BedrockServer(const SData& args)
         const string& pluginName = SToLower(plugin->getName());
         SINFO("Registering plugin '" << pluginName << "'");
         registeredPluginMap[pluginName] = plugin;
-        plugin->enable(false); // Disable in case a previous run enabled it
     }
 
     // Enable the requested plugins
     list<string> pluginNameList = SParseList(args["-plugins"]);
     for (string& pluginName : pluginNameList) {
-        // Enable the named plugin
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin) {
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         }
-        SINFO("Enabling plugin '" << pluginName << "'");
-        plugin->enable(true);
-
-        // Add the plugin's SHTTPSManagers to our list.
-        // As this is a list of lists, push_back will push a *copy* of the list onto our local list, meaning that the
-        // plugin's list must be complete and final when `initialize` finishes. There is no facility to add more
-        // httpsManagers at a later time.
-        httpsManagers.push_back(plugin->httpsManagers);
+        plugin->initialize(args, *this);
+        plugins.push_back(plugin);
     }
 
     SINFO("Launching sync thread '" << _syncThreadName << "'");
@@ -527,15 +536,13 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         openPort(_args["-serverHost"]);
 
         // Open any plugin ports on enabled plugins
-        for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-            if (plugin->enabled()) {
-                string portHost = plugin->getPort();
-                if (!portHost.empty()) {
-                    // Open the port and associate it with the plugin
-                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
-                    Port* port = openPort(portHost);
-                    _portPluginMap[port] = plugin;
-                }
+        for (auto plugin : plugins) {
+            string portHost = plugin->getPort();
+            if (!portHost.empty()) {
+                // Open the port and associate it with the plugin
+                SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                Port* port = openPort(portHost);
+                _portPluginMap[port] = plugin;
             }
         }
     }
@@ -823,13 +830,17 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["state"]    = SQLiteNode::stateNames[state];
         content["version"]  = _version;
 
-        // Retrieve information about our peers.
+        // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
+        // thread.
         list<STable> peerData;
-        // TODO: This is broken because there's nothing guaranteeing that the sync thread isn't modifying these values
-        // as we read them. We could add a 'status' lock before calling SQLiteNode::update(), and also lock that here.
-        for (SQLiteNode::Peer* peer : _syncNode->peerList) {
-            peerData.emplace_back(peer->nameValueMap);
-            peerData.back()["host"] = peer->host;
+        {
+            // TODO: Uncommenting this makes everything horribly slow.
+            // SAUTOLOCK(_syncMutex);
+            // Retrieve information about our peers.
+            for (SQLiteNode::Peer* peer : _syncNode->peerList) {
+                peerData.emplace_back(peer->nameValueMap);
+                peerData.back()["host"] = peer->host;
+            }
         }
 
         // Coalesce all of this into one value to return.
@@ -858,4 +869,20 @@ void BedrockServer::_status(BedrockCommand& command) {
 bool BedrockServer::_upgradeDB(SQLite& db) {
     // TODO: Implement.
     return !db.getUncommittedQuery().empty();
+}
+
+void BedrockServer::_preSelectPlugins(fd_map& fdm) {
+    for (auto plugin : plugins) {
+        for (auto manager : plugin->httpsManagers) {
+            manager->preSelect(fdm);
+        }
+    }
+}
+
+void BedrockServer::_postSelectPlugins(fd_map& fdm, uint64_t nextActivity) {
+    for (auto plugin : plugins) {
+        for (auto manager : plugin->httpsManagers) {
+            manager->postSelect(fdm, nextActivity);
+        }
+    }
 }

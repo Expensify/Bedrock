@@ -133,23 +133,6 @@ set<string> loadPlugins(SData& args) {
         }
     }
 
-    // Initialize our version string.
-    vector<string> versions = {SVERSION};
-    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-        // We need to call initialize to let the plugin set its version info.
-        // We only do this for plugins that were actually requested to load.
-        if (postProcessedNames.find(SToUpper(plugin->getName())) != postProcessedNames.end()) {
-            plugin->initialize(args);
-            auto info = plugin->getInfo();
-            auto iterator = info.find("version");
-            if (iterator != info.end()) {
-                versions.push_back(plugin->getName() + "_" + iterator->second);
-            }
-        }
-    }
-    sort(versions.begin(), versions.end());
-    args["version"] = SComposeList(versions, ":");
-
     return postProcessedNames;
 }
 

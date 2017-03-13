@@ -1,5 +1,6 @@
 #pragma once
 #include "BedrockCommand.h"
+class BedrockServer;
 
 // BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
 // just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
@@ -31,27 +32,26 @@ class BedrockPlugin {
     // Returns a version string indicating the version of this plugin.
     virtual STable getInfo();
 
-    // Initializes it with command-line arguments
-    virtual void initialize(const SData& args);
+    // Initializes it with command-line arguments and a reference to the server object that will call this plugin.
+    // This may be called multiple times, it's up to a plugin to handle that in a reasonable way. Note that `server`
+    // may change between calls to this function.
+    virtual void initialize(const SData& args, const BedrockServer& server);
 
-    // Optionally updates the schema as necessary to support this plugin
+    // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);
 
-    // Optionally "peeks" at a command to process it in a read-only manner
+    // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
+    // completely handled and a response has been written into `command.response`, which can be returned to the client.
+    // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
+    // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
     virtual bool peekCommand(SQLite& db, BedrockCommand& command);
 
-    // Optionally "processes" a command in a read/write manner, triggering
-    // a distributed transaction if necessary
+    // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
+    // with any changes to the DB made by this plugin.
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
-    // Enable this plugin for active operation
-    virtual void enable(bool enabled);
-    virtual bool enabled();
-
-    // The plugin can add as many of these as it needs in it's initialize function. The server will then add those
-    // to it's own global list. Note that this is the *only* time these can be added, once `initialize` completes,
-    // the server maintains a copy of this list. This also means that these managers need to live for the life of
-    // the application.
+    // A list of SHTTPSManagers that the plugin would like the server to watch for activity. It is only guaranteed to
+    // be safe to modify this list during `initialize`.
     list<SHTTPSManager*> httpsManagers;
 
     // The plugin can register any number of timers it wants. When any of them `ding`, then the `timerFired`
@@ -59,6 +59,9 @@ class BedrockPlugin {
     set<SStopwatch*> timers;
     virtual void timerFired(SStopwatch* timer);
 
+    // Below here are several functions for allowing plugins to open a port and accept their own connections.
+    // TODO: This is currently disabled and may be removed. It exists only for the MySQL plugin, and this functionality
+    // may be better encapsulated there.
     // Returns "host:port" on which to listen, or empty if none
     virtual string getPort() { return ""; }
 
@@ -69,9 +72,6 @@ class BedrockPlugin {
     // Param request: optional request to queue internally
     // Return true if the socket is still alive
     virtual bool onPortRecv(STCPManager::Socket* s, SData& request) { return false; }
-
-    // Gets a specific plugin by name, if it exists
-    static BedrockPlugin* getPlugin(const string& name);
 
     // After processing the request from this plugin, this is called to send the response
     // param response The response from the processed request

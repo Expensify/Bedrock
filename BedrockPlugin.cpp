@@ -1,10 +1,11 @@
 #include <libstuff/libstuff.h>
 #include "BedrockPlugin.h"
+#include "BedrockServer.h"
 
 // Global static values
 list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = nullptr;
 
-BedrockPlugin::BedrockPlugin() : _enabled(false) {
+BedrockPlugin::BedrockPlugin() {
     // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.
     // This just makes it available for enabling via the command line: by default all plugins start out disabled.
     //
@@ -34,20 +35,10 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
     }
 }
 
-BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
-    list<BedrockPlugin*>::iterator plugin;
-    plugin = find_if(g_registeredPluginList->begin(), g_registeredPluginList->end(),
-                     [&](BedrockPlugin* plugin) { return SIEquals(plugin->getName(), name); });
-    // Return what we found, or null if nothing.
-    return (plugin == g_registeredPluginList->end()) ? 0 : *plugin;
-}
-
 // One-liner default implementations.
-void BedrockPlugin::enable(bool enabled) { _enabled = enabled; }
-bool BedrockPlugin::enabled() { return _enabled; }
 STable BedrockPlugin::getInfo() { return STable(); }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-void BedrockPlugin::initialize(const SData& args) {}
+void BedrockPlugin::initialize(const SData& args, const BedrockServer& server) {}
 bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) { return false; }
 bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) { return false; }
 void BedrockPlugin::timerFired(SStopwatch* timer) {}

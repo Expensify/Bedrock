@@ -9,6 +9,10 @@
 class BedrockServer : public SQLiteServer {
   public:
 
+    // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
+    // initialized at construction based on the arguments passed in.
+    list<BedrockPlugin*> plugins;
+
     // A command queue is just a SSynchronizedQueue of BedrockCommands. This is distinct from a `BedrockCommandQueue`,
     // which is a more complex data structure.
     typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
@@ -29,6 +33,9 @@ class BedrockServer : public SQLiteServer {
 
     // Returns true when everything's ready to sutdown.
     bool shutdownComplete();
+
+    // Exposes the replication state to plugins.
+    SQLiteNode::State getState() const { return _replicationState.load(); }
 
     // Flush the send buffers
     // STCPNode API.
@@ -111,6 +118,10 @@ class BedrockServer : public SQLiteServer {
     // becomes master. It will return true if the DB has changed and needs to be committed.
     bool _upgradeDB(SQLite& db);
 
+    // Iterate across all of our plugins and call `preSelect` and `postSelect` on any httpsManagers they've created.
+    void _preSelectPlugins(fd_map& fdm);
+    void _postSelectPlugins(fd_map& fdm, uint64_t nextActivity);
+
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
     static void sync(SData& args,
@@ -128,6 +139,7 @@ class BedrockServer : public SQLiteServer {
                        atomic<bool>& nodeGracefulShutdown,
                        atomic<string>& masterVersion,
                        CommandQueue& syncNodeQueuedCommands,
+                       CommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
                        int threadId,
                        int threadCount);
@@ -143,8 +155,10 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_STATUS            = "Status";
 
     // This *only* exists so that status commands can pull info from this node.
-    // TODO: This isn't synchronized, but should be.
     SQLiteNode* _syncNode;
+
+    // Because status will access internal sync node data, we lock in both places that will access the pointer above.
+    mutex _syncMutex;
 
     // Functions for checking for and responding to status commands.
     bool _isStatusCommand(BedrockCommand& command);

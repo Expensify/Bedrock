@@ -5,37 +5,14 @@ extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
     new BedrockPlugin_TestPlugin();
 }
 
+BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
+  _server(nullptr)
+{ }
 
-bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
-    string methodLine = transaction->fullResponse.methodLine;
-    transaction->response = 0;
-    size_t offset = methodLine.find_first_of(' ', 0);
-    offset = methodLine.find_first_not_of(' ', offset);
-    if (offset != string::npos) {
-        int status = SToInt(methodLine.substr(offset));
-        if (status) {
-            transaction->response = status;
-        }
-    }
-    if (!transaction->response) {
-        transaction->response = 400;
-        SWARN("Failed to parse method line from request: " << methodLine);
-    }
-
-    return false;
-}
-
-void BedrockPlugin_TestPlugin::initialize(const SData& args) {
+void BedrockPlugin_TestPlugin::initialize(const SData& args, const BedrockServer& server) {
     httpsManagers.push_back(&httpsManager);
+    _server = &server;
 }
-
-TestHTTPSMananager::~TestHTTPSMananager() {
-}
-
-TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
-    return _httpsSend(url, request);
-}
-
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     // This should never exist when calling peek.
@@ -45,6 +22,10 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.response.content = "this is a test response";
         return true;
     } else if (command.request.methodLine == "sendrequest") {
+        if (_server->getState() != SQLiteNode::MASTERING) {
+            // Only start HTTPS reqeusts on master, otherwise, we'll escalate.
+            return false;
+        }
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.expensify.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
@@ -81,4 +62,30 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         return true;
     }
     return false;
+}
+
+bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
+    string methodLine = transaction->fullResponse.methodLine;
+    transaction->response = 0;
+    size_t offset = methodLine.find_first_of(' ', 0);
+    offset = methodLine.find_first_not_of(' ', offset);
+    if (offset != string::npos) {
+        int status = SToInt(methodLine.substr(offset));
+        if (status) {
+            transaction->response = status;
+        }
+    }
+    if (!transaction->response) {
+        transaction->response = 400;
+        SWARN("Failed to parse method line from request: " << methodLine);
+    }
+
+    return false;
+}
+
+TestHTTPSMananager::~TestHTTPSMananager() {
+}
+
+TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
+    return _httpsSend(url, request);
 }

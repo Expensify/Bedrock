@@ -1,25 +1,26 @@
 #include "BedrockCore.h"
 #include "BedrockPlugin.h"
+#include "BedrockServer.h"
 
-BedrockCore::BedrockCore(SQLite& db) : 
-SQLiteCore(db)
+BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : 
+SQLiteCore(db),
+_server(server)
 { }
 
 bool BedrockCore::peekCommand(BedrockCommand& command)
 {
-    // Classify the message
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
-    // Assume success; will throw failure if necessary
+    // We catch any exception and handle in `_handleCommandException`.
     try {
-        // Loop across the plugins to see which wants to take this
+        // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
-        for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+        for (auto plugin : _server.plugins) {
             // See if it peeks this
-            if (plugin->enabled() && plugin->peekCommand(_db, command)) {
+            if (plugin->peekCommand(_db, command)) {
                 // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
@@ -27,11 +28,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
             }
         }
 
-        // If not peeked by a plugin, do the old commands
+        // If nobody succeeded in peeking it, then we'll need to process it.
+        // TODO: Would be nice to be able to check if a plugin *can* handle a command, so that we can differentiate
+        // between "didn't peek" and "peeked but didn't complete".
         if (!pluginPeeked) {
-            // Not a peekable command
             SINFO("Command '" << request.methodLine << "' is not peekable, queuing for processing.");
-            return false; // Not done
+            return false;
         }
 
         // If no response was sent, assume 200 OK
@@ -39,7 +41,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
             response.methodLine = "200 OK";
         }
 
-        // Success.  If a command has set "content", encode it in the response.
+        // Success. If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
         if (!content.empty()) {
             // Make sure we're not overwriting anything different.
@@ -69,18 +71,14 @@ void BedrockCore::upgradeDatabase()
     if (!_db.beginTransaction()) {
         throw "501 Failed to begin transaction";
     }
-
-    for(BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-         if (plugin->enabled()) {
-             plugin->upgradeDatabase(_db);
-         }
+    for (auto plugin : _server.plugins) {
+        plugin->upgradeDatabase(_db);
     }
     SINFO("Finished upgrading database");
 }
 
 bool BedrockCore::processCommand(BedrockCommand& command)
 {
-    // Classify the message
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
@@ -97,12 +95,9 @@ bool BedrockCore::processCommand(BedrockCommand& command)
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
             SINFO("Upgrading database");
-            for(BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-                 // See if it processes this
-                 if (plugin->enabled()) {
-                     plugin->upgradeDatabase(_db);
-                 }
-             }
+            for(auto plugin : _server.plugins) {
+                plugin->upgradeDatabase(_db);
+            }
             SINFO("Finished upgrading database");
         } else {
             // All non-upgrade commands should be concurrent
@@ -112,9 +107,9 @@ bool BedrockCore::processCommand(BedrockCommand& command)
 
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
-            for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+            for (auto plugin : _server.plugins) {
                 // See if it processes this
-                if (plugin->enabled() && plugin->processCommand(_db, command)) {
+                if (plugin->processCommand(_db, command)) {
                     // Processed it!
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
@@ -199,66 +194,3 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const string&
     }
 }
 
-#if 0
-BedrockNode::BedrockNode(const SData& args, int threadID, int workerThreadCount, BedrockServer* server_)
-    : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
-                 1024,                                                         // auto-checkpoint every 1024 pages
-                 STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), threadID, workerThreadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
-                 args.test("-worker"), args.calc("-maxJournalSize")),
-      server(server_) {
-    // Initialize
-    SINFO("BedrockNode constructor");
-}
-
-
-BedrockNode::~BedrockNode() {
-    // Note any orphaned commands; this list should ideally be empty
-    list<string> commandList;
-    commandList = getQueuedCommandList();
-    if (!commandList.empty())
-        SALERT("Queued: " << SComposeJSONArray(commandList));
-}
-
-bool BedrockNode::_passToExternalQueue(Command* command) {
-    // Check to see if we have a server
-    // **FIXME: Given that this->server is defined in the constructor, how can this be false?
-    if (server) {
-        // No server, which probably means REASON
-        server->enqueueCommand(command);
-        return true;
-    }
-    return false;
-};
-
-void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
-    // Update the parent and attributes
-    SQLiteNode::postSelect(fdm, nextActivity);
-}
-
-bool BedrockNode::isWorker() { return _worker; }
-
-void BedrockNode::_setState(SQLCState state) {
-    // When we change states, our schema might change - note that we need to
-    // wait for any possible upgrade to complete again.
-    _masterAndUpgradeComplete = false;
-    SQLiteNode::_setState(state);
-}
-
-bool BedrockNode::dbReady() {
-    return _masterAndUpgradeComplete;
-}
-
-// Notes that we failed to process something
-void BedrockNode::_abortCommand(SQLite& db, Command* command) {
-    // Note the failure in the response
-    command->response.methodLine = "500 ABORTED";
-}
-
-void BedrockNode::_cleanCommand(Command* command) {
-    if (command->httpsRequest) {
-        command->httpsRequest->owner.closeTransaction(command->httpsRequest);
-        command->httpsRequest = 0;
-    }
-}
-#endif

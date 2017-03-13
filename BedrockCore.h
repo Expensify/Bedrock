@@ -1,10 +1,11 @@
 #pragma once
 #include <sqlitecluster/SQLiteCore.h>
 class BedrockCommand;
+class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
   public:
-    BedrockCore(SQLite& db);
+    BedrockCore(SQLite& db, const BedrockServer& server);
 
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
     // command, and it *may be called multiple times*. Preventing duplicate actions on calling peek multiple times is
@@ -34,4 +35,5 @@ class BedrockCore : public SQLiteCore {
 
   private:
     void _handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing);
+    const BedrockServer& _server;
 };
