@@ -13,6 +13,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
 {
   public:
     BedrockPlugin_TestPlugin();
+    void upgradeDatabase(SQLite& db);
     virtual string getName() { return "TestPlugin"; }
     void initialize(const SData& args, const BedrockServer& server);
     bool peekCommand(SQLite& db, BedrockCommand& command);

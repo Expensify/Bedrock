@@ -867,7 +867,14 @@ void BedrockServer::_status(BedrockCommand& command) {
 }
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
-    // TODO: Implement.
+    // These all get conglomerated into one big query.
+    db.beginTransaction();
+    for (auto plugin : plugins) {
+        plugin->upgradeDatabase(db);
+    }
+    if (db.getUncommittedQuery().empty()) {
+        db.rollback();
+    }
     return !db.getUncommittedQuery().empty();
 }
 

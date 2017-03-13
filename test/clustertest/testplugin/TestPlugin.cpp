@@ -64,6 +64,14 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
     return false;
 }
 
+void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
+    bool ignore;
+    SASSERT(db.verifyTable("dbupgrade", "CREATE TABLE dbupgrade ( "
+                                        "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
+                                        "value )", ignore));
+}
+
+
 bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;

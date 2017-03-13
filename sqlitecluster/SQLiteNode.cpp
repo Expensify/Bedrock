@@ -1346,7 +1346,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         (*peer)["Subscribed"] = "true";
 
         // New slave; are we in the midst of a transaction?
-        if (commitInProgress()) {
+        if (_commitState == CommitState::COMMITTING) {
             // Invite the new peer to participate in the transaction
             SINFO("Inviting peer into distributed transaction already underway (" << _db.getUncommittedHash() << ")");
 
@@ -1355,9 +1355,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SData transaction("BEGIN_TRANSACTION");
             SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
                   << _db.getUncommittedHash() << ")");
-            transaction["NewCount"] = to_string(commitCount + 1);
-            transaction["NewHash"] = _db.getUncommittedHash();
-            transaction["ID"] = _lastSentTransactionID + 1;
+
+
+            transaction.set("NewCount", commitCount + 1);
+            transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);
         }
