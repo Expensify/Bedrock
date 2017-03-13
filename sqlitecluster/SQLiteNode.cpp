@@ -1,7 +1,7 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
 #include "SQLiteServer.h"
-#include "SQliteCommand.h"
+#include "SQLiteCommand.h"
 
 /// Introduction
 /// ------------
