@@ -35,11 +35,6 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateNames[_state] << "} "
 
-// Useful STL macros
-// _CT_ : Container type
-// _C_  : Container
-// _I_  : Iterator
-
 // We've bumped these values back up to 5 minutes because some of the billing commands take over 1 minute to process.
 #define SQL_NODE_DEFAULT_RECV_TIMEOUT (STIME_US_PER_M * 5) // Receive timeout for 'normal' SQLiteNode messages
 
@@ -185,9 +180,8 @@ bool SQLiteNode::shutdownComplete() {
                 int64_t created = command.executeTimestamp;
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
-                SINFO("Escalated command remaining at shutdown("
-                      << name << "): " << command.request.methodLine << ". Created: " << command.executeTimestamp
-                      << " (" << elapsedSeconds << "s ago)");
+                SINFO("Escalated command remaining at shutdown(" << name << "): " << command.request.methodLine
+                      << ". Created: " << command.executeTimestamp << " (" << elapsedSeconds << "s ago)");
             }
         }
         return false;
@@ -1666,7 +1660,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             command.response = response;
             command.complete = true;
             _server.acceptCommand(move(command));
-            _escalatedCommandMap.erase(command.id);
+            _escalatedCommandMap.erase(commandIt);
         } else {
             SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
         }
@@ -1688,6 +1682,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Re-queueing command '" << message["ID"] << "' (" << command.request.methodLine << ") ("
                                           << command.id << ")");
             _server.acceptCommand(move(command));
+            _escalatedCommandMap.erase(commandIt);
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
     } else
