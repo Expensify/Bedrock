@@ -36,7 +36,7 @@ class BedrockPlugin {
     // Initializes it with command-line arguments and a reference to the server object that will call this plugin.
     // This may be called multiple times, it's up to a plugin to handle that in a reasonable way. Note that `server`
     // may change between calls to this function.
-    virtual void initialize(const SData& args, const BedrockServer& server);
+    virtual void initialize(const SData& args, BedrockServer& server);
 
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);

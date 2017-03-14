@@ -119,14 +119,16 @@ void BedrockServer::sync(SData& args,
         // Process any activity in our plugins.
         server._postSelectPlugins(fdm, nextActivity);
 
-        // Process any network traffic that happened in the sync thread.
+        // Process any network traffic that happened.
         syncNode.postSelect(fdm, nextActivity);
+        syncNodeQueuedCommands.postSelect(fdm);
+        completedCommands.postSelect(fdm);
 
         // If any of our plugins finished any outstanding HTTPS requests, we'll move those commands back into the
         // regular queue. This code modifies a list while iterating over it.
         auto httpsIt = httpsCommands.begin();
         while (httpsIt != httpsCommands.end()) {
-            if (httpsIt->httpsRequest->finished) {
+            if (httpsIt->httpsRequest->response) {
                 syncNodeQueuedCommands.push(move(*httpsIt));
                 httpsIt = httpsCommands.erase(httpsIt);
             } else {
@@ -221,7 +223,7 @@ void BedrockServer::sync(SData& args,
             // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
             // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
             // command.
-            if (command.httpsRequest && !command.httpsRequest->finished) {
+            if (command.httpsRequest && !command.httpsRequest->response) {
                 httpsCommands.push_back(move(command));
                 continue;
             }

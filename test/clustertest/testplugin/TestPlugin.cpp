@@ -9,7 +9,7 @@ BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
   _server(nullptr)
 { }
 
-void BedrockPlugin_TestPlugin::initialize(const SData& args, const BedrockServer& server) {
+void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& server) {
     httpsManagers.push_back(&httpsManager);
     _server = &server;
 }

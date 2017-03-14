@@ -25,6 +25,9 @@ class SSynchronizedQueue {
     // Returns true if the queue is empty.
     bool empty() const;
 
+    // Returns the queue's size.
+    size_t size() const;
+
   protected:
     // Private state
     list<T> _queue;
@@ -92,6 +95,12 @@ const T& SSynchronizedQueue<T>::front() const {
         return _queue.front();
     }
     throw out_of_range("No commands");
+}
+
+template<typename T>
+size_t SSynchronizedQueue<T>::size() const {
+    SAUTOLOCK(_queueMutex);
+    return _queue.size();
 }
 
 template<typename T>

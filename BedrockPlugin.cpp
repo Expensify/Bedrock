@@ -38,7 +38,7 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
 // One-liner default implementations.
 STable BedrockPlugin::getInfo() { return STable(); }
 string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-void BedrockPlugin::initialize(const SData& args, const BedrockServer& server) {}
+void BedrockPlugin::initialize(const SData& args, BedrockServer& server) {}
 bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) { return false; }
 bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) { return false; }
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
