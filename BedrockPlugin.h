@@ -29,7 +29,8 @@ class BedrockPlugin {
     // Returns a short, descriptive name of this plugin
     virtual string getName();
 
-    // Returns a version string indicating the version of this plugin.
+    // Returns a version string indicating the version of this plugin. This needs to be implemented in a thread-safe
+    // manner, as it will be called from a different thread than any processing commands.
     virtual STable getInfo();
 
     // Initializes it with command-line arguments and a reference to the server object that will call this plugin.
@@ -78,10 +79,6 @@ class BedrockPlugin {
     // param s        Optional socket from which this request was received
     // return         True if the socket should be kept open
     virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s) { return false; }
-
-  protected:
-    // Attributes
-    bool _enabled;
 
   public:
     // Global static attributes

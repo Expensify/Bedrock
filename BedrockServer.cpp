@@ -533,7 +533,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     string masterVersion = _masterVersion.load();
     if (!_suppressCommandPort && state == SQLiteNode::SLAVING && (masterVersion != _version)) {
         SINFO("Node " << _args["-nodeName"] << " slaving on version " << _version
-                      << ", master is version: " /*<< masterVersion <<*/ ", not opening command port.");
+                      << ", master is version: " << masterVersion << ", not opening command port.");
         suppressCommandPort(true);
 
         // If we become master, or if master's version resumes matching ours, open the command port again.
@@ -643,6 +643,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 SAUTOLOCK(_socketIDMutex);
                 _socketIDMap.erase(s->id);
                 socketsToClose.push_back(s);
+
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
                 // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
                 // able to have their responses returned.
@@ -721,7 +722,7 @@ void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // If any plugin timers are firing, let the plugins know.
-    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
+    for (auto plugin : plugins) {
         for (SStopwatch* timer : plugin->timers) {
             if (timer->ding()) {
                 plugin->timerFired(timer);
@@ -825,21 +826,14 @@ void BedrockServer::_status(BedrockCommand& command) {
     else if (request.methodLine == STATUS_STATUS) {
         STable content;
         SQLiteNode::State state = _replicationState.load();
-        list<string> plugins;
-        for (auto plugin : *BedrockPlugin::g_registeredPluginList) {
-            STable pluginData;
+        list<string> pluginList;
+        for (auto plugin : plugins) {
+            STable pluginData = plugin->getInfo();
             pluginData["name"] = plugin->getName();
-
-            // TODO: This is another thing that isn't synchronized, but should be, we have no idea when plugins might
-            // want to update this (in practice, currently, it's never).
-            STable pluginInfo = plugin->getInfo();
-            for (auto row : pluginInfo) {
-                pluginData[row.first] = row.second;
-            }
-            plugins.push_back(SComposeJSONObject(pluginData));
+            pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isMaster"] = state == SQLiteNode::MASTERING ? "true" : "false";
-        content["plugins"]  = SComposeJSONArray(plugins);
+        content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateNames[state];
         content["version"]  = _version;
 
