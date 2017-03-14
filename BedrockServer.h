@@ -77,7 +77,7 @@ class BedrockServer : public SQLiteServer {
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
-    mutex _socketIDMutex;
+    recursive_mutex _socketIDMutex;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.

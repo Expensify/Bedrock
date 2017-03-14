@@ -523,8 +523,12 @@ int BedrockServer::preSelect(fd_map& fdm) {
 }
 
 void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
-    // Let the base class do its thing
-    STCPServer::postSelect(fdm);
+    // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
+    // writing to them, but this can truncate send buffers).
+    {
+        SAUTOLOCK(_socketIDMutex);
+        STCPServer::postSelect(fdm);
+    }
 
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
