@@ -78,10 +78,14 @@ void BedrockServer::sync(SData& args,
     uint64_t nextActivity = STimeNow();
     BedrockCommand command;
     bool committingCommand = false;
-    while (!syncNode.shutdownComplete()) {
-        // We lock the global sync lock, so that 'Status' doesn't conflict with this.
-        SAUTOLOCK(server._syncMutex);
 
+    // We hold a lock here around all operations on `syncNode`, because SQLiteNode isn't thread-safe, but we need
+    // BedrockServer to be able to introspect it in `Status` requests. We hold this lock at all times until exiting our
+    // main loop, aside from when we're waiting on `poll`. Strictly, we could hold this lock less often, but there are
+    // not that many status commands coming in, and they can wait for a fraction of a second, which lets us keep the
+    // logic of this loop simpler.
+    server._syncMutex.lock();
+    while (!syncNode.shutdownComplete()) {
         // If we've been instructed to shutdown and we haven't yet, do it.
         if (nodeGracefulShutdown.load()) {
             syncNode.beginShutdown();
@@ -103,8 +107,14 @@ void BedrockServer::sync(SData& args,
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
+
+        // Unlock our mutex, poll, and re-lock when finished.
+        server._syncMutex.unlock();
         S_poll(fdm, max(nextActivity, now) - now);
-        nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+        server._syncMutex.lock();
+
+        // And set our next timeout for 1 second from now.
+        nextActivity = STimeNow() + STIME_US_PER_S;
 
         // Process any activity in our plugins.
         server._postSelectPlugins(fdm, nextActivity);
@@ -259,6 +269,9 @@ void BedrockServer::sync(SData& args,
             continue;
         }
     }
+
+    // Done with the global lock.
+    server._syncMutex.unlock();
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
@@ -819,7 +832,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 
             // TODO: This is another thing that isn't synchronized, but should be, we have no idea when plugins might
             // want to update this (in practice, currently, it's never).
-            STable pluginInfo  = plugin->getInfo();
+            STable pluginInfo = plugin->getInfo();
             for (auto row : pluginInfo) {
                 pluginData[row.first] = row.second;
             }
@@ -834,9 +847,9 @@ void BedrockServer::_status(BedrockCommand& command) {
         // thread.
         list<STable> peerData;
         {
-            // TODO: Uncommenting this makes everything horribly slow.
-            // SAUTOLOCK(_syncMutex);
-            // Retrieve information about our peers.
+            // Retrieve information about our peers. We lock to do this so we can't end up in any sort of invalid
+            // state where the sync thread's main loop changes this while we're reading it.
+            SAUTOLOCK(_syncMutex);
             for (SQLiteNode::Peer* peer : _syncNode->peerList) {
                 peerData.emplace_back(peer->nameValueMap);
                 peerData.back()["host"] = peer->host;
