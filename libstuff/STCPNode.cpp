@@ -1,5 +1,4 @@
 #include "libstuff.h"
-#include <algorithm>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
@@ -165,7 +164,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                             // We set a lower bound on this at 1, because even though it should be pretty impossible
                             // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
                             // peers.
-                            peer->latency = std::max(STimeNow() - message.calc64("Timestamp"), UINT64_C(0x1));
+                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), UINT64_C(0x1));
                             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
