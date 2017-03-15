@@ -359,6 +359,23 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(b.methodLine, "methodline");
         ASSERT_EQUAL(a.getVerb(), "this");
         ASSERT_EQUAL(b.getVerb(), "methodline");
+
+        SData c("Test");
+        c.set("a", 1);
+        c.set("b", 2.5);
+        c.set("c", 3ll);
+        c.set("d", 4ull);
+        c.set("e", "char*");
+        c.set("f", string("string"));
+        c.set("g", 'a'); // char, get's converted to number, not string!
+
+        ASSERT_EQUAL(c["a"], "1");
+        ASSERT_EQUAL(SToFloat(c["b"]), 2.5);
+        ASSERT_EQUAL(c["c"], "3");
+        ASSERT_EQUAL(c["d"], "4");
+        ASSERT_EQUAL(c["e"], "char*");
+        ASSERT_EQUAL(c["f"], "string");
+        ASSERT_EQUAL(SToInt(c["g"]), 97);
     }
 
     void testFileIO() {
