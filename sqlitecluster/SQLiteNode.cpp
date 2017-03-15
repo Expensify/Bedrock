@@ -805,7 +805,7 @@ bool SQLiteNode::update() {
 
                 // Notify everybody to rollback
                 SData rollback("ROLLBACK_TRANSACTION");
-                rollback["ID"] = _lastSentTransactionID + 1;
+                rollback.set("ID", _lastSentTransactionID + 1);
                 _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
 
                 // Finished, but failed.
@@ -822,7 +822,7 @@ bool SQLiteNode::update() {
                     // roll back.
                     SWARN("Conflict committing in SQLiteNode, ROLLBACK");
                     SData rollback("ROLLBACK_TRANSACTION");
-                    rollback["ID"] = _lastSentTransactionID + 1;
+                    rollback.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
 
                     // Finished, but failed.
@@ -844,7 +844,7 @@ bool SQLiteNode::update() {
 
                     SINFO("Successfully committed. Sending COMMIT_TRANSACTION to peers.");
                     SData commit("COMMIT_TRANSACTION");
-                    commit["ID"] = _lastSentTransactionID + 1;
+                    commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
                     
                     // clear the unsent transactions, we've sent them all (including this one);
@@ -1568,7 +1568,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "not slaving";
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
-        SINFO("Rolling back slave transaction " << message["ID"]);
         SWARN("ROLLBACK received on slave for: " << message["ID"]);
         _db.rollback();
 

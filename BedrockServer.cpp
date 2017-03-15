@@ -177,7 +177,8 @@ void BedrockServer::sync(SData& args,
                     upgradeInProgress.store(false);
                     continue;
                 }
-                // Otherwise, mark this command as complete and return.
+
+                // Otherwise, mark this command as complete and reply.
                 command.complete = true;
                 if (command.initiatingPeerID) {
                     // This is a command that came from a peer. Have the server send the response back to the peer.

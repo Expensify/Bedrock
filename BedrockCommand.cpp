@@ -9,6 +9,13 @@ BedrockCommand::BedrockCommand() :
     processCount(0)
 { }
 
+BedrockCommand::~BedrockCommand() {
+    if (httpsRequest) {
+        httpsRequest->owner.closeTransaction(httpsRequest);
+        httpsRequest = nullptr;
+    }
+}
+
 // Constructor by moving from a SQLiteCommand.
 BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     SQLiteCommand(std::move(from)),
@@ -18,6 +25,18 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     processCount(0)
 {
     _init();
+}
+
+BedrockCommand::BedrockCommand(BedrockCommand&& from) :
+    SQLiteCommand(std::move(from)),
+    httpsRequest(from.httpsRequest),
+    priority(from.priority),
+    peekCount(from.peekCount),
+    processCount(from.processCount)
+{
+    // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
+    // they clear it from the old object, so that when it's constructor is called, the https transaction isn't closed.
+    from.httpsRequest = nullptr;
 }
 
 BedrockCommand::BedrockCommand(SData&& _request) :

@@ -10,7 +10,9 @@ BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
 { }
 
 void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& server) {
-    httpsManagers.push_back(&httpsManager);
+    if (httpsManagers.empty()) {
+        httpsManagers.push_back(&httpsManager);
+    }
     _server = &server;
 }
 
@@ -23,7 +25,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         return true;
     } else if (command.request.methodLine == "sendrequest") {
         if (_server->getState() != SQLiteNode::MASTERING) {
-            // Only start HTTPS reqeusts on master, otherwise, we'll escalate.
+            // Only start HTTPS requests on master, otherwise, we'll escalate.
             return false;
         }
         SData request("GET / HTTP/1.1");

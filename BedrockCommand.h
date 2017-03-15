@@ -16,7 +16,10 @@ class BedrockCommand : public SQLiteCommand {
     BedrockCommand();
 
     // Constructor to convert from an existing SQLiteCommand (by move).
-    BedrockCommand(SQLiteCommand &&);
+    BedrockCommand(SQLiteCommand&& from);
+
+    // Move constructor.
+    BedrockCommand(BedrockCommand&& from);
 
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SData&& _request);
@@ -24,11 +27,11 @@ class BedrockCommand : public SQLiteCommand {
     // Constructor to initialize via a request object (by copy).
     BedrockCommand(SData _request);
 
+    // Destructor.
+    ~BedrockCommand();
+
     // Move assignment operator.
     BedrockCommand& operator=(BedrockCommand&& from);
-
-    //Default move constructor.
-    BedrockCommand (BedrockCommand &&) = default;
 
     // If the `peek` portion of this command needs to make an HTTPS request, we store it here.
     SHTTPSManager::Transaction* httpsRequest;
