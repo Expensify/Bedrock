@@ -162,6 +162,10 @@ bool BedrockCore::processCommand(BedrockCommand& command)
     }
 
     // Done, return whether or not we need the parent to commit our transaction.
+    if (command.httpsRequest) {
+        command.httpsRequest->owner.closeTransaction(command.httpsRequest);
+        command.httpsRequest = nullptr;
+    }
     command.complete = !needsCommit;
     return needsCommit;
 }

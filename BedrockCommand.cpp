@@ -44,6 +44,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from)
 {
     if (this != &from) {
         httpsRequest = from.httpsRequest;
+        from.httpsRequest = nullptr;
         SQLiteCommand::operator=(move(from));
     }
 

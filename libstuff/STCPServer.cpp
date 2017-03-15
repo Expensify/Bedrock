@@ -76,7 +76,7 @@ int STCPServer::preSelect(fd_map& fdm) {
     STCPManager::preSelect(fdm);
 
     // Add the ports
-    for (Port port : portList) {
+    for (Port& port : portList) {
         SFDset(fdm, port.s, SREADEVTS);
     }
     // Done!

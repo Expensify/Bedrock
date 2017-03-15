@@ -515,7 +515,7 @@ bool BedrockServer::shutdownComplete() {
 }
 
 int BedrockServer::preSelect(fd_map& fdm) {
-    // Do the base class
+    SAUTOLOCK(_socketIDMutex);
     STCPServer::preSelect(fdm);
 
     // The return value here is obsolete.

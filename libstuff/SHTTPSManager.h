@@ -1,8 +1,7 @@
 #pragma once
 
 class SHTTPSManager : public STCPManager {
-  public: // External API
-    // Transaction
+  public:
     struct Transaction {
         // Constructor/Destructor
         Transaction(SHTTPSManager& owner_)
@@ -29,8 +28,12 @@ class SHTTPSManager : public STCPManager {
     // Methods
     void closeTransaction(Transaction* transaction);
 
-  public: // STCPServer API
+  public:
+    // STCPServer API. Except for postSelect, these are just threadsafe wrappers around base class functions.
+    int preSelect(fd_map& fdm);
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    Socket* openSocket(const string& host, SX509* x509 = nullptr);
+    void closeSocket(Socket* socket);
 
   protected: // Child API
     // Methods
@@ -39,8 +42,11 @@ class SHTTPSManager : public STCPManager {
     virtual bool _onRecv(Transaction* transaction) = 0;
 
   private: // Internal API
-    // Attriubutes
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
     SX509* _x509;
+
+    // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
+    // multiple threads can add/remove from them.
+    recursive_mutex _listMutex;
 };

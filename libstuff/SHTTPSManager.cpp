@@ -1,20 +1,18 @@
 #include "libstuff.h"
 
-// --------------------------------------------------------------------------
 SHTTPSManager::SHTTPSManager()
     : _x509(SX509Open()) { // Generate the x509 certificate.
     SASSERT(_x509);
 }
 
-// --------------------------------------------------------------------------
 SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt) {
     // Generate the x509 certificate.
     _x509 = SX509Open(pem, srvCrt, caCrt);
     SASSERT(_x509);
 }
 
-// --------------------------------------------------------------------------
 SHTTPSManager::~SHTTPSManager() {
+    SAUTOLOCK(_listMutex);
     // Clean up outstanding transactions
     SASSERTWARN(_activeTransactionList.empty());
     while (!_activeTransactionList.empty())
@@ -27,20 +25,42 @@ SHTTPSManager::~SHTTPSManager() {
     SX509Close(_x509);
 }
 
-// --------------------------------------------------------------------------
 void SHTTPSManager::closeTransaction(Transaction* transaction) {
+    if (transaction == nullptr) {
+        return;
+    }
+    SAUTOLOCK(_listMutex);
     // Clean up the socket and done
     _activeTransactionList.remove(transaction);
     _completedTransactionList.remove(transaction);
-    if (transaction->s)
+    if (transaction->s) {
         closeSocket(transaction->s);
+    }
     transaction->s = nullptr;
     delete transaction;
 }
 
-// --------------------------------------------------------------------------
+SHTTPSManager::Socket* SHTTPSManager::openSocket(const string& host, SX509* x509) {
+    // Just call the base class function but in a thread-safe way.
+    SAUTOLOCK(_listMutex);
+    return STCPManager::openSocket(host, x509);
+}
+
+void SHTTPSManager::closeSocket(Socket* socket) {
+    // Just call the base class function but in a thread-safe way.
+    SAUTOLOCK(_listMutex);
+    STCPManager::closeSocket(socket);
+}
+
+int SHTTPSManager::preSelect(fd_map& fdm) {
+    // Just call the base class function but in a thread-safe way.
+    SAUTOLOCK(_listMutex);
+    return STCPManager::preSelect(fdm);
+}
+
 void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Let the base class do its thing
+    SAUTOLOCK(_listMutex);
     STCPManager::postSelect(fdm);
 
     // Update each of the active requests
@@ -84,7 +104,7 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             nextActivity = min(nextActivity, active->created + TIMEOUT);
         }
 
-        // If we're done, remove from the active and add to completd
+        // If we're done, remove from the active and add to completed
         if (active->response) {
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
@@ -96,23 +116,21 @@ void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
-// --------------------------------------------------------------------------
 SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
-    // Sometimes we have to create transactions without an attempted
-    // connect.  This could happen if we dont have the host or service id yet.
+    // Sometimes we have to create transactions without an attempted connect. This could happen if we don't have the
+    // host or service id yet.
     SWARN("We had to create an error transaction instead of attempting a real one.");
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
+    SAUTOLOCK(_listMutex);
     _completedTransactionList.push_front(transaction);
     return transaction;
 }
 
-// --------------------------------------------------------------------------
 SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const SData& request) {
-    // Open a connection, optionally using SSL (if the URL is HTTPS).  If that
-    // doesnt't work, then just return a completed transaction with an error
-    // response.
+    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
+    // completed transaction with an error response.
     string host, path;
     if (!SParseURI(url, host, path))
         return _createErrorTransaction();
@@ -134,6 +152,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     // There is a very good reason for push_front and not back.
     // If this transaction is added in the postSelect loop, it
     // would instantly timeout if pushed to the back.
+    SAUTOLOCK(_listMutex);
     _activeTransactionList.push_front(transaction);
     return transaction;
 }
