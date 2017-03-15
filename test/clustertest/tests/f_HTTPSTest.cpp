@@ -36,22 +36,25 @@ struct f_HTTPSTest : tpunit::TestFixture {
         // Now we spam a bunch of commands at the cluster, with one of them being an HTTPS reqeust command, and attempt
         // to cause a conflict.
         atomic<int> cmdID;
-        cmdID.store(700);
+        cmdID.store(1700);
         mutex m;
+
+        // Every 10th request on master is an HTTP request.
+        int nthHasRequest = 10;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         vector<vector<pair<string,string>>> responses(3);
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &cmdID, &responses, &m](){
+            threads.emplace_back([this, i, nthHasRequest, &cmdID, &responses, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
-                    if (i == 0 && (j % 20 == 0)) {
-                        // Every 10th request on master is an HTTP request.
+                    if (i == 0 && (j % nthHasRequest == 0)) {
                         // They should throw all sorts of errors if they repeat HTTPS requests.
                         SData request("sendrequest");
                         int cmdNum = cmdID.fetch_add(1);
+                        request["writeConsistency"] = "ASYNC";
                         request["Query"] = "INSERT INTO test VALUES(" + SQ(cmdNum) + ", " + SQ("HTTPS_TEST") + ");";
                         requests.push_back(request);
                     } else {
@@ -77,7 +80,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         // Ok, hopefully that caused a conflict, but everything succeeded. Let's see.
         // First, do we have all the rows we wanted?
         SData cmd("Query");
-        cmd["Query"] = "SELECT COUNT(*) FROM test WHERE id >= 699;";
+        cmd["Query"] = "SELECT COUNT(*) FROM test WHERE id >= 699 AND id <= " + SQ(cmdID.load())+ ";";
 
         // We should have received 600 new rows.
         string response = brtester->executeWait(cmd); 
@@ -93,7 +96,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         for (size_t i = 0; i < responses[0].size(); i++) {
             string code = responses[0][i].first;
             string body = responses[0][i].second;
-            if (i % 20 == 0) {
+            if (i % nthHasRequest == 0) {
                 ASSERT_TRUE(body.size() > 10);
             } else {
                 ASSERT_EQUAL(body.size(), 0);
