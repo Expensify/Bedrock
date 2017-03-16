@@ -9,9 +9,8 @@ STCPManager::~STCPManager() {
 }
 
 // --------------------------------------------------------------------------
-int STCPManager::preSelect(fd_map& fdm) {
+void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
-    int maxS = 0;
     for (Socket* socket : socketList) {
         // Make sure it's not closed
         if (socket->state != Socket::CLOSED) {
@@ -23,7 +22,6 @@ int STCPManager::preSelect(fd_map& fdm) {
             // Add this socket.  First, we always want to read, and we always
             // want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
-            maxS = max(maxS, socket->s);
 
             // However, we only want to write in some states.  No matter
             // what, we want to send if we're not yet connected.  And if we're
@@ -77,12 +75,10 @@ int STCPManager::preSelect(fd_map& fdm) {
             }
         }
     }
-    // Done
-    return maxS;
 }
 
 // --------------------------------------------------------------------------
-void STCPManager::postSelect(fd_map& fdm) {
+void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     for (Socket* socket : socketList) {
         // Update this socket

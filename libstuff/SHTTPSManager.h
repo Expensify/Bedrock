@@ -23,9 +23,9 @@ class SHTTPSManager : public STCPManager {
     SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
-    // STCPServer API. Except for postSelect, these are just threadsafe wrappers around base class functions.
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 

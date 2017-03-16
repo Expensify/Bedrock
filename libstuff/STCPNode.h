@@ -6,8 +6,8 @@ struct STCPNode : public STCPServer {
     virtual ~STCPNode();
 
     // Updates all peers
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
     struct Peer : public SData {
@@ -57,7 +57,7 @@ struct STCPNode : public STCPServer {
 
   private:
     // Override dead function
-    void postSelect(fd_map& ignore) { SERROR("Don't call."); }
+    void postPoll(fd_map& ignore) { SERROR("Don't call."); }
 
     // Helper functions
     void _sendPING(Peer* peer);

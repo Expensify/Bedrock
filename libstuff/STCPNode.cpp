@@ -43,15 +43,15 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
 }
 
 // --------------------------------------------------------------------------
-int STCPNode::preSelect(fd_map& fdm) {
+void STCPNode::prePoll(fd_map& fdm) {
     // Let the base class do its thing
-    return STCPServer::preSelect(fdm);
+    return STCPServer::prePoll(fdm);
 }
 
 // --------------------------------------------------------------------------
-void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
+void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
-    STCPServer::postSelect(fdm);
+    STCPServer::postPoll(fdm);
 
     // Accept any new peers
     Socket* socket = nullptr;

@@ -71,21 +71,19 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
 }
 
 // --------------------------------------------------------------------------
-int STCPServer::preSelect(fd_map& fdm) {
-    // Do the base class
-    STCPManager::preSelect(fdm);
+void STCPServer::prePoll(fd_map& fdm) {
+    // Call the base class
+    STCPManager::prePoll(fdm);
 
     // Add the ports
     for (Port& port : portList) {
         SFDset(fdm, port.s, SREADEVTS);
     }
-    // Done!
-    return 0;
 }
 
 // --------------------------------------------------------------------------
-void STCPServer::postSelect(fd_map& fdm) {
+void STCPServer::postPoll(fd_map& fdm) {
     // Process all the existing sockets;
-    STCPManager::postSelect(fdm);
+    STCPManager::postPoll(fdm);
     // **FIXME: Detect port failure
 }

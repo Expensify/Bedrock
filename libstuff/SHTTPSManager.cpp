@@ -58,17 +58,17 @@ void SHTTPSManager::closeSocket(Socket* socket) {
     STCPManager::closeSocket(socket);
 }
 
-int SHTTPSManager::preSelect(fd_map& fdm) {
+void SHTTPSManager::prePoll(fd_map& fdm) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
-    return STCPManager::preSelect(fdm);
+    return STCPManager::prePoll(fdm);
 }
 
-void SHTTPSManager::postSelect(fd_map& fdm, uint64_t& nextActivity) {
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
-    STCPManager::postSelect(fdm);
+    STCPManager::postPoll(fdm);
 
     // Update each of the active requests
     uint64_t now = STimeNow();

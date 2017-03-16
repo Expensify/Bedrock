@@ -19,11 +19,11 @@ struct SSLTest : tpunit::TestFixture {
         while ((t ? t->response == 0 : true) && STimeNow() < stop) {
             // Do another select.
             fdm.clear();
-            https.preSelect(fdm);
+            https.prePoll(fdm);
             const uint64_t now = STimeNow();
             S_poll(fdm, max(nextActivity, now) - now);
             nextActivity = STimeNow() + STIME_US_PER_S;
-            https.postSelect(fdm, nextActivity);
+            https.postPoll(fdm, nextActivity);
         }
     }
 

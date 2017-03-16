@@ -12,21 +12,21 @@ class SSynchronizedQueue {
 
     // This queue can be watched by a `poll` loop. These functions are called with an fd_map to prepare for/handle
     // activity from polling.
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm, int bytesToRead = 1);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm, int bytesToRead = 1);
 
-    // Push an item onto the queue, by move.
-    void push(T&& rhs);
-
-    // Get an item off the queue.
-    T pop();
+    // Returns true if the queue is empty.
+    bool empty() const;
 
     // Return a const reference to the front item in the list, for inspection.
     // throws out_of_range if nothing is available.
     const T& front() const;
 
-    // Returns true if the queue is empty.
-    bool empty() const;
+    // Get an item off the queue.
+    T pop();
+
+    // Push an item onto the queue, by move.
+    void push(T&& rhs);
 
     // Returns the queue's size.
     size_t size() const;
@@ -56,23 +56,36 @@ SSynchronizedQueue<T>::~SSynchronizedQueue() {
 }
 
 template<typename T>
-int SSynchronizedQueue<T>::preSelect(fd_map& fdm) {
+void SSynchronizedQueue<T>::prePoll(fd_map& fdm) {
     // Put the read-side of the pipe into the fd set.
     // **NOTE: This is *not* synchronized.  All threads use the same pipes. All threads use *different* fd_maps, though
     //         so we don't have to worry about contention inside FDSet.
     SFDset(fdm, _pipeFD[0], SREADEVTS);
-    return _pipeFD[0];
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::push(T&& rhs) {
-    SAUTOLOCK(_queueMutex);
-    // Just add to the queue
-    _queue.push_back(move(rhs));
+void SSynchronizedQueue<T>::postPoll(fd_map& fdm, int bytesToRead) {
+    // Caller determines the bytes to read.  If a consumer can only process one item then it will only read 1 byte. If
+    // the pipe has more data to read it will continue to "fire" so other threads also subscribing will pick up work.
+    if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
+        char readbuffer[bytesToRead];
+        read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+    }
+}
 
-    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
-    // **NOTE: 1 byte so write is atomic.
-    SASSERT(write(_pipeFD[1], "A", 1));
+template<typename T>
+bool SSynchronizedQueue<T>::empty() const {
+    SAUTOLOCK(_queueMutex);
+    return _queue.empty();
+}
+
+template<typename T>
+const T& SSynchronizedQueue<T>::front() const {
+    SAUTOLOCK(_queueMutex);
+    if (!_queue.empty()) {
+        return _queue.front();
+    }
+    throw out_of_range("No commands");
 }
 
 template<typename T>
@@ -87,32 +100,18 @@ T SSynchronizedQueue<T>::pop() {
 }
 
 template<typename T>
-const T& SSynchronizedQueue<T>::front() const {
+void SSynchronizedQueue<T>::push(T&& rhs) {
     SAUTOLOCK(_queueMutex);
-    if (!_queue.empty()) {
-        return _queue.front();
-    }
-    throw out_of_range("No commands");
+    // Just add to the queue
+    _queue.push_back(move(rhs));
+
+    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    SASSERT(write(_pipeFD[1], "A", 1));
 }
 
 template<typename T>
 size_t SSynchronizedQueue<T>::size() const {
     SAUTOLOCK(_queueMutex);
     return _queue.size();
-}
-
-template<typename T>
-bool SSynchronizedQueue<T>::empty() const {
-    SAUTOLOCK(_queueMutex);
-    return _queue.empty();
-}
-
-template<typename T>
-void SSynchronizedQueue<T>::postSelect(fd_map& fdm, int bytesToRead) {
-    // Caller determines the bytes to read.  If a consumer can only process one item then it will only read 1 byte. If
-    // the pipe has more data to read it will continue to "fire" so other threads also subscribing will pick up work.
-    if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
-        char readbuffer[bytesToRead];
-        read(_pipeFD[0], readbuffer, sizeof(readbuffer));
-    }
 }

@@ -39,11 +39,11 @@ class BedrockServer : public SQLiteServer {
 
     // Flush the send buffers
     // STCPNode API.
-    int preSelect(fd_map& fdm);
+    void prePoll(fd_map& fdm);
 
     // Accept connections and dispatch requests
     // STCPNode API.
-    void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
     // in which case the `suppress` setting will be forced.
@@ -118,9 +118,9 @@ class BedrockServer : public SQLiteServer {
     // becomes master. It will return true if the DB has changed and needs to be committed.
     bool _upgradeDB(SQLite& db);
 
-    // Iterate across all of our plugins and call `preSelect` and `postSelect` on any httpsManagers they've created.
-    void _preSelectPlugins(fd_map& fdm);
-    void _postSelectPlugins(fd_map& fdm, uint64_t nextActivity);
+    // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
+    void _prePollPlugins(fd_map& fdm);
+    void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.

@@ -299,11 +299,11 @@ int main(int argc, char* argv[]) {
             while (!server.shutdownComplete()) {
                 // Wait and process
                 fd_map fdm;
-                server.preSelect(fdm);
+                server.prePoll(fdm);
                 const uint64_t now = STimeNow();
                 S_poll(fdm, max(nextActivity, now) - now);
                 nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-                server.postSelect(fdm, nextActivity);
+                server.postPoll(fdm, nextActivity);
             }
             SINFO("Graceful bedrock shutdown complete");
         }

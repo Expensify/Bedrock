@@ -96,14 +96,14 @@ void BedrockServer::sync(SData& args,
         fd_map fdm;
 
         // Prepare our plugins for `poll` (for instance, in case they're making HTTP requests).
-        server._preSelectPlugins(fdm);
+        server._prePollPlugins(fdm);
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        syncNode.preSelect(fdm);
+        syncNode.prePoll(fdm);
 
         // Add our command queues to our fd_map.
-        syncNodeQueuedCommands.preSelect(fdm);
-        completedCommands.preSelect(fdm);
+        syncNodeQueuedCommands.prePoll(fdm);
+        completedCommands.prePoll(fdm);
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
@@ -117,12 +117,12 @@ void BedrockServer::sync(SData& args,
         nextActivity = STimeNow() + STIME_US_PER_S;
 
         // Process any activity in our plugins.
-        server._postSelectPlugins(fdm, nextActivity);
+        server._postPollPlugins(fdm, nextActivity);
 
         // Process any network traffic that happened.
-        syncNode.postSelect(fdm, nextActivity);
-        syncNodeQueuedCommands.postSelect(fdm);
-        completedCommands.postSelect(fdm);
+        syncNode.postPoll(fdm, nextActivity);
+        syncNodeQueuedCommands.postPoll(fdm);
+        completedCommands.postPoll(fdm);
 
         // If any of our plugins finished any outstanding HTTPS requests, we'll move those commands back into the
         // regular queue. This code modifies a list while iterating over it.
@@ -515,20 +515,17 @@ bool BedrockServer::shutdownComplete() {
     return retVal;
 }
 
-int BedrockServer::preSelect(fd_map& fdm) {
+void BedrockServer::prePoll(fd_map& fdm) {
     SAUTOLOCK(_socketIDMutex);
-    STCPServer::preSelect(fdm);
-
-    // The return value here is obsolete.
-    return 0;
+    STCPServer::prePoll(fdm);
 }
 
-void BedrockServer::postSelect(fd_map& fdm, uint64_t& nextActivity) {
+void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
         SAUTOLOCK(_socketIDMutex);
-        STCPServer::postSelect(fdm);
+        STCPServer::postPoll(fdm);
     }
 
     // Open the port the first time we enter a command-processing state
@@ -892,18 +889,18 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     return !db.getUncommittedQuery().empty();
 }
 
-void BedrockServer::_preSelectPlugins(fd_map& fdm) {
+void BedrockServer::_prePollPlugins(fd_map& fdm) {
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
-            manager->preSelect(fdm);
+            manager->prePoll(fdm);
         }
     }
 }
 
-void BedrockServer::_postSelectPlugins(fd_map& fdm, uint64_t nextActivity) {
+void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
-            manager->postSelect(fdm, nextActivity);
+            manager->postPoll(fdm, nextActivity);
         }
     }
 }

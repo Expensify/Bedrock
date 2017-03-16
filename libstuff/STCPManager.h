@@ -34,8 +34,8 @@ struct STCPManager {
     virtual ~STCPManager();
 
     // Updates all managed sockets
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm);
 
     // Opens outgoing socket
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
