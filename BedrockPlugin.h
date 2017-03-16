@@ -21,25 +21,24 @@ class BedrockPlugin {
     static constexpr int64_t MAX_SIZE_BLOB = 1024 * 1024;
     static constexpr int64_t MAX_SIZE_SMALL = 255;
 
+    // Utility functions for verifying expected input.
     static void verifyAttributeInt64(const SData& request, const string& name, size_t minSize);
     static void verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize);
 
+    // Standard constructor, inserts the created plugin in `g_registeredPluginList`.
     BedrockPlugin();
-
-    // Returns a short, descriptive name of this plugin
-    virtual string getName();
 
     // Returns a version string indicating the version of this plugin. This needs to be implemented in a thread-safe
     // manner, as it will be called from a different thread than any processing commands.
     virtual STable getInfo();
 
+    // Returns a short, descriptive name of this plugin
+    virtual string getName();
+
     // Initializes it with command-line arguments and a reference to the server object that will call this plugin.
     // This may be called multiple times, it's up to a plugin to handle that in a reasonable way. Note that `server`
     // may change between calls to this function.
     virtual void initialize(const SData& args, BedrockServer& server);
-
-    // Called at some point during initiation to allow the plugin to verify/change the database schema.
-    virtual void upgradeDatabase(SQLite& db);
 
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
@@ -50,6 +49,9 @@ class BedrockPlugin {
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
+
+    // Called at some point during initiation to allow the plugin to verify/change the database schema.
+    virtual void upgradeDatabase(SQLite& db);
 
     // A list of SHTTPSManagers that the plugin would like the server to watch for activity. It is only guaranteed to
     // be safe to modify this list during `initialize`.
@@ -70,17 +72,17 @@ class BedrockPlugin {
     virtual void onPortAccept(STCPManager::Socket* s) {}
 
     // Called when a socket receives input
-    // Param request: optional request to queue internally
+    // request: optional request to queue internally
     // Return true if the socket is still alive
     virtual bool onPortRecv(STCPManager::Socket* s, SData& request) { return false; }
 
     // After processing the request from this plugin, this is called to send the response
-    // param response The response from the processed request
-    // param s        Optional socket from which this request was received
-    // return         True if the socket should be kept open
+    // response The response from the processed request
+    // s        Optional socket from which this request was received
+    // return   True if the socket should be kept open
     virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s) { return false; }
 
   public:
-    // Global static attributes
+    // A global static list of all registered plugins.
     static list<BedrockPlugin*>* g_registeredPluginList;
 };

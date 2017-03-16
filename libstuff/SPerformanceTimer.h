@@ -1,8 +1,8 @@
 #pragma once
+
 class SPerformanceTimer {
   public:
     SPerformanceTimer(string description, bool reverse = false, uint64_t logIntervalSeconds = 60);
-    ~SPerformanceTimer();
     void start();
     void stop();
     void log();

@@ -2,7 +2,6 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
-// Global static values
 list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = nullptr;
 
 BedrockPlugin::BedrockPlugin() {
@@ -35,11 +34,23 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
     }
 }
 
-// One-liner default implementations.
-STable BedrockPlugin::getInfo() { return STable(); }
-string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
+STable BedrockPlugin::getInfo() {
+    return STable();
+}
+
+string BedrockPlugin::getName() {
+    SERROR("No name defined by this plugin, aborting.");
+}
+
 void BedrockPlugin::initialize(const SData& args, BedrockServer& server) {}
-bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) { return false; }
-bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) { return false; }
+
+bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    return false;
+}
+bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
+    return false;
+}
+
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
+
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}

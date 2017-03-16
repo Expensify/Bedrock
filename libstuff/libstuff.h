@@ -800,7 +800,6 @@ struct STestTimer {
 #include "STCPManager.h"
 #include "STCPServer.h"
 #include "STCPNode.h"
-#include "SDataClient.h"
 #include "SHTTPSManager.h"
 #include "SSynchronizedQueue.h"
 

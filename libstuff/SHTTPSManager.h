@@ -4,10 +4,8 @@ class SHTTPSManager : public STCPManager {
   public:
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SHTTPSManager& owner_)
-          : s(nullptr), created(STimeNow()), finished(0), response(0), owner(owner_) {
-        }
-        ~Transaction() { SASSERT(!s); }
+        Transaction(SHTTPSManager& owner_);
+        ~Transaction();
 
         // Attributes
         STCPManager::Socket* s;
@@ -25,15 +23,14 @@ class SHTTPSManager : public STCPManager {
     SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
-    // Methods
-    void closeTransaction(Transaction* transaction);
-
-  public:
     // STCPServer API. Except for postSelect, these are just threadsafe wrappers around base class functions.
     int preSelect(fd_map& fdm);
     void postSelect(fd_map& fdm, uint64_t& nextActivity);
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
+
+    // Close a transaction and remove it from our internal lists.
+    void closeTransaction(Transaction* transaction);
 
   protected: // Child API
     // Methods

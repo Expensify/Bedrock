@@ -8,11 +8,9 @@ class SLockTimer : public SPerformanceTimer {
     SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds = 60);
     ~SLockTimer();
 
+    // Wrappers around calls to the equivalent functions for the underlying lock, but with timing info added.
     void lock();
     void unlock();
-
-    // For testing.
-    void stop();
 
   private:
     int _lockCount;
@@ -36,19 +34,6 @@ void SLockTimer<LOCKTYPE>::lock()
         start();
     }
     ++_lockCount;
-}
-
-template<typename LOCKTYPE>
-void SLockTimer<LOCKTYPE>::stop()
-{
-    if (_lastStart) {
-        uint64_t current = STimeNow() - _lastStart;
-        if (current > 10 * 1000 * 1000) {
-            SWARN("[concurrent] Over 10S spent in Commit Lock: " << current << "us.");
-            SLogStackTrace();
-        }
-    }
-    SPerformanceTimer::stop();
 }
 
 template<typename LOCKTYPE>
