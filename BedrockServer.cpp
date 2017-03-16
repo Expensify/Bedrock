@@ -388,7 +388,7 @@ void BedrockServer::worker(SData& args,
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                             // done, and we just need to respond.
-                            if (core.commitCommand(command)) {
+                            if (core.commit()) {
                                 // If the commit succeeded, we'll mark the command as complete, and there's nothing
                                 // else to do!
                                 command.complete = true;

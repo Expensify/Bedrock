@@ -2,13 +2,10 @@
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
-// --------------------------------------------------------------------------
 STCPManager::~STCPManager() {
-    // Verify clean shutdown
     SASSERTWARN(socketList.empty());
 }
 
-// --------------------------------------------------------------------------
 void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
     for (Socket* socket : socketList) {
@@ -19,17 +16,14 @@ void STCPManager::prePoll(fd_map& fdm) {
                 SWARN("Invalid FD number("
                       << socket->s << "), we're probably about to corrupt stack memory. FD_SETSIZE=" << FD_SETSIZE);
             }
-            // Add this socket.  First, we always want to read, and we always
-            // want to learn of exceptions.
+            // Add this socket.  First, we always want to read, and we always want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
 
-            // However, we only want to write in some states.  No matter
-            // what, we want to send if we're not yet connected.  And if we're
-            // not using SSL, then we want to send only when we have something
-            // buffered for sending.  But if we *are* using SSL, it's a bit more
-            // complex.  If we've completed the handshake, then we only want to
-            // send when we have data.  But if we're inside the handshake, leave
-            // it up to the SSL engine to decide if it wants to send.
+            // However, we only want to write in some states. No matter what, we want to send if we're not yet
+            // connected. And if we're not using SSL, then we want to send only when we have something buffered for
+            // sending. But if we *are* using SSL, it's a bit more complex. If we've completed the handshake, then we
+            // only want to send when we have data. But if we're inside the handshake, leave it up to the SSL engine
+            // to decide if it wants to send.
             if (socket->state == Socket::CONNECTING) {
                 // We haven't yet connected -- send regardless of SSL
                 SFDset(fdm, socket->s, SWRITEEVTS);
@@ -40,9 +34,7 @@ void STCPManager::prePoll(fd_map& fdm) {
                 }
             } else {
                 // Have we completed the handshake?
-
                 SASSERT(socket->ssl);
-
                 SSSLState* sslState = socket->ssl;
                 if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
                     // Handshake done -- send if we have anything buffered
@@ -77,7 +69,6 @@ void STCPManager::prePoll(fd_map& fdm) {
     }
 }
 
-// --------------------------------------------------------------------------
 void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     for (Socket* socket : socketList) {
@@ -113,16 +104,12 @@ void STCPManager::postPoll(fd_map& fdm) {
             // Connected -- see if we're ready to send
             bool aliveAfterRecv = true;
             bool aliveAfterSend = true;
-
             if (socket->ssl) {
-                // If the socket is ready to send or receive, do both: SSL
-                // has its own internal traffic, so even if we only want to
-                // receive, SSL might need to send (and vice versa)
+                // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
+                // only want to receive, SSL might need to send (and vice versa)
                 //
-                // **NOTE: SSL can receive data for a while before giving
-                //         any back, so if this gets called many times in
-                //         a row it might just be filling an internal
-                //         buffer (and not due to some busy loop)
+                // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
+                //         in a row it might just be filling an internal buffer (and not due to some busy loop)
                 SDEBUG("sslState=" << SSSLGetState(socket->ssl) << ", canrecv=" << SFDAnySet(fdm, socket->s, SREADEVTS)
                                    << ", recvsize=" << socket->recvBuffer.size()
                                    << ", cansend=" << SFDAnySet(fdm, socket->s, SWRITEEVTS)
@@ -145,8 +132,8 @@ void STCPManager::postPoll(fd_map& fdm) {
             // If we died, update
             if (!aliveAfterRecv || !aliveAfterSend) {
                 // How did we die?
-                SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv
-                                         << ", send=" << aliveAfterSend << ")");
+                SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv << ", send="
+                       << aliveAfterSend << ")");
                 socket->state = Socket::CLOSED;
             }
             break;
@@ -161,10 +148,8 @@ void STCPManager::postPoll(fd_map& fdm) {
                 bool aliveAfterSend = socket->send();
                 if (!aliveAfterSend || (!aliveAfterRecv && socket->sendBuffer.empty())) {
 
-                    // Did we send everything?  (Technically this the send buffer could
-                    // be empty and we still haven't sent everything -- SSL buffers
-                    // internally, so we should check that buffer.  But odds are it
-                    // sent fine.)
+                    // Did we send everything?  (Technically this the send buffer could be empty and we still haven't
+                    // sent everything -- SSL buffers internally, so we should check that buffer.  But odds are it sent fine.)
                     if (socket->sendBuffer.empty()) {
                         SDEBUG("Graceful shutdown of SSL socket '" << socket->addr << "'");
                     } else {
@@ -199,23 +184,41 @@ void STCPManager::postPoll(fd_map& fdm) {
                 }
             }
             break;
-
         case Socket::CLOSED:
             // Ignore
             break;
-
         default:
             SERROR("Unknown socket state");
         }
     }
 }
 
+void STCPManager::shutdownSocket(Socket* socket, int how) {
+    // Send the shutdown and note
+    SASSERT(socket);
+    SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
+    ::shutdown(socket->s, how);
+    socket->state = Socket::SHUTTINGDOWN;
+}
+
+void STCPManager::closeSocket(Socket* socket) {
+    // Clean up this socket
+    SASSERT(socket);
+    SDEBUG("Closing socket '" << socket->addr << "'");
+    socketList.remove(socket);
+    ::close(socket->s);
+    if (socket->ssl) {
+        SSSLClose(socket->ssl);
+    }
+    delete socket;
+}
+
+
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++)
 { }
 
-// --------------------------------------------------------------------------
 STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
     SASSERT(SHostIsValid(host));
@@ -230,28 +233,6 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     SASSERT(!x509 || socket->ssl);
     socketList.push_back(socket);
     return socket;
-}
-
-// --------------------------------------------------------------------------
-void STCPManager::shutdownSocket(Socket* socket, int how) {
-    // Send the shutdown and note
-    SASSERT(socket);
-    SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
-    ::shutdown(socket->s, how);
-    socket->state = Socket::SHUTTINGDOWN;
-}
-
-// --------------------------------------------------------------------------
-void STCPManager::closeSocket(Socket* socket) {
-    // Clean up this socket
-    SASSERT(socket);
-    SDEBUG("Closing socket '" << socket->addr << "'");
-    socketList.remove(socket);
-    ::close(socket->s);
-    if (socket->ssl) {
-        SSSLClose(socket->ssl);
-    }
-    delete socket;
 }
 
 // --------------------------------------------------------------------------

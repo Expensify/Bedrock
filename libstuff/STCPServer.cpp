@@ -1,6 +1,5 @@
 #include "libstuff.h"
 
-// --------------------------------------------------------------------------
 STCPServer::STCPServer(const string& host) {
     // Initialize
     if (!host.empty()) {
@@ -8,13 +7,11 @@ STCPServer::STCPServer(const string& host) {
     }
 }
 
-// --------------------------------------------------------------------------
 STCPServer::~STCPServer() {
     // Close all ports
     closePorts();
 }
 
-// --------------------------------------------------------------------------
 STCPServer::Port* STCPServer::openPort(const string& host) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
@@ -26,7 +23,6 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     return &*portIt;
 }
 
-// --------------------------------------------------------------------------
 void STCPServer::closePorts() {
     // Are there any ports to close?
     if (!portList.empty()) {
@@ -41,7 +37,6 @@ void STCPServer::closePorts() {
     }
 }
 
-// --------------------------------------------------------------------------
 STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     portOut = 0;
@@ -70,7 +65,6 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     return socket;
 }
 
-// --------------------------------------------------------------------------
 void STCPServer::prePoll(fd_map& fdm) {
     // Call the base class
     STCPManager::prePoll(fdm);
@@ -81,9 +75,8 @@ void STCPServer::prePoll(fd_map& fdm) {
     }
 }
 
-// --------------------------------------------------------------------------
 void STCPServer::postPoll(fd_map& fdm) {
-    // Process all the existing sockets;
+    // Process all the existing sockets.
+    // FIXME: Detect port failure
     STCPManager::postPoll(fdm);
-    // **FIXME: Detect port failure
 }

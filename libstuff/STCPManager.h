@@ -1,8 +1,7 @@
 #pragma once
 
-// Convenience base class for managing a series of TCP sockets.  This
-// includes filling receive buffers, emptying send buffers, completing
-// connections, performing graceful shutdowns, etc.
+// Convenience base class for managing a series of TCP sockets. This includes filling receive buffers, emptying send
+// buffers, completing connections, performing graceful shutdowns, etc.
 struct STCPManager {
     // Captures all the state for a single socket
     class Socket {

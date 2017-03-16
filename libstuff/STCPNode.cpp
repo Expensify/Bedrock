@@ -3,12 +3,10 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
-// --------------------------------------------------------------------------
 STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
     : STCPServer(host), name(name_), recvTimeout(recvTimeout_) {
 }
 
-// --------------------------------------------------------------------------
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
     for (Socket* socket : acceptedSocketList) {
@@ -17,21 +15,22 @@ STCPNode::~STCPNode() {
     acceptedSocketList.clear();
     for (Peer* peer : peerList) {
         // Shut down the peer
-        if (peer->s)
+        if (peer->s) {
             closeSocket(peer->s);
+        }
         delete peer;
     }
     peerList.clear();
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::addPeer(const string& peerName, const string& host, const STable& params) {
     // Create a new peer and ready it for connection
     SASSERT(SHostIsValid(host));
-    SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), "
-                          << SComposeJSONObject(params));
+    SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), " << SComposeJSONObject(params));
     Peer* peer = new Peer(peerName, host, params, peerList.size() + 1);
-    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
+
+    // Wait up to 2s before trying the first time
+    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
     peerList.push_back(peer);
 }
 
@@ -42,13 +41,11 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
     return nullptr;
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::prePoll(fd_map& fdm) {
     // Let the base class do its thing
     return STCPServer::prePoll(fdm);
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
     STCPServer::postPoll(fdm);
@@ -188,16 +185,6 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     peer->s->send(reconnect.serialize());
                     shutdownSocket(peer->s);
                     break;
-                } catch (const string& e) {
-                    // TODO: Don't repeat the above block.
-                    // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e
-                                                       << "), reconnecting:" << message.serialize());
-                    SData reconnect("RECONNECT");
-                    reconnect["Reason"] = e;
-                    peer->s->send(reconnect.serialize());
-                    shutdownSocket(peer->s);
-                    break;
                 }
                 break;
             }
@@ -256,7 +243,6 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::_sendPING(Peer* peer) {
     // Send a PING message, including our current timestamp
     SASSERT(peer);
@@ -264,6 +250,3 @@ void STCPNode::_sendPING(Peer* peer) {
     ping["Timestamp"] = SToStr(STimeNow());
     peer->s->send(ping.serialize());
 }
-
-#undef SLOGPREFIX
-#define SLOGPREFIX ""
