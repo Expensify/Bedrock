@@ -11,7 +11,7 @@ class BedrockServer;
 #define BREGISTER_PLUGIN_EXPAND1(_CT_, _NUM_) BREGISTER_PLUGIN_EXPAND2(_CT_, _NUM_)
 #define BREGISTER_PLUGIN(_CT_) BREGISTER_PLUGIN_EXPAND1(_CT_, __COUNTER__)
 
-// Simple plugin system to add functionality to a node at runtime
+// Simple plugin system to add functionality to a node at runtime.
 class BedrockPlugin {
   public:
     // We use these sizes to make sure the storage engine does not silently truncate data. We throw an exception

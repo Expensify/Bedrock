@@ -7,8 +7,8 @@ SQLiteCore(db),
 _server(server)
 { }
 
-bool BedrockCore::peekCommand(BedrockCommand& command)
-{
+bool BedrockCore::peekCommand(BedrockCommand& command) {
+    // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
@@ -19,9 +19,8 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
         // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
         for (auto plugin : _server.plugins) {
-            // See if it peeks this
+            // Try to peek the command.
             if (plugin->peekCommand(_db, command)) {
-                // Peeked it!
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
                 break;
@@ -36,7 +35,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
             return false;
         }
 
-        // If no response was sent, assume 200 OK
+        // If no response was set, assume 200 OK
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
@@ -66,81 +65,51 @@ bool BedrockCore::peekCommand(BedrockCommand& command)
     return true;
 }
 
-void BedrockCore::upgradeDatabase() 
-{
-    if (!_db.beginTransaction()) {
-        throw "501 Failed to begin transaction";
-    }
-    for (auto plugin : _server.plugins) {
-        plugin->upgradeDatabase(_db);
-    }
-    SINFO("Finished upgrading database");
-}
-
-bool BedrockCore::processCommand(BedrockCommand& command)
-{
+bool BedrockCore::processCommand(BedrockCommand& command) {
+    // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Received '" << request.methodLine << "'");
+    SDEBUG("Processing '" << request.methodLine << "'");
+
+    // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
-        if (SIEquals(request.methodLine, "UpgradeDatabase")) {
-            // Begin a non-concurrent transaction for database upgrading
-            if (!_db.beginTransaction()) {
-                throw "501 Failed to begin transaction";
-            }
+        if (!_db.beginConcurrentTransaction()) {
+            throw "501 Failed to begin concurrent transaction";
+        }
 
-            // Loop across the plugins to give each an opportunity to upgrade the
-            // database.  This command is triggered only on the MASTER, and only
-            // upon it step up in the MASTERING state.
-            SINFO("Upgrading database");
-            for(auto plugin : _server.plugins) {
-                plugin->upgradeDatabase(_db);
-            }
-            SINFO("Finished upgrading database");
-        } else {
-            // All non-upgrade commands should be concurrent
-            if (!_db.beginConcurrentTransaction()) {
-                throw "501 Failed to begin concurrent transaction";
-            }
-
-            // Loop across the plugins to see which wants to take this
-            bool pluginProcessed = false;
-            for (auto plugin : _server.plugins) {
-                // See if it processes this
-                if (plugin->processCommand(_db, command)) {
-                    // Processed it!
-                    SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
-                    pluginProcessed = true;
-                    break;
-                }
-            }
-
-            // If no plugin processed it, respond accordingly
-            if (!pluginProcessed) {
-                // No command specified
-                SWARN("Command '" << request.methodLine << "' does not exist.");
-                throw "430 Unrecognized command";
+        // Loop across the plugins to see which wants to take this.
+        bool pluginProcessed = false;
+        for (auto plugin : _server.plugins) {
+            // Try to process the command.
+            if (plugin->processCommand(_db, command)) {
+                SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
+                pluginProcessed = true;
+                break;
             }
         }
 
-        // If we have no uncommitted query, just rollback the empty transaction.
-        // Otherwise, try to prepare to commit.
-        bool isQueryEmpty = _db.getUncommittedQuery().empty();
-        if (isQueryEmpty) {
+        // If no plugin processed it, respond accordingly.
+        if (!pluginProcessed) {
+            SWARN("Command '" << request.methodLine << "' does not exist.");
+            throw "430 Unrecognized command";
+        }
+
+        // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.
+        if (_db.getUncommittedQuery().empty()) {
             _db.rollback();
         } else {
             needsCommit = true;
         }
 
-        // If no response was sent, assume 200 OK
+        // If no response was set, assume 200 OK
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
 
         // Success, this command will be committed.
-        SINFO("Responding '" << response.methodLine << "' to '" << request.methodLine << "'.");
+        SINFO("Processed '" << response.methodLine << "' for '" << request.methodLine << "'.");
 
         // Finally, if a command has set "content", encode it in the response.
         if (!content.empty()) {
@@ -171,10 +140,8 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const string&
     if (wasProcessing) {
         _db.rollback();
     }
-
     const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e + "), ignoring: " +
                         command.request.serialize();
-
     if (SContains(e, "_ALERT_")) {
         SALERT(msg);
     } else if (SContains(e, "_WARN_")) {
@@ -189,8 +156,7 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const string&
 
     // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
     // we'll use the text of the error.
-    if (command.response.methodLine == "") {
+    if (command.response.methodLine.empty()) {
         command.response.methodLine = e;
     }
 }
-

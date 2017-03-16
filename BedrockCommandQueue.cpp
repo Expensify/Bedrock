@@ -2,40 +2,23 @@
 #include "BedrockCommand.h"
 #include "BedrockCommandQueue.h"
 
-void BedrockCommandQueue::push(BedrockCommand&& item) {
+bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
-    auto& queue = _commandQueue[item.priority];
-    queue.emplace(item.executeTimestamp, move(item));
-    _queueCondition.notify_one();
-}
-
-list<string> BedrockCommandQueue::getRequestMethodLines() {
-    list<string> returnVal;
-    for (auto& queue : _commandQueue) {
-        for (auto& entry : queue.second) {
-            returnVal.push_back(entry.second.request.methodLine);
-        }
-    }
-    return returnVal;
+    return _commandQueue.empty();
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
-    // So here's the challenge. Say there's work in the queue, but it's not ready yet. Someone calls: get(1000000),
-    // and nothing gets added to the queue during that second (which would wake someone up to process whatever is next,
-    // which isn't necessarily the same thing that's added). BUT, some work in the queue comes due during that wait. Do
-    // we want to try to implement something that would wake up as soon as that came due? It may not be worth the
-    // effort.
+    // Possible future improvement: Say there's work in the queue, but it's not ready yet (i.e., it's scheduled in the
+    // future). Someone calls `get(1000000)`, and nothing gets added to the queue during that second (which would wake
+    // someone up to process whatever is next, which isn't necessarily the same thing that was added). BUT, some work
+    // in the queue comes due during that wait (i.e., it's timestamp is no longer in the future). Currently, we won't
+    // wake up here, we'll wait out our full second and force the caller to retry. This is fine for the current
+    // (03-2017) use case, where we interrupt every second and only really use scheduling at 1-second granularity.
     //
-    // How might we do this?
-    // If we keep the timestamp of the next command scheduled in the future, and always wake up when we hit that, then
-    // we'll never miss a command. We could keep a set of timestamps to facilitate this, but we'd need to remove them
-    // if they'd passed.
-    //
-    // Update: we don't have to wait until the next *future* timestamp, we can just wait until the *next* timestamp,
-    // because if it's not in the future, we can operate on it immediately.
+    // What we could do, is truncate the timeout to not be farther in the future than the next timestamp in the list.
 
     // If there's already work in the queue, just return some.
     try {
@@ -51,7 +34,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
             // Wait until we hit our timeout, or someone gives us some work.
             _queueCondition.wait_until(queueLock, timeout);
             
-            // Did we get any work? If so, return it.
+            // If we got any work, return it.
             try {
                 return _dequeue();
             } catch (...) {
@@ -77,18 +60,28 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     }
 }
 
-bool BedrockCommandQueue::empty()  {
+list<string> BedrockCommandQueue::getRequestMethodLines() {
+    list<string> returnVal;
+    for (auto& queue : _commandQueue) {
+        for (auto& entry : queue.second) {
+            returnVal.push_back(entry.second.request.methodLine);
+        }
+    }
+    return returnVal;
+}
+
+void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.empty();
+    auto& queue = _commandQueue[item.priority];
+    queue.emplace(item.executeTimestamp, move(item));
+    _queueCondition.notify_one();
 }
 
 bool BedrockCommandQueue::removeByID(const string& id) {
     SAUTOLOCK(_queueMutex);
-    int count = 0;
     for (auto& queue : _commandQueue) {
         auto it = queue.second.begin();
         while (it != queue.second.end()) {
-            ++count;
             if (it->second.id == id) {
                 // Found it!
                 queue.second.erase(it);
@@ -96,7 +89,7 @@ bool BedrockCommandQueue::removeByID(const string& id) {
             }
         }
     }
-    SWARN("Attempted to remove command '" << id << "' but not found. Inspected " << count << " commands.");
+    SWARN("Attempted to remove command '" << id << "' but not found.");
     return false;
 }
 
@@ -105,7 +98,7 @@ BedrockCommand BedrockCommandQueue::_dequeue() {
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).
 
-    // We'll check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
+    // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 
     // Look at each priority queue, starting from the highest priority.

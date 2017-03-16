@@ -3,7 +3,6 @@
 
 class BedrockCommand : public SQLiteCommand {
   public:
-
     enum Priority {
         PRIORITY_MIN = 0,
         PRIORITY_LOW = 250,
@@ -33,7 +32,7 @@ class BedrockCommand : public SQLiteCommand {
     // Move assignment operator.
     BedrockCommand& operator=(BedrockCommand&& from);
 
-    // If the `peek` portion of this command needs to make an HTTPS request, we store it here.
+    // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     SHTTPSManager::Transaction* httpsRequest;
 
     // Each command is assigned a priority.

@@ -16,7 +16,6 @@ BedrockCommand::~BedrockCommand() {
     }
 }
 
-// Constructor by moving from a SQLiteCommand.
 BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     SQLiteCommand(std::move(from)),
     httpsRequest(nullptr),
@@ -35,7 +34,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     processCount(from.processCount)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
-    // they clear it from the old object, so that when it's constructor is called, the https transaction isn't closed.
+    // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
     from.httpsRequest = nullptr;
 }
 
@@ -59,8 +58,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     _init();
 }
 
-BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from)
-{
+BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
     if (this != &from) {
         httpsRequest = from.httpsRequest;
         from.httpsRequest = nullptr;
@@ -70,8 +68,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from)
     return *this;
 }
 
-void BedrockCommand::_init()
-{
+void BedrockCommand::_init() {
     // Initialize the priority, if supplied.
     if (request.isSet("priority")) {
         int tempPriority = request.calc("priority");
@@ -85,7 +82,7 @@ void BedrockCommand::_init()
                 priority = static_cast<Priority>(tempPriority);
                 break;
             default:
-                // But an invalid case gets set to NORMAL, and a warning is thrown.
+                // But an invalid case gets set to NORMAL, and a warning is logged.
                 SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
                 priority = PRIORITY_NORMAL;
                 break;
