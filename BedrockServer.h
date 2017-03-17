@@ -1,4 +1,3 @@
-// Manages connections to a single instance of the bedrock server.
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
@@ -8,7 +7,6 @@
 
 class BedrockServer : public SQLiteServer {
   public:
-
     // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
     // initialized at construction based on the arguments passed in.
     list<BedrockPlugin*> plugins;
@@ -31,7 +29,7 @@ class BedrockServer : public SQLiteServer {
     // SQLiteNode API.
     void cancelCommand(const string& commandID);
 
-    // Returns true when everything's ready to sutdown.
+    // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
     // Exposes the replication state to plugins.
@@ -49,13 +47,7 @@ class BedrockServer : public SQLiteServer {
     // in which case the `suppress` setting will be forced.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
-    // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
-    // read loop on the sync thread.
-    // TODO: expose an `addHTTPSManagers` API to plugins, make this private.
-    list<list<SHTTPSManager*>> httpsManagers;
-
   private:
-
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
 
@@ -104,11 +96,9 @@ class BedrockServer : public SQLiteServer {
     bool _suppressCommandPortManualOverride;
 
     // This is a map of open listening ports to the plugin objects that created them.
-    // TODO: Tear this out and let the MySQL plugin, which is the only thing that uses this, manage its own special
-    // feature. We can expose _commandQueue so it can add it's own commands if it wants.
     map<Port*, BedrockPlugin*> _portPluginMap;
 
-    // The server version. This may be fake if the args contain a `versionOverride` value.
+    // The server version. This may be fake if the arguments contain a `versionOverride` value.
     string _version;
 
     // The actual thread object for the sync thread.

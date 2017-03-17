@@ -23,6 +23,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             if (plugin->peekCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
+                command.peekCount++;
                 break;
             }
         }
@@ -86,6 +87,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             if (plugin->processCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                 pluginProcessed = true;
+                command.processCount++;
                 break;
             }
         }

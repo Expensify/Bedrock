@@ -10,6 +10,9 @@ class SQLiteCore {
     // Returns true on successful commit, false on conflict.
     bool commit();
 
+    // Roll back a transaction if we've decided not to commit it.
+    void rollback();
+
   protected:
     SQLite& _db;
 };

@@ -3,44 +3,29 @@
 #include "SQLiteServer.h"
 #include "SQLiteCommand.h"
 
-/// Introduction
-/// ------------
-/// SQLiteNode builds atop STCPNode and SQLite to provide a distributed
-/// transactional SQL database.  The STCPNode base class establishes and maintains
-/// connections with all peers: if any connection fails, it forever attempts to
-/// re-establish.  This frees the SQLiteNode layer to focus on the high-level
-/// distributed database state machine.
-///
-/// **FIXME**: Assertion in WAITING for no currentMaster is sometimes false;
-///            appears to block the STANDUP
-///
-/// **FIXME**: Handle the case where two nodes have conflicting databases;
-///            should find where they fork, tag the affected accounts for manual
-///            review, and adopt the higher-priority
-///
-/// **FIXME**: Master should detect whether any slaves fall out of sync for any
-///            reason, identify/tag affected accounts, and resynchronize.
-///
-/// **FIXME**: Add test to measure how long it takes for master to stabalize
-///
-/// **FIXME**: Add 'nextActivity' to update() [TYLER: Partially addressed?]
-///
-/// **FIXME**: If master dies before sending ESCALATE_RESPONSE (or if slave dies
-///            before receiving it), then a command might have been committed to
-///            the database without notifying whoever initiated it.  Perhaps have
-///            the caller identify each command with a unique command guid, and
-///            verify inside the query that the command hasn't been executed yet?
-///
-// --------------------------------------------------------------------------
+// Introduction
+// ------------
+// SQLiteNode builds atop STCPNode and SQLite to provide a distributed transactional SQL database. The STCPNode base
+// class establishes and maintains connections with all peers: if any connection fails, it forever attempts to
+// re-establish. This frees the SQLiteNode layer to focus on the high-level distributed database state machine.
+//
+// FIXME: Handle the case where two nodes have conflicting databases. Should find where they fork, tag the affected
+//        accounts for manual review, and adopt the higher-priority
+//
+// FIXME: Master should detect whether any slaves fall out of sync for any reason, identify/tag affected accounts, and
+//        re-synchronize.
+//
+// FIXME: Add test to measure how long it takes for master to stabilize.
+//
+// FIXME: If master dies before sending ESCALATE_RESPONSE (or if slave dies before receiving it), then a command might
+//        have been committed to the database without notifying whoever initiated it. Perhaps have the caller identify
+//        each command with a unique command id, and verify inside the query that the command hasn't been executed yet?
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateNames[_state] << "} "
 
-// We've bumped these values back up to 5 minutes because some of the billing commands take over 1 minute to process.
-#define SQL_NODE_DEFAULT_RECV_TIMEOUT (STIME_US_PER_M * 5) // Receive timeout for 'normal' SQLiteNode messages
-
-// Seperate timeout for receiving and applying synchronization commits
-// Increase me during a rekey if you need larger commits to have more time
-#define SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT (STIME_US_PER_S * 60)
+const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
+const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_M;
 
 const string SQLiteNode::stateNames[] = {"SEARCHING",
                                          "SYNCHRONIZING",
@@ -64,7 +49,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpoint)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _server(server)
+      _db(db), _commitState(CommitState::UNKNOWN), _server(server)
     {
     SASSERT(priority >= 0);
     // Initialize
@@ -216,47 +201,35 @@ void SQLiteNode::_sendOutstandingTransactions() {
     if (!unsentTransactions.load()) {
         return;
     }
-
     auto transactions = _db.getCommittedTransactions();
-
     for (auto& i : transactions) {
-
         uint64_t id = i.first;
-
         if (id <= _lastSentTransactionID) {
             continue;
         }
-
         string& query = i.second.first;
         string& hash = i.second.second;
-
         SData transaction("BEGIN_TRANSACTION");
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
-
         _sendToAllPeers(transaction, true); // subscribed only
         for (auto peer : peerList) {
             // Clear the response flag from the last transaction
             (*peer)["TransactionResponse"].clear();
         }
-
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = transaction["ID"];
-
         commit["CommitCount"] = transaction["NewCount"];
         commit["Hash"] = hash;
-
         _sendToAllPeers(commit, true); // subscribed only
-
         _lastSentTransactionID = id;
 
         // Commits made by other threads are implicitly not quorum commits. We'll update our counter.
         _commitsSinceCheckpoint++;
     }
-
     unsentTransactions.store(false);
 }
 
@@ -278,6 +251,14 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
 
     // And send to master.
     _sendToPeer(_masterPeer, escalate);
+}
+
+list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
+    list<string> returnList;
+    for (auto& commandPair : _escalatedCommandMap) {
+        returnList.push_back(commandPair.second.request.methodLine);
+    }
+    return returnList;
 }
 
 // --------------------------------------------------------------------------
@@ -671,47 +652,8 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
 
-        // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
-        if (_state == MASTERING) {
-            string standDownReason;
-            if (gracefulShutdown()) {
-                // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new master and finish
-                // up our commands.
-                standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
-                _priority = 1;
-            } else {
-                // Loop across peers
-                for (auto peer : peerList) {
-                    // Check this peer
-                    if (SIEquals((*peer)["State"], "MASTERING")) {
-                        // Hm... somehow we're in a multi-master scenario -- not good.
-                        // Let's get out of this as soon as possible.
-                        standDownReason = "Found another MASTER (" + peer->name + "), STANDINGDOWN to clean it up.";
-                    } else if (SIEquals((*peer)["State"], "WAITING")) {
-                        // We have a WAITING peer; is it waiting to STANDUP?
-                        if (peer->calc("Priority") > _priority) {
-                            // We've got a higher priority peer in the works; stand down so it can stand up.
-                            standDownReason =
-                                "Found higher priority WAITING peer (" + peer->name + ") while MASTERING, STANDINGDOWN";
-                        } else if (peer->calcU64("CommitCount") > _db.getCommitCount()) {
-                            // It's got data that we don't, stand down so we can get it.
-                            standDownReason = "Found WAITING peer (" + peer->name +
-                                              ") with more data than us (we have " + SToStr(_db.getCommitCount()) +
-                                              "/" + _db.getCommittedHash() + ", it has " + (*peer)["CommitCount"] +
-                                              "/" + (*peer)["Hash"] + ") while MASTERING, STANDINGDOWN";
-                        }
-                    }
-                }
-            }
-
-            // Do we want to stand down, and can we?
-            if (!standDownReason.empty()) {
-                // Do it
-                SHMMM(standDownReason);
-                _changeState(STANDINGDOWN);
-                SINFO("Standing down: " << standDownReason);
-            }
-        }
+        // NOTE: This block very carefully will not try and call _changeState() while holding SQLite::g_commitLock,
+        // because that could cause a deadlock when called by an outside caller!
 
         // If there's no commit in progress, we'll send any outstanding transactions that exist. We won't send them
         // mid-commit, as they'd end up as nested transactions interleaved with the one in progress.
@@ -878,6 +820,52 @@ bool SQLiteNode::update() {
             SQLite::g_commitLock.unlock();
         }
 
+        // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
+        if (_state == MASTERING) {
+            string standDownReason;
+            if (gracefulShutdown()) {
+                // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new master and finish
+                // up our commands.
+                standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
+                _priority = 1;
+            } else {
+                // Loop across peers
+                for (auto peer : peerList) {
+                    // Check this peer
+                    if (SIEquals((*peer)["State"], "MASTERING")) {
+                        // Hm... somehow we're in a multi-master scenario -- not good.
+                        // Let's get out of this as soon as possible.
+                        standDownReason = "Found another MASTER (" + peer->name + "), STANDINGDOWN to clean it up.";
+                    } else if (SIEquals((*peer)["State"], "WAITING")) {
+                        // We have a WAITING peer; is it waiting to STANDUP?
+                        if (peer->calc("Priority") > _priority) {
+                            // We've got a higher priority peer in the works; stand down so it can stand up.
+                            standDownReason =
+                                "Found higher priority WAITING peer (" + peer->name + ") while MASTERING, STANDINGDOWN";
+                        } else if (peer->calcU64("CommitCount") > _db.getCommitCount()) {
+                            // It's got data that we don't, stand down so we can get it.
+                            standDownReason = "Found WAITING peer (" + peer->name +
+                                              ") with more data than us (we have " + SToStr(_db.getCommitCount()) +
+                                              "/" + _db.getCommittedHash() + ", it has " + (*peer)["CommitCount"] +
+                                              "/" + (*peer)["Hash"] + ") while MASTERING, STANDINGDOWN";
+                        }
+                    }
+                }
+            }
+
+            // Do we want to stand down, and can we?
+            if (!standDownReason.empty()) {
+                // Do it
+                SHMMM(standDownReason);
+
+                // As we fall out of mastering, make sure no lingering transactions are left behind.
+                SAUTOLOCK(stateMutex);
+                _sendOutstandingTransactions();
+                _changeState(STANDINGDOWN);
+                SINFO("Standing down: " << standDownReason);
+            }
+        }
+
         // At this point, we're no longer committing. We'll have returned false above, or we'll have completed any
         // outstanding transaction, we can complete standing down if that's what we're doing.
         if (_state == STANDINGDOWN) {
@@ -898,6 +886,10 @@ bool SQLiteNode::update() {
             if (allUnsubscribed) {
                 // Standdown complete
                 SINFO("STANDDOWN complete, SEARCHING");
+
+                // As we fall out of mastering, make sure no lingering transactions are left behind.
+                SAUTOLOCK(stateMutex);
+                _sendOutstandingTransactions();
                 _changeState(SEARCHING);
 
                 // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
@@ -1809,6 +1801,8 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 
 // --------------------------------------------------------------------------
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
+    SAUTOLOCK(stateMutex);
+
     // Did we actually change _state?
     SQLiteNode::State oldState = _state;
     if (newState != oldState) {

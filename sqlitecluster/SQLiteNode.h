@@ -11,6 +11,11 @@ class SQLiteNode : public STCPNode {
     friend class SQLiteNodeTester;
 
   public:
+    // Receive timeout for 'normal' SQLiteNode messages
+    static const uint64_t SQL_NODE_DEFAULT_RECV_TIMEOUT;
+
+    // Separate timeout for receiving and applying synchronization commits.
+    static const uint64_t SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT;
 
     // Possible states of a node in a DB cluster
     enum State {
@@ -97,6 +102,15 @@ class SQLiteNode : public STCPNode {
     // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
     // threads making commits to the database, and they communicate that data to us via this variable.
     static atomic<bool> unsentTransactions;
+
+    // This exists so that the _server can inspect internal state for diagnostic purposes.
+    list<string> getEscalatedCommandRequestMethodLines();
+
+    // This mutex is exposed publicly so that others (particularly, the_server) can atomically act on the current state
+    // of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
+    // 1. stateMutex
+    // 2. SQLite::g_commitLock
+    recursive_mutex stateMutex;
 
   private:
     // STCPNode API: Peer handling framework functions

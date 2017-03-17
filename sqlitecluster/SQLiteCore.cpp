@@ -30,3 +30,7 @@ bool SQLiteCore::commit() {
     SQLiteNode::unsentTransactions.store(true);
     return true;
 }
+
+void SQLiteCore::rollback() {
+    _db.rollback();
+}

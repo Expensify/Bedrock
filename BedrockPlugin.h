@@ -63,8 +63,6 @@ class BedrockPlugin {
     virtual void timerFired(SStopwatch* timer);
 
     // Below here are several functions for allowing plugins to open a port and accept their own connections.
-    // TODO: This is currently disabled and may be removed. It exists only for the MySQL plugin, and this functionality
-    // may be better encapsulated there.
     // Returns "host:port" on which to listen, or empty if none
     virtual string getPort() { return ""; }
 
