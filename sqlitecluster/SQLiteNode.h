@@ -1,7 +1,5 @@
 #pragma once
 #include "SQLite.h"
-
-// Forward declarations. SQLiteNode passes SQLiteCommands received from peers to an SQLiteServer.
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -42,7 +40,7 @@ class SQLiteNode : public STCPNode {
 
     // These are the possible states a transaction can be in.
     enum class CommitState {
-        UNKNOWN,
+        UNINITIALIZED,
         WAITING,
         COMMITTING,
         SUCCESS,
@@ -54,14 +52,11 @@ class SQLiteNode : public STCPNode {
                int priority, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0);
     ~SQLiteNode();
 
-    // Simple Getters. Descriptions of the variables they return will be with their definitions.
+    // Simple Getters. See property definitions for details.
     State         getState()         { return _state; }
     int           getPriority()      { return _priority; }
     const string& getMasterVersion() { return _masterVersion; }
     const string& getVersion()       { return _version; }
-
-    // Returns whether the node is ready to process traffic.
-    bool ready() { return (_state == MASTERING || _state == SLAVING); }
 
     // Returns whether we're in the process of gracefully shutting down.
     bool gracefulShutdown() { return (_gracefulShutdownTimeout.alarmDuration != 0); }
@@ -90,24 +85,23 @@ class SQLiteNode : public STCPNode {
 
     // If we have a command that can't be handled on a slave, we can escalate it to the master node. The SQLiteNode
     // takes ownership of the command until it receives a response from the slave. When the command completes, it will
-    // be re-queued in the SQLiteServer, but its `complete` field will be set to true.
+    // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
     void escalateCommand(SQLiteCommand&& command);
 
-    // This takes a completed command and sends the response back to the originating peer. If this command doesn't have
-    // an `initiatingPeerID`, then it's an error to pass it to this function, or if we're not the master node, it's an
-    // error to call this method.
+    // This takes a completed command and sends the response back to the originating peer. If we're not the master
+    // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
     void sendResponse(const SQLiteCommand& command);
 
     // This is a static and thus *global* indicator of whether or not we have transactions that need replicating to
     // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
-    // threads making commits to the database, and they communicate that data to us via this variable.
+    // threads making commits to the database, and they communicate that to the node via this flag.
     static atomic<bool> unsentTransactions;
 
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
 
-    // This mutex is exposed publicly so that others (particularly, the_server) can atomically act on the current state
-    // of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
+    // This mutex is exposed publicly so that others (particularly, the _server) can atomically act on the current
+    // state of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
     // 1. stateMutex
     // 2. SQLite::g_commitLock
     recursive_mutex stateMutex;
@@ -145,7 +139,8 @@ class SQLiteNode : public STCPNode {
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;
 
-    // This is the current CommitState we're in with regard to committing a transaction.
+    // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
+    // startup until a transaction is started.
     CommitState _commitState;
 
     // The write consistency requested for the current in-progress commit.
@@ -180,14 +175,11 @@ class SQLiteNode : public STCPNode {
     bool _majoritySubscribed();
 
     // When we're a slave, we can escalate a command to the master. When we do so, we store that command in the
-    // following map until the slave responds.
-    map<string, SQLiteCommand> _escalatedCommandMap; // commandID -> Command map
+    // following map of commandID to Command until the slave responds.
+    map<string, SQLiteCommand> _escalatedCommandMap;
 
+    // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
-
-    // How many journal tables does our DB have?
-    // We always have 'journal', and then we have numbered tables 'journal00' through this number, inclusive.
-    static int _maximumJournalTable;
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
