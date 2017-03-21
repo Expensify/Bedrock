@@ -12,6 +12,8 @@
 
 bool SQLite::sqliteInitialized = false;
 
+extern "C" void sqlite3_spellfix_init();
+
 // --------------------------------------------------------------------------
 void SQLite::sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] "
@@ -41,8 +43,12 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, bool r
     // Initialize logging on first use.
     if (!sqliteInitialized) {
         sqlite3_config(SQLITE_CONFIG_LOG, sqliteLogCallback, 0);
-        sqlite3_initialize();
         sqliteInitialized = true;
+
+        // Load the spellfix extension for all future DB connections.
+        // NOTE: sqlite3_auto_extension implicitly calls sqlite3_initialize, so it's no longer called explicitly
+        //       See: https://www.sqlite.org/loadext.html
+        sqlite3_auto_extension(sqlite3_spellfix_init);
     }
 
     // Initialize sqlite multithreaded magic.
