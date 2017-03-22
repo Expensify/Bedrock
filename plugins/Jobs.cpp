@@ -165,13 +165,15 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         }
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID "
+        if (!db.read("SELECT jobID, data "
                      "FROM jobs "
                      "WHERE name=" + SQ(request["name"]) + ";",
                      result)) {
             throw "502 Select failed";
         }
-        if (result.empty()) {
+
+        // If there's no job, or the existing job doesn't match the data we've been passed, escalate to master.
+        if (result.empty() || result[0][1] != request["data"]) {
             return false;
         }
 
@@ -218,16 +220,24 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         if (request.test("unique")) {
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-            if (!db.read("SELECT jobID "
+            if (!db.read("SELECT jobID, data "
                          "FROM jobs "
                          "WHERE name=" + SQ(request["name"]) + ";",
                          result)) {
                 throw "502 Select failed";
             }
-            if (!result.empty()) {
-                SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+
+            // If we got a result, and it's data is the same as passed, we won't change anything.
+            if (!result.empty() && result[0][1] == request["data"]) {
+                SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
+                      << result[0][0]);
                 content["jobID"] = result[0][0];
                 return true;
+            }
+
+            // If we found a job, we'll need to update the data for it with our new data.
+            if (!result.empty()) {
+                //request["data"] = SMergeJSON(result[0][1], request["data"]);
             }
         }
 
