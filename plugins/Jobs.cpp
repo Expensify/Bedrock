@@ -217,6 +217,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
         // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
         // master.
+        uint64_t mergeIntoID = 0;
         if (request.test("unique")) {
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
@@ -235,9 +236,9 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 return true;
             }
 
-            // If we found a job, we'll need to update the data for it with our new data.
+            // If we found a job, but the data was different, we'll need to update it.
             if (!result.empty()) {
-                //request["data"] = SMergeJSON(result[0][1], request["data"]);
+                mergeIntoID = SToInt64(result[0][0]);
             }
         }
 
@@ -278,18 +279,33 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             throw "402 Invalid priority value";
         }
 
-        // Create this new job
-        db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
-                 "VALUES( " +
-                    SCURRENT_TIMESTAMP() + ", " + 
-                    SQ("QUEUED") + ", " + 
-                    SQ(request["name"]) + ", " + 
-                    safeFirstRun + ", " +
-                    SQ(SToUpper(request["repeat"])) + ", " + 
-                    safeData + ", " + 
-                    SQ(priority) + ", " + 
-                    safeParentJobID +
-                 " );");
+        if (mergeIntoID) {
+            // Update the existing job.
+            if(!db.write("UPDATE JOBS SET "
+                         "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " + 
+                         "data     = json_patch(data, " + safeData + "), " +
+                         "priority = " + SQ(priority) + " " + 
+                     "WHERE jobID = " + SQ(mergeIntoID) + ";"))
+             {
+                 throw "502 update query failed";
+             }
+        } else {
+            // Create this new job
+            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
+                     "VALUES( " +
+                        SCURRENT_TIMESTAMP() + ", " + 
+                        SQ("QUEUED") + ", " + 
+                        SQ(request["name"]) + ", " + 
+                        safeFirstRun + ", " +
+                        SQ(SToUpper(request["repeat"])) + ", " + 
+                        safeData + ", " + 
+                        SQ(priority) + ", " + 
+                        safeParentJobID +
+                     " );"))
+             {
+                 throw "502 insert query failed";
+             }
+         }
 
         // Release workers waiting on this state
         node->clearCommandHolds("Jobs:" + request["name"]);
