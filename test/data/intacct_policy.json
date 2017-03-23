@@ -1,0 +1,1936 @@
+{
+  "name": "Intacct WS",
+  "type": "corporate",
+  "owner": "francois+dev@expensify.com",
+  "technicalContact": "francois+dev@expensify.com",
+  "employeeList": [
+    {
+      "email": "francois+dev@expensify.com",
+      "employeeUserID": "Francois DEV",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "admin",
+      "rules": [
+        {
+          "tag": "Engineering:San Francisco:Services"
+        }
+      ]
+    },
+    {
+      "email": "nkuoch@expensify.com",
+      "employeeUserID": "0002",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.oswalt@expensicorp.com",
+      "employeeUserID": "0003",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "qa@expensify.com",
+      "employeeUserID": "QA",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "admin",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "employee.chris@expensicorp.com",
+      "employeeUserID": "0005",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "employee.gabe@expensicorp.com",
+      "employeeUserID": "0006",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.dandeneau@expensicorp.com",
+      "employeeUserID": "0007",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.kluger@expensify.com",
+      "employeeUserID": "0008",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.kluger@expensicorp.com",
+      "employeeUserID": "0009",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Success Coach"
+        }
+      ]
+    },
+    {
+      "email": "employee.sasha@expensicorp.com",
+      "employeeUserID": "0010",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.haxhiu@expensicorp.com",
+      "employeeUserID": "0011",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Success Coach"
+        }
+      ]
+    },
+    {
+      "email": "employee.elissa@expensicorp.com",
+      "employeeUserID": "0013",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "francois@expensify.com",
+      "employeeUserID": "03221989",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "admin",
+      "rules": [
+        {
+          "tag": "12 - Infra:Paris:Delaware"
+        }
+      ]
+    },
+    {
+      "email": "changeme@intacct.com",
+      "employeeUserID": "1",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Administration:corporate"
+        }
+      ]
+    },
+    {
+      "email": "manager.perkins@expensicorp.com",
+      "employeeUserID": "12345",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Success Coach"
+        }
+      ]
+    },
+    {
+      "email": "puneet@expensicorp.com",
+      "employeeUserID": "123456",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Success Coach"
+        }
+      ]
+    },
+    {
+      "email": "jason@expensifail.com",
+      "employeeUserID": "123464",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "jason@expensify.com",
+      "employeeUserID": "1345",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "mhaxhiu@expensify.com",
+      "employeeUserID": "20",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Training Consultation:East"
+        }
+      ]
+    },
+    {
+      "email": "workingd@working.com",
+      "employeeUserID": "2222",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.caitlin@expensicorp.com",
+      "employeeUserID": "caitlinw",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.gorecki@expensicorp.com",
+      "employeeUserID": "cgorecki",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.draeger@expensicorp.com",
+      "employeeUserID": "christina",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.david@expensicorp.com",
+      "employeeUserID": "dcardoza",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "approved+demo@expensicorp.com",
+      "employeeUserID": "E0087",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "employee.graham@expensicorp.com",
+      "employeeUserID": "employee graham",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": "Success Coach"
+        }
+      ]
+    },
+    {
+      "email": "graham@expensify.com",
+      "employeeUserID": "EXP0018",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.knight@expensicorp.com",
+      "employeeUserID": "garrett",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.ladue@expensicorp.com",
+      "employeeUserID": "ladue",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.bob@expensicorp.com",
+      "employeeUserID": "managerbob",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.isaacson@expensicorp.com",
+      "employeeUserID": "michael",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "manager.donato@expensicorp.com",
+      "employeeUserID": "rdonato",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "yuwen@expensify.com",
+      "employeeUserID": "YM0001",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    },
+    {
+      "email": "successteam@expensify.com",
+      "employeeUserID": "0014",
+      "submitsTo": "francois+dev@expensify.com",
+      "role": "user",
+      "rules": [
+        {
+          "tag": ""
+        }
+      ]
+    }
+  ],
+  "fieldList": [
+    {
+      "fieldID": "text_title",
+      "type": "text",
+      "defaultValue": "New Report",
+      "defaultExternalID": null,
+      "value": null,
+      "name": "title",
+      "target": "expense",
+      "values": [],
+      "keys": [],
+      "orderWeight": 0,
+      "deletable": true,
+      "isTax": false,
+      "externalIDs": [],
+      "disabledOptions": [],
+      "externalID": null,
+      "modifiedTaxAmount": null,
+      "origin": null
+    }
+  ],
+  "welcomeNote": "",
+  "maxExpenseAge": 90,
+  "maxExpenseAmount": 200000,
+  "maxExpenseAmountNoReceipt": 2500,
+  "eReceipts": true,
+  "outputCurrency": "USD",
+  "tagObjects": [],
+  "tagLists": [
+    {
+      "tagListData": {
+        "name": "Departments",
+        "tags": [
+          {
+            "origin": "intacct_tag",
+            "name": "11 - Operations",
+            "externalID": "11",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "12 - Infra",
+            "externalID": "12",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "124398 - Markets &amp; Administration",
+            "externalID": "124398",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "20 - operations",
+            "externalID": "20",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "65 - DOCUMENTATION",
+            "externalID": "65",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "90 - MKT ADMIN",
+            "externalID": "90",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Administration",
+            "externalID": "10",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Business Development",
+            "externalID": "40",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Engineering",
+            "externalID": "1",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Human Resources",
+            "externalID": "30",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Marketing (35)",
+            "externalID": "35",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Marketing (Dep_222)",
+            "externalID": "Dep_222",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Success Coach",
+            "externalID": "2",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Test delete",
+            "externalID": "Test delete",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Training",
+            "externalID": "25",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Training &amp; Documentation",
+            "externalID": "123498",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Training Consultation",
+            "externalID": "80",
+            "enabled": true,
+            "GL Code": ""
+          },
+          {
+            "origin": "intacct_tag",
+            "name": "Training Coordination",
+            "externalID": "60",
+            "enabled": true,
+            "GL Code": ""
+          }
+        ],
+        "required": false,
+        "externalID": "Departments",
+        "lastSanitizedOn": 1482449048396
+      }
+    }
+  ],
+  "requiresTag": true,
+  "categoryObjects": {
+    "Airfare": {
+      "enabled": true,
+      "name": "Airfare",
+      "GL Code": "6430",
+      "origin": "intacct",
+      "externalID": "6430",
+      "areCommentsRequired": false,
+      "clientID": "133"
+    },
+    "Client meetings": {
+      "enabled": true,
+      "name": "Client meetings",
+      "GL Code": "6120",
+      "origin": "intacct",
+      "externalID": "6120",
+      "areCommentsRequired": false,
+      "clientID": "136"
+    },
+    "IT Equipment": {
+      "enabled": true,
+      "name": "IT Equipment",
+      "GL Code": "6360",
+      "origin": "intacct",
+      "externalID": "6360",
+      "areCommentsRequired": false,
+      "expenseLimitType": "expense",
+      "clientID": "142"
+    },
+    "Business Meals": {
+      "enabled": true,
+      "name": "Business Meals",
+      "GL Code": "6390",
+      "origin": "intacct",
+      "externalID": "6390",
+      "areCommentsRequired": false,
+      "clientID": "134"
+    },
+    "Telephone": {
+      "enabled": true,
+      "name": "Telephone",
+      "GL Code": "6470",
+      "origin": "intacct",
+      "externalID": "6470",
+      "areCommentsRequired": false,
+      "clientID": "146"
+    },
+    "Advertising: Media": {
+      "enabled": true,
+      "name": "Advertising: Media",
+      "GL Code": "6120",
+      "origin": "intacct",
+      "externalID": "6120",
+      "areCommentsRequired": false,
+      "clientID": "131"
+    },
+    "Office Expenses 2": {
+      "enabled": true,
+      "name": "Office Expenses 2",
+      "GL Code": "6120",
+      "origin": "intacct",
+      "externalID": "6120",
+      "areCommentsRequired": false,
+      "clientID": "145"
+    },
+    "Misc": {
+      "enabled": true,
+      "name": "Misc",
+      "GL Code": "6530",
+      "origin": "intacct",
+      "externalID": "6530",
+      "areCommentsRequired": false,
+      "clientID": "144"
+    },
+    "Teleportation": {
+      "enabled": false,
+      "name": "Teleportation",
+      "GL Code": "6430",
+      "origin": "intacct",
+      "externalID": "6430",
+      "areCommentsRequired": false,
+      "clientID": "147"
+    },
+    "Meals & Entertainment": {
+      "enabled": true,
+      "name": "Meals & Entertainment",
+      "GL Code": "6390",
+      "origin": "intacct",
+      "externalID": "6390",
+      "areCommentsRequired": false,
+      "clientID": "143"
+    },
+    "Transportation in US": {
+      "enabled": false,
+      "name": "Transportation in US",
+      "GL Code": "6410",
+      "origin": "intacct",
+      "externalID": "6410",
+      "areCommentsRequired": false,
+      "clientID": "149"
+    },
+    "Equipment 1": {
+      "enabled": true,
+      "name": "Equipment 1",
+      "GL Code": "1500",
+      "origin": "intacct",
+      "externalID": "1500",
+      "areCommentsRequired": false,
+      "clientID": "140"
+    },
+    "Test": {
+      "enabled": true,
+      "name": "Test",
+      "GL Code": "1099",
+      "Payroll Code": "coucou",
+      "origin": "intacct",
+      "externalID": "1099",
+      "maxAmountNoReceipt": 0,
+      "areCommentsRequired": true,
+      "commentHint": "plop",
+      "maxExpenseAmount": 123400,
+      "expenseLimitType": "daily",
+      "clientID": "148"
+    },
+    "Employee Morale": {
+      "enabled": true,
+      "name": "Employee Morale",
+      "GL Code": "6390",
+      "origin": "intacct",
+      "externalID": "6390",
+      "areCommentsRequired": false,
+      "clientID": "138"
+    },
+    "Employee Morale Expensify": {
+      "enabled": true,
+      "name": "Employee Morale Expensify",
+      "GL Code": "6390",
+      "origin": "intacct",
+      "externalID": "6390",
+      "areCommentsRequired": false,
+      "clientID": "139"
+    },
+    "Advertising: TV": {
+      "enabled": true,
+      "name": "Advertising: TV",
+      "GL Code": "6120",
+      "origin": "intacct",
+      "externalID": "6120",
+      "areCommentsRequired": false,
+      "clientID": "132"
+    },
+    "Grahams Marshmallows": {
+      "enabled": true,
+      "name": "Grahams Marshmallows",
+      "GL Code": "6380",
+      "origin": "intacct",
+      "externalID": "6380",
+      "areCommentsRequired": false,
+      "clientID": "141"
+    },
+    "Travel (Transportion)": {
+      "enabled": true,
+      "name": "Travel (Transportion)",
+      "GL Code": "6430",
+      "origin": "intacct",
+      "externalID": "6430",
+      "areCommentsRequired": false,
+      "clientID": "150"
+    },
+    "Advertising": {
+      "enabled": true,
+      "name": "Advertising",
+      "GL Code": "6120",
+      "origin": "intacct",
+      "externalID": "6120",
+      "areCommentsRequired": false,
+      "clientID": "130"
+    },
+    "Cellular Phone": {
+      "enabled": true,
+      "name": "Cellular Phone",
+      "GL Code": "6410",
+      "origin": "intacct",
+      "externalID": "6410",
+      "areCommentsRequired": false,
+      "clientID": "135"
+    },
+    "Computers & Laptops": {
+      "enabled": true,
+      "name": "Computers & Laptops",
+      "GL Code": "6410",
+      "origin": "intacct",
+      "externalID": "6410",
+      "areCommentsRequired": false,
+      "clientID": "137"
+    }
+  },
+  "requiresCategory": true,
+  "mccGroup": {
+    "airlines": {
+      "groupID": "airlines",
+      "category": "Uncategorized"
+    },
+    "commuter": {
+      "groupID": "commuter",
+      "category": "Uncategorized"
+    },
+    "gas": {
+      "groupID": "gas",
+      "category": "Uncategorized"
+    },
+    "goods": {
+      "groupID": "goods",
+      "category": "Uncategorized"
+    },
+    "groceries": {
+      "groupID": "groceries",
+      "category": "Uncategorized"
+    },
+    "hotel": {
+      "groupID": "hotel",
+      "category": "Uncategorized"
+    },
+    "mail": {
+      "groupID": "mail",
+      "category": "Uncategorized"
+    },
+    "meals": {
+      "groupID": "meals",
+      "category": "Uncategorized"
+    },
+    "rental": {
+      "groupID": "rental",
+      "category": "Uncategorized"
+    },
+    "services": {
+      "groupID": "services",
+      "category": "Uncategorized"
+    },
+    "taxi": {
+      "groupID": "taxi",
+      "category": "Uncategorized"
+    },
+    "uncategorized": {
+      "groupID": "uncategorized",
+      "category": "Uncategorized"
+    },
+    "utilities": {
+      "groupID": "utilities",
+      "category": "Uncategorized"
+    }
+  },
+  "mccToCategory": {
+    "mcc742": "Uncategorized",
+    "mcc763": "Uncategorized",
+    "mcc780": "Uncategorized",
+    "mcc1520": "Uncategorized",
+    "mcc1711": "Uncategorized",
+    "mcc1731": "Uncategorized",
+    "mcc1740": "Uncategorized",
+    "mcc1750": "Uncategorized",
+    "mcc1761": "Uncategorized",
+    "mcc1771": "Uncategorized",
+    "mcc1799": "Uncategorized",
+    "mcc2741": "Uncategorized",
+    "mcc2791": "Uncategorized",
+    "mcc2842": "Uncategorized",
+    "mcc3000": "Uncategorized",
+    "mcc3001": "Uncategorized",
+    "mcc3002": "Uncategorized",
+    "mcc3003": "Uncategorized",
+    "mcc3004": "Uncategorized",
+    "mcc3005": "Uncategorized",
+    "mcc3006": "Uncategorized",
+    "mcc3007": "Uncategorized",
+    "mcc3008": "Uncategorized",
+    "mcc3009": "Uncategorized",
+    "mcc3010": "Uncategorized",
+    "mcc3011": "Uncategorized",
+    "mcc3012": "Uncategorized",
+    "mcc3013": "Uncategorized",
+    "mcc3014": "Uncategorized",
+    "mcc3015": "Uncategorized",
+    "mcc3016": "Uncategorized",
+    "mcc3017": "Uncategorized",
+    "mcc3018": "Uncategorized",
+    "mcc3019": "Uncategorized",
+    "mcc3020": "Uncategorized",
+    "mcc3021": "Uncategorized",
+    "mcc3022": "Uncategorized",
+    "mcc3023": "Uncategorized",
+    "mcc3024": "Uncategorized",
+    "mcc3025": "Uncategorized",
+    "mcc3026": "Uncategorized",
+    "mcc3027": "Uncategorized",
+    "mcc3028": "Uncategorized",
+    "mcc3029": "Uncategorized",
+    "mcc3030": "Uncategorized",
+    "mcc3031": "Uncategorized",
+    "mcc3032": "Uncategorized",
+    "mcc3033": "Uncategorized",
+    "mcc3034": "Uncategorized",
+    "mcc3035": "Uncategorized",
+    "mcc3036": "Uncategorized",
+    "mcc3037": "Uncategorized",
+    "mcc3038": "Uncategorized",
+    "mcc3039": "Uncategorized",
+    "mcc3040": "Uncategorized",
+    "mcc3041": "Uncategorized",
+    "mcc3042": "Uncategorized",
+    "mcc3043": "Uncategorized",
+    "mcc3044": "Uncategorized",
+    "mcc3045": "Uncategorized",
+    "mcc3046": "Uncategorized",
+    "mcc3047": "Uncategorized",
+    "mcc3048": "Uncategorized",
+    "mcc3049": "Uncategorized",
+    "mcc3050": "Uncategorized",
+    "mcc3051": "Uncategorized",
+    "mcc3052": "Uncategorized",
+    "mcc3053": "Uncategorized",
+    "mcc3054": "Uncategorized",
+    "mcc3055": "Uncategorized",
+    "mcc3056": "Uncategorized",
+    "mcc3057": "Uncategorized",
+    "mcc3058": "Uncategorized",
+    "mcc3059": "Uncategorized",
+    "mcc3060": "Uncategorized",
+    "mcc3061": "Uncategorized",
+    "mcc3062": "Uncategorized",
+    "mcc3063": "Uncategorized",
+    "mcc3064": "Uncategorized",
+    "mcc3065": "Uncategorized",
+    "mcc3066": "Uncategorized",
+    "mcc3067": "Uncategorized",
+    "mcc3068": "Uncategorized",
+    "mcc3069": "Uncategorized",
+    "mcc3070": "Uncategorized",
+    "mcc3071": "Uncategorized",
+    "mcc3072": "Uncategorized",
+    "mcc3073": "Uncategorized",
+    "mcc3074": "Uncategorized",
+    "mcc3075": "Uncategorized",
+    "mcc3076": "Uncategorized",
+    "mcc3077": "Uncategorized",
+    "mcc3078": "Uncategorized",
+    "mcc3079": "Uncategorized",
+    "mcc3080": "Uncategorized",
+    "mcc3081": "Uncategorized",
+    "mcc3082": "Uncategorized",
+    "mcc3083": "Uncategorized",
+    "mcc3084": "Uncategorized",
+    "mcc3085": "Uncategorized",
+    "mcc3086": "Uncategorized",
+    "mcc3087": "Uncategorized",
+    "mcc3088": "Uncategorized",
+    "mcc3089": "Uncategorized",
+    "mcc3090": "Uncategorized",
+    "mcc3091": "Uncategorized",
+    "mcc3092": "Uncategorized",
+    "mcc3093": "Uncategorized",
+    "mcc3094": "Uncategorized",
+    "mcc3095": "Uncategorized",
+    "mcc3096": "Uncategorized",
+    "mcc3097": "Uncategorized",
+    "mcc3098": "Uncategorized",
+    "mcc3099": "Uncategorized",
+    "mcc3100": "Uncategorized",
+    "mcc3101": "Uncategorized",
+    "mcc3102": "Uncategorized",
+    "mcc3103": "Uncategorized",
+    "mcc3104": "Uncategorized",
+    "mcc3105": "Uncategorized",
+    "mcc3106": "Uncategorized",
+    "mcc3107": "Uncategorized",
+    "mcc3108": "Uncategorized",
+    "mcc3109": "Uncategorized",
+    "mcc3110": "Uncategorized",
+    "mcc3111": "Uncategorized",
+    "mcc3112": "Uncategorized",
+    "mcc3113": "Uncategorized",
+    "mcc3114": "Uncategorized",
+    "mcc3115": "Uncategorized",
+    "mcc3116": "Uncategorized",
+    "mcc3117": "Uncategorized",
+    "mcc3118": "Uncategorized",
+    "mcc3119": "Uncategorized",
+    "mcc3120": "Uncategorized",
+    "mcc3121": "Uncategorized",
+    "mcc3122": "Uncategorized",
+    "mcc3123": "Uncategorized",
+    "mcc3124": "Uncategorized",
+    "mcc3125": "Uncategorized",
+    "mcc3126": "Uncategorized",
+    "mcc3127": "Uncategorized",
+    "mcc3128": "Uncategorized",
+    "mcc3129": "Uncategorized",
+    "mcc3130": "Uncategorized",
+    "mcc3131": "Uncategorized",
+    "mcc3132": "Uncategorized",
+    "mcc3133": "Uncategorized",
+    "mcc3134": "Uncategorized",
+    "mcc3135": "Uncategorized",
+    "mcc3136": "Uncategorized",
+    "mcc3137": "Uncategorized",
+    "mcc3138": "Uncategorized",
+    "mcc3139": "Uncategorized",
+    "mcc3140": "Uncategorized",
+    "mcc3141": "Uncategorized",
+    "mcc3142": "Uncategorized",
+    "mcc3143": "Uncategorized",
+    "mcc3144": "Uncategorized",
+    "mcc3145": "Uncategorized",
+    "mcc3146": "Uncategorized",
+    "mcc3147": "Uncategorized",
+    "mcc3148": "Uncategorized",
+    "mcc3149": "Uncategorized",
+    "mcc3150": "Uncategorized",
+    "mcc3151": "Uncategorized",
+    "mcc3152": "Uncategorized",
+    "mcc3153": "Uncategorized",
+    "mcc3154": "Uncategorized",
+    "mcc3155": "Uncategorized",
+    "mcc3156": "Uncategorized",
+    "mcc3157": "Uncategorized",
+    "mcc3158": "Uncategorized",
+    "mcc3159": "Uncategorized",
+    "mcc3160": "Uncategorized",
+    "mcc3161": "Uncategorized",
+    "mcc3162": "Uncategorized",
+    "mcc3163": "Uncategorized",
+    "mcc3164": "Uncategorized",
+    "mcc3165": "Uncategorized",
+    "mcc3166": "Uncategorized",
+    "mcc3167": "Uncategorized",
+    "mcc3168": "Uncategorized",
+    "mcc3169": "Uncategorized",
+    "mcc3170": "Uncategorized",
+    "mcc3171": "Uncategorized",
+    "mcc3172": "Uncategorized",
+    "mcc3173": "Uncategorized",
+    "mcc3174": "Uncategorized",
+    "mcc3175": "Uncategorized",
+    "mcc3176": "Uncategorized",
+    "mcc3177": "Uncategorized",
+    "mcc3178": "Uncategorized",
+    "mcc3179": "Uncategorized",
+    "mcc3180": "Uncategorized",
+    "mcc3181": "Uncategorized",
+    "mcc3182": "Uncategorized",
+    "mcc3183": "Uncategorized",
+    "mcc3184": "Uncategorized",
+    "mcc3185": "Uncategorized",
+    "mcc3186": "Uncategorized",
+    "mcc3187": "Uncategorized",
+    "mcc3188": "Uncategorized",
+    "mcc3189": "Uncategorized",
+    "mcc3190": "Uncategorized",
+    "mcc3191": "Uncategorized",
+    "mcc3192": "Uncategorized",
+    "mcc3193": "Uncategorized",
+    "mcc3194": "Uncategorized",
+    "mcc3195": "Uncategorized",
+    "mcc3196": "Uncategorized",
+    "mcc3197": "Uncategorized",
+    "mcc3198": "Uncategorized",
+    "mcc3199": "Uncategorized",
+    "mcc3200": "Uncategorized",
+    "mcc3201": "Uncategorized",
+    "mcc3202": "Uncategorized",
+    "mcc3203": "Uncategorized",
+    "mcc3204": "Uncategorized",
+    "mcc3205": "Uncategorized",
+    "mcc3206": "Uncategorized",
+    "mcc3207": "Uncategorized",
+    "mcc3208": "Uncategorized",
+    "mcc3209": "Uncategorized",
+    "mcc3210": "Uncategorized",
+    "mcc3211": "Uncategorized",
+    "mcc3212": "Uncategorized",
+    "mcc3213": "Uncategorized",
+    "mcc3214": "Uncategorized",
+    "mcc3215": "Uncategorized",
+    "mcc3216": "Uncategorized",
+    "mcc3217": "Uncategorized",
+    "mcc3218": "Uncategorized",
+    "mcc3219": "Uncategorized",
+    "mcc3220": "Uncategorized",
+    "mcc3221": "Uncategorized",
+    "mcc3222": "Uncategorized",
+    "mcc3223": "Uncategorized",
+    "mcc3224": "Uncategorized",
+    "mcc3225": "Uncategorized",
+    "mcc3226": "Uncategorized",
+    "mcc3227": "Uncategorized",
+    "mcc3228": "Uncategorized",
+    "mcc3229": "Uncategorized",
+    "mcc3230": "Uncategorized",
+    "mcc3231": "Uncategorized",
+    "mcc3232": "Uncategorized",
+    "mcc3233": "Uncategorized",
+    "mcc3234": "Uncategorized",
+    "mcc3235": "Uncategorized",
+    "mcc3236": "Uncategorized",
+    "mcc3237": "Uncategorized",
+    "mcc3238": "Uncategorized",
+    "mcc3239": "Uncategorized",
+    "mcc3240": "Uncategorized",
+    "mcc3241": "Uncategorized",
+    "mcc3242": "Uncategorized",
+    "mcc3243": "Uncategorized",
+    "mcc3244": "Uncategorized",
+    "mcc3245": "Uncategorized",
+    "mcc3246": "Uncategorized",
+    "mcc3247": "Uncategorized",
+    "mcc3248": "Uncategorized",
+    "mcc3249": "Uncategorized",
+    "mcc3250": "Uncategorized",
+    "mcc3251": "Uncategorized",
+    "mcc3252": "Uncategorized",
+    "mcc3253": "Uncategorized",
+    "mcc3254": "Uncategorized",
+    "mcc3255": "Uncategorized",
+    "mcc3256": "Uncategorized",
+    "mcc3257": "Uncategorized",
+    "mcc3258": "Uncategorized",
+    "mcc3259": "Uncategorized",
+    "mcc3260": "Uncategorized",
+    "mcc3261": "Uncategorized",
+    "mcc3262": "Uncategorized",
+    "mcc3263": "Uncategorized",
+    "mcc3264": "Uncategorized",
+    "mcc3265": "Uncategorized",
+    "mcc3266": "Uncategorized",
+    "mcc3267": "Uncategorized",
+    "mcc3268": "Uncategorized",
+    "mcc3269": "Uncategorized",
+    "mcc3270": "Uncategorized",
+    "mcc3271": "Uncategorized",
+    "mcc3272": "Uncategorized",
+    "mcc3273": "Uncategorized",
+    "mcc3274": "Uncategorized",
+    "mcc3275": "Uncategorized",
+    "mcc3276": "Uncategorized",
+    "mcc3277": "Uncategorized",
+    "mcc3278": "Uncategorized",
+    "mcc3279": "Uncategorized",
+    "mcc3280": "Uncategorized",
+    "mcc3281": "Uncategorized",
+    "mcc3282": "Uncategorized",
+    "mcc3283": "Uncategorized",
+    "mcc3284": "Uncategorized",
+    "mcc3285": "Uncategorized",
+    "mcc3286": "Uncategorized",
+    "mcc3287": "Uncategorized",
+    "mcc3288": "Uncategorized",
+    "mcc3289": "Uncategorized",
+    "mcc3290": "Uncategorized",
+    "mcc3291": "Uncategorized",
+    "mcc3292": "Uncategorized",
+    "mcc3293": "Uncategorized",
+    "mcc3294": "Uncategorized",
+    "mcc3295": "Uncategorized",
+    "mcc3296": "Uncategorized",
+    "mcc3297": "Uncategorized",
+    "mcc3298": "Uncategorized",
+    "mcc3299": "Uncategorized",
+    "mcc3351": "Uncategorized",
+    "mcc3352": "Uncategorized",
+    "mcc3353": "Uncategorized",
+    "mcc3354": "Uncategorized",
+    "mcc3355": "Uncategorized",
+    "mcc3356": "Uncategorized",
+    "mcc3357": "Uncategorized",
+    "mcc3358": "Uncategorized",
+    "mcc3359": "Uncategorized",
+    "mcc3360": "Uncategorized",
+    "mcc3361": "Uncategorized",
+    "mcc3362": "Uncategorized",
+    "mcc3363": "Uncategorized",
+    "mcc3364": "Uncategorized",
+    "mcc3365": "Uncategorized",
+    "mcc3366": "Uncategorized",
+    "mcc3367": "Uncategorized",
+    "mcc3368": "Uncategorized",
+    "mcc3369": "Uncategorized",
+    "mcc3370": "Uncategorized",
+    "mcc3371": "Uncategorized",
+    "mcc3372": "Uncategorized",
+    "mcc3373": "Uncategorized",
+    "mcc3374": "Uncategorized",
+    "mcc3375": "Uncategorized",
+    "mcc3376": "Uncategorized",
+    "mcc3377": "Uncategorized",
+    "mcc3378": "Uncategorized",
+    "mcc3379": "Uncategorized",
+    "mcc3380": "Uncategorized",
+    "mcc3381": "Uncategorized",
+    "mcc3382": "Uncategorized",
+    "mcc3383": "Uncategorized",
+    "mcc3384": "Uncategorized",
+    "mcc3385": "Uncategorized",
+    "mcc3386": "Uncategorized",
+    "mcc3387": "Uncategorized",
+    "mcc3388": "Uncategorized",
+    "mcc3389": "Uncategorized",
+    "mcc3390": "Uncategorized",
+    "mcc3391": "Uncategorized",
+    "mcc3392": "Uncategorized",
+    "mcc3393": "Uncategorized",
+    "mcc3394": "Uncategorized",
+    "mcc3395": "Uncategorized",
+    "mcc3396": "Uncategorized",
+    "mcc3397": "Uncategorized",
+    "mcc3398": "Uncategorized",
+    "mcc3399": "Uncategorized",
+    "mcc3400": "Uncategorized",
+    "mcc3401": "Uncategorized",
+    "mcc3402": "Uncategorized",
+    "mcc3403": "Uncategorized",
+    "mcc3404": "Uncategorized",
+    "mcc3405": "Uncategorized",
+    "mcc3406": "Uncategorized",
+    "mcc3407": "Uncategorized",
+    "mcc3408": "Uncategorized",
+    "mcc3409": "Uncategorized",
+    "mcc3410": "Uncategorized",
+    "mcc3411": "Uncategorized",
+    "mcc3412": "Uncategorized",
+    "mcc3413": "Uncategorized",
+    "mcc3414": "Uncategorized",
+    "mcc3415": "Uncategorized",
+    "mcc3416": "Uncategorized",
+    "mcc3417": "Uncategorized",
+    "mcc3418": "Uncategorized",
+    "mcc3419": "Uncategorized",
+    "mcc3420": "Uncategorized",
+    "mcc3421": "Uncategorized",
+    "mcc3422": "Uncategorized",
+    "mcc3423": "Uncategorized",
+    "mcc3424": "Uncategorized",
+    "mcc3425": "Uncategorized",
+    "mcc3426": "Uncategorized",
+    "mcc3427": "Uncategorized",
+    "mcc3428": "Uncategorized",
+    "mcc3429": "Uncategorized",
+    "mcc3430": "Uncategorized",
+    "mcc3431": "Uncategorized",
+    "mcc3432": "Uncategorized",
+    "mcc3433": "Uncategorized",
+    "mcc3434": "Uncategorized",
+    "mcc3435": "Uncategorized",
+    "mcc3436": "Uncategorized",
+    "mcc3437": "Uncategorized",
+    "mcc3438": "Uncategorized",
+    "mcc3439": "Uncategorized",
+    "mcc3440": "Uncategorized",
+    "mcc3441": "Uncategorized",
+    "mcc3501": "Uncategorized",
+    "mcc3502": "Uncategorized",
+    "mcc3503": "Uncategorized",
+    "mcc3504": "Uncategorized",
+    "mcc3505": "Uncategorized",
+    "mcc3506": "Uncategorized",
+    "mcc3507": "Uncategorized",
+    "mcc3508": "Uncategorized",
+    "mcc3509": "Uncategorized",
+    "mcc3510": "Uncategorized",
+    "mcc3511": "Uncategorized",
+    "mcc3512": "Uncategorized",
+    "mcc3513": "Uncategorized",
+    "mcc3514": "Uncategorized",
+    "mcc3515": "Uncategorized",
+    "mcc3516": "Uncategorized",
+    "mcc3517": "Uncategorized",
+    "mcc3518": "Uncategorized",
+    "mcc3519": "Uncategorized",
+    "mcc3520": "Uncategorized",
+    "mcc3521": "Uncategorized",
+    "mcc3522": "Uncategorized",
+    "mcc3523": "Uncategorized",
+    "mcc3524": "Uncategorized",
+    "mcc3525": "Uncategorized",
+    "mcc3526": "Uncategorized",
+    "mcc3527": "Uncategorized",
+    "mcc3528": "Uncategorized",
+    "mcc3529": "Uncategorized",
+    "mcc3530": "Uncategorized",
+    "mcc3531": "Uncategorized",
+    "mcc3532": "Uncategorized",
+    "mcc3533": "Uncategorized",
+    "mcc3534": "Uncategorized",
+    "mcc3535": "Uncategorized",
+    "mcc3536": "Uncategorized",
+    "mcc3537": "Uncategorized",
+    "mcc3538": "Uncategorized",
+    "mcc3539": "Uncategorized",
+    "mcc3540": "Uncategorized",
+    "mcc3541": "Uncategorized",
+    "mcc3542": "Uncategorized",
+    "mcc3543": "Uncategorized",
+    "mcc3544": "Uncategorized",
+    "mcc3545": "Uncategorized",
+    "mcc3546": "Uncategorized",
+    "mcc3547": "Uncategorized",
+    "mcc3548": "Uncategorized",
+    "mcc3549": "Uncategorized",
+    "mcc3550": "Uncategorized",
+    "mcc3551": "Uncategorized",
+    "mcc3552": "Uncategorized",
+    "mcc3553": "Uncategorized",
+    "mcc3554": "Uncategorized",
+    "mcc3555": "Uncategorized",
+    "mcc3556": "Uncategorized",
+    "mcc3557": "Uncategorized",
+    "mcc3558": "Uncategorized",
+    "mcc3559": "Uncategorized",
+    "mcc3560": "Uncategorized",
+    "mcc3561": "Uncategorized",
+    "mcc3562": "Uncategorized",
+    "mcc3563": "Uncategorized",
+    "mcc3564": "Uncategorized",
+    "mcc3565": "Uncategorized",
+    "mcc3566": "Uncategorized",
+    "mcc3567": "Uncategorized",
+    "mcc3568": "Uncategorized",
+    "mcc3569": "Uncategorized",
+    "mcc3570": "Uncategorized",
+    "mcc3571": "Uncategorized",
+    "mcc3572": "Uncategorized",
+    "mcc3573": "Uncategorized",
+    "mcc3574": "Uncategorized",
+    "mcc3575": "Uncategorized",
+    "mcc3576": "Uncategorized",
+    "mcc3577": "Uncategorized",
+    "mcc3578": "Uncategorized",
+    "mcc3579": "Uncategorized",
+    "mcc3580": "Uncategorized",
+    "mcc3581": "Uncategorized",
+    "mcc3582": "Uncategorized",
+    "mcc3583": "Uncategorized",
+    "mcc3584": "Uncategorized",
+    "mcc3585": "Uncategorized",
+    "mcc3586": "Uncategorized",
+    "mcc3587": "Uncategorized",
+    "mcc3588": "Uncategorized",
+    "mcc3589": "Uncategorized",
+    "mcc3590": "Uncategorized",
+    "mcc3591": "Uncategorized",
+    "mcc3592": "Uncategorized",
+    "mcc3593": "Uncategorized",
+    "mcc3594": "Uncategorized",
+    "mcc3595": "Uncategorized",
+    "mcc3596": "Uncategorized",
+    "mcc3597": "Uncategorized",
+    "mcc3598": "Uncategorized",
+    "mcc3599": "Uncategorized",
+    "mcc3600": "Uncategorized",
+    "mcc3601": "Uncategorized",
+    "mcc3602": "Uncategorized",
+    "mcc3603": "Uncategorized",
+    "mcc3604": "Uncategorized",
+    "mcc3605": "Uncategorized",
+    "mcc3606": "Uncategorized",
+    "mcc3607": "Uncategorized",
+    "mcc3608": "Uncategorized",
+    "mcc3609": "Uncategorized",
+    "mcc3610": "Uncategorized",
+    "mcc3611": "Uncategorized",
+    "mcc3612": "Uncategorized",
+    "mcc3613": "Uncategorized",
+    "mcc3614": "Uncategorized",
+    "mcc3615": "Uncategorized",
+    "mcc3616": "Uncategorized",
+    "mcc3617": "Uncategorized",
+    "mcc3618": "Uncategorized",
+    "mcc3619": "Uncategorized",
+    "mcc3620": "Uncategorized",
+    "mcc3621": "Uncategorized",
+    "mcc3622": "Uncategorized",
+    "mcc3623": "Uncategorized",
+    "mcc3624": "Uncategorized",
+    "mcc3625": "Uncategorized",
+    "mcc3626": "Uncategorized",
+    "mcc3627": "Uncategorized",
+    "mcc3628": "Uncategorized",
+    "mcc3629": "Uncategorized",
+    "mcc3630": "Uncategorized",
+    "mcc3631": "Uncategorized",
+    "mcc3632": "Uncategorized",
+    "mcc3633": "Uncategorized",
+    "mcc3634": "Uncategorized",
+    "mcc3635": "Uncategorized",
+    "mcc3636": "Uncategorized",
+    "mcc3637": "Uncategorized",
+    "mcc3638": "Uncategorized",
+    "mcc3639": "Uncategorized",
+    "mcc3640": "Uncategorized",
+    "mcc3641": "Uncategorized",
+    "mcc3642": "Uncategorized",
+    "mcc3643": "Uncategorized",
+    "mcc3644": "Uncategorized",
+    "mcc3645": "Uncategorized",
+    "mcc3646": "Uncategorized",
+    "mcc3647": "Uncategorized",
+    "mcc3648": "Uncategorized",
+    "mcc3649": "Uncategorized",
+    "mcc3650": "Uncategorized",
+    "mcc3651": "Uncategorized",
+    "mcc3652": "Uncategorized",
+    "mcc3653": "Uncategorized",
+    "mcc3654": "Uncategorized",
+    "mcc3655": "Uncategorized",
+    "mcc3656": "Uncategorized",
+    "mcc3657": "Uncategorized",
+    "mcc3658": "Uncategorized",
+    "mcc3659": "Uncategorized",
+    "mcc3660": "Uncategorized",
+    "mcc3661": "Uncategorized",
+    "mcc3662": "Uncategorized",
+    "mcc3663": "Uncategorized",
+    "mcc3664": "Uncategorized",
+    "mcc3665": "Uncategorized",
+    "mcc3666": "Uncategorized",
+    "mcc3667": "Uncategorized",
+    "mcc3668": "Uncategorized",
+    "mcc3669": "Uncategorized",
+    "mcc3670": "Uncategorized",
+    "mcc3671": "Uncategorized",
+    "mcc3672": "Uncategorized",
+    "mcc3673": "Uncategorized",
+    "mcc3674": "Uncategorized",
+    "mcc3675": "Uncategorized",
+    "mcc3676": "Uncategorized",
+    "mcc3677": "Uncategorized",
+    "mcc3678": "Uncategorized",
+    "mcc3679": "Uncategorized",
+    "mcc3680": "Uncategorized",
+    "mcc3681": "Uncategorized",
+    "mcc3682": "Uncategorized",
+    "mcc3683": "Uncategorized",
+    "mcc3684": "Uncategorized",
+    "mcc3685": "Uncategorized",
+    "mcc3686": "Uncategorized",
+    "mcc3687": "Uncategorized",
+    "mcc3688": "Uncategorized",
+    "mcc3689": "Uncategorized",
+    "mcc3690": "Uncategorized",
+    "mcc3691": "Uncategorized",
+    "mcc3692": "Uncategorized",
+    "mcc3693": "Uncategorized",
+    "mcc3694": "Uncategorized",
+    "mcc3695": "Uncategorized",
+    "mcc3696": "Uncategorized",
+    "mcc3697": "Uncategorized",
+    "mcc3698": "Uncategorized",
+    "mcc3699": "Uncategorized",
+    "mcc3700": "Uncategorized",
+    "mcc3701": "Uncategorized",
+    "mcc3702": "Uncategorized",
+    "mcc3703": "Uncategorized",
+    "mcc3704": "Uncategorized",
+    "mcc3705": "Uncategorized",
+    "mcc3706": "Uncategorized",
+    "mcc3707": "Uncategorized",
+    "mcc3708": "Uncategorized",
+    "mcc3709": "Uncategorized",
+    "mcc3710": "Uncategorized",
+    "mcc3711": "Uncategorized",
+    "mcc3712": "Uncategorized",
+    "mcc3713": "Uncategorized",
+    "mcc3714": "Uncategorized",
+    "mcc3715": "Uncategorized",
+    "mcc3716": "Uncategorized",
+    "mcc3717": "Uncategorized",
+    "mcc3718": "Uncategorized",
+    "mcc3719": "Uncategorized",
+    "mcc3720": "Uncategorized",
+    "mcc3721": "Uncategorized",
+    "mcc3722": "Uncategorized",
+    "mcc3723": "Uncategorized",
+    "mcc3724": "Uncategorized",
+    "mcc3725": "Uncategorized",
+    "mcc3726": "Uncategorized",
+    "mcc3727": "Uncategorized",
+    "mcc3728": "Uncategorized",
+    "mcc3729": "Uncategorized",
+    "mcc3730": "Uncategorized",
+    "mcc3731": "Uncategorized",
+    "mcc3732": "Uncategorized",
+    "mcc3733": "Uncategorized",
+    "mcc3734": "Uncategorized",
+    "mcc3735": "Uncategorized",
+    "mcc3736": "Uncategorized",
+    "mcc3737": "Uncategorized",
+    "mcc3738": "Uncategorized",
+    "mcc3739": "Uncategorized",
+    "mcc3740": "Uncategorized",
+    "mcc3741": "Uncategorized",
+    "mcc3742": "Uncategorized",
+    "mcc3743": "Uncategorized",
+    "mcc3744": "Uncategorized",
+    "mcc3745": "Uncategorized",
+    "mcc3746": "Uncategorized",
+    "mcc3747": "Uncategorized",
+    "mcc3748": "Uncategorized",
+    "mcc3749": "Uncategorized",
+    "mcc3750": "Uncategorized",
+    "mcc3751": "Uncategorized",
+    "mcc3752": "Uncategorized",
+    "mcc3753": "Uncategorized",
+    "mcc3754": "Uncategorized",
+    "mcc3755": "Uncategorized",
+    "mcc3756": "Uncategorized",
+    "mcc3757": "Uncategorized",
+    "mcc3758": "Uncategorized",
+    "mcc3759": "Uncategorized",
+    "mcc3760": "Uncategorized",
+    "mcc3761": "Uncategorized",
+    "mcc3762": "Uncategorized",
+    "mcc3763": "Uncategorized",
+    "mcc3764": "Uncategorized",
+    "mcc3765": "Uncategorized",
+    "mcc3766": "Uncategorized",
+    "mcc3767": "Uncategorized",
+    "mcc3768": "Uncategorized",
+    "mcc3769": "Uncategorized",
+    "mcc3770": "Uncategorized",
+    "mcc3771": "Uncategorized",
+    "mcc3772": "Uncategorized",
+    "mcc3773": "Uncategorized",
+    "mcc3774": "Uncategorized",
+    "mcc3775": "Uncategorized",
+    "mcc3776": "Uncategorized",
+    "mcc3777": "Uncategorized",
+    "mcc3778": "Uncategorized",
+    "mcc3779": "Uncategorized",
+    "mcc3780": "Uncategorized",
+    "mcc3781": "Uncategorized",
+    "mcc3782": "Uncategorized",
+    "mcc3783": "Uncategorized",
+    "mcc3784": "Uncategorized",
+    "mcc3785": "Uncategorized",
+    "mcc3786": "Uncategorized",
+    "mcc3787": "Uncategorized",
+    "mcc3788": "Uncategorized",
+    "mcc3789": "Uncategorized",
+    "mcc3790": "Uncategorized",
+    "mcc3831": "Uncategorized",
+    "mcc3835": "Uncategorized",
+    "mcc4011": "Uncategorized",
+    "mcc4111": "Uncategorized",
+    "mcc4112": "Uncategorized",
+    "mcc4119": "Uncategorized",
+    "mcc4121": "Uncategorized",
+    "mcc4131": "Uncategorized",
+    "mcc4214": "Uncategorized",
+    "mcc4215": "Uncategorized",
+    "mcc4225": "Uncategorized",
+    "mcc4411": "Uncategorized",
+    "mcc4457": "Uncategorized",
+    "mcc4468": "Uncategorized",
+    "mcc4511": "Uncategorized",
+    "mcc4582": "Uncategorized",
+    "mcc4722": "Uncategorized",
+    "mcc4723": "Uncategorized",
+    "mcc4784": "Uncategorized",
+    "mcc4789": "Uncategorized",
+    "mcc4812": "Uncategorized",
+    "mcc4814": "Uncategorized",
+    "mcc4815": "Uncategorized",
+    "mcc4816": "Uncategorized",
+    "mcc4821": "Uncategorized",
+    "mcc4829": "Uncategorized",
+    "mcc4899": "Uncategorized",
+    "mcc4900": "Uncategorized",
+    "mcc5013": "Uncategorized",
+    "mcc5021": "Uncategorized",
+    "mcc5039": "Uncategorized",
+    "mcc5044": "Uncategorized",
+    "mcc5045": "Uncategorized",
+    "mcc5046": "Uncategorized",
+    "mcc5047": "Uncategorized",
+    "mcc5051": "Uncategorized",
+    "mcc5065": "Uncategorized",
+    "mcc5072": "Uncategorized",
+    "mcc5074": "Uncategorized",
+    "mcc5085": "Uncategorized",
+    "mcc5094": "Uncategorized",
+    "mcc5099": "Uncategorized",
+    "mcc5111": "Uncategorized",
+    "mcc5122": "Uncategorized",
+    "mcc5131": "Uncategorized",
+    "mcc5137": "Uncategorized",
+    "mcc5139": "Uncategorized",
+    "mcc5169": "Uncategorized",
+    "mcc5172": "Uncategorized",
+    "mcc5192": "Uncategorized",
+    "mcc5193": "Uncategorized",
+    "mcc5198": "Uncategorized",
+    "mcc5199": "Uncategorized",
+    "mcc5200": "Uncategorized",
+    "mcc5211": "Uncategorized",
+    "mcc5231": "Uncategorized",
+    "mcc5251": "Uncategorized",
+    "mcc5261": "Uncategorized",
+    "mcc5271": "Uncategorized",
+    "mcc5300": "Uncategorized",
+    "mcc5309": "Uncategorized",
+    "mcc5310": "Uncategorized",
+    "mcc5311": "Uncategorized",
+    "mcc5331": "Uncategorized",
+    "mcc5399": "Uncategorized",
+    "mcc5411": "Uncategorized",
+    "mcc5422": "Uncategorized",
+    "mcc5441": "Uncategorized",
+    "mcc5451": "Uncategorized",
+    "mcc5462": "Uncategorized",
+    "mcc5499": "Uncategorized",
+    "mcc5511": "Uncategorized",
+    "mcc5521": "Uncategorized",
+    "mcc5531": "Uncategorized",
+    "mcc5532": "Uncategorized",
+    "mcc5533": "Uncategorized",
+    "mcc5541": "Uncategorized",
+    "mcc5542": "Uncategorized",
+    "mcc5551": "Uncategorized",
+    "mcc5561": "Uncategorized",
+    "mcc5571": "Uncategorized",
+    "mcc5592": "Uncategorized",
+    "mcc5598": "Uncategorized",
+    "mcc5599": "Uncategorized",
+    "mcc5611": "Uncategorized",
+    "mcc5621": "Uncategorized",
+    "mcc5631": "Uncategorized",
+    "mcc5641": "Uncategorized",
+    "mcc5651": "Uncategorized",
+    "mcc5655": "Uncategorized",
+    "mcc5661": "Uncategorized",
+    "mcc5681": "Uncategorized",
+    "mcc5691": "Uncategorized",
+    "mcc5697": "Uncategorized",
+    "mcc5698": "Uncategorized",
+    "mcc5699": "Uncategorized",
+    "mcc5712": "Uncategorized",
+    "mcc5713": "Uncategorized",
+    "mcc5714": "Uncategorized",
+    "mcc5718": "Uncategorized",
+    "mcc5719": "Uncategorized",
+    "mcc5722": "Uncategorized",
+    "mcc5732": "Uncategorized",
+    "mcc5733": "Uncategorized",
+    "mcc5734": "Uncategorized",
+    "mcc5735": "Uncategorized",
+    "mcc5811": "Uncategorized",
+    "mcc5812": "Uncategorized",
+    "mcc5813": "Uncategorized",
+    "mcc5814": "Uncategorized",
+    "mcc5832": "Uncategorized",
+    "mcc5912": "Uncategorized",
+    "mcc5921": "Uncategorized",
+    "mcc5931": "Uncategorized",
+    "mcc5932": "Uncategorized",
+    "mcc5933": "Uncategorized",
+    "mcc5935": "Uncategorized",
+    "mcc5937": "Uncategorized",
+    "mcc5940": "Uncategorized",
+    "mcc5941": "Uncategorized",
+    "mcc5942": "Uncategorized",
+    "mcc5943": "Uncategorized",
+    "mcc5944": "Uncategorized",
+    "mcc5945": "Uncategorized",
+    "mcc5946": "Uncategorized",
+    "mcc5947": "Uncategorized",
+    "mcc5948": "Uncategorized",
+    "mcc5949": "Uncategorized",
+    "mcc5950": "Uncategorized",
+    "mcc5960": "Uncategorized",
+    "mcc5961": "Uncategorized",
+    "mcc5962": "Uncategorized",
+    "mcc5963": "Uncategorized",
+    "mcc5964": "Uncategorized",
+    "mcc5965": "Uncategorized",
+    "mcc5966": "Uncategorized",
+    "mcc5967": "Uncategorized",
+    "mcc5968": "Uncategorized",
+    "mcc5969": "Uncategorized",
+    "mcc5970": "Uncategorized",
+    "mcc5971": "Uncategorized",
+    "mcc5972": "Uncategorized",
+    "mcc5973": "Uncategorized",
+    "mcc5975": "Uncategorized",
+    "mcc5976": "Uncategorized",
+    "mcc5977": "Uncategorized",
+    "mcc5978": "Uncategorized",
+    "mcc5983": "Uncategorized",
+    "mcc5992": "Uncategorized",
+    "mcc5993": "Uncategorized",
+    "mcc5994": "Uncategorized",
+    "mcc5995": "Uncategorized",
+    "mcc5996": "Uncategorized",
+    "mcc5997": "Uncategorized",
+    "mcc5998": "Uncategorized",
+    "mcc5999": "Uncategorized",
+    "mcc6010": "Uncategorized",
+    "mcc6011": "Uncategorized",
+    "mcc6012": "Uncategorized",
+    "mcc6051": "Uncategorized",
+    "mcc6211": "Uncategorized",
+    "mcc6300": "Uncategorized",
+    "mcc6381": "Uncategorized",
+    "mcc6399": "Uncategorized",
+    "mcc6513": "Uncategorized",
+    "mcc6530": "Uncategorized",
+    "mcc6531": "Uncategorized",
+    "mcc6532": "Uncategorized",
+    "mcc6533": "Uncategorized",
+    "mcc6534": "Uncategorized",
+    "mcc6535": "Uncategorized",
+    "mcc6611": "Uncategorized",
+    "mcc6760": "Uncategorized",
+    "mcc7011": "Uncategorized",
+    "mcc7012": "Uncategorized",
+    "mcc7032": "Uncategorized",
+    "mcc7033": "Uncategorized",
+    "mcc7210": "Uncategorized",
+    "mcc7211": "Uncategorized",
+    "mcc7216": "Uncategorized",
+    "mcc7217": "Uncategorized",
+    "mcc7221": "Uncategorized",
+    "mcc7230": "Uncategorized",
+    "mcc7251": "Uncategorized",
+    "mcc7261": "Uncategorized",
+    "mcc7273": "Uncategorized",
+    "mcc7276": "Uncategorized",
+    "mcc7277": "Uncategorized",
+    "mcc7278": "Uncategorized",
+    "mcc7296": "Uncategorized",
+    "mcc7297": "Uncategorized",
+    "mcc7298": "Uncategorized",
+    "mcc7299": "Uncategorized",
+    "mcc7311": "Uncategorized",
+    "mcc7321": "Uncategorized",
+    "mcc7332": "Uncategorized",
+    "mcc7333": "Uncategorized",
+    "mcc7338": "Uncategorized",
+    "mcc7339": "Uncategorized",
+    "mcc7342": "Uncategorized",
+    "mcc7349": "Uncategorized",
+    "mcc7361": "Uncategorized",
+    "mcc7372": "Uncategorized",
+    "mcc7375": "Uncategorized",
+    "mcc7379": "Uncategorized",
+    "mcc7392": "Uncategorized",
+    "mcc7393": "Uncategorized",
+    "mcc7394": "Uncategorized",
+    "mcc7395": "Uncategorized",
+    "mcc7399": "Uncategorized",
+    "mcc7511": "Uncategorized",
+    "mcc7512": "Uncategorized",
+    "mcc7513": "Uncategorized",
+    "mcc7519": "Uncategorized",
+    "mcc7523": "Uncategorized",
+    "mcc7531": "Uncategorized",
+    "mcc7534": "Uncategorized",
+    "mcc7535": "Uncategorized",
+    "mcc7538": "Uncategorized",
+    "mcc7542": "Uncategorized",
+    "mcc7549": "Uncategorized",
+    "mcc7622": "Uncategorized",
+    "mcc7623": "Uncategorized",
+    "mcc7629": "Uncategorized",
+    "mcc7631": "Uncategorized",
+    "mcc7641": "Uncategorized",
+    "mcc7692": "Uncategorized",
+    "mcc7699": "Uncategorized",
+    "mcc7829": "Uncategorized",
+    "mcc7832": "Uncategorized",
+    "mcc7841": "Uncategorized",
+    "mcc7911": "Uncategorized",
+    "mcc7922": "Uncategorized",
+    "mcc7929": "Uncategorized",
+    "mcc7932": "Uncategorized",
+    "mcc7933": "Uncategorized",
+    "mcc7941": "Uncategorized",
+    "mcc7991": "Uncategorized",
+    "mcc7992": "Uncategorized",
+    "mcc7993": "Uncategorized",
+    "mcc7994": "Uncategorized",
+    "mcc7995": "Uncategorized",
+    "mcc7996": "Uncategorized",
+    "mcc7997": "Uncategorized",
+    "mcc7998": "Uncategorized",
+    "mcc7999": "Uncategorized",
+    "mcc8011": "Uncategorized",
+    "mcc8021": "Uncategorized",
+    "mcc8031": "Uncategorized",
+    "mcc8041": "Uncategorized",
+    "mcc8042": "Uncategorized",
+    "mcc8043": "Uncategorized",
+    "mcc8044": "Uncategorized",
+    "mcc8049": "Uncategorized",
+    "mcc8050": "Uncategorized",
+    "mcc8062": "Uncategorized",
+    "mcc8071": "Uncategorized",
+    "mcc8099": "Uncategorized",
+    "mcc8111": "Uncategorized",
+    "mcc8211": "Uncategorized",
+    "mcc8220": "Uncategorized",
+    "mcc8241": "Uncategorized",
+    "mcc8244": "Uncategorized",
+    "mcc8249": "Uncategorized",
+    "mcc8299": "Uncategorized",
+    "mcc8351": "Uncategorized",
+    "mcc8398": "Uncategorized",
+    "mcc8641": "Uncategorized",
+    "mcc8651": "Uncategorized",
+    "mcc8661": "Uncategorized",
+    "mcc8675": "Uncategorized",
+    "mcc8699": "Uncategorized",
+    "mcc8734": "Uncategorized",
+    "mcc8911": "Uncategorized",
+    "mcc8931": "Uncategorized",
+    "mcc8999": "Uncategorized",
+    "mcc9211": "Uncategorized",
+    "mcc9222": "Uncategorized",
+    "mcc9223": "Uncategorized",
+    "mcc9311": "Uncategorized",
+    "mcc9399": "Uncategorized",
+    "mcc9402": "Uncategorized",
+    "mcc9405": "Uncategorized",
+    "mcc9700": "Uncategorized",
+    "mcc9701": "Uncategorized",
+    "mcc9702": "Uncategorized",
+    "mcc9950": "Uncategorized"
+  },
+  "digitalSignatureRequired": false,
+  "glCodes": true,
+  "exportLayouts": [],
+  "fcrmEnabled": false,
+  "tax": {
+    "trackingEnabled": false
+  },
+  "companyInformation": "",
+  "logoURL": "",
+  "invoice": {
+    "enabled": false,
+    "logoURL": "",
+    "notes": ""
+  },
+  "approvalMode": "BASIC",
+  "units": {
+    "distance": {
+      "km": 0.336,
+      "mi": 0.54,
+      "defaultUnit": "mi",
+      "defaultCategory": "Fuel/Mileage"
+    },
+    "time": {
+      "rate": 50,
+      "enabled": true
+    }
+  },
+  "rter": {
+    "visibility": {
+      "enabled": true
+    },
+    "emailSummaryJobID": 319
+  },
+  "autoReporting": true,
+  "autoReimbursement": {
+    "limit": 10000
+  },
+  "lastModified": 1482449001246581,
+  "harvesting": {
+    "enabled": true,
+    "jobID": 3
+  },
+  "connections": {
+    "intacct": {
+      "lastSync": {
+        "successfulDate": "2016-12-22T23:23:20+0000",
+        "isSuccessful": true,
+        "jobSource": "",
+        "errorDate": "2016-07-14T00:51:29+0000"
+      },
+      "data": {
+        "creditCards": [
+          {
+            "name": "Chase Credit Cards",
+            "id": "37"
+          },
+          {
+            "name": "Fake4485070331471317",
+            "id": "5"
+          },
+          {
+            "name": "Fake4485070331471319",
+            "id": "22"
+          },
+          {
+            "name": "Fake5186936826070211",
+            "id": "6"
+          },
+          {
+            "name": "Test4024007116356782",
+            "id": "26"
+          }
+        ],
+        "entities": [],
+        "bankAccounts": [
+          {
+            "name": "1000 -- Wells Fargo bank",
+            "id": "CHK-WFB0004"
+          }
+        ]
+      },
+      "config": {
+        "importEmployees": true,
+        "isConfigured": true,
+        "isAutoSyncEnabled": false,
+        "mappings": {
+          "projects": "NONE",
+          "classes": "DEFAULT",
+          "locations": "DEFAULT",
+          "departments": "TAG",
+          "customers": "NONE"
+        },
+        "credentials": {
+          "companyID": "expensify-DEV",
+          "password": "jI++obGByxtBt5YHXmJZEw==;cBbO2hvc8a/Q6rdRVEPJ6g==;GkcbXjAXdRg3tgjTMGIRSBAgxEBNQFIQ+GV1wi7qEgTLd1vYRT21S4/chHQd7fwv19n80hm2kk9rCA69w0309w==",
+          "userID": "WS_User"
+        },
+        "shouldSyncApprovalWorkflow": false,
+        "autoSync": {
+          "jobID": null,
+          "enabled": false
+        },
+        "export": {
+          "exporter": "qa@expensify.com",
+          "exportDate": "LAST_EXPENSE",
+          "reimbursable": "EXPENSE_REPORT",
+          "nonReimbursableAccount": "Chase Credit Cards"
+        },
+        "sync": {
+          "syncReimbursedReports": false,
+          "reimbursementAccountID": null
+        }
+      }
+    }
+  },
+  "hidesProblemsBoxUntilModified": false,
+  "expenseUDFs": [
+    {
+      "type": "tax",
+      "fieldID": "field_id_TAX",
+      "defaultValue": "0%",
+      "value": null,
+      "name": "Tax",
+      "target": "expense",
+      "values": [
+        "5%",
+        "0%"
+      ],
+      "keys": [
+        "Tax Rate 1",
+        "Tax exempt"
+      ],
+      "externalIDs": [
+        "id_TAX_RATE_1",
+        "id_TAX_EXEMPT"
+      ],
+      "disabledOptions": [
+        false,
+        false
+      ],
+      "externalID": null,
+      "orderWeight": 0,
+      "deletable": false,
+      "isTax": true,
+      "defaultExternalID": "id_TAX_EXEMPT",
+      "modifiedTaxAmount": ""
+    }
+  ],
+  "isAutoApprovalEnabled": true,
+  "dynamicExternalWorkflowRulesProcessor": "",
+  "dynamicExternalWorkflowURL": ""
+}
