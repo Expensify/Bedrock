@@ -156,7 +156,7 @@ struct LibStuff : tpunit::TestFixture {
     void testCollapse() {
         ASSERT_EQUAL("", SCollapse(""));
         ASSERT_EQUAL(" ", SCollapse("   "));
-        ASSERT_EQUAL("\t", SCollapse("\t  "));
+        ASSERT_EQUAL(" ", SCollapse("\t  "));
         ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem ipsum"));
         ASSERT_EQUAL("Lorem ipsum", SCollapse("Lorem \r\t\nipsum"));
         ASSERT_EQUAL(" Lorem ipsum ", SCollapse("  Lorem \r\t\nipsum \r\n"));
