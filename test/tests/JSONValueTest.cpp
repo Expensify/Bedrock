@@ -33,34 +33,34 @@ struct JSONValueTest : tpunit::TestFixture
 
     void setBool()
     {
-        SJSONValue value;
+        SJSON value;
         value = true;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_BOOL);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_BOOL);
         EXPECT_EQUAL(value.serialize(), "true");
     }
 
     void setBool2()
     {
-        SJSONValue value;
+        SJSON value;
         value = false;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_BOOL);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_BOOL);
         EXPECT_EQUAL(value.serialize(), "false");
     }
 
     void setInt()
     {
-        SJSONValue value;
+        SJSON value;
         value = -15;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_TRUE(value.getDouble() < 0);
         EXPECT_EQUAL(value.serialize(), "-15");
     }
 
     void setInt2()
     {
-        SJSONValue value;
+        SJSON value;
         value = 123;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_FALSE(value.getDouble() < 0);
         EXPECT_EQUAL(value.serialize(), "123");
         EXPECT_EQUAL(value.getInt(), 123);
@@ -69,9 +69,9 @@ struct JSONValueTest : tpunit::TestFixture
     /*
     void setBigInt()
     {
-        SJSONValue value;
+        SJSON value;
         value = 9223372036854775808ULL;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_FALSE(value.getDouble() < 0);
         EXPECT_EQUAL(value.serialize(), "9223372036854775808");
         EXPECT_THROW(value.getInt(), invalid_argument);
@@ -80,60 +80,60 @@ struct JSONValueTest : tpunit::TestFixture
 
     void setDouble()
     {
-        SJSONValue value;
+        SJSON value;
         value = 1.5;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_EQUAL(value.serialize(), "1.5");
     }
 
     void setString()
     {
-        SJSONValue value;
+        SJSON value;
         value = "test";
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_STRING);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_STRING);
         EXPECT_EQUAL(value.serialize(), "\"test\"");
     }
 
     void ctorNull()
     {
-        const SJSONValue value;
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NULL);
+        const SJSON value;
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NULL);
         EXPECT_EQUAL(value.serialize(), "null");
     }
 
     void ctorBool()
     {
-        const SJSONValue value(true);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_BOOL);
+        const SJSON value(true);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_BOOL);
         EXPECT_EQUAL(value.serialize(), "true");
     }
 
     void ctorBool2()
     {
-        const SJSONValue value(false);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_BOOL);
+        const SJSON value(false);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_BOOL);
         EXPECT_EQUAL(value.serialize(), "false");
     }
 
     void ctorInt()
     {
-        const SJSONValue value(-15);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        const SJSON value(-15);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_EQUAL(value.serialize(), "-15");
     }
 
     void ctorInt2()
     {
-        const SJSONValue value(123);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        const SJSON value(123);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_EQUAL(value.serialize(), "123");
     }
 
     /*
     void ctorBigInt()
     {
-        const SJSONValue value(9223372036854775808ULL);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        const SJSON value(9223372036854775808ULL);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_FALSE(value.getDouble() < 0);
         EXPECT_EQUAL(value.serialize(), "9223372036854775808");
         EXPECT_THROW(value.getInt(), invalid_argument);
@@ -142,55 +142,55 @@ struct JSONValueTest : tpunit::TestFixture
 
     void ctorDouble()
     {
-        const SJSONValue value(1.5);
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_NUMBER);
+        const SJSON value(1.5);
+        EXPECT_EQUAL(value.type(), SJSON::JSON_NUMBER);
         EXPECT_EQUAL(value.serialize(), "1.5");
     }
 
     void ctorString()
     {
-        const SJSONValue value("test");
-        EXPECT_EQUAL(value.type(), SJSONValue::JSON_STRING);
+        const SJSON value("test");
+        EXPECT_EQUAL(value.type(), SJSON::JSON_STRING);
         EXPECT_EQUAL(value.serialize(), "\"test\"");
     }
 
     void simpleArray()
     {
-        SJSONValue array(SJSONValue::JSON_ARRAY);
+        SJSON array(SJSON::JSON_ARRAY);
 
         EXPECT_EQUAL(array.serialize(), "[]");
 
-        array.push_back(SJSONValue(true));
+        array.push_back(SJSON(true));
         EXPECT_EQUAL(array.serialize(), "[true]");
 
-        array.push_back(SJSONValue(false));
+        array.push_back(SJSON(false));
         EXPECT_EQUAL(array.serialize(), "[true,false]");
 
-        array.push_back(SJSONValue());
+        array.push_back(SJSON());
         EXPECT_EQUAL(array.serialize(), "[true,false,null]");
 
-        array.push_back(SJSONValue(-15));
+        array.push_back(SJSON(-15));
         EXPECT_EQUAL(array.serialize(), "[true,false,null,-15]");
 
-        array.push_back(SJSONValue(123));
+        array.push_back(SJSON(123));
         EXPECT_EQUAL(array.serialize(), "[true,false,null,-15,123]");
 
-        array.push_back(SJSONValue(1.5));
+        array.push_back(SJSON(1.5));
         EXPECT_EQUAL(array.serialize(), "[true,false,null,-15,123,1.5]");
 
-        array.push_back(SJSONValue("asdf"));
+        array.push_back(SJSON("asdf"));
         EXPECT_EQUAL(array.serialize(), "[true,false,null,-15,123,1.5,\"asdf\"]");
     }
 
     void nestedArray()
     {
-        SJSONValue outer(SJSONValue::JSON_ARRAY);
-        SJSONValue inner(SJSONValue::JSON_ARRAY);
+        SJSON outer(SJSON::JSON_ARRAY);
+        SJSON inner(SJSON::JSON_ARRAY);
 
-        outer.push_back(SJSONValue(true));
-        inner.push_back(SJSONValue(3));
+        outer.push_back(SJSON(true));
+        inner.push_back(SJSON(3));
         inner.push_back(2);
-        inner.push_back(SJSONValue(1));
+        inner.push_back(SJSON(1));
         outer.push_back(inner);
         outer.push_back(false);
 
@@ -200,29 +200,29 @@ struct JSONValueTest : tpunit::TestFixture
 
     void simpleObject()
     {
-        SJSONValue doc(SJSONValue::JSON_OBJECT);
+        SJSON doc(SJSON::JSON_OBJECT);
 
         EXPECT_EQUAL(doc.serialize(), "{}");
-        doc["a"] = SJSONValue(3);
+        doc["a"] = SJSON(3);
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3}");
-        doc["b"] = SJSONValue();
+        doc["b"] = SJSON();
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null}");
         doc["c"] = -3;
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3}");
-        doc["d"] = SJSONValue(false);
+        doc["d"] = SJSON(false);
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":false}");
         doc["d"] = true;
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true}");
-        doc["e"] = SJSONValue("test");
+        doc["e"] = SJSON("test");
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true,\"e\":\"test\"}");
     }
 
     void nestedObject()
     {
-        SJSONValue outer(SJSONValue::JSON_OBJECT);
-        SJSONValue inner(SJSONValue::JSON_OBJECT);
+        SJSON outer(SJSON::JSON_OBJECT);
+        SJSON inner(SJSON::JSON_OBJECT);
 
-        outer["a"] = SJSONValue(true);
+        outer["a"] = SJSON(true);
         inner["a"] = 3;
         outer["b"] = inner; // inner is passed to outer by copy
         inner["b"] = "This should not be in outer";
@@ -233,7 +233,7 @@ struct JSONValueTest : tpunit::TestFixture
 
     void invalidIndex()
     {
-        SJSONValue array(SJSONValue::JSON_ARRAY);
+        SJSON array(SJSON::JSON_ARRAY);
 
         EXPECT_EQUAL(array.size(), 0);
         EXPECT_THROW(array[0], std::out_of_range);
@@ -241,11 +241,11 @@ struct JSONValueTest : tpunit::TestFixture
 
     void invalidKey()
     {
-        const SJSONValue immutableObject(SJSONValue::JSON_OBJECT);
+        const SJSON immutableObject(SJSON::JSON_OBJECT);
         EXPECT_EQUAL(immutableObject.size(), 0);
         EXPECT_THROW(immutableObject["asdf"], std::out_of_range);
 
-        SJSONValue mutableObject(SJSONValue::JSON_OBJECT);
+        SJSON mutableObject(SJSON::JSON_OBJECT);
         EXPECT_EQUAL(mutableObject.size(), 0);
         EXPECT_NO_THROW(mutableObject["asdf"] = 1);
         EXPECT_EQUAL(mutableObject.size(), 1);

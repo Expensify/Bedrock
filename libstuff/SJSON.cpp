@@ -1,10 +1,10 @@
 #include <libstuff/libstuff.h>
 #include "SJSON.h"
 
-SJSONValue::SJSONValue() : _type(JSON_NULL), _value(nullptr) {
+SJSON::SJSON() : _type(JSON_NULL), _value(nullptr) {
 }
 
-SJSONValue::SJSONValue(SJSONValue::Type t) : _type(t), _value(nullptr) {
+SJSON::SJSON(SJSON::Type t) : _type(t), _value(nullptr) {
     switch(_type) {
         case JSON_NULL:
             _value = nullptr;
@@ -19,34 +19,34 @@ SJSONValue::SJSONValue(SJSONValue::Type t) : _type(t), _value(nullptr) {
             _value = new Number;
             break;
         case JSON_ARRAY:
-            _value = new list<SJSONValue>;
+            _value = new list<SJSON>;
             break;
         case JSON_OBJECT:
-            _value = new map<string, SJSONValue>;
+            _value = new map<string, SJSON>;
             break;
     }
 }
 
-SJSONValue::SJSONValue(const bool& b) : _type(JSON_BOOL) {
+SJSON::SJSON(const bool& b) : _type(JSON_BOOL) {
     _value = new bool;
     bool& v = *static_cast<bool*>(_value);
     v = b;
 }
 
-SJSONValue::SJSONValue(const string& s) : _type(JSON_STRING) {
+SJSON::SJSON(const string& s) : _type(JSON_STRING) {
     _value = new string;
     string& v = *static_cast<string*>(_value);
     v = s;
 }
 
-SJSONValue::SJSONValue(const char* s) : _type(JSON_STRING) {
+SJSON::SJSON(const char* s) : _type(JSON_STRING) {
     _value = new string;
     string& v = *static_cast<string*>(_value);
     v = s;
 }
 
-SJSONValue& SJSONValue::operator=(const bool& b) {
-    this->~SJSONValue();
+SJSON& SJSON::operator=(const bool& b) {
+    this->~SJSON();
     _type = JSON_BOOL;
     _value = new bool;
     bool& v = *static_cast<bool*>(_value);
@@ -54,8 +54,8 @@ SJSONValue& SJSONValue::operator=(const bool& b) {
     return *this;
 }
 
-SJSONValue& SJSONValue::operator=(const string& s) {
-    this->~SJSONValue();
+SJSON& SJSON::operator=(const string& s) {
+    this->~SJSON();
     _type = JSON_STRING;
     _value = new string;
     string& v = *static_cast<string*>(_value);
@@ -63,8 +63,8 @@ SJSONValue& SJSONValue::operator=(const string& s) {
     return *this;
 }
 
-SJSONValue& SJSONValue::operator=(const char* s) {
-    this->~SJSONValue();
+SJSON& SJSON::operator=(const char* s) {
+    this->~SJSON();
     _type = JSON_STRING;
     _value = new string;
     string& v = *static_cast<string*>(_value);
@@ -72,7 +72,7 @@ SJSONValue& SJSONValue::operator=(const char* s) {
     return *this;
 }
 
-SJSONValue::SJSONValue(SJSONValue&& other) {
+SJSON::SJSON(SJSON&& other) {
     // Copy values from the other object.
     _type = other._type;
     _value = other._value;
@@ -81,7 +81,7 @@ SJSONValue::SJSONValue(SJSONValue&& other) {
     other._value = nullptr;
 }
 
-SJSONValue::SJSONValue(const SJSONValue& other) {
+SJSON::SJSON(const SJSON& other) {
     // Copy values from the other object.
     _type = other._type;
     switch(_type) {
@@ -116,26 +116,26 @@ SJSONValue::SJSONValue(const SJSONValue& other) {
         break;
         case JSON_ARRAY:
         {
-            _value = new list<SJSONValue>;
-            list<SJSONValue>& v = *static_cast<list<SJSONValue>*>(_value);
-            list<SJSONValue>& otherv = *static_cast<list<SJSONValue>*>(other._value);
+            _value = new list<SJSON>;
+            list<SJSON>& v = *static_cast<list<SJSON>*>(_value);
+            list<SJSON>& otherv = *static_cast<list<SJSON>*>(other._value);
             v = otherv;
         }
         break;
         case JSON_OBJECT:
         {
-            _value = new map<string, SJSONValue>;
-            map<string, SJSONValue>& v = *static_cast<map<string, SJSONValue>*>(_value);
-            map<string, SJSONValue>& otherv = *static_cast<map<string, SJSONValue>*>(other._value);
+            _value = new map<string, SJSON>;
+            map<string, SJSON>& v = *static_cast<map<string, SJSON>*>(_value);
+            map<string, SJSON>& otherv = *static_cast<map<string, SJSON>*>(other._value);
             v = otherv;
         }
         break;
     }
 }
 
-SJSONValue& SJSONValue::operator=(const SJSONValue& other) {
+SJSON& SJSON::operator=(const SJSON& other) {
     // Free our existing value by explicitly calling the destructor.
-    this->~SJSONValue();
+    this->~SJSON();
 
     // Copy values from the other object.
     _type = other._type;
@@ -171,17 +171,17 @@ SJSONValue& SJSONValue::operator=(const SJSONValue& other) {
         break;
         case JSON_ARRAY:
         {
-            _value = new list<SJSONValue>;
-            list<SJSONValue>& v = *static_cast<list<SJSONValue>*>(_value);
-            list<SJSONValue>& otherv = *static_cast<list<SJSONValue>*>(other._value);
+            _value = new list<SJSON>;
+            list<SJSON>& v = *static_cast<list<SJSON>*>(_value);
+            list<SJSON>& otherv = *static_cast<list<SJSON>*>(other._value);
             v = otherv;
         }
         break;
         case JSON_OBJECT:
         {
-            _value = new map<string, SJSONValue>;
-            map<string, SJSONValue>& v = *static_cast<map<string, SJSONValue>*>(_value);
-            map<string, SJSONValue>& otherv = *static_cast<map<string, SJSONValue>*>(other._value);
+            _value = new map<string, SJSON>;
+            map<string, SJSON>& v = *static_cast<map<string, SJSON>*>(_value);
+            map<string, SJSON>& otherv = *static_cast<map<string, SJSON>*>(other._value);
             v = otherv;
         }
         break;
@@ -190,9 +190,9 @@ SJSONValue& SJSONValue::operator=(const SJSONValue& other) {
     return *this;
 }
 
-SJSONValue& SJSONValue::operator=(SJSONValue&& other) {
+SJSON& SJSON::operator=(SJSON&& other) {
     // Free our existing value by explicitly calling the destructor.
-    this->~SJSONValue();
+    this->~SJSON();
     
     // Copy values from the other object.
     _type = other._type;
@@ -204,18 +204,18 @@ SJSONValue& SJSONValue::operator=(SJSONValue&& other) {
     return *this;
 }
 
-SJSONValue& SJSONValue::operator[](const string& key) {
+SJSON& SJSON::operator[](const string& key) {
     if (_type != JSON_OBJECT) {
         throw invalid_argument("Value is not an object");
     }
-    return (*static_cast<map<string, SJSONValue>*>(_value))[key];
+    return (*static_cast<map<string, SJSON>*>(_value))[key];
 }
 
-const SJSONValue& SJSONValue::operator[](const string& key) const {
+const SJSON& SJSON::operator[](const string& key) const {
     if (_type != JSON_OBJECT) {
         throw invalid_argument("Value is not an object");
     }
-    auto& m = *static_cast<map<string, SJSONValue>*>(_value);
+    auto& m = *static_cast<map<string, SJSON>*>(_value);
     auto it = m.find(key);
     if (it != m.end()) {
         return it->second;
@@ -223,11 +223,11 @@ const SJSONValue& SJSONValue::operator[](const string& key) const {
     throw out_of_range("Couldn't find key in object");
 }
 
-SJSONValue& SJSONValue::operator[](size_t pos) {
+SJSON& SJSON::operator[](size_t pos) {
     if (_type != JSON_ARRAY) {
         throw invalid_argument("Value is not an array");
     }
-    list<SJSONValue>& v = *static_cast<list<SJSONValue>*>(_value);
+    list<SJSON>& v = *static_cast<list<SJSON>*>(_value);
     if (pos >= v.size()) {
         throw out_of_range("pos too large");
     }
@@ -238,7 +238,7 @@ SJSONValue& SJSONValue::operator[](size_t pos) {
     return *it;
 }
 
-SJSONValue::~SJSONValue() {
+SJSON::~SJSON() {
     switch(_type) {
         case JSON_NULL:
             // Nothing to do for null.
@@ -263,13 +263,13 @@ SJSONValue::~SJSONValue() {
         break;
         case JSON_ARRAY:
         {
-            list<SJSONValue>* v = static_cast<list<SJSONValue>*>(_value);
+            list<SJSON>* v = static_cast<list<SJSON>*>(_value);
             delete v;
         }
         break;
         case JSON_OBJECT:
         {
-            map<string, SJSONValue>* v = static_cast<map<string, SJSONValue>*>(_value);
+            map<string, SJSON>* v = static_cast<map<string, SJSON>*>(_value);
             delete v;
         }
         break;
@@ -277,21 +277,21 @@ SJSONValue::~SJSONValue() {
     _value = nullptr;
 }
 
-bool& SJSONValue::getBool() {
+bool& SJSON::getBool() {
     if (_type != JSON_BOOL) {
         throw invalid_argument("Value is not a bool");
     }
     return *static_cast<bool*>(_value);
 }
 
-string& SJSONValue::getString() {
+string& SJSON::getString() {
     if (_type != JSON_STRING) {
         throw invalid_argument("Value is not a string");
     }
     return *static_cast<string*>(_value);
 }
 
-double SJSONValue::getDouble() const {
+double SJSON::getDouble() const {
     if (_type != JSON_NUMBER) {
         throw invalid_argument("Value is not a number");
     }
@@ -302,7 +302,7 @@ double SJSONValue::getDouble() const {
     return (double)n.integer;
 }
 
-int64_t SJSONValue::getInt() const {
+int64_t SJSON::getInt() const {
     if (_type != JSON_NUMBER) {
         throw invalid_argument("Value is not a number");
     }
@@ -313,21 +313,21 @@ int64_t SJSONValue::getInt() const {
     return (int64_t)n.floatingPoint;
 }
 
-list<SJSONValue>& SJSONValue::getArray() {
+list<SJSON>& SJSON::getArray() {
     if (_type != JSON_ARRAY) {
         throw invalid_argument("Value is not an array");
     }
-    return *static_cast<list<SJSONValue>*>(_value);
+    return *static_cast<list<SJSON>*>(_value);
 }
 
-map<string, SJSONValue>& SJSONValue::getObject() {
+map<string, SJSON>& SJSON::getObject() {
     if (_type != JSON_OBJECT) {
         throw invalid_argument("Value is not an object");
     }
-    return *static_cast<map<string, SJSONValue>*>(_value);
+    return *static_cast<map<string, SJSON>*>(_value);
 }
 
-void SJSONValue::setDouble(double d) {
+void SJSON::setDouble(double d) {
     if (_type != JSON_NUMBER) {
         throw invalid_argument("Value is not a number");
     }
@@ -336,7 +336,7 @@ void SJSONValue::setDouble(double d) {
     n.floatingPoint = d;
 }
 
-void SJSONValue::setInt(int64_t i) {
+void SJSON::setInt(int64_t i) {
     if (_type != JSON_NUMBER) {
         throw invalid_argument("Value is not a number");
     }
@@ -345,17 +345,17 @@ void SJSONValue::setInt(int64_t i) {
     n.integer = i;
 }
 
-size_t SJSONValue::size() const {
+size_t SJSON::size() const {
     switch(_type) {
         case JSON_ARRAY:
         {
-            list<SJSONValue>* v = static_cast<list<SJSONValue>*>(_value);
+            list<SJSON>* v = static_cast<list<SJSON>*>(_value);
             return v->size();
         }
         break;
         case JSON_OBJECT:
         {
-            map<string, SJSONValue>* v = static_cast<map<string, SJSONValue>*>(_value);
+            map<string, SJSON>* v = static_cast<map<string, SJSON>*>(_value);
             return v->size();
         }
         break;
@@ -370,11 +370,11 @@ size_t SJSONValue::size() const {
     }
 }
 
-void SJSONValue::push_back(SJSONValue&& val) {
+void SJSON::push_back(SJSON&& val) {
     switch(_type) {
         case JSON_ARRAY:
         {
-            list<SJSONValue>* v = static_cast<list<SJSONValue>*>(_value);
+            list<SJSON>* v = static_cast<list<SJSON>*>(_value);
             v->push_back(move(val));
         }
         break;
@@ -383,11 +383,11 @@ void SJSONValue::push_back(SJSONValue&& val) {
     }
 }
 
-void SJSONValue::push_back(const SJSONValue& val) {
+void SJSON::push_back(const SJSON& val) {
     switch(_type) {
         case JSON_ARRAY:
         {
-            list<SJSONValue>* v = static_cast<list<SJSONValue>*>(_value);
+            list<SJSON>* v = static_cast<list<SJSON>*>(_value);
             v->push_back(val);
         }
         break;
@@ -396,7 +396,7 @@ void SJSONValue::push_back(const SJSONValue& val) {
     }
 }
 
-string SJSONValue::serialize() const {
+string SJSON::serialize() const {
     string out;
     switch (_type) {
         case JSON_NULL:
@@ -461,7 +461,7 @@ string SJSONValue::serialize() const {
         case JSON_ARRAY:
         {
             // Cast to appropriate type.
-            list<SJSONValue>* value = static_cast<list<SJSONValue>*>(_value);
+            list<SJSON>* value = static_cast<list<SJSON>*>(_value);
             if (value->empty()) {
                 return "[]";
             }
@@ -475,7 +475,7 @@ string SJSONValue::serialize() const {
         case JSON_OBJECT:
         {
             // Cast to appropriate type.
-            map<string, SJSONValue>* value = static_cast<map<string, SJSONValue>*>(_value);
+            map<string, SJSON>* value = static_cast<map<string, SJSON>*>(_value);
             if (value->empty()) {
                 return "{}";
             }
@@ -491,12 +491,12 @@ string SJSONValue::serialize() const {
     return out;
 }
 
-SJSONValue SJSONValue::deserialize(const string& val) {
+SJSON SJSON::deserialize(const string& val) {
     size_t consumed;
     return deserialize(val, 0, consumed);
 }
 
-SJSONValue SJSONValue::deserialize(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::deserialize(const string& val, size_t offset, size_t& consumed) {
     while (isspace(val[offset])) {
         offset++;
     }
@@ -530,12 +530,12 @@ SJSONValue SJSONValue::deserialize(const string& val, size_t offset, size_t& con
     throw SJSONParseException(val.substr(max((size_t)0, offset - 20), 40), consumed);
 }
 
-SJSONValue SJSONValue::parseObject(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseObject(const string& val, size_t offset, size_t& consumed) {
     // Set how many bytes we've consumed.
     consumed = 0;
 
     // Create the new object.
-    SJSONValue returnVal(JSON_OBJECT);
+    SJSON returnVal(JSON_OBJECT);
 
     // Verify we're starting with the right character.
     if (val[offset] != '{') {
@@ -563,7 +563,7 @@ SJSONValue SJSONValue::parseObject(const string& val, size_t offset, size_t& con
 
         // Otherwise, we should find a string.
         size_t tempConsumed = 0;
-        SJSONValue key = parseString(val, offset, tempConsumed);
+        SJSON key = parseString(val, offset, tempConsumed);
         offset += tempConsumed;
         consumed += tempConsumed;
 
@@ -591,7 +591,7 @@ SJSONValue SJSONValue::parseObject(const string& val, size_t offset, size_t& con
         // Then should be a value.
         tempConsumed = 0;
         auto& map = returnVal.getObject();
-        map.insert(pair<string, SJSONValue>(key.getString(), deserialize(val, offset, tempConsumed)));
+        map.insert(pair<string, SJSON>(key.getString(), deserialize(val, offset, tempConsumed)));
         offset += tempConsumed;
         consumed += tempConsumed;
 
@@ -611,12 +611,12 @@ SJSONValue SJSONValue::parseObject(const string& val, size_t offset, size_t& con
     return returnVal;
 }
 
-SJSONValue SJSONValue::parseArray(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseArray(const string& val, size_t offset, size_t& consumed) {
     // Set how many bytes we've consumed.
     consumed = 0;
 
     // Create the new object.
-    SJSONValue returnVal(JSON_ARRAY);
+    SJSON returnVal(JSON_ARRAY);
 
     // Verify we're starting with the right character.
     if (val[offset] != '[') {
@@ -665,12 +665,12 @@ SJSONValue SJSONValue::parseArray(const string& val, size_t offset, size_t& cons
     return returnVal;
 }
 
-SJSONValue SJSONValue::parseString(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseString(const string& val, size_t offset, size_t& consumed) {
     // Set how many bytes we've consumed;
     consumed = 0;
 
     // Create the new object.
-    SJSONValue returnVal(JSON_STRING);
+    SJSON returnVal(JSON_STRING);
 
     // Verify we're starting with the right character.
     if (val[offset] != '"') {
@@ -768,32 +768,32 @@ SJSONValue SJSONValue::parseString(const string& val, size_t offset, size_t& con
     return returnVal;
 }
 
-SJSONValue SJSONValue::parseNull(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseNull(const string& val, size_t offset, size_t& consumed) {
     if (val[offset] == 'n' && val[offset + 1] == 'u' && val[offset + 2] == 'l' && val[offset + 3] == 'l') {
         consumed = 4;
-        return SJSONValue(JSON_NULL);
+        return SJSON(JSON_NULL);
     }
     throw SJSONParseException(val.substr(max((size_t)0, offset - 20), 40), consumed);
 }
 
-SJSONValue SJSONValue::parseBool(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseBool(const string& val, size_t offset, size_t& consumed) {
     if (val[offset] == 't' && val[offset + 1] == 'r' && val[offset + 2] == 'u' && val[offset + 3] == 'e') {
         consumed = 4;
-        SJSONValue temp(JSON_BOOL);
+        SJSON temp(JSON_BOOL);
         temp.getBool() = true;
         return temp;
     }
     if (val[offset] == 'f' && val[offset + 1] == 'a' && val[offset + 2] == 'l' && val[offset + 3] == 's'
         && val[offset + 4] == 'e') {
         consumed = 5;
-        SJSONValue temp(JSON_BOOL);
+        SJSON temp(JSON_BOOL);
         temp.getBool() = false;
         return temp;
     }
     throw SJSONParseException(val.substr(max((size_t)0, offset - 20), 40), consumed);
 }
 
-SJSONValue SJSONValue::parseNumber(const string& val, size_t offset, size_t& consumed) {
+SJSON SJSON::parseNumber(const string& val, size_t offset, size_t& consumed) {
     // Pointers to the end of parsing for both strings and doubles.
     char* dend = nullptr;
     char* iend = nullptr;
@@ -808,7 +808,7 @@ SJSONValue SJSONValue::parseNumber(const string& val, size_t offset, size_t& con
     }
 
     // Store value here.
-    SJSONValue temp(JSON_NUMBER);
+    SJSON temp(JSON_NUMBER);
 
     // See how much string each parsed.
     size_t iconsumed = iend - &val[offset];

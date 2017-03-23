@@ -13,7 +13,7 @@ class SJSONParseException : public exception {
 };
 
 // The abstract base class.
-class SJSONValue {
+class SJSON {
   public:
 
     // The possible types of a JSON value.
@@ -34,56 +34,56 @@ class SJSONValue {
     string stringValue();
 
     // Constructor/destructor.
-    SJSONValue(Type t);
-    ~SJSONValue();
+    SJSON(Type t);
+    ~SJSON();
 
     // This constructor exists mainly to allow operator[] to work as expected when these are stored in maps, by
     // creating a default value (which may immediately be replaced).
-    SJSONValue();
+    SJSON();
 
     // Move constructor.
-    SJSONValue(SJSONValue&& other);
+    SJSON(SJSON&& other);
 
     // Copy constructor.
-    SJSONValue(const SJSONValue& other);
+    SJSON(const SJSON& other);
 
     // Various overloaded constructors.
-    SJSONValue(const bool& b);
-    SJSONValue(const string& s);
-    SJSONValue(const char* s);
+    SJSON(const bool& b);
+    SJSON(const string& s);
+    SJSON(const char* s);
 
     // Templated for any integral/floating point type.
     template <typename T>
-    SJSONValue(const T& item, typename std::enable_if<std::is_integral<T>::value>::type* t = 0);
+    SJSON(const T& item, typename std::enable_if<std::is_integral<T>::value>::type* t = 0);
     template <typename T>
-    SJSONValue(const T& item, typename std::enable_if<std::is_floating_point<T>::value>::type* t = 0);
+    SJSON(const T& item, typename std::enable_if<std::is_floating_point<T>::value>::type* t = 0);
 
     // Move assignment operator.
-    SJSONValue& operator=(SJSONValue&& other);
+    SJSON& operator=(SJSON&& other);
 
     // Copy assignment operator.
-    SJSONValue& operator=(const SJSONValue& other);
+    SJSON& operator=(const SJSON& other);
 
     // Various overloaded assignment operators.
     template <typename T>
-    typename enable_if<is_integral<T>::value, SJSONValue&>::type operator=(const T& item);
+    typename enable_if<is_integral<T>::value, SJSON&>::type operator=(const T& item);
     template <typename T>
-    typename enable_if<is_floating_point<T>::value, SJSONValue&>::type operator=(const T& item);
-    SJSONValue& operator=(const bool& b);
-    SJSONValue& operator=(const string& s);
-    SJSONValue& operator=(const char* s);
+    typename enable_if<is_floating_point<T>::value, SJSON&>::type operator=(const T& item);
+    SJSON& operator=(const bool& b);
+    SJSON& operator=(const string& s);
+    SJSON& operator=(const char* s);
 
     // This throws on values that are not Object.
-    SJSONValue& operator[](const string& key);
+    SJSON& operator[](const string& key);
 
     // Const version of above.
-    const SJSONValue& operator[](const string& key) const;
+    const SJSON& operator[](const string& key) const;
 
     // This throws on values that are not Array.
-    SJSONValue& operator[](size_t pos);
+    SJSON& operator[](size_t pos);
 
     // Create JSON Values from strings.
-    static SJSONValue deserialize(const string& val);
+    static SJSON deserialize(const string& val);
 
     // return the type of the object.
     Type type() const { return _type; }
@@ -93,17 +93,17 @@ class SJSONValue {
 
     // Take ownership of JSON value and push on our array. Throws if not an array, in which case the argument is
     // unaffected.
-    void push_back(SJSONValue&& val);
+    void push_back(SJSON&& val);
 
     // Same as above, but makes a copy.
-    void push_back(const SJSONValue& val);
+    void push_back(const SJSON& val);
 
     // Return the value of the object. These each throw an exception in the case that the object type doesn't match the
     // accessor being called. There is no 'getNull'.
     bool& getBool();
     string& getString();
-    list<SJSONValue>& getArray();
-    map<string, SJSONValue>& getObject();
+    list<SJSON>& getArray();
+    map<string, SJSON>& getObject();
 
     // The numeric operations do not return references, but values, so that we can maintain type-safety. All
     // conversions are handled automatically. The type still must be JSON_NUMBER or these ill throw.
@@ -126,38 +126,38 @@ class SJSONValue {
     void* _value;
 
     // Recursive deserialization functions.
-    static SJSONValue deserialize(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseString(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseNull(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseBool(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseNumber(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseObject(const string& val, size_t offset, size_t& consumed);
-    static SJSONValue parseArray(const string& val, size_t offset, size_t& consumed);
+    static SJSON deserialize(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseString(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseNull(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseBool(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseNumber(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseObject(const string& val, size_t offset, size_t& consumed);
+    static SJSON parseArray(const string& val, size_t offset, size_t& consumed);
 };
 
 
 // Template function implementations for this class.
 template <typename T>
-typename enable_if<is_integral<T>::value, SJSONValue&>::type SJSONValue::operator=(const T& item)
+typename enable_if<is_integral<T>::value, SJSON&>::type SJSON::operator=(const T& item)
 {
     // Explicitly call the destructor to free existing values.
-    this->~SJSONValue();
+    this->~SJSON();
     _type = JSON_NUMBER;
     _value = new Number;
     setInt(item);
 }
 template <typename T>
-typename enable_if<is_floating_point<T>::value, SJSONValue&>::type SJSONValue::operator=(const T& item)
+typename enable_if<is_floating_point<T>::value, SJSON&>::type SJSON::operator=(const T& item)
 {
     // Explicitly call the destructor to free existing values.
-    this->~SJSONValue();
+    this->~SJSON();
     _type = JSON_NUMBER;
     _value = new Number;
     setDouble(item);
 }
 
 template <typename T>
-SJSONValue::SJSONValue(const T& item, typename std::enable_if<std::is_integral<T>::value>::type* t) {
+SJSON::SJSON(const T& item, typename std::enable_if<std::is_integral<T>::value>::type* t) {
     _type = JSON_NUMBER;
     _value = new Number;
     Number& v = *static_cast<Number*>(_value);
@@ -166,7 +166,7 @@ SJSONValue::SJSONValue(const T& item, typename std::enable_if<std::is_integral<T
 }
 
 template <typename T>
-SJSONValue::SJSONValue(const T& item, typename std::enable_if<std::is_floating_point<T>::value>::type* t) {
+SJSON::SJSON(const T& item, typename std::enable_if<std::is_floating_point<T>::value>::type* t) {
     _type = JSON_NUMBER;
     _value = new Number;
     Number& v = *static_cast<Number*>(_value);

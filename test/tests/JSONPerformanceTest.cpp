@@ -45,7 +45,7 @@ struct JSONPerformanceTest : tpunit::TestFixture
 
         for (size_t i = 0; i < iterations; i++) {
             start = STimeNow();
-            const SJSONValue value = SJSONValue::deserialize(policy);
+            const SJSON value = SJSON::deserialize(policy);
             parseTime += STimeNow() - start;
 
             start = STimeNow();
@@ -74,7 +74,7 @@ struct JSONPerformanceTest : tpunit::TestFixture
 
         for (size_t i = 0; i < iterations; i++) {
             start = STimeNow();
-            const SJSONValue value = SJSONValue::deserialize(policy);
+            const SJSON value = SJSON::deserialize(policy);
             parseTime += STimeNow() - start;
 
             start = STimeNow();
