@@ -182,10 +182,10 @@ string SCollapse(const string& lhs) {
         if (isspace(*c)) {
             // Only add if not already whitespace
             if (!inWhite)
-                out += *c;
+                out += ' ';
             inWhite = true;
         } else {
-            // Not whitespace,a dd
+            // Not whitespace, add
             out += *c;
             inWhite = false;
         }
