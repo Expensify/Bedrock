@@ -282,10 +282,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         if (mergeIntoID) {
             // Update the existing job.
             if(!db.write("UPDATE JOBS SET "
-                         "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " + 
-                         "data     = json_patch(data, " + safeData + "), " +
-                         "priority = " + SQ(priority) + " " + 
-                     "WHERE jobID = " + SQ(mergeIntoID) + ";"))
+                           "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " +
+                           "data     = JSON_PATCH(data, " + safeData + "), " +
+                           "priority = " + SQ(priority) + " " +
+                         "WHERE jobID = " + SQ(mergeIntoID) + ";"))
              {
                  throw "502 update query failed";
              }
