@@ -210,7 +210,7 @@ int main(int argc, char* argv[]) {
         cout << "-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to "
                 "enable/disable)"
              << endl;
-        cout << "-maxJournalSize <#commits>  Number of commits to retainin the historical journal (default 1000000)"
+        cout << "-maxJournalSize <#commits>  Number of commits to retain in the historical journal (default 1000000)"
              << endl;
         cout << endl;
         cout << "Quick Start Tips:" << endl;
