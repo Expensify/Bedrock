@@ -4,87 +4,109 @@
 #include "BedrockNode.h"
 #include "BedrockPlugin.h"
 
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-/// BedrockServer
-/// ---------
 class BedrockServer : public STCPServer {
   public: // External Bedrock
-    // A synchronized queue of messages for enabling the main, read, and write
-    // threads to communicate safely.
-    //
-    class MessageQueue {
+
+    class MessageQueue : public SSynchronizedQueue<SData> {
       public:
-        // Constructor / Destructor
-        MessageQueue();
-        ~MessageQueue();
+        bool cancel(const string& name, const string& value) {
+            SAUTOLOCK(_queueMutex);
+            // Loop across and see if we can find it; if so, cancel
+            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
+                if ((*queueIt)[name] == value) {
+                    // Found it
+                    _queue.erase(queueIt);
+                    return true;
+                }
+            }
 
-        // Explicitly delete copy constructor so it can't accidentally get called.
-        MessageQueue(const MessageQueue& other) = delete;
-
-        // Wait for something to be put onto the queue
-        int preSelect(fd_map& fdm);
-        void postSelect(fd_map& fdm, int bytesToRead = 1);
-
-        // Synchronized interface to add/remove work
-        void push(const SData& rhs);
-        SData pop();
-        bool empty();
-        bool cancel(const string& name, const string& value);
-
-      private:
-        // Private state
-        list<SData> _queue;
-        recursive_mutex _queueMutex;
-        int _pipeFD[2] = {-1, -1};
+            // Didn't find it
+            return false;
+        }
     };
 
-    // All the data required for a thread to create an BedrockNode
-    // and coordinate with other threads.
-    struct Thread {
-        Thread(const string& name_,                         // Thread name
-               SData args_,                                 // Command line args passed in.
-               SSynchronized<SQLCState>& replicationState_, // Shared var for communicating replication thread's status.
-               SSynchronized<uint64_t>& replicationCommitCount_, // Shared var for communicating replication thread's
-                                                                 // commit count (for sticky connections)
-               SSynchronized<bool>& gracefulShutdown_, // Shared var for communicating shutdown status between threads.
-               SSynchronized<string>& masterVersion_, // Shared var for communicating the master version (for knowing if
-                                                      // we should skip the slave peek).
-               MessageQueue& queuedRequests_, // Shared external queue between threads. Queued for read-only thread(s)
-               MessageQueue&
-                   queuedEscalatedRequests_, // Shared external queue between threads. Queued for replication thread
-               MessageQueue& processedResponses_, // Shared external queue between threads. Finished commands ready to
-                                                  // return to client.
-               BedrockServer* server_)            // The server spawning the thread.
-            : name(name_),
-              args(args_),
-              replicationState(replicationState_),
-              replicationCommitCount(replicationCommitCount_),
-              gracefulShutdown(gracefulShutdown_),
-              masterVersion(masterVersion_),
-              queuedRequests(queuedRequests_),
-              queuedEscalatedRequests(queuedEscalatedRequests_),
-              processedResponses(processedResponses_),
-              ready(false),
-              server(server_) {
-            // Initialized above
-        }
+    class CommandQueue : public SSynchronizedQueue<SQLiteNode::Command*> {
+      public:
+        bool cancel(const string& name, const string& value) {
+            SAUTOLOCK(_queueMutex);
+            // Loop across and see if we can find it; if so, cancel
+            for (auto queueIt = _queue.begin(); queueIt != _queue.end(); ++queueIt) {
+                if ((*queueIt)->request[name] == value) {
+                    // Found it
+                    _queue.erase(queueIt);
+                    return true;
+                }
+            }
 
-        // Public attributes
-        string name;
-        SData args;
-        SSynchronized<SQLCState>& replicationState;
-        SSynchronized<uint64_t>& replicationCommitCount;
-        SSynchronized<bool>& gracefulShutdown;
-        SSynchronized<string>& masterVersion;
-        MessageQueue& queuedRequests;
-        MessageQueue& queuedEscalatedRequests;
-        MessageQueue& processedResponses;
+            // Didn't find it
+            return false;
+        }
+    };
+
+    class ThreadData {
+      public:
+        ThreadData(string name_, SData args_, SSynchronized<SQLCState>& replicationState_,
+                   atomic<uint64_t>& replicationCommitCount_, atomic<bool>& gracefulShutdown_,
+                   SSynchronized<string>& masterVersion_, MessageQueue& queuedRequests_,
+                   MessageQueue& processedResponses_, CommandQueue& escalatedCommands_, CommandQueue& peekedCommands_,
+                   BedrockServer* server_) :
+            name(name_),
+            args(args_),
+            replicationState(replicationState_),
+            replicationCommitCount(replicationCommitCount_),
+            gracefulShutdown(gracefulShutdown_),
+            masterVersion(masterVersion_),
+            queuedRequests(queuedRequests_),
+            processedResponses(processedResponses_),
+            escalatedCommands(escalatedCommands_),
+            peekedCommands(peekedCommands_),
+            server(server_),
+            threadObject() {}
+
         MessageQueue directMessages;
-        void* thread;
-        SSynchronized<bool> ready;
+
+        // Thread's name.
+        string name;
+
+        // Command line args passed in.
+        SData args;
+
+        // Shared var for communicating replication thread's status.
+        SSynchronized<SQLCState>& replicationState;
+
+        // Shared var for communicating replication thread's commit count (for sticky connections)
+        atomic<uint64_t>& replicationCommitCount;
+
+        // Shared var for communicating shutdown status between threads.
+        atomic<bool>& gracefulShutdown;
+
+        // Shared var for communicating the master version (for knowing if we should skip the slave peek).
+        SSynchronized<string>& masterVersion;
+
+        // Shared external queue containing requests from the client, from the
+        // main thread to the worker/sync threads.
+        MessageQueue& queuedRequests;
+
+        // Shared external queue containing finished responses from the
+        // worker/sync threads, ready to be sent back to the client by the main
+        // thread.
+        MessageQueue& processedResponses;
+
+        // Shared internal queue containing commands escalated from slaves to
+        // the master sync thread, sent to the master worker threads for
+        // processing.
+        CommandQueue& escalatedCommands;
+
+        // Shared internal queue containing commands that have already been
+        // peeked by a worker thread, but that need final processing by the
+        // sync thread.
+        CommandQueue& peekedCommands;
+
+        // The server this thread is running in.
         BedrockServer* server;
-        bool finished = false;
+
+        // The actual thread object associated with this data object. This is set after initialization.
+        thread threadObject;
     };
 
     // Constructor / Destructor
@@ -114,28 +136,45 @@ class BedrockServer : public STCPServer {
     const string& getVersion();
 
     // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
-    // read loop on the write thread.
+    // read loop on the sync thread.
     list<list<SHTTPSManager*>> httpsManagers;
 
-    // Keeps track of the time we spend idle.
-    SPerformanceTimer pollTimer;
+    // Called by a BedrockNode when it needs to make an escalated request available externally.
+    void enqueueCommand(SQLiteNode::Command* command);
 
   private: // Internal Bedrock
     // Attributes
     SData _args;
     uint64_t _requestCount;
     map<uint64_t, Socket*> _requestCountSocketMap;
-    Thread* _writeThread;
-    list<Thread*> _readThreadList;
+    list<ThreadData> _workerThreadList;
     SSynchronized<SQLCState> _replicationState;
-    SSynchronized<uint64_t> _replicationCommitCount;
-    SSynchronized<bool> _nodeGracefulShutdown;
+    atomic<uint64_t> _replicationCommitCount;
+    atomic<bool> _nodeGracefulShutdown;
     SSynchronized<string> _masterVersion;
     MessageQueue _queuedRequests;
-    MessageQueue _queuedEscalatedRequests;
     MessageQueue _processedResponses;
+
+    // Two queues for communicating escalated requests out from the sync thread to workers, and then when
+    // completed, communicating those responses back to the sync thread.
+    CommandQueue _escalatedCommands;
+    CommandQueue _peekedCommands;
+
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
     map<Port*, BedrockPlugin*> _portPluginMap;
     string _version;
+    ThreadData _syncThread;
+
+    // Static attributes
+    static void worker(ThreadData& data, int threadId, int threadCount);
+    static void syncWorker(ThreadData& data);
+
+    // Used to communicate to workers threads that the sync thread is ready.
+    static condition_variable _threadInitVar;
+    static mutex _threadInitMutex;
+    static bool _threadReady;
+
+    // **DMB: Why is this here?
+    static BedrockNode* _syncNode;
 };

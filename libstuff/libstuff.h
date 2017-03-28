@@ -1,49 +1,44 @@
-// --------------------------------------------------------------------------
-// libstuff.h
-// --------------------------------------------------------------------------
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
 
-// Include relevant headers
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+// C library
 #include <arpa/inet.h>
-#include <syslog.h>
-#include <unistd.h>
 #include <fcntl.h>
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
-#include <poll.h>
-#include <time.h>
 #include <libgen.h>   // for basename()
-#include <sys/time.h> // for gettimeofday()
+#include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
-#include <pthread.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/time.h> // for gettimeofday()
+#include <sys/types.h>
+#include <syslog.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
 
-// --------------------------------------------------------------------------
-// Initialization / Shutdown
-// --------------------------------------------------------------------------
-// Initialize libstuff on every thread before calling any of its functions
-void SInitialize();
-
-// --------------------------------------------------------------------------
-// Standard Template Library stuff
-// --------------------------------------------------------------------------
-// Include the files
-#include <map>
-#include <string>
-#include <list>
+// STL
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <condition_variable>
 #include <iostream>
-#include <sstream>
-#include <vector>
+#include <list>
+#include <map>
+#include <mutex>
 #include <random>
 #include <set>
-#include <algorithm>
-#include <stdlib.h>
-#include <mutex>
-#include <cctype>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
 using namespace std;
+
+// Custom libraries.
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+
+// Initialize libstuff on every thread before calling any of its functions
+void SInitialize(string threadName = "");
 
 // --------------------------------------------------------------------------
 // Assertion stuff
@@ -84,7 +79,7 @@ using namespace std;
     } while (false)
 
 // --------------------------------------------------------------------------
-// A very simple name/value pair table with case-insensitive name maching
+// A very simple name/value pair table with case-insensitive name matching
 // --------------------------------------------------------------------------
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
 class STableComp : binary_function<string, string, bool> {
@@ -161,7 +156,7 @@ struct SData {
 };
 
 // --------------------------------------------------------------------------
-// Time stuff
+// Time stuff TODO: Replace with std::chrono
 // --------------------------------------------------------------------------
 #define STIME_US_PER_MS ((uint64_t)1000)
 #define STIME_US_PER_S ((uint64_t)1000 * STIME_US_PER_MS)
@@ -249,18 +244,17 @@ void SLogStackTrace();
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
     do {                                                                                                               \
-        SThreadLocalStorage* tls = SThreadGetLocalStorage();                                                           \
         if (_g_SLogMask & (1 << (_PRI_))) {                                                                            \
             ostringstream __out;                                                                                       \
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
-            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                  \
-                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                          \
+            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
+                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                              \
         }                                                                                                              \
     } while (false)
 
 #define SWHEREAMI                                                                                                      \
-    tls->logPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << tls->name \
+    SThreadLogPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << SThreadLogName \
                    << "] "
 
 #define SLOGPREFIX ""
@@ -288,31 +282,20 @@ void SLogStackTrace();
 // --------------------------------------------------------------------------
 // Thread stuff
 // --------------------------------------------------------------------------
-// Light wrapper around thread functions
-void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& threadName = "", size_t stackSize = 0);
-void SThreadClose(void* thread);
-void SThreadSleep(uint64_t delay);
 
-// Thread local storage
-struct SThreadLocalStorage {
-    // Attributes
-    void (*proc)(void* procData);
-    void* procData;
-    string name;
-    string logPrefix;
-    SData data;
-};
-
-SThreadLocalStorage* SThreadGetLocalStorage();
+// Each thread gets its own thread-local log prefix.
+extern thread_local string SThreadLogPrefix;
+extern thread_local string SThreadLogName;
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
+void SLogSetThreadName(const string& name);
 
 struct SAutoThreadPrefix {
     // Set on construction; reset on destruction
     SAutoThreadPrefix(const string& prefix) {
         // Retain the old prefix
-        oldPrefix = SThreadGetLocalStorage()->logPrefix;
+        oldPrefix = SThreadLogPrefix;
 
         // Only change if we have something
         if (!prefix.empty()) {
@@ -328,7 +311,7 @@ struct SAutoThreadPrefix {
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX##__LINE__(_PREFIX_)
 
 // Automatically locks/unlocks a mutex by scope
-#define SAUTOLOCK(_MUTEX_) lock_guard<recursive_mutex> __SAUTOLOCK_##__LINE__(_MUTEX_);
+#define SAUTOLOCK(_MUTEX_) lock_guard<decltype(_MUTEX_)> __SAUTOLOCK_##__LINE__(_MUTEX_);
 
 // Convenient interface for multi-threaded, synchronized variables.
 template <typename T> class SSynchronized {
@@ -717,19 +700,17 @@ template <typename Container> string SQList(const Container& valueList) {
 
 void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
-bool SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
-                   int64_t warnThreshold = 1000 * STIME_US_PER_MS);
-inline bool SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
+
+// Returns an SQLite result code.
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
+           int64_t warnThreshold = 1000 * STIME_US_PER_MS);
+inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
     SQResult ignore;
     return SQuery(db, e, sql, ignore, warnThreshold);
 }
-#define SSTR(_val_) #_val_
-#define __SLINE__ SSTR(__LINE__)
-#define SQUERY(_db_, _query_, _result_) SQuery(_db_, __FILE__ __SLINE__, (string)_query_, _result_)
-#define SQUERYIGNORE(_db_, _query_) SQuery(_db_, __FILE__ __SLINE__, (string)_query_)
-#define SASSERTQUERY(_db_, _query_, _result_) SASSERT(SQUERY(_db_, _query_, _result_))
-#define SASSERTQUERYIGNORE(_db_, _query_) SASSERT(SQUERYIGNORE(_db_, _query_))
+
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
+bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
 // --------------------------------------------------------------------------
 inline string STIMESTAMP(uint64_t when) { return SQ(SComposeTime("%Y-%m-%d %H:%M:%S", when)); }
@@ -815,9 +796,11 @@ struct STestTimer {
 #include "STCPNode.h"
 #include "SDataClient.h"
 #include "SHTTPSManager.h"
+#include "SSynchronizedQueue.h"
 
 // Other libstuff headers.
 #include "SRandom.h"
 #include "SPerformanceTimer.h"
+#include "SLockTimer.h"
 
 #endif	// LIBSTUFF_H

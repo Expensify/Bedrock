@@ -1,6 +1,11 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
 
+// This is a hack so that we can support 'special' Status commands, but it really breaks encapsulation entirely.
+#include <plugins/Status.h>
+
+atomic<int> SQLiteNode::_commandCount(0);
+
 /// Introduction
 /// ------------
 /// SQLiteNode builds atop STCPNode and SQLite to provide a distributed
@@ -63,30 +68,33 @@ const char* SQLCStateNames[] = {"SEARCHING", "SYNCHRONIZING", "WAITING",     "ST
                                 "MASTERING", "STANDINGDOWN",  "SUBSCRIBING", "SLAVING"};
 const char* SQLCConsistencyLevelNames[] = {"ASYNC", "ONE", "QUORUM"};
 
+// Initializations for static vars.
+bool SQLiteNode::_haveUnsentTransactions = false;
+uint64_t SQLiteNode::_lastSentTransactionID = 0;
+
 // --------------------------------------------------------------------------
 SQLiteNode::SQLiteNode(const string& filename, const string& name, const string& host, int priority, int cacheSize,
-                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int quorumCheckpoint,
-                       const string& synchronousCommands, bool readOnly, int maxJournalSize)
+                       int autoCheckpoint, uint64_t firstTimeout, const string& version, int threadId, int threadCount,
+                       int quorumCheckpoint, const string& synchronousCommands, bool worker, int maxJournalSize)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(filename, cacheSize, autoCheckpoint, readOnly, maxJournalSize), _processTimer("process()"),
-      _commitTimer("COMMIT")
+      _db(filename, cacheSize, autoCheckpoint, false, maxJournalSize, threadId, threadCount - 1),
+      _processTimer("process()"), _commitTimer("COMMIT")
     {
-    SASSERT(readOnly || !portList.empty());
+    SASSERT(worker || !portList.empty());
     SASSERT(priority >= 0);
     // Initialize
     _priority = priority;
-    _state = SQLC_SEARCHING;
+    _setState(SQLC_SEARCHING);
     _currentCommand = nullptr;
     _syncPeer = nullptr;
     _masterPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
-    _commandCount = 0;
     _version = version;
     _commitsSinceCheckpoint = 0;
     _quorumCheckpoint = quorumCheckpoint;
     _synchronousCommands = SParseList(SToLower(synchronousCommands));
     _synchronousCommands.push_back("upgradedatabase");
-    _readOnly = readOnly;
+    _worker = worker;
 
     // Get this party started
     _changeState(SQLC_SEARCHING);
@@ -192,57 +200,165 @@ bool SQLiteNode::shutdownComplete() {
     }
 }
 
-void SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
+bool SQLiteNode::processCommand(Command* command) {
+    return _processCommandWrapper(_db, command);
+}
+
+bool SQLiteNode::commit() {
+    SQLITE_COMMIT_AUTOLOCK;
+
+    if (!_db.prepare()) {
+        return false;
+    }
+
+    if (_db.getUncommittedHash().empty()) {
+        return true;
+    }
+    // No prepare() call here because it's handled in process
+
+    int errorCode = _db.commit();
+    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+        SINFO("Commit conflict, rolling back.");
+        _db.rollback();
+        return false; // Commit conflicted.
+    }
+    _haveUnsentTransactions = true;
+    return true; // Commit succeeded.
+}
+
+void SQLiteNode::_sendOutstandingTransactions() {
+    SQLITE_COMMIT_AUTOLOCK;
+
+    // Make sure we have something to do.
+    if (!_haveUnsentTransactions) {
+        return;
+    }
+
+    auto transactions = _db.getCommittedTransactions();
+
+    for (auto& i : transactions) {
+
+        uint64_t id = i.first;
+
+        if (id <= _lastSentTransactionID) {
+            continue;
+        }
+
+        string& query = i.second.first;
+        string& hash = i.second.second;
+
+        SData transaction("BEGIN_TRANSACTION");
+        transaction["Command"] = "ASYNC";
+        transaction["NewCount"] = to_string(id);
+        transaction["NewHash"] = hash;
+        transaction["ID"] = "ASYNC_" + to_string(id);
+        transaction.content = query;
+
+        _sendToAllPeers(transaction, true); // subscribed only
+        SFOREACH (list<Peer*>, peerList, peerIt) {
+            // Clear the response flag from the last transaction
+            Peer* peer = *peerIt;
+            (*peer)["TransactionResponse"].clear();
+        }
+
+        SData commit("COMMIT_TRANSACTION");
+        commit["ID"] = transaction["ID"];
+
+        commit["CommitCount"] = transaction["NewCount"];
+        commit["Hash"] = hash;
+
+        _sendToAllPeers(commit, true); // subscribed only
+
+        _lastSentTransactionID = id;
+    }
+
+    _haveUnsentTransactions = false;
+}
+
+bool SQLiteNode::_processCommandWrapper(SQLite& db, Command* command) {
     // Measure elapsed time and add to processing
     uint64_t start = STimeNow();
     _processTimer.start();
-    _processCommand(db, command);
+    bool result = _processCommand(db, command);
+    command->processed++;
     _processTimer.stop();
     command->processingTime += STimeNow() - start;
+    return result;
 }
 
 bool SQLiteNode::_peekCommandWrapper(SQLite& db, Command* command) {
     // Measure elapsed time and add to processing
     uint64_t start = STimeNow();
     bool result = _peekCommand(db, command);
+    command->peeked++;
     command->processingTime += STimeNow() - start;
     return result;
 }
 
-// --------------------------------------------------------------------------
-SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority, bool unique,
-                                             int64_t commandExecuteTime) {
-    SASSERT(!request.empty());
-    SASSERT(priority <= SPRIORITY_MAX); // Else will trump UpgradeDatabase
-    // If unique, then make sure another one isnt on the queue already.
-    SAUTOPREFIX(request["requestID"]);
-    if (unique)
-        SFOREACHPRIORITYQUEUE(Command*, _queuedCommandMap, commandIt)
-    if ((*commandIt)->request.methodLine == request.methodLine) {
-        // Already got one.  No thanks.
-        SINFO("'" << request.methodLine << " already in queue, ignoring");
-        return NULL;
+SQLiteNode::Command* SQLiteNode::reopenCommand(SQLiteNode::Command* existingCommand) {
+    // If there's already a response to this command, we must have finished it somewhere else (presumably, wherever we
+    // called `reopenCommand` from. We'll simply clean up here.
+    if (!existingCommand->response.empty()) {
+        SINFO("Reopening and finishing command. " << existingCommand->id);
+        return _finishCommand(existingCommand);
     }
 
-    // Wrap in a command for processing
-    const string& id = name + "#" + SToStr(_commandCount++);
-    Command* command = new Command;
-    command->id = id;
-    command->request = request;
-    command->priority = priority;
+    // No response? We must not have processed this. Let's process it now.
+    SINFO("Reopening command from the start. " << existingCommand->id);
+    return _openCommand(existingCommand);
+}
 
-    // If we want to execute the command at a particular time.
-    // **FIXME: This is not preserved if we escalate this command.
-    //          That's fine for now given our use case for it, but
-    //          may not be the case in the future.
-    int64_t now = STimeNow();
+SQLiteNode::Command* SQLiteNode::createCommand(const SData& request) {
+
+    // Create our new command.
+    Command* command = new Command;
+
+    // Save it's request info.
+    command->request = request;
+
+    // Give it a unique name.
+    command->id = name + "#" + SToStr(_commandCount.fetch_add(1));
+
+    // Set it's creationTimestamp.
+    command->creationTimestamp = request.calc64("creationTimestamp");
+    uint64_t commandExecuteTime = request.calc64("commandExecuteTime");
+    uint64_t now = STimeNow();
     if (commandExecuteTime > now) {
         command->creationTimestamp = commandExecuteTime;
-        SINFO("Scheduling command " << command->id << " for "
-                                    << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
-                                    << "s in the future.");
+    }
+    if (!command->creationTimestamp) {
+        command->creationTimestamp = now;
     }
 
+    // If it's specified priority info, set it.
+    if (!request["priority"].empty()) {
+        int priority = request.calc("priority");
+        if (SWITHIN(Command::SPRIORITY_MIN, priority, Command::SPRIORITY_MAX)) {
+            command->priority = priority;
+        } else {
+            SWARN("Invalid priority " << request["priority"] << ". Ignoring");
+        }
+    }
+
+    return command;
+}
+
+SQLiteNode::Command* SQLiteNode::openCommand(const SData& request) {
+    SASSERT(!request.empty());
+    SAUTOPREFIX(request["requestID"]);
+
+    // Wrap in a command for processing
+    Command* command = createCommand(request);
+
+    if (!command->response.empty()) {
+        SINFO("Command has non-empty response. Someone already processed it. " << command->id << ":" << request.methodLine);
+        _finishCommand(command);
+    }
+
+    return _openCommand(command);
+}
+
+SQLiteNode::Command* SQLiteNode::_openCommand(SQLiteNode::Command* command) {
     // Pre-process this command if we're MASTER or SLAVE.
     //
     // **NOTE: This is only a "best attempt" -- if the node isn't MASTERING or
@@ -254,34 +370,27 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     // **NOTE: It's possible the node's state will change after peeking and before
     //         the command is either begun or escalated.
     //
+
+    // If we want to execute the command at a particular time.
+    // **FIXME: This is not preserved if we escalate this command.
+    //          That's fine for now given our use case for it, but
+    //          may not be the case in the future.
+    int64_t now = STimeNow();
+    if (command->creationTimestamp > STimeNow()) {
+        SINFO("Scheduling command " << command->id << " (" << command->request.methodLine << ") for "
+                                    << (((int64_t)command->creationTimestamp - now) / STIME_US_PER_S)
+                                    << "s in the future.");
+    }
+
+    const SData& request = command->request;
     bool nodeUpToDate = request["commitCount"].empty() || request.calcU64("commitCount") <= getCommitCount();
     bool peekIt = (_state == SQLC_MASTERING || _state == SQLC_SLAVING) && (int64_t)command->creationTimestamp <= now &&
                   nodeUpToDate;
 
     // Process status commands special, as we never want to escalate to the master
     bool forcePeekIt = false;
-    if (SIEquals(request.methodLine, "Status")) {
-        // If we're a slave, we never want to escalate this to the master, else
-        // it'll return the master's status (which will be super confusion).
-        // However, if we're a read only thread on a slave, then we *do* want
-        // to escalate to the write thread -- because only the write thread
-        // knows the peer status (which is the primary point of this command).
-        // So, we want to peek if we're *not* read only.  This way:
-        //
-        // - If we're a read thread on the slave, we *don't* peek -- instead,
-        //   we escalate this internally to the write thread
-        //
-        // - If we're a write thread on a slave, we *do* peek -- this will
-        //   return the peer status from the perspective of this slave.
-        //
-        // - If we're a read thread on the master, again, we still *don't*
-        //   peek, as we want the master's write thread's status
-        //
-        // - If we're a write thread on the master, we *do* peek.
-        forcePeekIt = !_readOnly;
-        peekIt = !_readOnly;
-    } else if (SIEquals(request.methodLine, "Ping") || SIEquals(request.methodLine, "GET /status/isSlave HTTP/1.1") ||
-               SIEquals(request.methodLine, "GET /status/handlingCommands HTTP/1.1")) {
+    if (find(BedrockPlugin_Status::statusCommandNames.begin(), BedrockPlugin_Status::statusCommandNames.end(),
+             request.methodLine) != BedrockPlugin_Status::statusCommandNames.end()) {
         // Force peek these always -- even if read only -- because any read
         // thread knows our status, and thus can handle these.
         forcePeekIt = true;
@@ -298,11 +407,14 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
             SHMMM("Skipping slave peek because our version (" << _version << ") doesn't match master ("
                                                               << getMasterVersion() << ").");
             peekIt = false;
+        } else if (command->httpsRequest) {
+            SINFO("Not peeking command with HTTPS request, already peeked.");
+            peekIt = false;
         }
 
         // Don't process if we are not the master of the majority.  A split
         // brain could occur if we are the master of less than half of the peers.
-        if (_state == SQLC_MASTERING) {
+        else if (_state == SQLC_MASTERING) {
             // We need at least half the non-permaslave peers to form a majority in order to commit.
             int numFullPeers = 0;
             int numFullSlaves = 0;
@@ -320,7 +432,7 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
     if ((peekIt || forcePeekIt) && _peekCommandWrapper(_db, command)) {
         // Done with this command.  Make sure it only started a secondary command
         // if we are in fact mastering.
-        SINFO("Processed peekable command '" << request.methodLine << "' (" << id << ")");
+        SINFO("Processed peekable command '" << request.methodLine << "' (" << command->id << ")");
         SASSERTWARN(_state == SQLC_MASTERING || !command->httpsRequest);
         _processedCommandList.push_back(command);
     } else if (_masterPeer && SIEquals((*_masterPeer)["State"], "MASTERING")) {
@@ -331,8 +443,8 @@ SQLiteNode::Command* SQLiteNode::openCommand(const SData& request, int priority,
         _escalateCommand(command);
     } else {
         // Queue it.
-        SINFO("Queuing new non-peekable command '" << request.methodLine << "' (" << id << "), priority=" << priority
-                                                   << (!nodeUpToDate ? " because node out of date." : ""));
+        SINFO("Queuing new non-peekable command '" << request.methodLine << "' (" << command->id << "), priority="
+              << command->priority << (!nodeUpToDate ? " because node out of date." : ""));
         _queueCommand(command);
     }
 
@@ -433,7 +545,7 @@ void SQLiteNode::clearCommandHolds(const string& heldBy) {
 void SQLiteNode::closeCommand(Command* command) {
     SASSERT(command);
     // Note that we've closed the command
-    SDEBUG("Closing command '" << command->id << "'");
+    SDEBUG("Closing command '" << command->id << "'.");
 
     // Verify the command has completed before closing.  Three exceptions:
     // 1) If we self-initiated the command.  (**FIXME: Why is this ok?)
@@ -441,7 +553,7 @@ void SQLiteNode::closeCommand(Command* command) {
     //    response if the connection fails.
     // 3) This is a read only node.  In this case, we close a command that
     //    we haven't processed in order to send it to the write thread.
-    if (!command->initiator && command->request["HeldBy"].empty() && !_readOnly) {
+    if (!command->initiator && command->request["HeldBy"].empty() && !_worker) {
         SASSERTWARN(!command->response.empty());
     }
 
@@ -449,8 +561,9 @@ void SQLiteNode::closeCommand(Command* command) {
     //          However, the command is distinct and near the front so using list.erase( ).
     list<Command*>::iterator commandIt =
         ::find(_queuedCommandMap[command->priority].begin(), _queuedCommandMap[command->priority].end(), command);
-    if (commandIt != _queuedCommandMap[command->priority].end())
+    if (commandIt != _queuedCommandMap[command->priority].end()) {
         _queuedCommandMap[command->priority].erase(commandIt);
+    }
 
     // Verify we're not closing a command while it's being worked on
     if (_currentCommand == command) {
@@ -480,7 +593,6 @@ void SQLiteNode::closeCommand(Command* command) {
         _escalatedCommandMap.erase(command->id);
     }
 
-    // Finish the cleanup
     _processedCommandList.remove(command);
     delete command;
 }
@@ -523,10 +635,11 @@ void SQLiteNode::_queueCommand(Command* command) {
         // The caller is requesting some amount of consistency
         int wc = SStateNameToInt(SQLCConsistencyLevelNames, command->request["writeConsistency"],
                                  SQLC_NUM_CONSISTENCY_LEVELS);
-        if (wc >= 0)
+        if (wc >= 0) {
             command->writeConsistency = (SQLCConsistencyLevel)wc;
-        else
+        } else {
             SWARN("Unknown write consistency supplied '" << command->request["writeConsistency"] << "'. Ignoring.");
+        }
         SINFO("'" << command->request.methodLine << "' has overridden default consistency with '"
                   << command->request["writeConsistency"] << "' ("
                   << SQLCConsistencyLevelNames[command->writeConsistency] << ")");
@@ -563,14 +676,16 @@ void SQLiteNode::_queueCommand(Command* command) {
     // at the proper position, based on command timestamp. Start from the back because the proper place
     // for the command is likely near the back.
     if (_queuedCommandMap[command->priority].empty() ||
-        command->creationTimestamp > _queuedCommandMap[command->priority].back()->creationTimestamp)
+        command->creationTimestamp >= _queuedCommandMap[command->priority].back()->creationTimestamp) {
         _queuedCommandMap[command->priority].push_back(command);
-    else
-        SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt)
+    } else {
+        SFOREACH (list<Command*>, _queuedCommandMap[command->priority], commandIt) {
             if (command->creationTimestamp < (*commandIt)->creationTimestamp) {
                 _queuedCommandMap[command->priority].insert(commandIt, command);
                 return;
             }
+        }
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -590,7 +705,7 @@ void SQLiteNode::_escalateCommand(Command* command) {
 }
 
 // --------------------------------------------------------------------------
-void SQLiteNode::_finishCommand(Command* command) {
+SQLiteNode::Command* SQLiteNode::_finishCommand(Command* command) {
     SASSERT(command);
     // Done with this command
     // **FIXME: I'd prefer _cleanCommand() to be in closeCommand(), but it needs
@@ -621,20 +736,27 @@ void SQLiteNode::_finishCommand(Command* command) {
                                                                << ") after " << elapsed / STIME_US_PER_MS
                                                                << " ms (slow)");
         }
-        SASSERT(command->initiator->s);
-        SASSERTWARN((*command->initiator)["Subscribed"] == "true");
-        SData escalate("ESCALATE_RESPONSE");
-        escalate["ID"] = command->id;
-        escalate.content = command->response.serialize();
-        _sendToPeer(command->initiator, escalate);
+        if (command->initiator->s) {
+            SData escalate("ESCALATE_RESPONSE");
+            escalate["ID"] = command->id;
+            escalate.content = command->response.serialize();
+            _sendToPeer(command->initiator, escalate);
+        } else {
+            SWARN("Peer socket died and trying to finish command. Handling disconnect.");
+            _onDisconnect(command->initiator);
+        }
         delete command;
+        return nullptr;
     } else if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
         // Special command, just delete it.
         SINFO("Database upgrade complete");
         delete command;
+        return nullptr;
     } else {
         // Locally-initiated command -- hold onto it until the caller cleans up.
+        // TODO: Probably not for retried commands.
         _processedCommandList.push_back(command);
+        return command;
     }
 }
 
@@ -675,7 +797,7 @@ void SQLiteNode::_finishCommand(Command* command) {
 bool SQLiteNode::update(uint64_t& nextActivity) {
     // Process the database state machine
     switch (_state) {
-    /// - SEARCHING: Wait for a a period and try to connect to all known
+    /// - SEARCHING: Wait for a period and try to connect to all known
     ///     peers.  After a timeout, give up and go ahead with whoever
     ///     we were able to successfully connect to -- if anyone.  The
     ///     logic for this state is as follows:
@@ -694,7 +816,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (shutdownComplete())
             return false; // Don't re-update
 
-        // If no peers, we're the master
+        // If no peers, we're the master, unless we're shutting down.
         if (peerList.empty()) {
             // There are no peers, jump straight to mastering
             SHMMM("No peers configured, jumping to MASTERING");
@@ -956,6 +1078,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         bool allResponded = true;
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
+        if (gracefulShutdown()) {
+            SINFO("Shutting down while standing up, setting state to SEARCHING");
+            _changeState(SQLC_SEARCHING);
+            return true; // Re-update
+        }
         SFOREACH (list<Peer*>, peerList, peerIt) {
             // Check this peer; if not logged in, tacit approval
             Peer* peer = *peerIt;
@@ -1026,6 +1153,13 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
     case SQLC_STANDINGDOWN: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_masterPeer);
+
+        // If there are outstanding transactions to send, then we'll do that, but only if we're not waiting on a
+        // synchronous command to complete. However, it should be impossible for there to be any outstanding
+        // transactions while we wait for a synchronous command to complete
+        if (!_currentCommand) {
+            _sendOutstandingTransactions();
+        }
 
         // Are we waiting for approval of a distributed transaction?
         if (_currentCommand && !_currentCommand->transaction.empty()) {
@@ -1143,6 +1277,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 commandFinished = true;
 
                 // Notify everybody to rollback
+                SWARN("[TY2] ROLLBACK, not approved: " << _currentCommand->id);
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback["ID"] = _currentCommand->id;
                 _sendToAllPeers(rollback, true); // subscribed only
@@ -1153,40 +1288,75 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
             } else if (consistentEnough) {
                 // Commit this distributed transaction.  Either we have quorum, or we don't need it.
                 uint64_t start = STimeNow();
-                _db.commit();
+                int result = _db.commit();
+
+                if (result == SQLITE_BUSY_SNAPSHOT) {
+                    _db.rollback();
+                    _commitTimer.stop();
+
+                    // Notify everybody to rollback
+                    SWARN("ROLLBACK, conflicted on sync: " << _currentCommand->id << " : "
+                          << _currentCommand->request.methodLine);
+                    SData rollback("ROLLBACK_TRANSACTION");
+                    rollback["ID"] = _currentCommand->id;
+                    _sendToAllPeers(rollback, true); // subscribed only
+
+                    // We're done with this, we'll re-open it, and then return from `update` indicating we need to run
+                    // again. We specifically don't call `finishCommand`, as we don't want to send a response to the
+                    // caller.
+                    SQLite::commitLock.unlock();
+
+                    // Make sure the response is empty, and re-open the command.
+                    _currentCommand->response.clear();
+                    reopenCommand(_currentCommand);
+
+                    _currentCommand = nullptr;
+                    return true;
+                } else {
+                    // Record how long it took
+                    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+                    uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
+                                                                         prepareElapsed, commitElapsed, rollbackElapsed);
+                    SINFO("Committed master transaction for '"
+                          << _currentCommand->request.methodLine << "' (" << _currentCommand->id << ") "
+                                                                                                    "#"
+                          << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
+                          << _commitsSinceCheckpoint << " commits since quorum "
+                                                        "(consistencyRequired="
+                          << SQLCConsistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
+                          << numFullPeers << " approved "
+                                             "("
+                          << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
+                          << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
+                          << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
+                          << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
+
+                    // Try to flush the send buffer here in order to
+                    // prevent the case of the master sending out the
+                    // commits but the next command taking for ever and
+                    // causing the other nodes to timeout.  Note that
+                    // no flush happens before we start processing the
+                    // next commands below.  That situation can result in
+                    // an out of sync db on the master due to the master
+                    // committing and the slaves rolling back on disconnect.
+                    _lastSentTransactionID = getCommitCount();
+
+                    // clear the unsent transactions, we've sent them all (including this one);
+                    _db.getCommittedTransactions();
+
+                    SINFO("Successfully committed: " << _currentCommand->id << ":"
+                          << _currentCommand->request.methodLine
+                          << ". Sending COMMIT_TRANSACTION to peers. Updated _lastSentTransactionID to "
+                          << _lastSentTransactionID);
+                    SData commit("COMMIT_TRANSACTION");
+                    commit["ID"] = _currentCommand->id;
+                    _sendToAllPeers(commit, true); // subscribed only
+                }
+
+                // OK, this might fail.
                 _commitTimer.stop();
                 _currentCommand->processingTime += STimeNow() - start;
                 commandFinished = true;
-
-                // Record how long it took
-                uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-                uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
-                                                                     prepareElapsed, commitElapsed, rollbackElapsed);
-                SINFO("Committed master transaction for '"
-                      << _currentCommand->request.methodLine << "' (" << _currentCommand->id << ") "
-                                                                                                "#"
-                      << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
-                      << _commitsSinceCheckpoint << " commits since quorum "
-                                                    "(consistencyRequired="
-                      << SQLCConsistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
-                      << numFullPeers << " approved "
-                                         "("
-                      << peerList.size() << " total) in " << totalElapsed / STIME_US_PER_MS << " ms ("
-                      << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
-                      << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
-                      << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
-
-                // Try to flush the send buffer here in order to
-                // prevent the case of the master sending out the
-                // commits but the next command taking for ever and
-                // causing the other nodes to timeout.  Note that
-                // no flush happens before we start processing the
-                // next commands below.  That situation can result in
-                // an out of sync db on the master due to the master
-                // committing and the slaves rolling back on disconnect.
-                SData commit("COMMIT_TRANSACTION");
-                commit["ID"] = _currentCommand->id;
-                _sendToAllPeers(commit, true); // subscribed only
             }
 
             // Did we finish the command:
@@ -1195,7 +1365,7 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 _finishCommand(_currentCommand);
                 _currentCommand = nullptr;
 
-                // If we havne't received majority approval, increment how
+                // If we haven't received majority approval, increment how
                 // many commits we've had without a "checkpoint"
                 if (majorityApproved) {
                     // Safe!
@@ -1205,6 +1375,9 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                     // We're going further out on a limb...
                     _commitsSinceCheckpoint++;
                 }
+
+                // Done with this.
+                SQLite::commitLock.unlock();
             } else {
                 // Still waiting
                 SINFO("Waiting to commit: '"
@@ -1218,11 +1391,13 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
         if (_state == SQLC_MASTERING && !_currentCommand) {
             // See if it's time to stand down
             string standDownReason;
+            bool shuttingDown = false;
             if (gracefulShutdown()) {
                 // Graceful shutdown.  Set priority 1 and stand down so
                 // we'll re-connect to the new master and finish up our
                 // commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
+                shuttingDown = true;
                 _priority = 1;
             } else {
                 // Loop across peers
@@ -1251,13 +1426,26 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                 }
             }
 
-            // Do we want to stand down, and can we?
-            if (!standDownReason.empty()) {
-                // Do it
-                SHMMM(standDownReason);
-                _changeState(SQLC_STANDINGDOWN);
-                return true; // Re-update
+            // Historically, if we're shutting down, everything's already processed and handled, but since we now
+            // support other threads processing commands on our behalf, we can end up in the state where we're shutting
+            // down, but we still have either queued or processed commands. In the case that we still have queued
+            // commands to deal with at shutdown, we'll defer switching to STANDINGDOWN for another loop iteration to
+            // handle those commands. And, once we do switch to STANDNGDOWN, we return `true` rather than `false` to
+            // let the caller know it should clean up our command queues, as we may have processed some more commands.
+            if (!shuttingDown || _isQueuedCommandMapEmpty()) {
+                // Do we want to stand down, and can we?
+                if (!standDownReason.empty()) {
+                    // Do it
+                    SHMMM(standDownReason);
+                    _changeState(SQLC_STANDINGDOWN);
+                    SINFO("Standing down: " << standDownReason);
+                    // We might have processed more commands that the caller needs to respond to.
+                    return false;
+                }
+            } else {
+                SWARN("Shutting down but non-empty command queue, running another MASTERING loop.");
             }
+
 
             // Not standing down -- do we have any commands to start?  Only
             // dequeue if we either have no peers configured (meaning
@@ -1371,22 +1559,55 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                             SASSERTWARN(_currentCommand->transaction.empty());
                             SINFO("Starting processing command '" << _currentCommand->request.methodLine << "' ("
                                                                   << _currentCommand->id << ")");
-                            _processCommandWrapper(_db, _currentCommand);
+
+                            // Determine if we need to force a synchronous commit due to excessive conflicts
+                            bool unlock = false;
+                            if (_currentCommand->processed >= MAX_PROCESS_TRIES) {
+                                SWARN("[concurrent] Command " << _currentCommand->id << " processed " << _currentCommand->processed
+                                      << " times, exceeded max of " << MAX_PROCESS_TRIES
+                                      << ", forcing synchronous commit.");
+                                unlock = true;
+                                SQLite::commitLock.lock();
+                            }
+
+                            // Process the command itself and see if it needs to commit
+                            bool needsCommit = _processCommandWrapper(_db, _currentCommand);
                             SASSERT(!_currentCommand->response.empty()); // Must set a response
 
                             // Anything to commit?
-                            if (_db.insideTransaction()) {
+                            if (needsCommit) {
+
+                                // We're about to send a transaction here, grab our commit mutex and send anything
+                                // outstanding. This remains locked until we've finished this transaction.
+                                SQLite::commitLock.lock();
+
+                                // Clear anything outstanding before starting this one.
+                                uint64_t commitCount = getCommitCount();
+                                // This breaks with a non-recursive mutex.
+                                _sendOutstandingTransactions();
+
+                                if(!_db.prepare()) {
+                                    // This is expected to be fatal, the following code remains in case this is ever
+                                    // changed or refactored such that we attempt to recover from a failed prepare().
+                                    SERROR("PREPARE FAILED");
+                                    // If we forced a synchronous commit, unlock.
+                                    if (unlock) {
+                                        SQLite::commitLock.unlock();
+                                    }
+                                    return true;
+                                }
+
                                 _commitTimer.start();
                                 // Begin the distributed transaction
                                 SASSERT(!_db.getUncommittedQuery().empty());
                                 SINFO("Finished processing command '"
                                       << _currentCommand->request.methodLine << "' (" << _currentCommand->id
-                                      << "), beginning distributed transaction for commit #" << _db.getCommitCount() + 1
+                                      << "), beginning distributed transaction for commit #" << commitCount + 1
                                       << " (" << _db.getUncommittedHash() << ")");
                                 _currentCommand->replicationStartTimestamp = STimeNow();
                                 _currentCommand->transaction.methodLine = "BEGIN_TRANSACTION";
                                 _currentCommand->transaction["Command"] = _currentCommand->request.methodLine;
-                                _currentCommand->transaction["NewCount"] = SToStr(_db.getCommitCount() + 1);
+                                _currentCommand->transaction["NewCount"] = SToStr(commitCount + 1);
                                 _currentCommand->transaction["NewHash"] = _db.getUncommittedHash();
                                 _currentCommand->transaction["ID"] = _currentCommand->id;
                                 _currentCommand->transaction.content = _db.getUncommittedQuery();
@@ -1397,9 +1618,18 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                     (*peer)["TransactionResponse"].clear();
                                 }
 
+                                // If we forced a synchronous commit, unlock.
+                                if (unlock) {
+                                    // NOTE: This doesn't actually unlock anything, it just decrements our lock
+                                    // counter, so that we'll unlock properly when we commit the transaction.
+                                    SQLite::commitLock.unlock();
+                                }
+
                                 // By returning 'true', we update the FSM immediately, and thus evaluate whether or not
                                 // we need to wait for quorum.  This keeps all the quorum logic in the same place.
                                 if (STimeNow() > nextActivity) {
+                                    // TODO: If we hit this, nobody can commit anything until we resolve that. Is that
+                                    // an issue?
                                     SINFO("Timeout reached while processing (transaction) commands. Exceeded by "
                                           << (STimeNow() - nextActivity) << "us");
                                     return false;
@@ -1413,6 +1643,11 @@ bool SQLiteNode::update(uint64_t& nextActivity) {
                                 SASSERT(!_db.insideTransaction());
                                 _finishCommand(_currentCommand);
                                 _currentCommand = nullptr;
+                            }
+
+                            // If we forced a synchronous commit, unlock.
+                            if (unlock) {
+                                SQLite::commitLock.unlock();
                             }
 
                             // **NOTE: This loops back and starts the next command of the same priority immediately
@@ -1573,7 +1808,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
     // Classify and process the message
     if (SIEquals(message.methodLine, "LOGIN")) {
-        /// - LOGIN: This is the first message sent to and recieved from a new
+        /// - LOGIN: This is the first message sent to and received from a new
         ///     peer.  It communicates the current state of the peer (hash
         ///     and commit count), as well as the peer's priority.  Peers
         ///     can connect in any state, so this message can be sent and
@@ -1702,8 +1937,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     if (peer->calc("Priority") > _priority) {
                         // Not good -- we're in the way.  Not sure how we got
                         // here, so just reconnect and start over.
-                        PWARN("Higher-priority peer is trying to stand up while we are "
-                              << SQLCStateNames[_state] << ", reconnecting and SEARCHING.");
+                        PWARN("Higher-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
+                              << ", reconnecting and SEARCHING.");
                         _reconnectAll();
                         _changeState(SQLC_SEARCHING);
                     } else {
@@ -1712,13 +1947,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                         response["Response"] = "deny";
                         response["Reason"] = "I am mastering";
 
-                        // Hmm, why is a lower priority peer trying to stand up?  Is it possble we're not longer in
-                        // control
-                        // of the cluster?  Let's see how many nodes are subscribed.
+                        // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
+                        // control of the cluster? Let's see how many nodes are subscribed.
                         if (_majoritySubscribed()) {
                             // we have a majority of the cluster, so ignore this oddity.
-                            PHMMM("Lower-priority peer is trying to stand up while we are "
-                                  << SQLCStateNames[_state]
+                            PHMMM("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
                                   << " with a majority of the cluster; denying and ignoring.");
                         } else {
                             // We don't have a majority of the cluster -- maybe
@@ -1727,11 +1960,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             // away from us.  This can happen if the master
                             // hangs while processing a command: by the time it
                             // finishes, the cluster might have elected a new
-                            // master, forked, and be a thosuand commits in the
+                            // master, forked, and be a thousand commits in the
                             // future.  In this case, let's just reset
                             // everything anyway to be safe.
-                            PWARN("Lower-priority peer is trying to stand up while we are "
-                                  << SQLCStateNames[_state]
+                            PWARN("Lower-priority peer is trying to stand up while we are " << SQLCStateNames[_state]
                                   << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
                             _reconnectAll();
                             _changeState(SQLC_SEARCHING);
@@ -1756,10 +1988,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // Send the response
-                if (SIEquals(response["Response"], "approve"))
+                if (SIEquals(response["Response"], "approve")) {
                     PINFO("Approving standup request");
-                else
+                } else {
                     PHMMM("Denying standup request because " << response["Reason"]);
+                }
                 _sendToPeer(peer, response);
             } else if (from == SQLC_STANDINGDOWN) {
                 ///     * STANDINGDOWN: When a peer stands down we double-check
@@ -1782,24 +2015,27 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
         }
     } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
-        /// - STANDUP_RESPONSE: Sent in response to the STATE message generated
-        ///     when a node enters the STANDINGUP state.  Contains a header
-        ///     "Response" with either the value "approve" or "deny".  This
-        ///     response is stored within the peer for testing in the update loop.
-        ///
-        if (_state != SQLC_STANDINGUP)
-            throw "not standing up";
-        if (!message.isSet("Response"))
-            throw "missing Response";
-        if (peer->isSet("StandupResponse"))
-            PWARN("Already received standup response '" << (*peer)["StandupResponse"] << "', now receiving '"
-                                                        << message["Response"]
-                                                        << "', odd -- multiple masters competing?");
-        if (SIEquals(message["Response"], "approve"))
-            PINFO("Received standup approval");
-        else
-            PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
-        (*peer)["StandupResponse"] = message["Response"];
+        // STANDUP_RESPONSE: Sent in response to the STATE message generated when a node enters the STANDINGUP state.
+        // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
+        // peer for testing in the update loop.
+        if (_state == SQLC_STANDINGUP) {
+            if (!message.isSet("Response")) {
+                throw "missing Response";
+            }
+            if (peer->isSet("StandupResponse")) {
+                PWARN("Already received standup response '" << (*peer)["StandupResponse"] << "', now receiving '"
+                      << message["Response"] << "', odd -- multiple masters competing?");
+            }
+            if (SIEquals(message["Response"], "approve")) {
+                PINFO("Received standup approval");
+            }
+            else {
+                PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
+            }
+            (*peer)["StandupResponse"] = message["Response"];
+        } else {
+            SINFO("Got STANDUP_RESPONSE but not SQLC_STANDINGUP. Probably a late message, ignoring.");
+        }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
         /// - SYNCHRONIZE: Sent by a node in the SEARCHING state to a peer that
         ///     has new commits.  Respond with a SYNCHRONIZE_RESPONSE containing
@@ -1935,9 +2171,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "no master?";
         if (!_db.getUncommittedHash().empty())
             throw "already in a transaction";
-        if (_db.getCommitCount() + 1 != message.calcU64("NewCount"))
-            throw "commit count mismatch";
-        if (!_db.beginTransaction())
+        if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
+            throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
+        } if (!_db.beginTransaction())
             throw "failed to begin transaction";
         try {
             // Inside transaction; get ready to back out on error
@@ -1951,6 +2187,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // **FIXME: Remove the above line once we can automatically handle?
             _db.rollback();
             throw e;
+        } catch (const string& e) {
+            // TODO: Don't duplicate the above block.
+            // Transaction failed, clean up
+            SERROR("Can't begin master transaction (" << e << "); shutting down.");
+            // **FIXME: Remove the above line once we can automatically handle?
+            _db.rollback();
+            throw e;
         }
 
         // Successful commit; we in the right state?
@@ -1959,7 +2202,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Something is screwed up
             PWARN("New hash mismatch: command='"
                   << _currentTransactionCommand << "', commitCount=#" << _db.getCommitCount() << "', committedHash='"
-                  << _db.getCommittedHash() << "', uncommittedHash='" << _db.getUncommittedHash()
+                  << _db.getCommittedHash() << "', uncommittedHash='" << _db.getUncommittedHash() << "', messageHash='" << message["NewHash"]
                   << "', uncommittedQuery='" << _db.getUncommittedQuery() << "'");
             throw "new hash mismatch";
         }
@@ -2007,11 +2250,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Approval of current command, or an old one?
             if (_currentCommand && _currentCommand->id == message["ID"]) {
                 // Current, make sure it all matches.
-                if (message["NewHash"] != _db.getUncommittedHash())
+                if (message["NewHash"] != _db.getUncommittedHash()) {
                     throw "new hash mismatch";
-                if (message.calcU64("NewCount") != _db.getCommitCount() + 1)
-                    throw "commit count mismatch";
-                if (peer->params["Permaslave"] == "true")
+                }
+                if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
+                    throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
+                } if (peer->params["Permaslave"] == "true")
                     throw "permaslaves shouldn't approve";
                 uint64_t replicationElapsed = STimeNow() - _currentCommand->replicationStartTimestamp;
                 PINFO("Peer approved transaction #" << message["NewCount"] << " (" << message["NewHash"] << ") after "
@@ -2046,10 +2290,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "not slaving";
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
-        if (message.calcU64("CommitCount") != _db.getCommitCount() + 1)
-            throw "commit count mismatch";
+        if (message.calcU64("CommitCount") != _db.getCommitCount() + 1) {
+            throw "commit count mismatch. Expected: " + message["CommitCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
+        }
         if (message["Hash"] != _db.getUncommittedHash())
             throw "hash mismatch";
+
         _db.commit();
         uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
@@ -2083,6 +2329,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getUncommittedHash().empty())
             throw "no outstanding transaction";
         SINFO("Rolling back slave transaction " << message["ID"]);
+        SWARN("ROLLBACK received on slave for: " << message["ID"]);
         _db.rollback();
 
         // Look through our escalated commands and see if it's one being processed
@@ -2118,12 +2365,18 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!message.isSet("ID"))
                 throw "missing ID";
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
+
+            // Create a new Command and send to a worker thread
             Command* command = new Command;
             command->initiator = peer;
             command->id = message["ID"];
             command->request = request;
             command->priority = message.calc("priority");
-            _queueCommand(command);
+            if (!_passToExternalQueue(command)) {
+                // We have no server because **REASON**, so process on the sync
+                // node
+                _queueCommand(command);
+            }
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
         /// - ESCALATE_CANCEL: Sent to the master by a slave.  Indicates that the
@@ -2157,7 +2410,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     if (SIEquals((*commandIt)->id, commandID)) {
                         // Cancel that command
                         Command* command = *commandIt;
-                        SINFO("Cancelling escalated command " << command->id << " (" << command->request.methodLine
+                        SINFO("Canceling escalated command " << command->id << " (" << command->request.methodLine
                                                               << ")");
                         closeCommand(command);
                         foundIt = true;
@@ -2174,9 +2427,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "missing ID";
         SData response;
         if (!response.deserialize(message.content))
-            throw "malformed contet";
+            throw "malformed content";
 
-        // Go find the the escalated command
+        // Go find the escalated command
         PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
         CommandMapIt commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
@@ -2186,7 +2439,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             command->response = response;
             _finishCommand(command);
         } else
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring.");
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         /// - ESCALATE_RESPONSE: Sent when the master aborts processing an
         ///     escalated command.  Re-submit to the new master.
@@ -2335,7 +2588,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   and instruct all other subscribed slaves to roll-back the transaction.
     ///
     // **FIXME: Perhaps log if any initiator dies within a timeout of sending
-    //          the response; th migh be in jeopardy of not being sent out.  Or..
+    //          the response; they might be in jeopardy of not being sent out.  Or..
     //          we'll know which had responses go out at the 56K layer -- perhaps
     //          in a crash verify it went out... Or just always verify?
     if (_currentCommand && _currentCommand->initiator == peer) {
@@ -2349,6 +2602,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
             _db.rollback();
         SData rollback("ROLLBACK_TRANSACTION");
         rollback["ID"] = _currentCommand->id;
+        SINFO("ROLLBACK on disconnect: " << _currentCommand->id);
         SFOREACH (list<Peer*>, peerList, peerIt)
             if ((**peerIt)["Subscribed"] == "true") {
                 // Send the rollback command
@@ -2377,8 +2631,12 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Piggyback on whatever we're sending to add the CommitCount/Hash, but then
     // only serialize once before broadcasting
     SData messageCopy = message;
-    messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
-    messageCopy["Hash"] = _db.getCommittedHash();
+    if (!messageCopy.isSet("CommitCount")) {
+        messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
+    }
+    if (!messageCopy.isSet("Hash")) {
+        messageCopy["Hash"] = _db.getCommittedHash();
+    }
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
@@ -2400,12 +2658,19 @@ void SQLiteNode::_changeState(SQLCState newState) {
         // Depending on the state, set a timeout
         SDEBUG("Switching from '" << SQLCStateNames[_state] << "' to '" << SQLCStateNames[newState] << "'");
         uint64_t timeout = 0;
-        if (newState == SQLC_SEARCHING || newState == SQLC_STANDINGUP || newState == SQLC_SUBSCRIBING)
+        if (newState == SQLC_STANDINGUP) {
+            // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
+            // for the other to respond, but neither sends a response. We want a short timeout on this state.
+            // TODO: Maybe it would be better to re-send the message indicating we're standing up when we see someone
+            // hasn't responded.
+            timeout = STIME_US_PER_S * 5 + SRandom::rand64() % STIME_US_PER_S * 5;
+        } else if (newState == SQLC_SEARCHING || newState == SQLC_SUBSCRIBING) {
             timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
-        else if (newState == SQLC_SYNCHRONIZING)
+        } else if (newState == SQLC_SYNCHRONIZING) {
             timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
-        else
+        } else {
             timeout = 0;
+        }
         SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
         _stateTimeout = STimeNow() + timeout;
 
@@ -2429,9 +2694,21 @@ void SQLiteNode::_changeState(SQLCState newState) {
 
         // Additional logic for some new states
         if (newState == SQLC_MASTERING) {
+            // Seed our last sent transaction.
+            {
+                SQLITE_COMMIT_AUTOLOCK;
+                _haveUnsentTransactions = false;
+                _lastSentTransactionID = _db.getCommitCount();
+                // Clear these.
+                _db.getCommittedTransactions();
+            }
             // If we're switching to master, upgrade the database.
             // **NOTE: We'll detect this special command on destruction and clean it
-            openCommand(SData("UpgradeDatabase"), SPRIORITY_MAX); // High priority
+            if (!gracefulShutdown()) {
+                SData upgrade("UpgradeDatabase");
+                upgrade["priority"] = to_string(Command::SPRIORITY_MAX);
+                openCommand(upgrade);
+            }
         } else if (newState == SQLC_STANDINGDOWN) {
             // Abort all remote initiated commands if no longer MASTERING
             SFOREACHMAP (int, list<Command*>, _queuedCommandMap, it) {
@@ -2470,7 +2747,7 @@ void SQLiteNode::_changeState(SQLCState newState) {
         // we're "LoggedIn" (else we might change state after sending LOGIN,
         // but before we receive theirs, and they'll miss it).
         // Broadcast the new state
-        _state = newState;
+        _setState(newState);
         SData state("STATE");
         state["State"] = SQLCStateNames[_state];
         state["Priority"] = SToStr(_priority);
@@ -2494,8 +2771,11 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         string myHash, ignore;
         if (!_db.getCommit(peerCommitCount, ignore, myHash))
             throw "error getting hash";
-        if (myHash != (*peer)["Hash"])
+        if (myHash != (*peer)["Hash"]) {
+            SWARN("[TY5] Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << (*peer)["Hash"]
+                  << ", but we have hash: " << myHash << " for that commit.");
             throw "hash mismatch";
+        }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
     } else
         PINFO("Peer has no commits, beginning synchronization.");
@@ -2659,7 +2939,7 @@ void SQLiteNode::_updateSyncPeer()
 
 // --------------------------------------------------------------------------
 void SQLiteNode::_reconnectPeer(Peer* peer) {
-    // If we're connected, just kill the conection
+    // If we're connected, just kill the connection
     if (peer->s) {
         // Reset
         SWARN("Reconnecting to '" << peer->name << "'");

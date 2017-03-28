@@ -2,7 +2,6 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/TestHTTPS.h>
-#include <test/lib/TestSQLite.h>
 #include <test/lib/tpunit++.hpp>
 
 class BedrockTester {
@@ -16,35 +15,45 @@ class BedrockTester {
     static bool deleteFile(string name);
     static bool startServers;
 
-    string dbFile;
     uint64_t nextActivity;
-    bool passing;
     int serverPID = 0;
     SQLite* db = nullptr;
     SQLite* writableDB = nullptr;
 
+    string getServerAddr();
+
     // Constructor
-    BedrockTester(string filename = "");
+    BedrockTester(const string& filename = "", const string& serverAddress = "", const list<string>& queries = {}, const map<string, string>& args = {}, bool wait = true);
     ~BedrockTester();
 
     // Executes a command and waits for the response
     string executeWait(const SData& request, const std::string& correctResponse = "200");
 
+    // like executeWait, except it will execute multiple requests in parallel over several simultaneous connections.
+    // returns a pair of strings for each request, with the response code and the response text, in that order.
+    vector<pair<string,string>> executeWaitMultiple(vector<SData> requests, int connections = 10);
+
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
     SQLite& getWritableSQLiteDB();
-    static string getCommandLine();
+    string getCommandLine();
+
+    static string getTempFileName(string prefix = "");
+
+    void stopServer();
+    void startServer(map <string, string> args_ = {},  bool wait = true);
 
   private:
     // these exist to allow us to create and delete our database file.
     bool createFile(string name);
 
-    void startServer();
-    void stopServer();
-
-    static string getServerName();
-    static list<string> getServerArgs();
+    string getServerName();
+    list<string> getServerArgs(map <string, string> args = {});
 
     bool _spoofInternalCommands;
+
+    // If these are set, they'll be used instead of the global defaults.
+    string _serverAddr;
+    string _dbFile;
 };

@@ -52,12 +52,12 @@
 // * 531 Expected but unusable response, retry later.
 // * 534 Unexpected HTTP request/response - usually timeout or 500 level server error.
 
-BedrockNode::BedrockNode(const SData& args, BedrockServer* server_)
+BedrockNode::BedrockNode(const SData& args, int threadId, int threadCount, BedrockServer* server_)
     : SQLiteNode(args["-db"], args["-nodeName"], args["-nodeHost"], args.calc("-priority"), args.calc("-cacheSize"),
-                 1024,                                                 // auto-checkpoint every 1024 pages
+                 1024,                                                         // auto-checkpoint every 1024 pages
                  STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30, // Be patient first time
-                 server_->getVersion(), args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
-                 args.test("-readOnly"), args.calc("-maxJournalSize")),
+                 server_->getVersion(), threadId, threadCount, args.calc("-quorumCheckpoint"), args["-synchronousCommands"],
+                 args.test("-worker"), args.calc("-maxJournalSize")),
       server(server_) {
     // Initialize
     SINFO("BedrockNode constructor");
@@ -71,12 +71,23 @@ BedrockNode::~BedrockNode() {
         SALERT("Queued: " << SComposeJSONArray(commandList));
 }
 
+bool BedrockNode::_passToExternalQueue(Command* command) {
+    // Check to see if we have a server
+    // **FIXME: Given that this->server is defined in the constructor, how can this be false?
+    if (server) {
+        // No server, which probably means REASON
+        server->enqueueCommand(command);
+        return true;
+    }
+    return false;
+};
+
 void BedrockNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     // Update the parent and attributes
     SQLiteNode::postSelect(fdm, nextActivity);
 }
 
-bool BedrockNode::isReadOnly() { return _readOnly; }
+bool BedrockNode::isWorker() { return _worker; }
 
 bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     // Classify the message
@@ -135,19 +146,31 @@ bool BedrockNode::_peekCommand(SQLite& db, Command* command) {
     return true;
 }
 
-void BedrockNode::_processCommand(SQLite& db, Command* command) {
+void BedrockNode::_setState(SQLCState state) {
+    // When we change states, our schema might change - note that we need to
+    // wait for any possible upgrade to complete again.
+    _dbReady = false;
+    SQLiteNode::_setState(state);
+}
+
+bool BedrockNode::dbReady() {
+    return _dbReady;
+}
+
+bool BedrockNode::_processCommand(SQLite& db, Command* command) {
     // Classify the message
     SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
     SDEBUG("Received '" << request.methodLine << "'");
+    bool needsCommit = false;
     try {
-        // Process the message
-        if (!db.beginTransaction())
-            throw "501 Failed to begin transaction";
-
-        // --------------------------------------------------------------------------
         if (SIEquals(request.methodLine, "UpgradeDatabase")) {
+            // Begin a non-concurrent transaction for database upgrading
+            if (!db.beginTransaction()) {
+                throw "501 Failed to begin transaction";
+            }
+
             // Loop across the plugins to give each an opportunity to upgrade the
             // database.  This command is triggered only on the MASTER, and only
             // upon it step up in the MASTERING state.
@@ -159,8 +182,13 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
                  }
              }
             SINFO("Finished upgrading database");
+            _dbReady = true;
         } else {
-            // --------------------------------------------------------------------------
+            // All non-upgrade commands should be concurrent
+            if (!db.beginConcurrentTransaction()) {
+                throw "501 Failed to begin concurrent transaction";
+            }
+
             // Loop across the plugins to see which wants to take this
             bool pluginProcessed = false;
             for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
@@ -184,10 +212,11 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
         // If we have no uncommitted query, just rollback the empty transaction.
         // Otherwise, try to prepare to commit.
         bool isQueryEmpty = db.getUncommittedQuery().empty();
-        if (isQueryEmpty)
+        if (isQueryEmpty) {
             db.rollback();
-        else if (!db.prepare())
-            throw "501 Failed to prepare transaction";
+        } else {
+            needsCommit = true;
+        }
 
         // If no response was sent, assume 200 OK
         if (response.methodLine == "") {
@@ -215,6 +244,9 @@ void BedrockNode::_processCommand(SQLite& db, Command* command) {
     } catch (...) {
         handleCommandException(db, command, "", true);
     }
+
+    // Done, return whether or not we need the parent to commit our transaction
+    return needsCommit;
 }
 
 void BedrockNode::handleCommandException(SQLite& db, Command* command, const string& e, bool wasProcessing) {

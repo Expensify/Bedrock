@@ -3,9 +3,10 @@
 
 struct SSLTest : tpunit::TestFixture {
     SSLTest()
-        : tpunit::TestFixture(TEST(SSLTest::testPayPal), TEST(SSLTest::testExpensify), TEST(SSLTest::testFailure)) {
-        NAME(SSL);
-    }
+        : tpunit::TestFixture("SSL",
+                              TEST(SSLTest::testPayPal),
+                              TEST(SSLTest::testExpensify),
+                              TEST(SSLTest::testFailure)) { }
 
     TestHTTPS https;
 

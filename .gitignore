@@ -1,4 +1,7 @@
 test/test
+test/clustertest/clustertest
+test/bedrocktest_*
+test/clustertest/cluster_node_?_bedrocktest*
 bedrock
 .build
 libbedrock.a

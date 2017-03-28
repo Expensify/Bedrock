@@ -27,7 +27,7 @@ void RetrySystem(const string& command) {
             // Didn't work
             SWARN("'" << command << "' failed with return code " << returnCode << ", waiting 5s and retrying "
                       << numRetries << " more times");
-            SThreadSleep(STIME_US_PER_S * 5);
+            this_thread::sleep_for(chrono::seconds(5));
         } else
 
         {
@@ -160,9 +160,8 @@ set<string> loadPlugins(SData& args) {
 extern void BedrockTest(SData& trueArgs);
 int main(int argc, char* argv[]) {
     // Start libstuff
-    SInitialize();
+    SInitialize("main");
     SLogLevel(LOG_INFO);
-    SLogSetThreadPrefix("xxxxx ");
 
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
@@ -371,6 +370,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Log how much time we spent in our main mutex.
+    SQLite::commitLock.log();
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;

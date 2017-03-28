@@ -87,7 +87,7 @@ struct SQLiteTestNode : public SQLiteNode {
     // Construct the base class
     SQLiteTestNode(const string& filename, const string& host, int priority)
         : SQLiteNode(filename, filename, host, priority, 1000, 0, STIME_US_PER_S * 2 + SRandom::rand64() % STIME_US_PER_S * 5,
-                     "testversion", 100) {
+                     "testversion", -1, -1, 100) {
         // Nothing to initialize
         commandTimeout = 0;
     }
@@ -111,8 +111,9 @@ struct SQLiteTestNode : public SQLiteNode {
     }
 
     // Begin processing a new command
-    virtual void _processCommand(SQLite& db, Command* command) {
+    virtual bool _processCommand(SQLite& db, Command* command) {
         // See what we're starting
+        bool needsCommit = false;
         SASSERT(db.beginTransaction());
         SDEBUG("Processing '" << command->request.methodLine << "'");
         if (SIEquals(command->request.methodLine, "UpgradeDatabase")) {
@@ -122,7 +123,7 @@ struct SQLiteTestNode : public SQLiteNode {
             if (created) {
                 // Seed the database
                 SASSERT(db.write("INSERT INTO test VALUES ( 0 );"));
-                SASSERT(db.prepare());
+                needsCommit = true;
             } else
                 db.rollback();
             command->response.methodLine = "200 OK";
@@ -162,6 +163,7 @@ struct SQLiteTestNode : public SQLiteNode {
             } else
                 SERROR("Unrecognized request '" << command->request.methodLine << "'");
         }
+        return needsCommit;
     }
 
     // Cleanup pseudo-command
@@ -285,7 +287,7 @@ struct SQLiteTester {
         requestCopy["t"] = "t\t t\t";
         requestCopy["z"] = "z";
         requestCopy["writeConsistency"] = SQLCConsistencyLevelNames[_commandsStarted % SQLC_NUM_CONSISTENCY_LEVELS];
-        Command command = {_nodeArray[index]->openCommand(requestCopy, 0), _nodeArray[index]};
+        Command command = {_nodeArray[index]->openCommand(requestCopy), _nodeArray[index]};
         _commandList.push_back(command);
         ++_commandsStarted;
 
