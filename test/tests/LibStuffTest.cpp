@@ -2,7 +2,7 @@
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {
-    LibStuff() : tpunit::TestFixture(
+    LibStuff() : tpunit::TestFixture("LibStuff",
                                     TEST(LibStuff::testMaskPAN),
                                     TEST(LibStuff::testEncryptDecrpyt),
                                     TEST(LibStuff::testSHMACSHA1),
@@ -24,9 +24,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion))
-    {
-        NAME(LibStuff);
-    }
+    { }
 
     void testMaskPAN() {
         ASSERT_EQUAL(SMaskPAN(""), "");

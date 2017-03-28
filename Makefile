@@ -31,11 +31,15 @@ endif
 INTERMEDIATEDIR = .build
 
 # These targets aren't actual files.
-.PHONY: all test clean
+.PHONY: all test clustertest clean testplugin
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-all: bedrock test
+all: bedrock test clustertest
 test: test/test
+clustertest: test/clustertest/clustertest testplugin
+
+testplugin:
+	cd test/clustertest/testplugin && make
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
@@ -58,9 +62,11 @@ clean:
 	rm -rf libbedrock.a
 	rm -rf bedrock
 	rm -rf test/test
+	rm -rf test/clustertest/clustertest
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
 	cd mbedtls && make clean
+	cd test/clustertest/testplugin && make clean
 
 # The mbedtls libraries are all built the same way.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
@@ -85,9 +91,13 @@ BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-TESTCPP = $(shell find test -name '*.cpp')
+TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+
+CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path "test/main.cpp")
+CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
@@ -96,6 +106,7 @@ ifneq ($(MAKECMDGOALS),clean)
 -include $(LIBBEDROCKDEP)
 -include $(BEDROCKDEP)
 -include $(TESTDEP)
+-include $(CLUSTERTESTDEP)
 endif
 
 # Our static libraries just depend on their object files.
@@ -112,11 +123,13 @@ LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbe
 # times in parallel.
 BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
-# Both of our binaries build in the same way.
+# All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
+	$(GXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only
@@ -134,4 +147,4 @@ $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -o $@ -c $<
+	$(CC) $(CFLAGS) -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -o $@ -c $<

@@ -8,7 +8,9 @@ enum STCPState { STCP_CONNECTING, STCP_CONNECTED, STCP_SHUTTINGDOWN, STCP_CLOSED
 // connections, performing graceful shutdowns, etc.
 struct STCPManager {
     // Captures all the state for a single socket
-    struct Socket {
+    class Socket {
+      public:
+        Socket(int sock = 0, STCPState state_ = STCP_CONNECTING);
         // Attributes
         int s;
         sockaddr_in addr;

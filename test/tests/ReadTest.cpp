@@ -2,10 +2,10 @@
 
 struct ReadTest : tpunit::TestFixture {
     ReadTest()
-        : tpunit::TestFixture(BEFORE_CLASS(ReadTest::setup), TEST(ReadTest::simpleRead),
-                              AFTER_CLASS(ReadTest::tearDown)) {
-        NAME(Read);
-    }
+        : tpunit::TestFixture("Read",
+                              BEFORE_CLASS(ReadTest::setup),
+                              TEST(ReadTest::simpleRead),
+                              AFTER_CLASS(ReadTest::tearDown)) { }
 
     BedrockTester* tester;
 

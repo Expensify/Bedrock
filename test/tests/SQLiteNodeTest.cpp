@@ -3,11 +3,11 @@
 #include <test/lib/BedrockTester.h>
 
 struct TestSQLiteNode : public SQLiteNode {
-    TestSQLiteNode() : SQLiteNode(":memory:", "test", "localhost:9999", 1, 1, 1, 1000000000, "1.0") { }
+    TestSQLiteNode() : SQLiteNode(":memory:", "test", "localhost:9999", 1, 1, 1, 1000000000, "1.0", -1, 0) { }
 
     // Useless implementations that at least define the methods.
     bool _peekCommand(SQLite&, SQLiteNode::Command*) {return true;}
-    void _processCommand(SQLite&, SQLiteNode::Command*) {}
+    bool _processCommand(SQLite&, SQLiteNode::Command*) {return true;}
     void _abortCommand(SQLite&, SQLiteNode::Command*) {}
     void _cleanCommand(SQLiteNode::Command*) {}
 
@@ -16,11 +16,8 @@ struct TestSQLiteNode : public SQLiteNode {
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
-    SQLiteNodeTest() : tpunit::TestFixture(
-                                    TEST(SQLiteNodeTest::testFindSyncPeer))
-    {
-        NAME(SQLiteNode);
-    }
+    SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
+                                           TEST(SQLiteNodeTest::testFindSyncPeer)) { }
 
     void testFindSyncPeer() {
 

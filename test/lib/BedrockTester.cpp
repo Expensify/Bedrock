@@ -12,6 +12,8 @@ set<int> BedrockTester::serverPIDs;
 #define __NOEXCEPT _GLIBCXX_USE_NOEXCEPT
 #endif
 
+#define DB_WRITE_OPEN_FLAGS SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX
+
 class BedrockTestException : public std::exception {
   private:
     const string message;
@@ -22,18 +24,50 @@ class BedrockTestException : public std::exception {
     virtual const char* what() const __NOEXCEPT { return message.c_str(); }
 };
 
-BedrockTester::BedrockTester(string filename) : passing(true) {
-    nextActivity = 0;
+// Create temporary file. Returns its name or the empty string on failure.
+string BedrockTester::getTempFileName(string prefix) {
+    string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
+    char buffer[templateStr.size() + 1];
+    strcpy(buffer, templateStr.c_str());
+    int filedes = mkstemps(buffer, 3);
+    close(filedes);
+    return buffer;
+}
 
+BedrockTester::BedrockTester(const string& filename, const string& serverAddress, const list<string>& queries, const map<string, string>& args, bool wait) {
+    nextActivity = 0;
     if (filename.empty()) {
-        dbFile = BedrockTester::DB_FILE;
+        _dbFile = BedrockTester::DB_FILE;
     } else {
-        dbFile = filename;
+        _dbFile = filename;
     }
 
-    createFile(dbFile);
+    if (serverAddress.empty()) {
+        _serverAddr = BedrockTester::SERVER_ADDR;
+    } else {
+        _serverAddr = serverAddress;
+    }
+
+    createFile(_dbFile);
+
+    // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
+    if (queries.size()) {
+        sqlite3* _db;
+        sqlite3_initialize();
+        sqlite3_open_v2(_dbFile.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL);
+
+        for (string query : queries) {
+            int error = sqlite3_exec(_db, query.c_str(), 0, 0, 0);
+            if (error) {
+                cout << "Init Query: " << query << ", FAILED. Error: " << error << endl;
+            }
+        }
+
+        SASSERT(!sqlite3_close(_db));
+    }
+
     if (startServers) {
-        startServer();
+        startServer(args, wait);
     }
 }
 
@@ -48,20 +82,20 @@ BedrockTester::~BedrockTester() {
     }
     if (serverPID) {
         stopServer();
-        deleteFile(dbFile);
+        deleteFile(_dbFile);
     }
 }
 
 SQLite& BedrockTester::getSQLiteDB() {
     if (!db) {
-        db = new TestSQLite(dbFile, 1000000, false, true, 3000000);
+        db = new SQLite(_dbFile, 1000000, 100, 3000000, -1, -1);
     }
     return *db;
 }
 
 SQLite& BedrockTester::getWritableSQLiteDB() {
     if (!writableDB) {
-        writableDB = new TestSQLite(dbFile, 1000000, false, false, 3000000);
+        writableDB = new SQLite(_dbFile, 1000000, 100, 3000000, -1, -1);
     }
     return *writableDB;
 }
@@ -74,6 +108,7 @@ string BedrockTester::readDB(const string& query) { return getSQLiteDB().read(qu
 bool BedrockTester::readDB(const string& query, SQResult& result) { return getSQLiteDB().read(query, result); }
 
 bool BedrockTester::deleteFile(string name) {
+return true;
     string shm = name + "-shm";
     string wal = name + "-wal";
     bool retval = true;
@@ -96,21 +131,46 @@ bool BedrockTester::createFile(string name) {
     return true;
 }
 
-string BedrockTester::getServerName() { return "../bedrock"; }
+string BedrockTester::getServerName() {
+    list<string> locations = {
+        "../bedrock",
+        "../../bedrock",
+    };
+    for (auto location : locations) {
+        if (SFileExists(location)) {
+            return location;
+        }
+    }
+    return "";
+}
 
-list<string> BedrockTester::getServerArgs() {
-    list<string> args = {
-        "-db",         BedrockTester::DB_FILE,
-        "-serverHost", SERVER_ADDR,
-        "-nodeName",   "bedrock_test",
-        "-nodeHost",   "localhost:9889",
-        "-priority",   "200",
-        "-plugins",    "status,db,cache",
-        "-v",          "-cache",
-        "10001",
+list<string> BedrockTester::getServerArgs(map <string, string> args) {
+
+    map <string, string> defaults = {
+        {"-db",          _dbFile.empty() ? DB_FILE : _dbFile},
+        {"-serverHost",  _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
+        {"-nodeName",    "bedrock_test"},
+        {"-nodeHost",    "localhost:9889"},
+        {"-priority",    "200"},
+        {"-plugins",     "status,db,cache"},
+        {"-readThreads", "8"},
+        {"-v",           ""},
+        {"-cache",       "10001"},
     };
 
-    return args;
+    for (auto row : defaults) {
+        if (args.find(row.first) == args.end()) {
+            args[row.first] = row.second;
+        }
+    }
+
+    list<string> arglist;
+    for (auto arg : args) {
+        arglist.push_back(arg.first);
+        arglist.push_back(arg.second);
+    }
+
+    return arglist;
 }
 
 string BedrockTester::getCommandLine() {
@@ -122,12 +182,12 @@ string BedrockTester::getCommandLine() {
     return cmd;
 }
 
-void BedrockTester::startServer() {
+void BedrockTester::startServer(map<string, string> args_, bool wait) {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
         // We are the child!
-        list<string> args = getServerArgs();
+        list<string> args = getServerArgs(args_);
         // First arg is path to file.
         args.push_front(getServerName());
         if (_spoofInternalCommands) {
@@ -157,7 +217,7 @@ void BedrockTester::startServer() {
         // come up faster, not a change in how we wait for it, though it would be nice if we could do something
         // besides this 100ms polling.
         int count = 0;
-        while (1) {
+        while (wait) {
             count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
             if (count > 60 * 10) {
@@ -182,11 +242,134 @@ void BedrockTester::stopServer(int pid) {
     serverPIDs.erase(pid);
 }
 
-void BedrockTester::stopServer() { stopServer(serverPID); }
+void BedrockTester::stopServer() {
+    stopServer(serverPID);
+}
+
+vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> requests, int connections) {
+
+    // Synchronize dequeuing requessts, and saving results.
+    recursive_mutex listLock;
+
+    // Our results go here.
+    vector<pair<string,string>> results;
+    results.resize(requests.size());
+
+    // This is the next index of `requests` that needs processing.
+    int currentIndex = 0;
+
+    // This is the list of threads that we'll use for each connection.
+    list <thread> threads;
+
+    // Spawn a thread for each connection.
+    for (int i = 0; i < connections; i++) {
+
+        threads.emplace_back([&, i](){
+
+            // Create a socket.
+            int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
+
+            while (true) {
+
+                size_t myIndex = 0;
+                SData myRequest;
+                {
+                    SAUTOLOCK(listLock);
+
+                    myIndex = currentIndex;
+                    currentIndex++;
+
+                    if (myIndex >= requests.size()) {
+                        // No more requests to process.
+                        break;
+                    } else {
+                        myRequest = requests[myIndex];
+                    }
+                }
+
+                // We've released our lock so other threads can dequeue stuff now.
+
+                // Send some stuff on our socket.
+                string sendBuffer = myRequest.serialize();
+                // Send our data.
+                while (sendBuffer.size()) {
+                    bool result = S_sendconsume(socket, sendBuffer);
+                    if (!result) {
+                        break;
+                    }
+                }
+
+                // Receive some stuff on our socket.
+                string recvBuffer = "";
+
+                string methodLine, content;
+                STable headers;
+                int timeouts = 0;
+                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+
+                    // Poll the socket, so we get a timeout.
+
+                    pollfd readSock;
+                    readSock.fd = socket;
+                    readSock.events = POLLIN;
+                    readSock.revents = 0;
+
+                    // wait for a second...
+                    poll(&readSock, 1, 1000);
+                    if (readSock.revents & POLLIN) {
+                        bool result = S_recvappend(socket, recvBuffer);
+                        if (!result) {
+                            break;
+                        }
+                    } else {
+                        timeouts++;
+                        if (timeouts > 5) {
+                            //SAUTOLOCK(listLock);
+                            //cout << "Timeout (" << timeouts << ") waiting on socket, will try again." << endl;
+                        }
+                        if (timeouts == 60) {
+                            SAUTOLOCK(listLock);
+                            cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest["Query"] << endl;
+                            break;
+                        }
+                    }
+
+                }
+
+                // Lock to avoid log lines writing over each other.
+                {
+                    SAUTOLOCK(listLock);
+                    if (timeouts == 60) {
+                        // cout << "this failed: " << myRequest.serialize() << endl;
+                        results[myIndex] = make_pair("000 Timeout", myRequest.serialize());
+                    } else {
+                        // Ok, done, let's lock again and insert this in the results.
+                        results[myIndex] = make_pair(methodLine, content);
+                    }
+                }
+            }
+
+            close(socket);
+        });
+
+    }
+
+    // Wait for our threads to finish.
+    for (thread& t : threads) {
+        t.join();
+    }
+
+    // All done!
+    return results;
+}
+
+string BedrockTester::getServerAddr() {
+    return _serverAddr.empty() ? SERVER_ADDR : _serverAddr;
+}
 
 string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
-    int socket = S_socket(SERVER_ADDR, true, false, true);
+    int socket = S_socket(getServerAddr(), true, false, true);
 
     string sendBuffer = request.serialize();
     // Send our data.

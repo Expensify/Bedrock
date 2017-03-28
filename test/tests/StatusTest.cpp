@@ -2,10 +2,10 @@
 
 struct StatusTest : tpunit::TestFixture {
     StatusTest()
-        : tpunit::TestFixture(BEFORE_CLASS(StatusTest::setup), TEST(StatusTest::test),
-                              AFTER_CLASS(StatusTest::tearDown)) {
-        NAME(Status);
-    }
+        : tpunit::TestFixture("Status",
+                              BEFORE_CLASS(StatusTest::setup),
+                              TEST(StatusTest::test),
+                              AFTER_CLASS(StatusTest::tearDown)) { }
 
     BedrockTester* tester;
 

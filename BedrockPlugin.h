@@ -85,7 +85,6 @@ class BedrockPlugin {
   protected:
     // Attributes
     bool _enabled;
-    SSynchronized<STable> _pluginInfo;
 
   public:
     // Global static attributes

@@ -240,6 +240,26 @@ namespace tpunit {
 
       public:
 
+         // Use constructor delegation to add an optional default 'name' parameter that works as a first argument.
+         // This lets us keep backwards compatibility with existing tests, and add a name to new tests without having
+         // to add 50 '0's for a bunch of unused methods.
+         TestFixture(const char* name,
+                     method* m0,      method* m1  = 0, method* m2  = 0, method* m3  = 0, method* m4  = 0,
+                     method* m5  = 0, method* m6  = 0, method* m7  = 0, method* m8  = 0, method* m9  = 0,
+                     method* m10 = 0, method* m11 = 0, method* m12 = 0, method* m13 = 0, method* m14 = 0,
+                     method* m15 = 0, method* m16 = 0, method* m17 = 0, method* m18 = 0, method* m19 = 0,
+                     method* m20 = 0, method* m21 = 0, method* m22 = 0, method* m23 = 0, method* m24 = 0,
+                     method* m25 = 0, method* m26 = 0, method* m27 = 0, method* m28 = 0, method* m29 = 0,
+                     method* m30 = 0, method* m31 = 0, method* m32 = 0, method* m33 = 0, method* m34 = 0,
+                     method* m35 = 0, method* m36 = 0, method* m37 = 0, method* m38 = 0, method* m39 = 0,
+                     method* m40 = 0, method* m41 = 0, method* m42 = 0, method* m43 = 0, method* m44 = 0,
+                     method* m45 = 0, method* m46 = 0, method* m47 = 0, method* m48 = 0, method* m49 = 0)
+                    : TestFixture( m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
+                                  m10, m11, m12, m13, m14, m15, m16, m17, m18, m19,
+                                  m20, m21, m22, m23, m24, m25, m26, m27, m28, m29,
+                                  m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
+                                  m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, name) { }
+
          /**
           * Base constructor to register methods with the test fixture. A test
           * fixture can register up to 50 methods.
@@ -255,15 +275,35 @@ namespace tpunit {
                      method* m30 = 0, method* m31 = 0, method* m32 = 0, method* m33 = 0, method* m34 = 0,
                      method* m35 = 0, method* m36 = 0, method* m37 = 0, method* m38 = 0, method* m39 = 0,
                      method* m40 = 0, method* m41 = 0, method* m42 = 0, method* m43 = 0, method* m44 = 0,
-                     method* m45 = 0, method* m46 = 0, method* m47 = 0, method* m48 = 0, method* m49 = 0) {
+                     method* m45 = 0, method* m46 = 0, method* m47 = 0, method* m48 = 0, method* m49 = 0,
+                     const char* name = 0) : _name(name) {
             TestFixture** f = tpunit_detail_fixtures();
-            if (*f) {
-               while((*f)->_next) {
-                  f = &((*f)->_next);
-               }
-               (*f)->_next = this;
+
+            if (!(*f)) {
+               tpunit_detail_fixtures(this);
             } else {
-               *f = this;
+               TestFixture* current = *f;
+               TestFixture* last = 0;
+               bool inserted = false;
+               while(current) {
+                  if (current->_name && _name && strcmp(current->_name, _name) > 0) {
+                     if (last) {
+                        last->_next = this;
+                     } else {
+                        tpunit_detail_fixtures(this);
+                     }
+                     this->_next = current;
+
+                     inserted = true;
+                     break;
+                  }
+                  last = current;
+                  current = current->_next;
+               }
+
+               if (!inserted) {
+                  last->_next = this;
+               }
             }
 
             method* methods[50] = { m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
@@ -288,7 +328,6 @@ namespace tpunit {
                   (*m) ? (*m)->_next = methods[i] : *m = methods[i];
                }
             }
-            _name = 0;
          }
 
          ~TestFixture() {
@@ -489,8 +528,12 @@ namespace tpunit {
             return _stats;
          }
 
-         static TestFixture** tpunit_detail_fixtures() {
+         // We can reset the head of the list by passing it in here.
+         static TestFixture** tpunit_detail_fixtures(TestFixture* newFixture = 0) {
             static TestFixture* _fixtures = 0;
+            if (newFixture) {
+                _fixtures = newFixture;
+            }
             return &_fixtures;
          }
 
