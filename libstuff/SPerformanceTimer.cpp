@@ -6,8 +6,6 @@ SPerformanceTimer::SPerformanceTimer(string description, bool reverse, uint64_t 
       _lastLogStart(0), _timeLogged(0), _timeNotLogged(0), _description(description) {}
 
 SPerformanceTimer::~SPerformanceTimer() {
-    // The final shutdown.
-    log();
 }
 
 void SPerformanceTimer::start() {
