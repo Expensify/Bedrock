@@ -100,14 +100,15 @@ string BedrockTester::getServerName() { return "../bedrock"; }
 
 list<string> BedrockTester::getServerArgs() {
     list<string> args = {
-        "-db",         BedrockTester::DB_FILE,
-        "-serverHost", SERVER_ADDR,
-        "-nodeName",   "bedrock_test",
-        "-nodeHost",   "localhost:9889",
-        "-priority",   "200",
-        "-plugins",    "status,db,cache",
-        "-v",          "-cache",
-        "10001",
+        "-db",             BedrockTester::DB_FILE,
+        "-serverHost",     SERVER_ADDR,
+        "-nodeName",       "bedrock_test",
+        "-nodeHost",       "localhost:9889",
+        "-priority",       "200",
+        "-maxJournalSize", "10",
+        "-plugins",        "status,db,cache",
+        "-cache",          "10001",
+        "-v",
     };
 
     return args;
