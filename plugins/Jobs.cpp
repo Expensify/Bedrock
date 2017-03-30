@@ -545,6 +545,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
                 throw "502 Delete failed";
             }
+
+            // Resume the parent if this is the last pending child
             if (parentJobID > 0 && !_hasPendingChildJobs(db, parentJobID)) {
                 SINFO("Job has parentJobID: " + SToStr(parentJobID) +
                       " and no other pending children, resuming parent job");
