@@ -157,12 +157,18 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         content["repeat"] = result[0][6];
         content["data"] = result[0][7];
         return true; // Successfully processed
-    } else if (SIEquals(request.methodLine, "CreateJob")) {
-        // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
-        // master.
+    } 
+    
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CreateJob")) {
+        // If unique flag was passed and the job exist in the DB, then we can
+        // finish the command without escalating to master.
         if (!request.test("unique")) {
+            // Not unique; need to process
             return false;
         }
+
+        // Verify unique
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
         if (!db.read("SELECT jobID "
@@ -172,9 +178,12 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
             throw "502 Select failed";
         }
         if (result.empty()) {
+            // Is unique; need to process
             return false;
         }
 
+        // Supposed to be unique but not; notify the caller and return that we
+        // are processed
         SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
         content["jobID"] = result[0][0];
         return true;
