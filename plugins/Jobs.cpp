@@ -520,13 +520,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             }
         }
 
-        // Delete any FINISHED child jobs, but leave any PAUSED children alone.
-        SQResult finishedChildJobs;
-        if (!db.read("SELECT jobID FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';", finishedChildJobs)) {
-            throw "502 Failed getting finished child jobs";
-        }
-        for(auto finishedChildJob : finishedChildJobs.rows) {
-            _deleteFinishedJob(db, finishedChildJob[0]);
+        // Delete any FINISHED child jobs, but leave any PAUSED children alone (as those will signal that
+        // we just want to re-PAUSE this job so those new children can run)
+        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';")) {
+            throw "502 Failed deleting finished child jobs";
         }
 
         // If we are finishing a job that has child jobs, set its state to paused.
@@ -797,25 +794,5 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
         throw "502 Select failed";
     }
     return !result.empty();
-}
-
-// ==========================================================================
-void BedrockPlugin_Jobs::_deleteFinishedJob(SQLite& db, const string& safeJobID) {
-    // Delete this job
-    if (!db.write("DELETE FROM jobs WHERE jobID=" + safeJobID + ";")) {
-        throw "502 Delete failed";
-    }
-
-    // Delete all its children
-    SQResult result;
-    if (!db.read("SELECT jobID, state FROM jobs WHERE parentJobID=" + safeJobID + ";", result)) {
-        for(auto row : result.rows) {
-            // Verify the state is right, but delete either way
-            if (!SIEquals(row[1], "FINISHED")) {
-                SWARN("Deleting job#" << row[0] << " even though not FINISHED (" << row[1] << ")");
-            }
-            _deleteFinishedJob(db, row[0]);
-        }
-    }
 }
 
