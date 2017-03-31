@@ -484,12 +484,13 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //     - data   - Data to associate with this finsihed job
         //
         verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             throw "502 Select failed";
         }
@@ -504,7 +505,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING") {
-            SWARN("Trying to finish job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
+            SWARN("Trying to finish job#" << jobID << ", but isn't RUNNING (" << state << ")");
             throw "405 Can only retry/finish RUNNING jobs";
         }
 
@@ -514,26 +515,35 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         if (parentJobID) {
             auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
-                SWARN("Trying to finish job#" << request["jobID"] << ", but parent isn't PAUSED (" << parentState << ")");
+                SWARN("Trying to finish job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
                 throw "405 Can only retry/finish child job when parent is PAUSED";
             }
         }
 
+        // Delete any FINISHED child jobs, but leave any PAUSED children alone.
+        SQResult finishedChildJobs;
+        if (!db.read("SELECT jobID FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';", finishedChildJobs)) {
+            throw "502 Failed getting finished child jobs";
+        }
+        for(auto finishedChildJob : finishedChildJobs.rows) {
+            _deleteFinishedJob(db, finishedChildJob[0]);
+        }
+
         // If we are finishing a job that has child jobs, set its state to paused.
-        if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
+        if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
             if (!db.write("UPDATE jobs SET "
                           "state=" + SQ("PAUSED") + " " +
                           (request.isSet("data") ? ", data=" + SQ(request["data"]) : "") +
-                          "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+                          "WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Parent update failed";
             }
 
             // Also un-pause any child jobs such that they can run
             if (!db.write("UPDATE jobs SET state='QUEUED' "
                           "WHERE state='PAUSED' "
-                            "AND parentJobID=" + SQ(request.calc64("jobID")) + ";")) {
+                            "AND parentJobID=" + SQ(jobID) + ";")) {
                 throw "502 Child update failed";
             }
 
@@ -553,15 +563,15 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
         // Are we rescheduling?
         if (!repeat.empty()) {
-            // Configured to repeat.  The "nextRun" at this point is still storing the last time this job was
-            // *scheduled* to
-            // be run; lastRun contains when it was *actually* run.
+            // Configured to repeat.  The "nextRun" at this point is still
+            // storing the last time this job was *scheduled* to be run;
+            // lastRun contains when it was *actually* run.
             const string& lastScheduled = nextRun;
             const string& newNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
             if (newNextRun.empty()) {
                 throw "402 Malformed repeat";
             }
-            SINFO("Rescheduling job#" << request["jobID"] << ": " << newNextRun);
+            SINFO("Rescheduling job#" << jobID << ": " << newNextRun);
             list<string> updateList;
             updateList.push_back("nextRun=" + newNextRun);
             updateList.push_back("state='QUEUED'");
@@ -574,23 +584,36 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             }
 
             // Update this job
-            if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) +
-                          ";")) {
+            if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Update failed";
             }
         } else {
-            // Delete this job
+            // We are done with this job.  What do we do with it?
             SASSERT(!SIEquals(request.methodLine, "RetryJob"));
-            if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
-                throw "502 Delete failed";
-            }
+            if (parentJobID) {
+                // This is a child job.  Mark it as finished.
+                if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" +SQ(jobID)+ ";")) {
+                    throw "502 Failed to mark job as FINISHED";
+                }
 
-            // Resume the parent if this is the last pending child
-            if (parentJobID > 0 && !_hasPendingChildJobs(db, parentJobID)) {
-                SINFO("Job has parentJobID: " + SToStr(parentJobID) +
-                      " and no other pending children, resuming parent job");
-                if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
-                    throw "502 Update failed";
+                // Resume the parent if this is the last pending child
+                if (!_hasPendingChildJobs(db, parentJobID)) {
+                    SINFO("Job has parentJobID: " + SToStr(parentJobID) +
+                          " and no other pending children, resuming parent job");
+                    if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
+                        throw "502 Update failed";
+                    }
+                }
+            } else {
+                // This is a standalone (not a child) job; delete it.  
+                if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(jobID) + ";")) {
+                    throw "502 Delete failed";
+                }
+
+                // At this point, all child jobs should already be deleted, but
+                // let's double check.
+                if (!db.read("SELECT 1 FROM jobs WHERE parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
+                    SWARN("Child jobs still exist when deleting parent job, ignoring.");
                 }
             }
         }
@@ -775,3 +798,24 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     }
     return !result.empty();
 }
+
+// ==========================================================================
+void BedrockPlugin_Jobs::_deleteFinishedJob(SQLite& db, const string& safeJobID) {
+    // Delete this job
+    if (!db.write("DELETE FROM jobs WHERE jobID=" + safeJobID + ";")) {
+        throw "502 Delete failed";
+    }
+
+    // Delete all its children
+    SQResult result;
+    if (!db.read("SELECT jobID, state FROM jobs WHERE parentJobID=" + safeJobID + ";", result)) {
+        for(auto row : result.rows) {
+            // Verify the state is right, but delete either way
+            if (!SIEquals(row[1], "FINISHED")) {
+                SWARN("Deleting job#" << row[0] << " even though not FINISHED (" << row[1] << ")");
+            }
+            _deleteFinishedJob(db, row[0]);
+        }
+    }
+}
+
