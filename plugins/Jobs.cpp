@@ -501,6 +501,17 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             throw "405 Can only retry/finish RUNNING jobs";
         }
 
+        // If we have a parent, make sure it is PAUSED.  This is to just
+        // double-check that child jobs aren't somehow running in parallel to
+        // the parent.
+        if (parentJobID) {
+            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+            if (!SIEquals(parentState, "PAUSED")) {
+                SWARN("Trying to finish job#" << request["jobID"] << ", but parent isn't PAUSED (" << parentState << ")");
+                throw "405 Can only retry/finish child job when parent is PAUSED";
+            }
+        }
+
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
             // Update the parent job to PAUSED
