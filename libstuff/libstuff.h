@@ -329,7 +329,7 @@ namespace std {
         }
         bool is_lock_free() const {
             return false;
-        } 
+        }
         void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
             SAUTOLOCK(m);
             _string = desired;

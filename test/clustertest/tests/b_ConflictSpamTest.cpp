@@ -170,15 +170,14 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                     auto journals = tables[i];
                     list <string> queries;
                     for (auto journal : journals) {
-                        queries.push_back("SELECT id, hash, query FROM " + journal);
+                        queries.push_back("SELECT MAX(id) as maxIDs FROM " + journal);
                     }
 
-                    string query = SComposeList(queries, " UNION ");
-                    query += " ORDER BY id ASC";
+                    string query = "SELECT MAX(maxIDs) FROM (" + SComposeList(queries, " UNION ");
+                    query += ");";
 
                     SData cmd("Query");
                     cmd["query"] = query;
-
                     // Ok, send them all!
                     auto result = brtester->executeWait(cmd);
 
@@ -193,19 +192,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             }
             threads.clear();
 
-            if (allResults[0].size() == allResults[1].size() && allResults[1].size() == allResults[2].size()) {
+            if (allResults[0] == allResults[1] && allResults[1] == allResults[2]) {
                 break;
             }
-            cout << "Result sizes didn't match, waiting for journals to equalize." << endl;
+            cout << "Results didn't match, waiting for journals to equalize." << endl;
             sleep(1);
         }
-
-        /*
-        for (auto i : {0, 1, 2}) {
-            cout << "Complete journal table for node " << i << endl;
-            cout << allResults[i] << endl;
-        }
-        */
 
         // Verify the journals all match.
         ASSERT_TRUE(allResults[0].size() > 0);
@@ -230,23 +222,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             // Ok, send them all!
             auto results = brtester->executeWaitMultiple(commands);
 
-            int totalRows = 0;
             for (size_t i = 0; i < results.size(); i++) {
                 // Make sure they all succeeded.
                 ASSERT_TRUE(SToInt(results[i].first) == 200);
                 list<string> lines = SParseList(results[i].second, '\n');
                 lines.pop_front();
-                int rows = SToInt(lines.front());
-                if (i == 0) {
-                    cout << "Inserts Per Thread:" << endl;
-                    cout << "sync: " << rows;
-                } else {
-                    cout << ", worker" << (i - 1) << ": " << rows;
-                }
-                totalRows += rows;
             }
-            cout << endl;
-            cout << "Total journal rows: " << totalRows << endl;
             // We can't verify the size of the journal, because we can insert any number of 'upgrade database' rows as
             // each node comes online as master during startup.
             // ASSERT_EQUAL(totalRows, 69);

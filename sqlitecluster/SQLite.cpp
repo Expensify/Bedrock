@@ -348,7 +348,7 @@ int SQLite::commit() {
         // Delete the oldest entry
         truncating = true;
         uint64_t before = STimeNow();
-        string query = "DELETE FROM" + _journalName + " WHERE id = MIN(id);";
+        string query = "DELETE FROM " + _journalName + " WHERE id = (SELECT MIN(id) FROM " + _journalName + ")";
         SASSERT(!SQuery(_db, "Deleting oldest row", query));
         _writeElapsed += STimeNow() - before;
     }

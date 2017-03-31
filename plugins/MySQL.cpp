@@ -86,8 +86,9 @@ string MySQLPacket::serializeHandshake() {
     handshake.payload += lenEncInt(0);            // filler
 
     uint32_t CLIENT_LONG_PASSWORD = 0x00000001;
+    uint32_t CLIENT_PROTOCOL_41   = 0x00000200;
     uint32_t CLIENT_PLUGIN_AUTH   = 0x00080000;
-    uint32_t capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PLUGIN_AUTH;
+    uint32_t capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH;
 
     uint16_t capability_flags_1 = (const unsigned short)(capability_flags);
     uint16_t capability_flags_2 = (const unsigned short)(capability_flags >> 16);
@@ -134,15 +135,34 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
         // Now a column description
         MySQLPacket column;
         column.sequenceID = ++sequenceID;
-        column.payload += lenEncStr("unknown"); // table name
-        column.payload += lenEncStr(header);    // column name
-        column.payload += lenEncInt(3);         // length of column length field
+        column.payload += lenEncStr("def");     // catalog (lenenc_str) -- catalog (always "def")
+        column.payload += lenEncStr("unknown"); // schema (lenenc_str) -- schema-name
+        column.payload += lenEncStr("unknown"); // table (lenenc_str) -- virtual table-name
+        column.payload += lenEncStr("unknown"); // org_table (lenenc_str) -- physical table-name
+        column.payload += lenEncStr(header);    // name (lenenc_str) -- virtual column name
+        column.payload += lenEncStr(header);    // org_name (lenenc_str) -- physical column name
+
+        uint8_t next_length = 0x0c;
+        SAppend(column.payload, &next_length, 1); // next_length (lenenc_int) -- length of the following fields (always 0x0c)
+
+        uint16_t latin1_swedish_ci = 0x08;
+        SAppend(column.payload, &latin1_swedish_ci, 2); // character_set (2) -- is the column character set and is defined in Protocol::CharacterSet.
+
         uint32_t colLength = 1024;
-        SAppend(column.payload, &colLength, 3); // column length (3 bytes)
-        column.payload += lenEncInt(1);         // length of type field
-        column.payload += lenEncInt(0);         // type (int or static string)
-        column.payload += lenEncInt(2);         // length of flags + decimals
-        SAppend(column.payload, "\00\00", 2);   // flags + decimals
+        SAppend(column.payload, &colLength, 4); // column_length (4) -- maximum length of the field
+
+        uint8_t colType = 0;
+        SAppend(column.payload, &colType, 1); // column_type (1) -- type of the column as defined in Column Type
+
+        uint16_t flags = 0;
+        SAppend(column.payload, &flags, 2); // flags (2) -- flags
+
+        uint8_t decimals = 0;
+        SAppend(column.payload, &decimals, 1); // decimals (1) -- max shown decimal digits, 0x00 for integers and static strings
+
+        uint16_t filler = 0;
+        SAppend(column.payload, &filler, 2); // filler (to pad to 0x0c)
+
         sendBuffer += column.serialize();
     }
 
@@ -179,6 +199,12 @@ string MySQLPacket::serializeOK(int sequenceID) {
     ok.payload += lenEncInt(0); // OK
     ok.payload += lenEncInt(0); // Affected rows
     ok.payload += lenEncInt(0); // Last insert ID
+
+    uint16_t SERVER_STATUS_AUTOCOMMIT = 0x0002;
+    SAppend(ok.payload, &SERVER_STATUS_AUTOCOMMIT, 2); // status_flags
+    uint16_t WARNING_COUNT = 0x0;
+    SAppend(ok.payload, &WARNING_COUNT, 2); // required for protocol 4.1
+
     ok.payload += "OK";         // Message
     return ok.serialize();
 }

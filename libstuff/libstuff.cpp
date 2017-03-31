@@ -2186,7 +2186,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("[concurrent] commit conflict.");
+        SHMMM("[concurrent] commit conflict.");
         return extErr;
     }
     return error;
@@ -2214,9 +2214,5 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
 bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
-    if (result.empty()) {
-        return false;
-    } else {
-        return true;
-    }
+    return !result.empty();
 }
