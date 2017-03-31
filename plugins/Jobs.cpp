@@ -222,8 +222,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //
         verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
 
-        // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
-        // master.
+        // If the caller wants this job to be unique, let's verify it is
         if (request.test("unique")) {
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
@@ -253,15 +252,15 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // If no priority set, set it
         int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
 
-        // Validate that the parentJobID exists if one was passed.
+        // Validate that the parentJobID exists and is in the right state if one was passed.
         int64_t parentJobID = request.calc64("parentJobID");
         if (parentJobID) {
-            SQResult result;
-            if (!db.read("SELECT 1 FROM jobs WHERE jobID = " + SQ(parentJobID) + " LIMIT 1;", result)) {
-                throw "502 Select failed";
-            }
-            if (result.empty()) {
+            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+            if (parentState.empty()) {
                 throw "404 parentJobID does not exist";
+            } else if (!SIEquals(parentState, "RUNNING") && !SIEquals(parentState, "PAUSED")) {
+                SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << parentState << ")");
+                throw "405 Can only create child job when parent is RUNNING or PAUSED";
             }
         }
 
@@ -276,9 +275,17 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         }
 
         // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
-        // Child jobs start out in the PAUSED state, and are switched to QUEUED when the parent
-        // finishes itself (and itself becomes PAUSED).
-        auto initialState = (parentJobID ? "PAUSED" : "QUEUED");
+        // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
+        // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
+        // the child is created (indicating a child is creating a sibling) then the new child starts
+        // in the QUEUED state.
+        auto initialState = "QUEUED";
+        if (parentJobID) {
+            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+            if (SIEquals(parentState, "RUNNING")) {
+                initialState = "PAUSED";
+            }
+        }
 
         // Create this new job
         db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
