@@ -386,6 +386,12 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             SASSERT(result[c].size() == 4);
             updateQuery += (c ? ", " : "") + result[c][0];
 
+            // See if this job has any FINISHED child jobs, indicating it is being resumed
+            SQResult finishedChildJobs;
+            if (!db.read("SELECT jobID, data FROM jobs WHERE parentJobID=" + result[c][0] + " AND state='FINISHED';", finishedChildJobs)) {
+                throw "502 Failed to select finished child jobs";
+            }
+
             // Add this object to our output
             STable job;
             job["jobID"] = result[c][0];
@@ -396,6 +402,17 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" +SQ(parentJobID)+ ";");
+            }
+            if (!finishedChildJobs.empty()) {
+                // Add an associative array of all children
+                list<string> finishedChildJobArray;
+                for (auto row : finishedChildJobs.rows) {
+                    STable finishedChildJob;
+                    finishedChildJob["jobID"] = row[0];
+                    finishedChildJob["data"] = row[1];
+                    finishedChildJobArray.push_back(SComposeJSONObject(finishedChildJob));
+                }
+                job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
             }
             jobList.push_back(SComposeJSONObject(job));
         }
@@ -526,14 +543,19 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             throw "502 Failed deleting finished child jobs";
         }
 
+        // If we've been asked to update the data, let's do that
+        auto data = request["data"];
+        if (!data.empty()) {
+            if (!db.write("UPDATE jobs SET data=" +SQ(data)+ " WHERE jobID=" +SQ(jobID)+ ";")) {
+                throw "502 Failed to update job data";
+            }
+        }
+
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            if (!db.write("UPDATE jobs SET "
-                          "state=" + SQ("PAUSED") + " " +
-                          (request.isSet("data") ? ", data=" + SQ(request["data"]) : "") +
-                          "WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.write("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Parent update failed";
             }
 
@@ -569,19 +591,9 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                 throw "402 Malformed repeat";
             }
             SINFO("Rescheduling job#" << jobID << ": " << newNextRun);
-            list<string> updateList;
-            updateList.push_back("nextRun=" + newNextRun);
-            updateList.push_back("state='QUEUED'");
-
-            // Are we updating the data too? (This can be used to pass state from worker to worker
-            // between runs of the same job.)
-            if (request.isSet("data")) {
-                // Update the data too
-                updateList.push_back("data=" + SQ(request["data"]));
-            }
 
             // Update this job
-            if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + " WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.write("UPDATE jobs SET nextRun=" + newNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Update failed";
             }
         } else {
