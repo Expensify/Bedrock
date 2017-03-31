@@ -254,14 +254,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
 
         // Validate that the parentJobID exists if one was passed.
-        string safeParentJobID = "0";
-        if (!request["parentJobID"].empty()) {
-            safeParentJobID = SQ(request["parentJobID"]);
+        int64_t parentJobID = request.calc64("parentJobID");
+        if (parentJobID) {
             SQResult result;
-            if (!db.read("SELECT 1 "
-                         "FROM jobs "
-                         "WHERE jobID = " + safeParentJobID + ";",
-                         result)) {
+            if (!db.read("SELECT 1 FROM jobs WHERE jobID = " + SQ(parentJobID) + " LIMIT 1;", result)) {
                 throw "502 Select failed";
             }
             if (result.empty()) {
@@ -269,25 +265,32 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             }
         }
 
-        // We'd initially intended for any value to be allowable here, but for performance reasons, we currently
-        // will only allow specific values to try and keep queries fast. If you pass an invalid value, we'll throw
-        // here so that the caller can know that he did something wrong rather than having his job sit unprocessed
-        // in the queue forever. Hopefully we can remove this restriction in the future.
+        // We'd initially intended for any value to be allowable here, but for
+        // performance reasons, we currently will only allow specific values to
+        // try and keep queries fast. If you pass an invalid value, we'll throw
+        // here so that the caller can know that he did something wrong rather
+        // than having his job sit unprocessed in the queue forever. Hopefully
+        // we can remove this restriction in the future.
         if (priority != 0 && priority != 500 && priority != 1000) {
             throw "402 Invalid priority value";
         }
+
+        // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
+        // Child jobs start out in the PAUSED state, and are switched to QUEUED when the parent
+        // finishes itself (and itself becomes PAUSED).
+        auto initialState = (parentJobID ? "PAUSED" : "QUEUED");
 
         // Create this new job
         db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
                  "VALUES( " +
                     SCURRENT_TIMESTAMP() + ", " + 
-                    SQ("QUEUED") + ", " + 
+                    SQ(initialState) + ", " + 
                     SQ(request["name"]) + ", " + 
                     safeFirstRun + ", " +
                     SQ(SToUpper(request["repeat"])) + ", " + 
                     safeData + ", " + 
                     SQ(priority) + ", " + 
-                    safeParentJobID +
+                    SQ(parentJobID) +
                  " );");
 
         // Release workers waiting on this state
@@ -500,14 +503,23 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, request.calc64("jobID"))) {
-            SINFO("Job has child jobs, PAUSING");
+            // Update the parent job to PAUSED
+            SINFO("Job has child jobs, PAUSING parent, QUEUING children");
             if (!db.write("UPDATE jobs SET "
                           "state=" + SQ("PAUSED") + " " +
                           (request.isSet("data") ? ", data=" + SQ(request["data"]) : "") +
                           "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
-                throw "502 Update failed";
+                throw "502 Parent update failed";
             }
 
+            // Also un-pause any child jobs such that they can run
+            if (!db.write("UPDATE jobs SET state='QUEUED' "
+                          "WHERE state='PAUSED' "
+                            "AND parentJobID=" + SQ(request.calc64("jobID")) + ";")) {
+                throw "502 Child update failed";
+            }
+
+            // All done processing this command
             return true;
         }
 
