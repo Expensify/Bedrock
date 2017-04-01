@@ -673,10 +673,25 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                 // If there's a request, we'll dequeue it (but only the first one).
                 SData request;
-                int requestSize = request.deserialize(s->recvBuffer);
-                if (requestSize) {
-                    SConsumeFront(s->recvBuffer, requestSize);
 
+                // If the socket is owned by a plugin, we let the plugin populate our request.
+                BedrockPlugin* plugin = static_cast<BedrockPlugin*>(s->data);
+                if (plugin) {
+                    // Call the plugin's handler.
+                    plugin->onPortRecv(s, request);
+                    if (!request.empty()) {
+                        // If it populated our request, then we'll save the plugin name so we can handle the response.
+                        request["plugin"] = plugin->getName();
+                    }
+                } else {
+                    // Otherwise, handle any default request.
+                    int requestSize = request.deserialize(s->recvBuffer);
+                    SConsumeFront(s->recvBuffer, requestSize);
+                }
+
+                // If we have a populated request, from either a plugin or our default handling, we'll queue up the
+                // command.
+                if (!request.empty()) {
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
                         (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
@@ -742,7 +757,20 @@ void BedrockServer::_reply(BedrockCommand& command) {
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
-        socketIt->second->send(command.response.serialize());
+
+        // Is a plugin handling this command? If so, it gets to send the response.
+        string& pluginName = command.request["plugin"];
+        if (!pluginName.empty()) {
+            // Let the plugin handle it
+            SINFO("Plugin '" << pluginName << "' handling response '" << command.response.methodLine
+                  << "' to request '" << command.request.methodLine << "'");
+            BedrockPlugin::getPluginByName(pluginName)->onPortRequestComplete(command, socketIt->second);
+        } else {
+            // Otherwise we send the standard response.
+            socketIt->second->send(command.response.serialize());
+        }
+
+        // If `Connection: close` was set, shut down the socket.
         if (SIEquals(command.request["Connection"], "close")) {
             shutdownSocket(socketIt->second, SHUT_RD);
         }

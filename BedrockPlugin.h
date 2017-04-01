@@ -71,16 +71,17 @@ class BedrockPlugin {
 
     // Called when a socket receives input
     // request: optional request to queue internally
-    // Return true if the socket is still alive
-    virtual bool onPortRecv(STCPManager::Socket* s, SData& request) { return false; }
+    virtual void onPortRecv(STCPManager::Socket* s, SData& request) { }
 
     // After processing the request from this plugin, this is called to send the response
     // response The response from the processed request
     // s        Optional socket from which this request was received
-    // return   True if the socket should be kept open
-    virtual bool onPortRequestComplete(const SData& response, STCPManager::Socket* s) { return false; }
+    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) { }
 
   public:
     // A global static list of all registered plugins.
     static list<BedrockPlugin*>* g_registeredPluginList;
+
+    // Look up a plugin by its name.
+    static BedrockPlugin* getPluginByName(const string& name);
 };

@@ -54,3 +54,20 @@ bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
+
+BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
+    // If our global list isn't set, there's no plugin to return.
+    if (!g_registeredPluginList) {
+        return nullptr;
+    }
+
+    // If we find our plugin in our list, we'll return it.
+    for (auto& plugin : *g_registeredPluginList) {
+        if (SIEquals(plugin->getName(), name)) {
+            return plugin;
+        }
+    }
+
+    // Didn't find it.
+    return nullptr;
+}
