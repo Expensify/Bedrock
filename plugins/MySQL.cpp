@@ -225,7 +225,7 @@ void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
     s->send(MySQLPacket::serializeHandshake());
 }
 
-bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
+void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     // Get any new MySQL requests
     int packetSize = 0;
     MySQLPacket packet;
@@ -312,32 +312,28 @@ bool BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
         }
         }
     }
-
-    // Keep the socket alive
-    return true;
 }
 
-bool BedrockPlugin_MySQL::onPortRequestComplete(const SData& response, STCPManager::Socket* s) {
+void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) {
     // Only one request supported: Query.
-    SASSERT(SIEquals(response["request.methodLine"], "Query"));
-    SASSERT(response.isSet("request.sequenceID"));
-    if (SToInt(response.methodLine) == 200) {
+    SASSERT(SIEquals(command.request.methodLine, "Query"));
+    SASSERT(command.request.isSet("sequenceID"));
+    if (SToInt(command.response.methodLine) == 200) {
         // Success!  Were there any results?
-        if (response.content.empty()) {
+        if (command.response.content.empty()) {
             // Just send OK
-            s->send(MySQLPacket::serializeOK(response.calc("request.sequenceID")));
+            s->send(MySQLPacket::serializeOK(command.request.calc("sequenceID")));
         } else {
             // Convert the JSON response from Bedrock::DB into MySQL protocol
             SQResult result;
-            SASSERT(response.content.empty() || result.deserialize(response.content));
-            s->send(MySQLPacket::serializeQueryResponse(response.calc("request.sequenceID"), result));
+            SASSERT(command.response.content.empty() || result.deserialize(command.response.content));
+            s->send(MySQLPacket::serializeQueryResponse(command.request.calc("sequenceID"), result));
         }
     } else {
         // Failure -- pass along the message
-        s->send(MySQLPacket::serializeERR(response.calc("request.sequenceID"), SToInt(response.methodLine),
-                                          response["error"]));
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt(command.response.methodLine),
+                                          command.response["error"]));
     }
-    return true;
 }
 
 // Define the global variable list to pretend to be MySQL
