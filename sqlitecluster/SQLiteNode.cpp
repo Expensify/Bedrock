@@ -613,7 +613,10 @@ void SQLiteNode::_finishCommand(Command* command) {
         // This should never get called if the initiating slave was lost; on
         // slave drop we clean out any pending commands.
         uint64_t elapsed = STimeNow() - command->creationTimestamp;
-        if (elapsed < STIME_US_PER_S * 4 || !command->request["HeldBy"].empty()) {
+        if (elapsed < STIME_US_PER_S * 4 ||
+            !command->request["HeldBy"].empty() ||
+            SIEquals(command->response["latency"], "high"))
+        {
             SINFO("Responding to escalation for transaction '" << command->request.methodLine << "' (" << command->id
                                                                << ") after " << elapsed / STIME_US_PER_MS << " ms");
         } else {
