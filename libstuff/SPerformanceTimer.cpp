@@ -71,6 +71,7 @@ void SPerformanceTimer::log() {
     char buffer[7];
     snprintf(buffer, 7, "%.2f", percentage);
     // Log both raw numbers and our friendly percentage.
+    // Note: be mindful of external stats aggregation scripts/services that parse these messages
 
     SINFO("[performance] " << (_timeLogged + _timeNotLogged) << "us elapsed, " << _timeLogged << "us in "
                            << _description << ", " << _timeNotLogged << "us " << adj << ". " << buffer << "% "
