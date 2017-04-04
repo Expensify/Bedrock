@@ -460,9 +460,10 @@ string SQLite::getCommittedHash() {
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    string query = _getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
+    query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
     return !SQuery(_db, "getting commits", query, result);
 }
 
