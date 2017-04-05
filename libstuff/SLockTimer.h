@@ -13,7 +13,7 @@ class SLockTimer : public SPerformanceTimer {
     void unlock();
 
   private:
-    int _lockCount;
+    atomic<int> _lockCount;
     LOCKTYPE& _lock;
 };
 
@@ -30,17 +30,23 @@ template<typename LOCKTYPE>
 void SLockTimer<LOCKTYPE>::lock()
 {
     _lock.lock();
-    if (!_lockCount) {
+
+    // We atomically increment the counter, and only start the timer if we were the first to do so, in the case
+    // multiple threads are competing for this.
+    int count = _lockCount.fetch_add(1);
+    if (!count) {
         start();
     }
-    ++_lockCount;
 }
 
 template<typename LOCKTYPE>
 void SLockTimer<LOCKTYPE>::unlock()
 {
-    --_lockCount;
-    if (!_lockCount) {
+    int count = _lockCount.fetch_sub(1);
+    
+    // Count contains the value just before our decrement. If it was 1, that means we're now at a lock count of 0, and
+    // can stop the timer.
+    if (count == 1) {
         stop();
     }
     _lock.unlock();
