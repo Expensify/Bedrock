@@ -265,7 +265,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // Validate that the parentJobID exists and is in the right state if one was passed.
         int64_t parentJobID = request.calc64("parentJobID");
         if (parentJobID) {
-            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (parentState.empty()) {
                 throw "404 parentJobID does not exist";
             } else if (!SIEquals(parentState, "RUNNING") && !SIEquals(parentState, "PAUSED")) {
@@ -304,7 +304,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             // in the QUEUED state.
             auto initialState = "QUEUED";
             if (parentJobID) {
-                auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+                auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
                 if (SIEquals(parentState, "RUNNING")) {
                     initialState = "PAUSED";
                 }
@@ -428,7 +428,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             if (parentJobID) {
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
-                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" +SQ(parentJobID)+ ";");
+                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
             if (!finishedChildJobs.empty()) {
                 // Add an associative array of all children
@@ -557,7 +557,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // double-check that child jobs aren't somehow running in parallel to
         // the parent.
         if (parentJobID) {
-            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
                 SWARN("Trying to finish job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
                 throw "405 Can only retry/finish child job when parent is PAUSED";
@@ -573,7 +573,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
-            if (!db.write("UPDATE jobs SET data=" +SQ(data)+ " WHERE jobID=" +SQ(jobID)+ ";")) {
+            if (!db.write("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Failed to update job data";
             }
         }
@@ -628,7 +628,7 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             SASSERT(!SIEquals(request.methodLine, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
-                if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" +SQ(jobID)+ ";")) {
+                if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
                     throw "502 Failed to mark job as FINISHED";
                 }
 
