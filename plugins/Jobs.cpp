@@ -286,9 +286,10 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                            "data     = JSON_PATCH(data, " + safeData + "), " +
                            "priority = " + SQ(priority) + " " +
                          "WHERE jobID = " + SQ(mergeIntoID) + ";"))
-             {
-                 throw "502 update query failed";
-             }
+            {
+                throw "502 update query failed";
+            }
+            content["jobID"] = SToStr(mergeIntoID);
         } else {
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
@@ -302,22 +303,22 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
                         SQ(priority) + ", " + 
                         safeParentJobID +
                      " );"))
-             {
-                 throw "502 insert query failed";
-             }
+            {
+                throw "502 insert query failed";
+            }
+            // Return the new jobID
+            const int64_t lastInsertRowID = db.getLastInsertRowID();
+            const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
+            if (lastInsertRowID != maxJobID) {
+                SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
+                                                                         << " lastInsertRowID=" << lastInsertRowID);
+            }
+            content["jobID"] = SToStr(lastInsertRowID);
          }
 
         // Release workers waiting on this state
         node->clearCommandHolds("Jobs:" + request["name"]);
 
-        // Return the new jobID
-        const int64_t lastInsertRowID = db.getLastInsertRowID();
-        const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
-        if (lastInsertRowID != maxJobID) {
-            SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
-                                                                     << " lastInsertRowID=" << lastInsertRowID);
-        }
-        content["jobID"] = SToStr(lastInsertRowID);
         return true; // Successfully processed
     }
 
