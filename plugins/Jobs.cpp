@@ -171,14 +171,14 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
         // Verify unique
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID "
+        if (!db.read("SELECT jobID, data "
                      "FROM jobs "
                      "WHERE name=" + SQ(request["name"]) + ";",
                      result)) {
             throw "502 Select failed";
         }
-        if (result.empty()) {
-            // Is unique; need to process
+        // If there's no job, or the existing job doesn't match the data we've been passed, escalate to master.
+        if (result.empty() || result[0][1] != request["data"]) {
             return false;
         }
 
@@ -222,20 +222,30 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
         //
         verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
 
-        // If the caller wants this job to be unique, let's verify it is
+        // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
+        // master.
+        uint64_t updateJobID = 0;
         if (request.test("unique")) {
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-            if (!db.read("SELECT jobID "
+            if (!db.read("SELECT jobID, data "
                          "FROM jobs "
                          "WHERE name=" + SQ(request["name"]) + ";",
                          result)) {
                 throw "502 Select failed";
             }
-            if (!result.empty()) {
-                SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+
+            // If we got a result, and it's data is the same as passed, we won't change anything.
+            if (!result.empty() && result[0][1] == request["data"]) {
+                SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
+                      << result[0][0]);
                 content["jobID"] = result[0][0];
                 return true;
+            }
+
+            // If we found a job, but the data was different, we'll need to update it.
+            if (!result.empty()) {
+                updateJobID = SToInt64(result[0][0]);
             }
         }
 
@@ -274,43 +284,60 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
             throw "402 Invalid priority value";
         }
 
-        // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
-        // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
-        // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
-        // the child is created (indicating a child is creating a sibling) then the new child starts
-        // in the QUEUED state.
-        auto initialState = "QUEUED";
-        if (parentJobID) {
-            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
-            if (SIEquals(parentState, "RUNNING")) {
-                initialState = "PAUSED";
+        // Are we creating a new job, or updating an existing job?
+        if (updateJobID) {
+            // Update the existing job.
+            if(!db.write("UPDATE JOBS SET "
+                           "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " +
+                           "data     = JSON_PATCH(data, " + safeData + "), " +
+                           "priority = " + SQ(priority) + " " +
+                         "WHERE jobID = " + SQ(updateJobID) + ";"))
+            {
+                throw "502 update query failed";
             }
-        }
+            content["jobID"] = SToStr(updateJobID);
+        } else {
+            // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
+            // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
+            // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
+            // the child is created (indicating a child is creating a sibling) then the new child starts
+            // in the QUEUED state.
+            auto initialState = "QUEUED";
+            if (parentJobID) {
+                auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" +SQ(parentJobID) + ";");
+                if (SIEquals(parentState, "RUNNING")) {
+                    initialState = "PAUSED";
+                }
+            }
 
-        // Create this new job
-        db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
-                 "VALUES( " +
-                    SCURRENT_TIMESTAMP() + ", " + 
-                    SQ(initialState) + ", " + 
-                    SQ(request["name"]) + ", " + 
-                    safeFirstRun + ", " +
-                    SQ(SToUpper(request["repeat"])) + ", " + 
-                    safeData + ", " + 
-                    SQ(priority) + ", " + 
-                    SQ(parentJobID) +
-                 " );");
+            // Create this new job
+            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
+                     "VALUES( " +
+                        SCURRENT_TIMESTAMP() + ", " + 
+                        SQ(initialState) + ", " + 
+                        SQ(request["name"]) + ", " + 
+                        safeFirstRun + ", " +
+                        SQ(SToUpper(request["repeat"])) + ", " + 
+                        safeData + ", " + 
+                        SQ(priority) + ", " + 
+                        SQ(parentJobID) +
+                     " );"))
+            {
+                throw "502 insert query failed";
+            }
+            // Return the new jobID
+            const int64_t lastInsertRowID = db.getLastInsertRowID();
+            const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
+            if (lastInsertRowID != maxJobID) {
+                SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
+                                                                         << " lastInsertRowID=" << lastInsertRowID);
+            }
+            content["jobID"] = SToStr(lastInsertRowID);
+         }
 
         // Release workers waiting on this state
         node->clearCommandHolds("Jobs:" + request["name"]);
 
-        // Return the new jobID
-        const int64_t lastInsertRowID = db.getLastInsertRowID();
-        const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
-        if (lastInsertRowID != maxJobID) {
-            SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
-                                                                     << " lastInsertRowID=" << lastInsertRowID);
-        }
-        content["jobID"] = SToStr(lastInsertRowID);
         return true; // Successfully processed
     }
 

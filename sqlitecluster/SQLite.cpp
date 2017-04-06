@@ -27,7 +27,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     SASSERT(maxJournalSize > 0);
     _filename = filename;
     _insideTransaction = false;
-    _maxJournalSize = maxJournalSize / (maxRequiredJournalTableID + 2);
+    _maxJournalSize = maxJournalSize;
     _beginElapsed = 0;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -103,9 +103,23 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
     // limit.
+    // We want the min of all journal tables.
+    string minQuery = _getJournalQuery({"SELECT MIN(id) AS id FROM"}, true);
+    minQuery = "SELECT MIN(id) AS id FROM (" + minQuery + ")";
+
+    // And the max.
+    string maxQuery = _getJournalQuery({"SELECT MAX(id) AS id FROM"}, true);
+    maxQuery = "SELECT MAX(id) AS id FROM (" + maxQuery + ")";
+
+    // Look up the min and max values in the database.
     SQResult result;
-    SASSERT(!SQuery(_db, "getting commit count", "SELECT COUNT(*) FROM " + _journalName + ";", result));
-    _journalSize = SToUInt64(result[0][0]);
+    SASSERT(!SQuery(_db, "getting commit min", minQuery, result));
+    uint64_t min = SToUInt64(result[0][0]);
+    SASSERT(!SQuery(_db, "getting commit max", maxQuery, result));
+    uint64_t max = SToUInt64(result[0][0]);
+
+    // And save the difference as the size of the journal.
+    _journalSize = max - min;
 
     // Now that the DB's all up and running, we can load our global data from it, if we're the initializer thread.
     if (initializer) {
@@ -351,7 +365,7 @@ int SQLite::commit() {
         // Delete the oldest entry
         truncating = true;
         uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " WHERE id = (SELECT MIN(id) FROM " + _journalName + ")";
+        string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_journalSize);
         SASSERT(!SQuery(_db, "Deleting oldest row", query));
         _writeElapsed += STimeNow() - before;
     }
@@ -472,9 +486,10 @@ string SQLite::getCommittedHash() {
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    string query = _getJournalQuery({"SELECT hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
+    query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
     return !SQuery(_db, "getting commits", query, result);
 }
 
