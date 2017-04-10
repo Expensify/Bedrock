@@ -134,4 +134,4 @@ $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -o $@ -c $<
+	$(CC) $(CFLAGS) -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_FTS5 -DENABLE_FTS4 -DSQLITE_ENABLE_RTREE -o $@ -c $<
