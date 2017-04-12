@@ -5,12 +5,9 @@ struct STCPNode : public STCPServer {
     STCPNode(const string& name, const string& host, const uint64_t recvTimeout_ = STIME_US_PER_M);
     virtual ~STCPNode();
 
-    // Connects to a peer in the database cluster
-    void addPeer(const string& name, const string& host, const STable& params);
-
     // Updates all peers
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
     struct Peer : public SData {
@@ -21,24 +18,32 @@ struct STCPNode : public STCPServer {
         Socket* s;
         uint64_t latency;
         uint64_t nextReconnect;
+        uint64_t id;
         int failedConnections;
 
         // Helper methods
-        Peer(const string& name_, const string& host_, const STable& params_)
-            : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), failedConnections(0) {
-        }
-        bool connected() { return (s && s->state == STCP_CONNECTED); }
+        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
+          : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), id(id_),
+            failedConnections(0)
+        { }
+        bool connected() { return (s && s->state == STCPManager::Socket::CONNECTED); }
         void reset() {
             clear();
             s = nullptr;
             latency = 0;
         }
     };
+    
+    // Connects to a peer in the database cluster
+    void addPeer(const string& name, const string& host, const STable& params);
+
+    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
+    Peer* getPeerByID(uint64_t id);
 
     // Attributes
     string name;
     uint64_t recvTimeout;
-    list<Peer*> peerList;
+    vector<Peer*> peerList;
     list<Socket*> acceptedSocketList;
 
     // Called when we first establish a connection with a new peer
@@ -52,7 +57,7 @@ struct STCPNode : public STCPServer {
 
   private:
     // Override dead function
-    void postSelect(fd_map& ignore) { SERROR("Don't call."); }
+    void postPoll(fd_map& ignore) { SERROR("Don't call."); }
 
     // Helper functions
     void _sendPING(Peer* peer);

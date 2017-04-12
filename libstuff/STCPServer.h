@@ -30,8 +30,8 @@ struct STCPServer : public STCPManager {
     }
 
     // Updates all managed ports and sockets
-    int preSelect(fd_map& fdm);
-    void postSelect(fd_map& fdm);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm);
 
     // Attributes
     list<Port> portList;

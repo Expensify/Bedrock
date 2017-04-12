@@ -19,7 +19,6 @@
 // Apple specific tweaks
 #include <sys/types.h>
 #include <sys/stat.h>
-#define PTHREAD_MUTEX_RECURSIVE_NP PTHREAD_MUTEX_RECURSIVE
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL 0
 #endif
@@ -60,36 +59,25 @@
 // Initializes signal handling; only call in SInitialize()
 extern void _SInitializeSignals();
 
-// Initializes every thread, including the main thread
-// **NOTE: _g_SThread_TLSKey can stay 0 when initialized, else we'd just look at it
-pthread_key_t _g_SThread_TLSKey = 0;
-bool _g_SThread_TLSKey_Initialized = false;
-void SInitialize() {
+thread_local string SThreadLogPrefix;
+thread_local string SThreadLogName;
+
+void SInitialize(string threadName) {
     // Initialize signal handling
+    SLogSetThreadName(threadName);
+    SLogSetThreadPrefix("xxxxx ");
     _SInitializeSignals();
-
-    // If this is our first thread, initialize thread local storage
-    if (!_g_SThread_TLSKey_Initialized) {
-        // Initialize thread local storage
-        SASSERT(!pthread_key_create(&_g_SThread_TLSKey, NULL));
-        SThreadLocalStorage* mainTLS = new SThreadLocalStorage;
-        mainTLS->proc = nullptr;
-        mainTLS->procData = nullptr;
-        mainTLS->name = "main";
-        pthread_setspecific(_g_SThread_TLSKey, mainTLS);
-        _g_SThread_TLSKey_Initialized = true;
-    }
-}
-
-SThreadLocalStorage* SThreadGetLocalStorage() {
-    return (SThreadLocalStorage*)pthread_getspecific(_g_SThread_TLSKey);
 }
 
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix) {
-    SThreadLocalStorage* tls = SThreadGetLocalStorage();
-    tls->logPrefix = logPrefix;
+    SThreadLogPrefix = logPrefix;
 }
+
+void SLogSetThreadName(const string& logName) {
+    SThreadLogName = logName;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -1686,8 +1674,9 @@ bool S_recvappend(int s, string& recvBuffer) {
     }
 
     // See how we finished
-    if (numRecv == 0)
+    if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
+    }
     else {
         // Some kind of error -- what happened?
         switch (S_errno) {
@@ -2067,76 +2056,6 @@ string SHMACSHA1(const string& key, const string& buffer) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// Thread stuff
-/////////////////////////////////////////////////////////////////////////////
-// --------------------------------------------------------------------------
-void* _SThreadFunc(void* voidTLS) {
-    // Get this thread's call data and store fo future reference
-    // **NOTE: Logging won't work until the we set this
-    SThreadLocalStorage* tls = (SThreadLocalStorage*)voidTLS;
-    pthread_setspecific(_g_SThread_TLSKey, (void*)tls);
-
-    // If this thread wasn't given a name, name ourselves
-    if (tls->name.empty()) {
-// Set threadID (for use when logging)
-#if defined(__linux__)
-        uint64_t threadID = pthread_self();
-#elif defined(__APPLE__)
-        uint64_t threadID = pthread_self()->__sig;
-#endif
-        tls->name = SToStr(threadID);
-    }
-
-    // Execute the thread function
-    tls->proc(tls->procData);
-    delete tls;
-    return 0; // Ignore return value
-}
-
-// --------------------------------------------------------------------------
-void* SThreadOpen(void (*proc)(void* procData), void* procData, const string& name, size_t stackSize) {
-    // Explicitly define the thread as joinable
-    pthread_attr_t attr;
-    SASSERT(!pthread_attr_init(&attr));
-    SASSERT(!pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE));
-
-    // Store all the context relative to this thread for future reference
-    SThreadLocalStorage* tls = new SThreadLocalStorage;
-    tls->proc = proc;
-    tls->procData = procData;
-    tls->name = name;
-
-    // If a stack size was was provided, set it.
-    if (stackSize) {
-        SASSERT(!pthread_attr_setstacksize(&attr, stackSize));
-    }
-
-    // Create the thread
-    pthread_t pthread;
-    SASSERT(!pthread_create(&pthread, &attr, _SThreadFunc, tls));
-    SASSERT(!pthread_attr_destroy(&attr));
-    return (void*)pthread;
-}
-
-// --------------------------------------------------------------------------
-void SThreadClose(void* thread) {
-    // Wait for the thread to exit
-    pthread_t pthread = (pthread_t)thread;
-    SASSERT(!pthread_join(pthread, 0));
-}
-
-// --------------------------------------------------------------------------
-void SThreadSleep(uint64_t duration) {
-    // Just re-use a blocking select (this wasn't working on Windows?)
-    fd_set readfds, writefds, exceptfds;
-    FD_ZERO(&readfds);
-    FD_ZERO(&writefds);
-    FD_ZERO(&exceptfds);
-    timeval tv = SToTimeval(duration);
-    select(0, &readfds, &writefds, &exceptfds, &tv);
-}
-
-/////////////////////////////////////////////////////////////////////////////
 // SQLite Stuff
 /////////////////////////////////////////////////////////////////////////////
 
@@ -2192,7 +2111,7 @@ void SQueryLogClose() {
         SINFO("Closing query log...");
         FILE* fp = _g_sQueryLogFP;
         _g_sQueryLogFP = nullptr;
-        SThreadSleep(STIME_US_PER_S);
+        this_thread::sleep_for(chrono::seconds(1));
 
         // Close it
         fclose(fp);

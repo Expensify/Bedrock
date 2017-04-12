@@ -16,8 +16,6 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID)
-  // TODO: The following line can be removed when we have real multi-write, see note in 'prepare()'.
-  :  _maxRequiredJournalTableID(maxRequiredJournalTableID)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -326,12 +324,7 @@ bool SQLite::prepare() {
     _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
     uint64_t before = STimeNow();
 
-    // TODO: This is a hack to write to multiple journals from a single thread. It exists only for testing purposes,
-    // and should be removed when adding real multi-threaded writes.
-    int table = (SRandom::rand64() % (_maxRequiredJournalTableID + 2)) - 1;
-    _journalName = _getJournalTableName(table);
-
-    // This is no longer part of the hack above. Crete our query.
+    // Crete our query.
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
@@ -391,11 +384,6 @@ int SQLite::commit() {
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
-
-    // TODO: THIS IS A HACK! Because we expect SQLiteNode to call this and retrieve transactions that it needs to
-    // replicate, we continually grow this list, but in this test version of this code, SQLiteNode never calls this, so
-    // we call it to clear the list after each commit.
-    getCommittedTransactions();
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().

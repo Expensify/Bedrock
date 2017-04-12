@@ -1,6 +1,5 @@
 #include "libstuff.h"
 
-// --------------------------------------------------------------------------
 STCPServer::STCPServer(const string& host) {
     // Initialize
     if (!host.empty()) {
@@ -8,13 +7,11 @@ STCPServer::STCPServer(const string& host) {
     }
 }
 
-// --------------------------------------------------------------------------
 STCPServer::~STCPServer() {
     // Close all ports
     closePorts();
 }
 
-// --------------------------------------------------------------------------
 STCPServer::Port* STCPServer::openPort(const string& host) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
@@ -26,7 +23,6 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     return &*portIt;
 }
 
-// --------------------------------------------------------------------------
 void STCPServer::closePorts() {
     // Are there any ports to close?
     if (!portList.empty()) {
@@ -41,7 +37,6 @@ void STCPServer::closePorts() {
     }
 }
 
-// --------------------------------------------------------------------------
 STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     portOut = 0;
@@ -55,14 +50,8 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
         if (s > 0) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            socket = new Socket;
-            socket->s = s;
+            socket = new Socket(s, Socket::CONNECTED);
             socket->addr = addr;
-            socket->state = STCP_CONNECTED;
-            socket->connectFailure = false;
-            socket->openTime = STimeNow();
-            socket->ssl = nullptr;
-            socket->data = nullptr; // Used by caller, not libstuff
             socketList.push_back(socket);
 
             // Try to read immediately
@@ -76,22 +65,18 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     return socket;
 }
 
-// --------------------------------------------------------------------------
-int STCPServer::preSelect(fd_map& fdm) {
-    // Do the base class
-    STCPManager::preSelect(fdm);
+void STCPServer::prePoll(fd_map& fdm) {
+    // Call the base class
+    STCPManager::prePoll(fdm);
 
     // Add the ports
-    for (Port port : portList) {
+    for (Port& port : portList) {
         SFDset(fdm, port.s, SREADEVTS);
     }
-    // Done!
-    return 0;
 }
 
-// --------------------------------------------------------------------------
-void STCPServer::postSelect(fd_map& fdm) {
-    // Process all the existing sockets;
-    STCPManager::postSelect(fdm);
-    // **FIXME: Detect port failure
+void STCPServer::postPoll(fd_map& fdm) {
+    // Process all the existing sockets.
+    // FIXME: Detect port failure
+    STCPManager::postPoll(fdm);
 }

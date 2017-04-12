@@ -3,12 +3,10 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
-// --------------------------------------------------------------------------
 STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
     : STCPServer(host), name(name_), recvTimeout(recvTimeout_) {
 }
 
-// --------------------------------------------------------------------------
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
     for (Socket* socket : acceptedSocketList) {
@@ -17,34 +15,40 @@ STCPNode::~STCPNode() {
     acceptedSocketList.clear();
     for (Peer* peer : peerList) {
         // Shut down the peer
-        if (peer->s)
+        if (peer->s) {
             closeSocket(peer->s);
+        }
         delete peer;
     }
     peerList.clear();
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::addPeer(const string& peerName, const string& host, const STable& params) {
     // Create a new peer and ready it for connection
     SASSERT(SHostIsValid(host));
-    SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), "
-                          << SComposeJSONObject(params));
-    Peer* peer = new Peer(peerName, host, params);
-    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2); // Wait up to 2s before trying the first time
+    SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), " << SComposeJSONObject(params));
+    Peer* peer = new Peer(peerName, host, params, peerList.size() + 1);
+
+    // Wait up to 2s before trying the first time
+    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
     peerList.push_back(peer);
 }
 
-// --------------------------------------------------------------------------
-int STCPNode::preSelect(fd_map& fdm) {
-    // Let the base class do its thing
-    return STCPServer::preSelect(fdm);
+STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
+    if (id && id <= peerList.size()) {
+        return peerList[id - 1];
+    }
+    return nullptr;
 }
 
-// --------------------------------------------------------------------------
-void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
+void STCPNode::prePoll(fd_map& fdm) {
+    // Let the base class do its thing
+    return STCPServer::prePoll(fdm);
+}
+
+void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
-    STCPServer::postSelect(fdm);
+    STCPServer::postPoll(fdm);
 
     // Accept any new peers
     Socket* socket = nullptr;
@@ -60,7 +64,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         Socket* socket = *socketIt;
         try {
             // Verify it's still alive
-            if (socket->state != STCP_CONNECTED)
+            if (socket->state != Socket::CONNECTED)
                 throw "premature disconnect";
 
             // Still alive; try to login
@@ -74,7 +78,7 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                     bool foundIt = false;
                     for (Peer* peer : peerList) {
                         // Just match any unconnected peer
-                        // **FIXME: Autenticate and match by public key
+                        // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
                             // Found it!  Are we already connected?
                             if (!peer->s) {
@@ -107,12 +111,12 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
             }
         } catch (const char* e) {
             // Died prematurely
-            if (socket->recvBuffer.empty() && socket->sendBuffer.empty())
+            if (socket->recvBuffer.empty() && socket->sendBuffer.empty()) {
                 SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e << "), empty buffers");
-            else
+            } else {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e << "), recv='"
-                                                          << socket->recvBuffer << "', send='" << socket->sendBuffer
-                                                          << "'");
+                      << socket->recvBuffer << "', send='" << socket->sendBuffer << "'");
+            }
             closeSocket(socket);
             acceptedSocketList.erase(socketIt);
         }
@@ -124,13 +128,14 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
         if (peer->s) {
             // We have a socket; process based on its state
             switch (peer->s->state) {
-            case STCP_CONNECTED: {
+            case Socket::CONNECTED: {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures
                 SData message;
                 int messageSize = 0;
                 try {
-                    if (peer->s->lastRecvTime && peer->s->lastRecvTime + recvTimeout < STimeNow()) {
+                    // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
+                    if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
                         SWARN("Connection with peer '" << peer->name << "' timed out.");
                         throw "Timed Out!";
@@ -184,15 +189,16 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
                 break;
             }
 
-            case STCP_CLOSED: {
+            case Socket::CLOSED: {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
-                if (peer->s->connectFailure)
+                if (peer->s->connectFailure) {
                     PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                           << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
-                else
+                } else {
                     PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                         << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                }
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)
                     peer->failedConnections++;
@@ -237,7 +243,6 @@ void STCPNode::postSelect(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
-// --------------------------------------------------------------------------
 void STCPNode::_sendPING(Peer* peer) {
     // Send a PING message, including our current timestamp
     SASSERT(peer);
@@ -245,6 +250,3 @@ void STCPNode::_sendPING(Peer* peer) {
     ping["Timestamp"] = SToStr(STimeNow());
     peer->s->send(ping.serialize());
 }
-
-#undef SLOGPREFIX
-#define SLOGPREFIX ""

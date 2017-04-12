@@ -6,7 +6,7 @@
 #define JOBS_DEFAULT_PRIORITY 500
 
 // ==========================================================================
-void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
+void BedrockPlugin_Jobs::upgradeDatabase(SQLiteNode* node, SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
     SASSERT(db.verifyTable("jobs", "CREATE TABLE jobs ( "
@@ -37,7 +37,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(BedrockNode* node, SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_Jobs::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -194,7 +194,7 @@ bool BedrockPlugin_Jobs::peekCommand(BedrockNode* node, SQLite& db, BedrockNode:
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) {
+bool BedrockPlugin_Jobs::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
     // Pull out some helpful variables
     SData& request = command->request;
     SData& response = command->response;
@@ -336,7 +336,8 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
          }
 
         // Release workers waiting on this state
-        node->clearCommandHolds("Jobs:" + request["name"]);
+        // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
+        // node->clearCommandHolds("Jobs:" + request["name"]);
 
         return true; // Successfully processed
     }
@@ -754,16 +755,6 @@ bool BedrockPlugin_Jobs::processCommand(BedrockNode* node, SQLite& db, BedrockNo
 // Under this line we don't know the "node", so remove from the log prefix
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
-
-// ==========================================================================
-void BedrockPlugin_Jobs::test(BedrockTester* tester) {
-    STestTimer test("Testing constructNextRunDATETIME");
-    // Confirm parsing
-    STESTASSERT(_validateRepeat("SCHEDULED, +1 HOUR"));
-    STESTASSERT(_validateRepeat("FINISHED, +7 DAYS, WEEKDAY 4"));
-    STESTASSERT(_validateRepeat("STARTED, +1 MONTH, -1 DAY, START OF DAY, +4 HOURS"));
-    STESTASSERT(!_validateRepeat("FINISHED, WEEKDAY 7")); // only 0-6 weekdays
-}
 
 // ==========================================================================
 string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun,

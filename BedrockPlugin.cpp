@@ -1,10 +1,10 @@
 #include <libstuff/libstuff.h>
 #include "BedrockPlugin.h"
+#include "BedrockServer.h"
 
-// Global static values
 list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = nullptr;
 
-BedrockPlugin::BedrockPlugin() : _enabled(false) {
+BedrockPlugin::BedrockPlugin() {
     // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.
     // This just makes it available for enabling via the command line: by default all plugins start out disabled.
     //
@@ -34,22 +34,40 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
     }
 }
 
-BedrockPlugin* BedrockPlugin::getPlugin(const string& name) {
-    list<BedrockPlugin*>::iterator plugin;
-    plugin = find_if(g_registeredPluginList->begin(), g_registeredPluginList->end(),
-                     [&](BedrockPlugin* plugin) { return SIEquals(plugin->getName(), name); });
-    // Return what we found, or null if nothing.
-    return (plugin == g_registeredPluginList->end()) ? 0 : *plugin;
+STable BedrockPlugin::getInfo() {
+    return STable();
 }
 
-// One-liner default implementations.
-void BedrockPlugin::enable(bool enabled) { _enabled = enabled; }
-bool BedrockPlugin::enabled() { return _enabled; }
-STable BedrockPlugin::getInfo() { return _pluginInfo.get(); }
-string BedrockPlugin::getName() { SERROR("No name defined by this plugin, aborting."); }
-void BedrockPlugin::initialize(const SData& args) {}
-bool BedrockPlugin::peekCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
-bool BedrockPlugin::processCommand(BedrockNode* node, SQLite& db, BedrockNode::Command* command) { return false; }
-void BedrockPlugin::test(BedrockTester* tester) {}
+string BedrockPlugin::getName() {
+    SERROR("No name defined by this plugin, aborting.");
+}
+
+void BedrockPlugin::initialize(const SData& args, BedrockServer& server) {}
+
+bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    return false;
+}
+bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
+    return false;
+}
+
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
-void BedrockPlugin::upgradeDatabase(BedrockNode* node, SQLite& db) {}
+
+void BedrockPlugin::upgradeDatabase(SQLite& db) {}
+
+BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
+    // If our global list isn't set, there's no plugin to return.
+    if (!g_registeredPluginList) {
+        return nullptr;
+    }
+
+    // If we find our plugin in our list, we'll return it.
+    for (auto& plugin : *g_registeredPluginList) {
+        if (SIEquals(plugin->getName(), name)) {
+            return plugin;
+        }
+    }
+
+    // Didn't find it.
+    return nullptr;
+}

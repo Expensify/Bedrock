@@ -1,31 +1,38 @@
 #include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <sqlitecluster/SQLiteServer.h>
 #include <test/lib/BedrockTester.h>
 
-struct TestSQLiteNode : public SQLiteNode {
-    TestSQLiteNode() : SQLiteNode(":memory:", "test", "localhost:9999", 1, 1, 1, 1000000000, "1.0") { }
+class SQLiteNodeTester {
+  public:
+    static SQLiteNode::Peer* getSyncPeer(SQLiteNode& node) {
+        return node._syncPeer;
+    }
 
-    // Useless implementations that at least define the methods.
-    bool _peekCommand(SQLite&, SQLiteNode::Command*) {return true;}
-    void _processCommand(SQLite&, SQLiteNode::Command*) {}
-    void _abortCommand(SQLite&, SQLiteNode::Command*) {}
-    void _cleanCommand(SQLiteNode::Command*) {}
+    static void updateSyncPeer(SQLiteNode& node) {
+        node._updateSyncPeer();
+    }
+};
 
-    void updateSyncPeer() {_updateSyncPeer();}
-    Peer* getSyncPeer() {return _syncPeer;}
+class TestServer : public SQLiteServer {
+  public:
+    TestServer(const string& host) : SQLiteServer(host) { }
+
+    virtual void acceptCommand(SQLiteCommand&& command) { };
+    virtual void cancelCommand(const string& commandID) { };
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
-    SQLiteNodeTest() : tpunit::TestFixture(
-                                    TEST(SQLiteNodeTest::testFindSyncPeer))
-    {
-        NAME(SQLiteNode);
-    }
+    SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
+                                           TEST(SQLiteNodeTest::testFindSyncPeer)) { }
 
     void testFindSyncPeer() {
 
         // This exposes just enough to test the peer selection logic.
-        TestSQLiteNode testNode;
+        SQLite db(":memory:", 1000000, 100, 5000, -1, -1);
+        TestServer server("");
+        SQLiteNode testNode(server, db, "test", "localhost:9999", "", 1, 1000000000, "1.0", 100);
 
         STable dummyParams;
         testNode.addPeer("peer1", "host1.fake:5555", dummyParams);
@@ -48,8 +55,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.updateSyncPeer();
-        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
+        SQLiteNodeTester::updateSyncPeer(testNode);
+        ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // See what happens when another peer becomes faster.
         for (auto peer : testNode.peerList) {
@@ -59,8 +66,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.updateSyncPeer();
-        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
+        SQLiteNodeTester::updateSyncPeer(testNode);
+        ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And see what happens if our fastest peer logs out.
         for (auto peer : testNode.peerList) {
@@ -74,8 +81,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.updateSyncPeer();
-        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
+        SQLiteNodeTester::updateSyncPeer(testNode);
+        ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And then if our previously 0 latency peer gets (fast) latency data.
         for (auto peer : testNode.peerList) {
@@ -85,8 +92,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.updateSyncPeer();
-        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
+        SQLiteNodeTester::updateSyncPeer(testNode);
+        ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // Now none of our peers have latency data, but one has more commits.
         for (auto peer : testNode.peerList) {
@@ -97,8 +104,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                 fastest = peer;
             }
         }
-        testNode.updateSyncPeer();
-        ASSERT_EQUAL(testNode.getSyncPeer(), fastest);
+        SQLiteNodeTester::updateSyncPeer(testNode);
+        ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
     }
 
 } __SQLiteNodeTest;

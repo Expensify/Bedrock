@@ -1,47 +1,40 @@
 #include "libstuff.h"
 
-// --------------------------------------------------------------------------
+atomic<uint64_t> STCPManager::Socket::socketCount(1);
+
 STCPManager::~STCPManager() {
-    // Verify clean shutdown
     SASSERTWARN(socketList.empty());
 }
 
-// --------------------------------------------------------------------------
-int STCPManager::preSelect(fd_map& fdm) {
+void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
-    int maxS = 0;
     for (Socket* socket : socketList) {
         // Make sure it's not closed
-        if (socket->state != STCP_CLOSED) {
+        if (socket->state != Socket::CLOSED) {
             // Check and see if it looks like we're still valid.
             if (socket->s < 0) {
                 SWARN("Invalid FD number("
                       << socket->s << "), we're probably about to corrupt stack memory. FD_SETSIZE=" << FD_SETSIZE);
             }
-            // Add this socket.  First, we always want to read, and we always
-            // want to learn of exceptions.
+            // Add this socket.  First, we always want to read, and we always want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
-            maxS = max(maxS, socket->s);
 
-            // However, we only want to write in some states.  No matter
-            // what, we want to send if we're not yet connected.  And if we're
-            // not using SSL, then we want to send only when we have something
-            // buffered for sending.  But if we *are* using SSL, it's a bit more
-            // complex.  If we've completed the handshake, then we only want to
-            // send when we have data.  But if we're inside the handshake, leave
-            // it up to the SSL engine to decide if it wants to send.
-            if (socket->state == STCP_CONNECTING) {
+            // However, we only want to write in some states. No matter what, we want to send if we're not yet
+            // connected. And if we're not using SSL, then we want to send only when we have something buffered for
+            // sending. But if we *are* using SSL, it's a bit more complex. If we've completed the handshake, then we
+            // only want to send when we have data. But if we're inside the handshake, leave it up to the SSL engine
+            // to decide if it wants to send.
+            if (socket->state == Socket::CONNECTING) {
                 // We haven't yet connected -- send regardless of SSL
                 SFDset(fdm, socket->s, SWRITEEVTS);
             } else if (!socket->ssl) {
                 // No SSL, just send if we have anything buffered
-                if (!socket->sendBuffer.empty())
+                if (!socket->sendBuffer.empty()) {
                     SFDset(fdm, socket->s, SWRITEEVTS);
+                }
             } else {
                 // Have we completed the handshake?
-
                 SASSERT(socket->ssl);
-
                 SSSLState* sslState = socket->ssl;
                 if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
                     // Handshake done -- send if we have anything buffered
@@ -74,17 +67,14 @@ int STCPManager::preSelect(fd_map& fdm) {
             }
         }
     }
-    // Done
-    return maxS;
 }
 
-// --------------------------------------------------------------------------
-void STCPManager::postSelect(fd_map& fdm) {
+void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     for (Socket* socket : socketList) {
         // Update this socket
         switch (socket->state) {
-        case STCP_CONNECTING: {
+        case Socket::CONNECTING: {
             // See if it connected or failed
             if (!SFDAnySet(fdm, socket->s, SWRITEEVTS | POLLHUP | POLLERR)) {
                 // Keep waiting for asynchronous connect result
@@ -98,7 +88,7 @@ void STCPManager::postSelect(fd_map& fdm) {
             if (result) {
                 // Asynchronous connect failed; close socket
                 SDEBUG("Connect to '" << socket->addr << "' failed with SO_ERROR #" << result << ", closing.");
-                socket->state = STCP_CLOSED;
+                socket->state = Socket::CLOSED;
                 socket->connectFailure = true;
                 break;
             }
@@ -106,24 +96,20 @@ void STCPManager::postSelect(fd_map& fdm) {
             // Asynchronous connect succeeded
             SDEBUG("Connect to '" << socket->addr << "' succeeded.");
             SASSERTWARN(SFDAnySet(fdm, socket->s, SWRITEEVTS));
-            socket->state = STCP_CONNECTED;
+            socket->state = Socket::CONNECTED;
             // **NOTE: Intentionally fall through to the connected state
         }
 
-        case STCP_CONNECTED: {
+        case Socket::CONNECTED: {
             // Connected -- see if we're ready to send
             bool aliveAfterRecv = true;
             bool aliveAfterSend = true;
-
             if (socket->ssl) {
-                // If the socket is ready to send or receive, do both: SSL
-                // has its own internal traffic, so even if we only want to
-                // receive, SSL might need to send (and vice versa)
+                // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
+                // only want to receive, SSL might need to send (and vice versa)
                 //
-                // **NOTE: SSL can receive data for a while before giving
-                //         any back, so if this gets called many times in
-                //         a row it might just be filling an internal
-                //         buffer (and not due to some busy loop)
+                // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
+                //         in a row it might just be filling an internal buffer (and not due to some busy loop)
                 SDEBUG("sslState=" << SSSLGetState(socket->ssl) << ", canrecv=" << SFDAnySet(fdm, socket->s, SREADEVTS)
                                    << ", recvsize=" << socket->recvBuffer.size()
                                    << ", cansend=" << SFDAnySet(fdm, socket->s, SWRITEEVTS)
@@ -146,33 +132,31 @@ void STCPManager::postSelect(fd_map& fdm) {
             // If we died, update
             if (!aliveAfterRecv || !aliveAfterSend) {
                 // How did we die?
-                SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv
-                                         << ", send=" << aliveAfterSend << ")");
-                socket->state = STCP_CLOSED;
+                SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv << ", send="
+                       << aliveAfterSend << ")");
+                socket->state = Socket::CLOSED;
             }
             break;
         }
 
-        case STCP_SHUTTINGDOWN:
+        case Socket::SHUTTINGDOWN:
             // Is this a SSL socket?
             if (socket->ssl) {
-                // Always send/recv (see STCP_CONNECTED, above)
+                // Always send/recv (see Socket::CONNECTED, above)
                 // **FIXME: Add timeout.
                 bool aliveAfterRecv = socket->recv();
                 bool aliveAfterSend = socket->send();
                 if (!aliveAfterSend || (!aliveAfterRecv && socket->sendBuffer.empty())) {
 
-                    // Did we send everything?  (Technically this the send buffer could
-                    // be empty and we still haven't sent everything -- SSL buffers
-                    // internally, so we should check that buffer.  But odds are it
-                    // sent fine.)
+                    // Did we send everything?  (Technically this the send buffer could be empty and we still haven't
+                    // sent everything -- SSL buffers internally, so we should check that buffer.  But odds are it sent fine.)
                     if (socket->sendBuffer.empty()) {
                         SDEBUG("Graceful shutdown of SSL socket '" << socket->addr << "'");
                     } else {
                         SWARN("Dirty shutdown of SSL socket '" << socket->addr << "' (" << socket->sendBuffer.size()
                                                                << " bytes remain)");
                     }
-                    socket->state = STCP_CLOSED;
+                    socket->state = Socket::CLOSED;
                     ::shutdown(socket->s, SHUT_RDWR);
                 }
             } else {
@@ -194,59 +178,29 @@ void STCPManager::postSelect(fd_map& fdm) {
                     if (!S_recvappend(socket->s, socket->recvBuffer)) {
                         // Done shutting down
                         SDEBUG("Graceful shutdown of socket '" << socket->addr << "'");
-                        socket->state = STCP_CLOSED;
+                        socket->state = Socket::CLOSED;
                         ::shutdown(socket->s, SHUT_RDWR);
                     }
                 }
             }
             break;
-
-        case STCP_CLOSED:
+        case Socket::CLOSED:
             // Ignore
             break;
-
         default:
             SERROR("Unknown socket state");
         }
     }
 }
 
-// --------------------------------------------------------------------------
-STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
-    // Try to open the socket
-    SASSERT(SHostIsValid(host));
-    int s = S_socket(host, true, false, false);
-    if (s < 0) {
-        return 0;
-    }
-
-    // Create a new socket
-    Socket* socket = new Socket;
-    socket->s = s;
-    SASSERT(socket->s != -1);
-    socket->state = STCP_CONNECTING;
-    socket->connectFailure = false;
-    socket->openTime = STimeNow();
-    socket->lastSendTime = STimeNow();
-    socket->lastRecvTime = STimeNow();
-    socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
-    socket->data = nullptr; // Used by caller, not libstuff
-    SASSERT(!x509 || socket->ssl);
-    memset(&socket->addr, 0, sizeof(socket->addr));
-    socketList.push_back(socket);
-    return socket;
-}
-
-// --------------------------------------------------------------------------
 void STCPManager::shutdownSocket(Socket* socket, int how) {
     // Send the shutdown and note
     SASSERT(socket);
     SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
     ::shutdown(socket->s, how);
-    socket->state = STCP_SHUTTINGDOWN;
+    socket->state = Socket::SHUTTINGDOWN;
 }
 
-// --------------------------------------------------------------------------
 void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
@@ -257,6 +211,28 @@ void STCPManager::closeSocket(Socket* socket) {
         SSSLClose(socket->ssl);
     }
     delete socket;
+}
+
+
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_)
+  : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++)
+{ }
+
+STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
+    // Try to open the socket
+    SASSERT(SHostIsValid(host));
+    int s = S_socket(host, true, false, false);
+    if (s < 0) {
+        return 0;
+    }
+
+    // Create a new socket
+    Socket* socket = new Socket(s, Socket::CONNECTING);
+    socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
+    SASSERT(!x509 || socket->ssl);
+    socketList.push_back(socket);
+    return socket;
 }
 
 // --------------------------------------------------------------------------

@@ -9,7 +9,6 @@
 #include "plugins/Cache.h"
 #include "plugins/DB.h"
 #include "plugins/Jobs.h"
-#include "plugins/Status.h"
 #include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
@@ -27,7 +26,7 @@ void RetrySystem(const string& command) {
             // Didn't work
             SWARN("'" << command << "' failed with return code " << returnCode << ", waiting 5s and retrying "
                       << numRetries << " more times");
-            SThreadSleep(STIME_US_PER_S * 5);
+            this_thread::sleep_for(chrono::seconds(5));
         } else
 
         {
@@ -84,7 +83,6 @@ set<string> loadPlugins(SData& args) {
     // Instantiate all of our built-in plugins.
     map<string, BedrockPlugin*> standardPluginMap = {
         {"DB",     new BedrockPlugin_DB()},
-        {"STATUS", new BedrockPlugin_Status()},
         {"JOBS",   new BedrockPlugin_Jobs()},
         {"CACHE",  new BedrockPlugin_Cache()},
         {"MYSQL",  new BedrockPlugin_MySQL()}
@@ -135,34 +133,14 @@ set<string> loadPlugins(SData& args) {
         }
     }
 
-    // Initialize our version string.
-    vector<string> versions = {SVERSION};
-    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-        // We need to call initialize to let the plugin set its version info.
-        // We only do this for plugins that were actually requested to load.
-        if (postProcessedNames.find(SToUpper(plugin->getName())) != postProcessedNames.end()) {
-            plugin->initialize(args);
-            auto info = plugin->getInfo();
-            auto iterator = info.find("version");
-            if (iterator != info.end()) {
-                versions.push_back(plugin->getName() + "_" + iterator->second);
-            }
-        }
-    }
-    sort(versions.begin(), versions.end());
-    args["version"] = SComposeList(versions, ":");
-
     return postProcessedNames;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-extern void BedrockTest(SData& trueArgs);
 int main(int argc, char* argv[]) {
     // Start libstuff
-    SInitialize();
+    SInitialize("main");
     SLogLevel(LOG_INFO);
-    SLogSetThreadPrefix("xxxxx ");
 
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
@@ -250,11 +228,6 @@ int main(int argc, char* argv[]) {
         // Quiet logging
         SLogLevel(LOG_WARNING);
     }
-    if (args.isSet("-test")) {
-        // Run the test
-        BedrockTest(args);
-        return 1;
-    }
 
     // Fork if requested
     if (args.isSet("-fork")) {
@@ -326,11 +299,11 @@ int main(int argc, char* argv[]) {
             while (!server.shutdownComplete()) {
                 // Wait and process
                 fd_map fdm;
-                server.preSelect(fdm);
+                server.prePoll(fdm);
                 const uint64_t now = STimeNow();
                 S_poll(fdm, max(nextActivity, now) - now);
                 nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-                server.postSelect(fdm, nextActivity);
+                server.postPoll(fdm, nextActivity);
             }
             SINFO("Graceful bedrock shutdown complete");
         }
@@ -371,6 +344,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Log how much time we spent in our main mutex.
+    SQLite::g_commitLock.log();
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;

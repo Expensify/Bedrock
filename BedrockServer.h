@@ -1,141 +1,156 @@
-// Manages connections to a single instance of the bedrock server.
 #pragma once
 #include <libstuff/libstuff.h>
-#include "BedrockNode.h"
+#include <sqlitecluster/SQLiteNode.h>
+#include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
+#include "BedrockCommandQueue.h"
 
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-/// BedrockServer
-/// ---------
-class BedrockServer : public STCPServer {
-  public: // External Bedrock
-    // A synchronized queue of messages for enabling the main, read, and write
-    // threads to communicate safely.
-    //
-    class MessageQueue {
-      public:
-        // Constructor / Destructor
-        MessageQueue();
-        ~MessageQueue();
+class BedrockServer : public SQLiteServer {
+  public:
+    // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
+    // initialized at construction based on the arguments passed in.
+    list<BedrockPlugin*> plugins;
 
-        // Explicitly delete copy constructor so it can't accidentally get called.
-        MessageQueue(const MessageQueue& other) = delete;
+    // A command queue is just a SSynchronizedQueue of BedrockCommands. This is distinct from a `BedrockCommandQueue`,
+    // which is a more complex data structure.
+    typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
 
-        // Wait for something to be put onto the queue
-        int preSelect(fd_map& fdm);
-        void postSelect(fd_map& fdm, int bytesToRead = 1);
-
-        // Synchronized interface to add/remove work
-        void push(const SData& rhs);
-        SData pop();
-        bool empty();
-        bool cancel(const string& name, const string& value);
-
-      private:
-        // Private state
-        list<SData> _queue;
-        recursive_mutex _queueMutex;
-        int _pipeFD[2] = {-1, -1};
-    };
-
-    // All the data required for a thread to create an BedrockNode
-    // and coordinate with other threads.
-    struct Thread {
-        Thread(const string& name_,                         // Thread name
-               SData args_,                                 // Command line args passed in.
-               SSynchronized<SQLCState>& replicationState_, // Shared var for communicating replication thread's status.
-               SSynchronized<uint64_t>& replicationCommitCount_, // Shared var for communicating replication thread's
-                                                                 // commit count (for sticky connections)
-               SSynchronized<bool>& gracefulShutdown_, // Shared var for communicating shutdown status between threads.
-               SSynchronized<string>& masterVersion_, // Shared var for communicating the master version (for knowing if
-                                                      // we should skip the slave peek).
-               MessageQueue& queuedRequests_, // Shared external queue between threads. Queued for read-only thread(s)
-               MessageQueue&
-                   queuedEscalatedRequests_, // Shared external queue between threads. Queued for replication thread
-               MessageQueue& processedResponses_, // Shared external queue between threads. Finished commands ready to
-                                                  // return to client.
-               BedrockServer* server_)            // The server spawning the thread.
-            : name(name_),
-              args(args_),
-              replicationState(replicationState_),
-              replicationCommitCount(replicationCommitCount_),
-              gracefulShutdown(gracefulShutdown_),
-              masterVersion(masterVersion_),
-              queuedRequests(queuedRequests_),
-              queuedEscalatedRequests(queuedEscalatedRequests_),
-              processedResponses(processedResponses_),
-              ready(false),
-              server(server_) {
-            // Initialized above
-        }
-
-        // Public attributes
-        string name;
-        SData args;
-        SSynchronized<SQLCState>& replicationState;
-        SSynchronized<uint64_t>& replicationCommitCount;
-        SSynchronized<bool>& gracefulShutdown;
-        SSynchronized<string>& masterVersion;
-        MessageQueue& queuedRequests;
-        MessageQueue& queuedEscalatedRequests;
-        MessageQueue& processedResponses;
-        MessageQueue directMessages;
-        void* thread;
-        SSynchronized<bool> ready;
-        BedrockServer* server;
-        bool finished = false;
-    };
-
-    // Constructor / Destructor
+    // Our only constructor.
     BedrockServer(const SData& args);
+
+    // Destructor
     virtual ~BedrockServer();
 
-    // Accessors
-    SQLCState getState() { return _replicationState.get(); }
+    // Accept an incoming command from an SQLiteNode.
+    // SQLiteNode API.
+    void acceptCommand(SQLiteCommand&& command);
 
-    // Ready to gracefully shut down
+    // Cancel a command.
+    // SQLiteNode API.
+    void cancelCommand(const string& commandID);
+
+    // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
+    // Exposes the replication state to plugins.
+    SQLiteNode::State getState() const { return _replicationState.load(); }
+
     // Flush the send buffers
-    int preSelect(fd_map& fdm);
+    // STCPNode API.
+    void prePoll(fd_map& fdm);
 
     // Accept connections and dispatch requests
-    void postSelect(fd_map& fdm, uint64_t& nextActivity);
+    // STCPNode API.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
-    // in which case that setting trumps the `suppress` setting.
+    // in which case the `suppress` setting will be forced.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
-    // Add a new request to our message queue.
-    void queueRequest(const SData& request);
+  private:
+    // The name of the sync thread.
+    static constexpr auto _syncThreadName = "sync";
 
-    // Returns the version string of the server.
-    const string& getVersion();
-
-    // Each plugin can register as many httpsManagers as it likes. They'll all get checked for activity in the
-    // read loop on the write thread.
-    list<list<SHTTPSManager*>> httpsManagers;
-
-    // Keeps track of the time we spend idle.
-    SPerformanceTimer pollTimer;
-
-  private: // Internal Bedrock
-    // Attributes
+    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
     SData _args;
+
+    // Commands that aren't currently being processed are kept here.
+    BedrockCommandQueue _commandQueue;
+
+    // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
+
+    // We keep a map of requests to socket. We should never have more than one request per socket at a given time, or
+    // we could deliver responses in the wrong order.
     map<uint64_t, Socket*> _requestCountSocketMap;
-    Thread* _writeThread;
-    list<Thread*> _readThreadList;
-    SSynchronized<SQLCState> _replicationState;
-    SSynchronized<uint64_t> _replicationCommitCount;
-    SSynchronized<bool> _nodeGracefulShutdown;
-    SSynchronized<string> _masterVersion;
-    MessageQueue _queuedRequests;
-    MessageQueue _queuedEscalatedRequests;
-    MessageQueue _processedResponses;
+
+    // Each time we connect a new socket, we give it an ID, and we insert it in this set. When a socket disconnects, we
+    // remove that ID from this set.
+    map <uint64_t, Socket*> _socketIDMap;
+
+    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
+    recursive_mutex _socketIDMutex;
+
+    // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
+    // reference to this object is passed to the sync thread to allow this update.
+    atomic<SQLiteNode::State> _replicationState;
+
+    // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
+    atomic<bool> _upgradeInProgress;
+
+    // This flag will be raised when we want to start shutting down. A reference is passed to the sync thread to allow
+    // it to shut down its SQLiteNode.
+    atomic<bool> _nodeGracefulShutdown;
+
+    // This is the current version of the master node, updated after every SQLiteNode::update() iteration. A
+    // reference to this object is passed to the sync thread to allow this update.
+    atomic<string> _masterVersion;
+
+    // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
+    // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
+    // sync thread. A reference is passed to the sync thread.
+    CommandQueue _syncNodeQueuedCommands;
+
+    // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
+
+    // This is a map of open listening ports to the plugin objects that created them.
     map<Port*, BedrockPlugin*> _portPluginMap;
+
+    // The server version. This may be fake if the arguments contain a `versionOverride` value.
     string _version;
+
+    // The actual thread object for the sync thread.
+    thread _syncThread;
+
+    // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
+    // becomes master. It will return true if the DB has changed and needs to be committed.
+    bool _upgradeDB(SQLite& db);
+
+    // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
+    void _prePollPlugins(fd_map& fdm);
+    void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
+
+    // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
+    // start the worker threads.
+    static void sync(SData& args,
+                     atomic<SQLiteNode::State>& replicationState,
+                     atomic<bool>& upgradeInProgress,
+                     atomic<bool>& nodeGracefulShutdown,
+                     atomic<string>& masterVersion,
+                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockServer& server);
+
+    // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
+    static void worker(SData& args,
+                       atomic<SQLiteNode::State>& _replicationState,
+                       atomic<bool>& upgradeInProgress,
+                       atomic<bool>& nodeGracefulShutdown,
+                       atomic<string>& masterVersion,
+                       CommandQueue& syncNodeQueuedCommands,
+                       CommandQueue& syncNodeCompletedCommands,
+                       BedrockServer& server,
+                       int threadId,
+                       int threadCount);
+
+    // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
+    // then this is an error, as the command should have been sent back to a peer.
+    void _reply(BedrockCommand&);
+
+    // The following are constants used as methodlines by status command requests.
+    static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
+    static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
+    static constexpr auto STATUS_PING              = "Ping";
+    static constexpr auto STATUS_STATUS            = "Status";
+
+    // This *only* exists so that status commands can pull info from this node.
+    SQLiteNode* _syncNode;
+
+    // Because status will access internal sync node data, we lock in both places that will access the pointer above.
+    mutex _syncMutex;
+
+    // Functions for checking for and responding to status commands.
+    bool _isStatusCommand(BedrockCommand& command);
+    void _status(BedrockCommand& command);
 };

@@ -2,11 +2,9 @@
 #include "SPerformanceTimer.h"
 
 SPerformanceTimer::SPerformanceTimer(string description, bool reverse, uint64_t logIntervalSeconds)
-    : _reverse(reverse), _logPeriod(logIntervalSeconds * STIME_US_PER_S), _lastStart(0), _lastStop(0),
-      _lastLogStart(0), _timeLogged(0), _timeNotLogged(0), _description(description) {}
-
-SPerformanceTimer::~SPerformanceTimer() {
-}
+  : _reverse(reverse), _logPeriod(logIntervalSeconds * STIME_US_PER_S), _lastStart(0), _lastStop(0),
+    _lastLogStart(0), _timeLogged(0), _timeNotLogged(0), _description(description)
+{}
 
 void SPerformanceTimer::start() {
     uint64_t timestamp = STimeNow();
@@ -70,9 +68,8 @@ void SPerformanceTimer::log() {
     }
     char buffer[7];
     snprintf(buffer, 7, "%.2f", percentage);
-    // Log both raw numbers and our friendly percentage.
 
+    // Log both raw numbers and our friendly percentage.
     SINFO("[performance] " << (_timeLogged + _timeNotLogged) << "us elapsed, " << _timeLogged << "us in "
-                           << _description << ", " << _timeNotLogged << "us " << adj << ". " << buffer << "% "
-                           << "usage.");
+          << _description << ", " << _timeNotLogged << "us " << adj << ". " << buffer << "% " << "usage.");
 }
