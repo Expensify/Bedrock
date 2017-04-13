@@ -256,8 +256,16 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& safeData = request["data"].empty() ? SQ("{}") : SQ(request["data"]);
 
         // If a repeat is provided, validate it
-        if (request.isSet("repeat") && !_validateRepeat(request["repeat"]))
-            throw "402 Malformed repeat";
+        if (request.isSet("repeat")) {
+            if (request["repeat"].empty()) {
+                SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
+                      << request["name"] << ", removing attribute.");
+                request.erase("repeat");
+            } else if (!_validateRepeat(request["repeat"])) {
+                throw "402 Malformed repeat";
+            }
+        }
+
 
         // If no priority set, set it
         int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
@@ -477,8 +485,15 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
 
         // If a repeat is provided, validate it
-        if (request.isSet("repeat") && !_validateRepeat(request["repeat"]))
-            throw "402 Malformed repeat";
+        if (request.isSet("repeat")) {
+            if (request["repeat"].empty()) {
+                SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
+                      << request["jobID"] << ", removing attribute.");
+                request.erase("repeat");
+            } else if (!_validateRepeat(request["repeat"])) {
+                throw "402 Malformed repeat";
+            }
+        }
 
         // Verify there is a job like this
         SQResult result;
