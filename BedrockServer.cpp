@@ -450,7 +450,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
     _suppressCommandPortManualOverride(false), _syncNode(nullptr)
 {
-    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
+    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : SVERSION;
 
     // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;
@@ -461,8 +461,9 @@ BedrockServer::BedrockServer(const SData& args)
         registeredPluginMap[pluginName] = plugin;
     }
 
-    // Enable the requested plugins
+    // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
+    vector<string> versions = {_version};
     for (string& pluginName : pluginNameList) {
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin) {
@@ -470,8 +471,18 @@ BedrockServer::BedrockServer(const SData& args)
         }
         plugin->initialize(args, *this);
         plugins.push_back(plugin);
-    }
 
+        // If the plugin has version info, add it to the list.
+        auto info = plugin->getInfo();
+        auto iterator = info.find("version");
+        if (iterator != info.end()) {
+            versions.push_back(plugin->getName() + "_" + iterator->second);
+        }
+    }
+    sort(versions.begin(), versions.end());
+    _version = SComposeList(versions, ":");
+
+    // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(sync,
                          ref(_args),
