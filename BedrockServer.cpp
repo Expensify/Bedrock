@@ -430,7 +430,7 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                SWARN("Max retries hit in worker, forwarding command to sync node.");
+                SINFO("Max retries hit in worker, forwarding command to sync node.");
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {

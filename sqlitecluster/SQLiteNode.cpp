@@ -756,7 +756,7 @@ bool SQLiteNode::update() {
 
                     // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
                     // roll back.
-                    SWARN("Conflict committing in SQLiteNode, ROLLBACK");
+                    SINFO("Conflict committing in SQLiteNode, ROLLBACK");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
