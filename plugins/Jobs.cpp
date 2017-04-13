@@ -1,12 +1,12 @@
 #include "Jobs.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
+#define SLOGPREFIX "{" << getName() << "} "
 
 #define JOBS_DEFAULT_PRIORITY 500
 
 // ==========================================================================
-void BedrockPlugin_Jobs::upgradeDatabase(SQLiteNode* node, SQLite& db) {
+void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
     SASSERT(db.verifyTable("jobs", "CREATE TABLE jobs ( "
@@ -37,11 +37,11 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLiteNode* node, SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    SData& response = command->response;
-    STable& content = command->jsonContent;
+    SData& request = command.request;
+    SData& response = command.response;
+    STable& content = command.jsonContent;
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
@@ -194,11 +194,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLiteNode* node, SQLite& db, BedrockComman
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    SData& response = command->response;
-    STable& content = command->jsonContent;
+    SData& request = command.request;
+    SData& response = command.response;
+    STable& content = command.jsonContent;
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "CreateJob")) {
