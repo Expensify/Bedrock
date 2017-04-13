@@ -6,9 +6,9 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
   public:
     // Implement base class interface
     virtual string getName() { return "Jobs"; }
-    virtual void upgradeDatabase(SQLiteNode* node, SQLite& db);
-    virtual bool peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command);
-    virtual bool processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command);
+    virtual void upgradeDatabase(SQLite& db);
+    virtual bool peekCommand(SQLite& db, BedrockCommand& command);
+    virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
   private:
     // Helper functions
