@@ -1453,12 +1453,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "not mastering";
         }
         try {
-            // Approval of current command, or an old one?
-            if (to_string(_lastSentTransactionID + 1) == message["ID"]) {
-                // Current, make sure it all matches.
-                if (message["NewHash"] != _db.getUncommittedHash()) {
-                    throw "new hash mismatch";
-                }
+            // We ignore late approvals of commits that have already been finalized. They could have been committed
+            // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
+            // back due to a conflict, which would cuase them to have the wrong hash (the hash of the previous attempt
+            // at committing the tgransaction with this ID).
+            bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
+            if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
                 if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
                     throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
                           + to_string(_db.getCommitCount() + 1);
@@ -1471,7 +1471,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             } else {
                 // Old command.  Nothing to do.  We already sent a commit or rollback.
                 PINFO("Peer approved transaction #" << message["NewCount"] << " (" << message["NewHash"]
-                      << ") after commit.");
+                      << ") after " << (hashMatch ? "commit" : "rollback") << ".");
             }
         } catch (const char* e) {
             // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for

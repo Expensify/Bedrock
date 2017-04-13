@@ -171,8 +171,8 @@ void BedrockServer::sync(SData& args,
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !syncNode.commitInProgress()) {
-            // It should be impossible to get here if we're not mastering.
-            SASSERT(nodeState == SQLiteNode::MASTERING);
+            // It should be impossible to get here if we're not mastering or standing down.
+            SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
             if (syncNode.commitSucceeded()) {
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
@@ -818,10 +818,10 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
 }
 
 bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
-    if (command.request.methodLine == STATUS_IS_SLAVE          ||
-        command.request.methodLine == STATUS_HANDLING_COMMANDS ||
-        command.request.methodLine == STATUS_PING              ||
-        command.request.methodLine == STATUS_STATUS) {
+    if (SIEquals(command.request.methodLine, STATUS_IS_SLAVE)          ||
+        SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
+        SIEquals(command.request.methodLine, STATUS_PING)              ||
+        SIEquals(command.request.methodLine, STATUS_STATUS)) {
         return true;
     }
     return false;
@@ -832,7 +832,7 @@ void BedrockServer::_status(BedrockCommand& command) {
     SData& response = command.response;
 
     // We'll return whether or not this server is slaving.
-    if (request.methodLine == STATUS_IS_SLAVE) {
+    if (SIEquals(request.methodLine, STATUS_IS_SLAVE)) {
         // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
@@ -846,7 +846,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         }
     }
 
-    else if (request.methodLine == STATUS_HANDLING_COMMANDS) {
+    else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
         SQLiteNode::State state = _replicationState.load();
         if (state != SQLiteNode::SLAVING) {
@@ -859,12 +859,12 @@ void BedrockServer::_status(BedrockCommand& command) {
     }
 
     // All a ping message requires is some response.
-    else if (request.methodLine == STATUS_PING) {
+    else if (SIEquals(request.methodLine, STATUS_PING)) {
         response.methodLine = "200 OK";
     }
 
     // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
-    else if (request.methodLine == STATUS_STATUS) {
+    else if (SIEquals(request.methodLine, STATUS_STATUS)) {
         STable content;
         SQLiteNode::State state = _replicationState.load();
         list<string> pluginList;
