@@ -876,7 +876,6 @@ bool SQLiteNode::update() {
             // See if we're done
             // **FIXME: Add timeout?
             if (allUnsubscribed) {
-
                 // We can only switch to SEARCHING if the server has no outstanding write work to do.
                 if (!_server.canStandDown()) {
                     // Try again.
