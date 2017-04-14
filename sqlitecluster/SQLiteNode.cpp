@@ -1145,11 +1145,18 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 if (SWITHIN(STANDINGUP, _state, STANDINGDOWN)) {
                     // Oh crap, it's trying to stand up while we're mastering. Who is higher priority?
                     if (peer->calc("Priority") > _priority) {
-                        // Not good -- we're in the way.  Not sure how we got here, so just reconnect and start over.
-                        PWARN("Higher-priority peer is trying to stand up while we are " << stateNames[_state]
-                              << ", reconnecting and SEARCHING.");
-                        _reconnectAll();
-                        _changeState(SEARCHING);
+                        // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
+                        // came up as master, and now it's been brought back up). We'll want to stand down here, but we
+                        // do it gracefully so that we won't lose any transactions in progress.
+                        if (_state == STANDINGUP) {
+                            PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
+                            _changeState(SEARCHING);
+                        } else if (_state == MASTERING) {
+                            PWARN("Higher-priority peer is trying to stand up while we are MASTERING, STANDINGDOWN.");
+                            _changeState(STANDINGDOWN);
+                        } else {
+                            PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
+                        }
                     } else {
                         // Deny because we're currently in the process of mastering and we're higher priority.
                         response["Response"] = "deny";
@@ -1170,6 +1177,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             PWARN("Lower-priority peer is trying to stand up while we are " << stateNames[_state]
                                   << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
                             _reconnectAll();
+                            // TODO: This puts us in an ambiguous state if we switch to SEARCHING from MASTERING,
+                            // without going through the STANDDOWN process. We'll need to handle it better, but it's
+                            // unclear if this can ever happen at all. exit() may be a reasonable strategy here.
                             _changeState(SEARCHING);
                         }
                     }
@@ -1801,8 +1811,11 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // We are no longer mastering.  Are we processing a command?
             if (commitInProgress()) {
                 // Abort this command
-                SWARN("No longer mastering, aborting current command");
-                // TODO: Handle this? Not sure how this could even happen.
+                SWARN("Stopping MASTERING/STANDINGDOWN with commit in progress. Canceling.");
+                _commitState = CommitState::FAILED;
+                if (!_db.getUncommittedHash().empty()) {
+                    _db.rollback();
+                }
             }
         }
 
