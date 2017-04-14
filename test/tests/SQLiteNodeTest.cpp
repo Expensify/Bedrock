@@ -21,6 +21,7 @@ class TestServer : public SQLiteServer {
 
     virtual void acceptCommand(SQLiteCommand&& command) { };
     virtual void cancelCommand(const string& commandID) { };
+    virtual bool canStandDown() { return true; };
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {

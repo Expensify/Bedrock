@@ -14,4 +14,8 @@ class SQLiteServer : public STCPServer {
     // An SQLiteNode will call this to cancel a command that a peer has escalated but no longer wants a response to.
     // The command may or may not be canceled, depending on whether it's already been processed.
     virtual void cancelCommand(const string& commandID) = 0;
+
+    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
+    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
+    virtual bool canStandDown() = 0;
 };
