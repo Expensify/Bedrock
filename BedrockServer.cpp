@@ -12,6 +12,10 @@ void BedrockServer::cancelCommand(const string& commandID) {
     _commandQueue.removeByID(commandID);
 }
 
+bool BedrockServer::canStandDown() {
+    return _writableCommandsInProgress.load() == 0;
+}
+
 void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
@@ -22,6 +26,9 @@ void BedrockServer::sync(SData& args,
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
+
+    // We currently have no writable commands in progress.
+    server._writableCommandsInProgress.store(0);
 
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
@@ -161,6 +168,7 @@ void BedrockServer::sync(SData& args,
             if (server._upgradeDB(db)) {
                 upgradeInProgress.store(true);
                 committingCommand = true;
+                server._writableCommandsInProgress++;
                 syncNode.startCommit(SQLiteNode::QUORUM);
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -177,6 +185,7 @@ void BedrockServer::sync(SData& args,
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
                     committingCommand = false;
+                    server._writableCommandsInProgress--;
                     upgradeInProgress.store(false);
                     continue;
                 }
@@ -197,11 +206,12 @@ void BedrockServer::sync(SData& args,
             
             // Not committing any more.
             committingCommand = false;
+            server._writableCommandsInProgress--;
         }
 
-        // We're either mastering, or slaving. There could be a commit in progress on `command`, but there could also
-        // be other finished work to handle while we wait for that to complete. Let's see if we can handle any of that
-        // work.
+        // We're either mastering, standing down, or slaving. There could be a commit in progress on `command`, but
+        // there could also be other finished work to handle while we wait for that to complete. Let's see if we can
+        // handle any of that work.
         try {
             // If there are any completed commands to respond to, we'll do that first.
             try {
@@ -221,7 +231,14 @@ void BedrockServer::sync(SData& args,
                 continue;
             }
 
-            // Now we can pull the next one off the queue and start on it.
+            // If we're STANDINGDOWN, we don't want to start on any new commands. We'll just start our next loop
+            // iteration without doing anything here, and maybe we'll be either MASTERING or SLAVING on the next
+            // iteration.
+            if (nodeState == SQLiteNode::STANDINGDOWN) {
+                continue;
+            }
+
+            // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
@@ -243,6 +260,7 @@ void BedrockServer::sync(SData& args,
                 if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
+                    server._writableCommandsInProgress++;
                     syncNode.startCommit(command.writeConsistency);
 
                     // And we'll start the next main loop.
@@ -365,6 +383,11 @@ void BedrockServer::worker(SData& args,
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
                 if (!core.peekCommand(command)) {
+                    // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
+                    // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
+                    // until we're finished with this command.
+                    server._writableCommandsInProgress++;
+
                     if (command.httpsRequest) {
                         // It's an error to open an HTTPS request unless we're mastering, since we won't be able to
                         // record the response. Note that it's *possible* that the state of the node differs from what
@@ -383,7 +406,8 @@ void BedrockServer::worker(SData& args,
                         syncNodeQueuedCommands.push(move(command));
 
                         // We'll break out of our retry loop here, as we don't need to do anything else, we can just
-                        // look for another command to work on.
+                        // look for another command to work on. We're also not handling a writable command anymore.
+                        server._writableCommandsInProgress--;
                         break;
                     }  else {
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
@@ -407,6 +431,10 @@ void BedrockServer::worker(SData& args,
                                 command.complete = true;
                             }
                         }
+
+                        // Whether we rolled it back or committed it, it's no longer potentially getting written, so we
+                        // can decrement our counter.
+                        server._writableCommandsInProgress--;
                     }
                 }
 

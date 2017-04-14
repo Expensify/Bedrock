@@ -47,6 +47,10 @@ class BedrockServer : public SQLiteServer {
     // in which case the `suppress` setting will be forced.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
+    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
+    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
+    virtual bool canStandDown();
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -153,4 +157,9 @@ class BedrockServer : public SQLiteServer {
     // Functions for checking for and responding to status commands.
     bool _isStatusCommand(BedrockCommand& command);
     void _status(BedrockCommand& command);
+
+    // This counts the number of commands that are being processed that might be able to write to the database. We
+    // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
+    // it's 0.
+    atomic<int> _writableCommandsInProgress;
 };
