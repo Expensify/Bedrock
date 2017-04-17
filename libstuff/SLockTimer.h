@@ -14,8 +14,8 @@ class SLockTimer : public SPerformanceTimer {
 
   private:
     atomic<int> _lockCount;
-    recursive_mutex _syncMutex;
     LOCKTYPE& _lock;
+    recursive_mutex _syncMutex;
 };
 
 template<typename LOCKTYPE>
@@ -30,11 +30,11 @@ SLockTimer<LOCKTYPE>::~SLockTimer() {
 template<typename LOCKTYPE>
 void SLockTimer<LOCKTYPE>::lock()
 {
-    SAUTOLOCK(_syncMutex);
     _lock.lock();
 
     // We atomically increment the counter, and only start the timer if we were the first to do so, in the case
     // multiple threads are competing for this.
+    SAUTOLOCK(_syncMutex);
     int count = _lockCount.fetch_add(1);
     if (!count) {
         start();
@@ -46,7 +46,7 @@ void SLockTimer<LOCKTYPE>::unlock()
 {
     SAUTOLOCK(_syncMutex);
     int count = _lockCount.fetch_sub(1);
-    
+
     // Count contains the value just before our decrement. If it was 1, that means we're now at a lock count of 0, and
     // can stop the timer.
     if (count == 1) {
