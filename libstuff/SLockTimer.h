@@ -5,7 +5,7 @@
 template<typename LOCKTYPE>
 class SLockTimer : public SPerformanceTimer {
   public:
-    SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds = 60);
+    SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds = 10);
     ~SLockTimer();
 
     // Wrappers around calls to the equivalent functions for the underlying lock, but with timing info added.
