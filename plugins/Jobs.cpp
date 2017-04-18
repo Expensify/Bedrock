@@ -88,6 +88,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state='QUEUED' "
+                     "(state='QUEUED' OR (state=’RUNNING’ AND current_timestamp > timeout)) "
                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                      "  AND name GLOB " + SQ(name) + " "
                      "LIMIT 1;",
@@ -222,6 +223,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //     return that jobID
         //     - parentJobID - The ID of the parent job (optional)
+        //     - timeout - the timeout timestamp (optional)
         //
         //     Returns:
         //     - jobID - Unique identifier of this job
@@ -260,6 +262,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If no data was provided, use an empty object
         const string& safeData = request["data"].empty() ? SQ("{}") : SQ(request["data"]);
+
+        // If no timeout was passed, set to NULL
+        // @todo validate timeout
+        const string& safeTimeout = request["timeout"].empty() ? "NULL" : SQ(request["timeout"]);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
@@ -305,6 +311,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                            "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " +
                            "data     = JSON_PATCH(data, " + safeData + "), " +
                            "priority = " + SQ(priority) + " " +
+                           "timeout  = " + safeTimeout + " " +
                          "WHERE jobID = " + SQ(updateJobID) + ";"))
             {
                 throw "502 update query failed";
@@ -325,7 +332,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Create this new job
-            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
+            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, timeout ) "
                      "VALUES( " +
                         SCURRENT_TIMESTAMP() + ", " + 
                         SQ(initialState) + ", " + 
@@ -335,6 +342,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                         safeData + ", " + 
                         SQ(priority) + ", " + 
                         SQ(parentJobID) +
+                        safeTimeout + ", " +
                      " );"))
             {
                 throw "502 insert query failed";
