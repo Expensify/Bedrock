@@ -163,8 +163,8 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         content["repeat"] = result[0][6];
         content["data"] = result[0][7];
         return true; // Successfully processed
-    } 
-    
+    }
+
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CreateJob")) {
         // If unique flag was passed and the job exist in the DB, then we can
@@ -333,13 +333,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, timeout ) "
                      "VALUES( " +
-                        SCURRENT_TIMESTAMP() + ", " + 
-                        SQ(initialState) + ", " + 
-                        SQ(request["name"]) + ", " + 
+                        SCURRENT_TIMESTAMP() + ", " +
+                        SQ(initialState) + ", " +
+                        SQ(request["name"]) + ", " +
                         safeFirstRun + ", " +
-                        SQ(SToUpper(request["repeat"])) + ", " + 
-                        safeData + ", " + 
-                        SQ(priority) + ", " + 
+                        SQ(SToUpper(request["repeat"])) + ", " +
+                        safeData + ", " +
+                        SQ(priority) + ", " +
                         SQ(parentJobID) + ", " +
                         safeTimeout +
                      " );"))
@@ -374,7 +374,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // works!
         SQResult result;
         const string& name = request["name"];
-        string safeNumResults = SQ(max(request.calc("numResults"),1)); 
+        string safeNumResults = SQ(max(request.calc("numResults"),1));
         string selectQuery =
             "SELECT jobID, name, data, parentJobID FROM ( "
                 "SELECT * FROM ("
@@ -670,7 +670,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     }
                 }
             } else {
-                // This is a standalone (not a child) job; delete it.  
+                // This is a standalone (not a child) job; delete it.
                 if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(jobID) + ";")) {
                     throw "502 Delete failed";
                 }
@@ -845,7 +845,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " + 
+                 "WHERE parentJobID = " + SQ(jobID) + " " +
                  "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
