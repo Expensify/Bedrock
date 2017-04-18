@@ -862,41 +862,25 @@ bool SQLiteNode::update() {
         // At this point, we're no longer committing. We'll have returned false above, or we'll have completed any
         // outstanding transaction, we can complete standing down if that's what we're doing.
         if (_state == STANDINGDOWN) {
-            // Loop across and search for subscribed peers
-            bool allUnsubscribed = true;
-            for (auto peer : peerList) {
-                // See if this peer is still subscribed
-                if (SIEquals((*peer)["Subscribed"], "true")) {
-                    // Found one; keep waiting
-                    allUnsubscribed = false;
-                    break;
-                }
-            }
-
             // See if we're done
+            // We can only switch to SEARCHING if the server has no outstanding write work to do.
             // **FIXME: Add timeout?
-            if (allUnsubscribed) {
-                // We can only switch to SEARCHING if the server has no outstanding write work to do.
-                if (!_server.canStandDown()) {
-                    // Try again.
-                    SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
-                    return true;
-                }
-                // Standdown complete
-                SINFO("STANDDOWN complete, SEARCHING");
-
-                // As we fall out of mastering, make sure no lingering transactions are left behind.
-                SAUTOLOCK(stateMutex);
-                _sendOutstandingTransactions();
-                _changeState(SEARCHING);
-
-                // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
-                // slave node instead.
+            if (!_server.canStandDown()) {
+                // Try again.
+                SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return true;
             }
+            // Standdown complete
+            SINFO("STANDDOWN complete, SEARCHING");
 
-            // We still need to wait for peers to acknowledge our stand-down.
-            return false;
+            // As we fall out of mastering, make sure no lingering transactions are left behind.
+            SAUTOLOCK(stateMutex);
+            _sendOutstandingTransactions();
+            _changeState(SEARCHING);
+
+            // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
+            // slave node instead.
+            return true;
         }
 
         // At this point, we must be mastering, or we'd have returned. Let's see if there's a new transaction to start.
@@ -983,17 +967,25 @@ bool SQLiteNode::update() {
             return false; // Don't update
         }
 
-        // If the master stands down, stop slaving
-        // **FIXME: Wait for all commands to finish
-        if (!SIEquals((*_masterPeer)["State"], "MASTERING")) {
+        // If the master stops mastering (or standing down), we'll go SEARCHING, which allows us to look for a new
+        // master. We don't want to go searching before that, because we won't know when master is done sending its
+        // final transactions.
+        if (!SIEquals((*_masterPeer)["State"], "MASTERING") && !SIEquals((*_masterPeer)["State"], "STANDINGDOWN")) {
             // Master stepping down
-            SHMMM("Master stepping down, re-queueing commands and re-SEARCHING.");
+            SHMMM("Master stepping down, re-queueing commands.");
 
             // If there were escalated commands, give them back to the server to retry.
             for (auto& cmd : _escalatedCommandMap) {
                 _server.acceptCommand(move(cmd.second));
             }
             _escalatedCommandMap.clear();
+
+            // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` without a
+            // corresponding `COMMIT` or `ROLLBACK`, this isn't supposed to happen.
+            if (!_db.getUncommittedHash().empty()) {
+                SWARN("Master stepped down with transaction in progress, rolling back.");
+                _db.rollback();
+            }
             _changeState(SEARCHING);
             return true; // Re-update
         }
