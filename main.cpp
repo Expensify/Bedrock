@@ -262,7 +262,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-nodeHost", "localhost:8889");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
-    SETDEFAULT("-plugins", "status,db,jobs,cache");
+    SETDEFAULT("-plugins", "db,jobs,cache");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
