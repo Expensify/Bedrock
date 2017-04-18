@@ -87,8 +87,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         const string& name = request["name"];
         if (!db.read("SELECT 1 "
                      "FROM jobs "
-                     "WHERE state='QUEUED' "
-                     "(state='QUEUED' OR (state=’RUNNING’ AND current_timestamp > timeout)) "
+                     "WHERE ( (state='RUNNING' AND lastRun IS NOT NULL AND current_timestamp > DATETIME(lastRun, timeout) ) OR state='QUEUED') "
                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                      "  AND name GLOB " + SQ(name) + " "
                      "LIMIT 1;",
@@ -341,8 +340,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                         SQ(SToUpper(request["repeat"])) + ", " + 
                         safeData + ", " + 
                         SQ(priority) + ", " + 
-                        SQ(parentJobID) +
-                        safeTimeout + ", " +
+                        SQ(parentJobID) + ", " +
+                        safeTimeout +
                      " );"))
             {
                 throw "502 insert query failed";
@@ -381,7 +380,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE ( (state='RUNNING' AND lastRun IS NOT NULL AND current_timestamp > DATETIME(lastRun, timeout) ) OR state='QUEUED') "
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -391,7 +390,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE ( (state='RUNNING' AND lastRun IS NOT NULL AND current_timestamp > DATETIME(lastRun, timeout) ) OR state='QUEUED') "
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -401,7 +400,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE ( (state='RUNNING' AND lastRun IS NOT NULL AND current_timestamp > DATETIME(lastRun, timeout) ) OR state='QUEUED') "
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
