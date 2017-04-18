@@ -399,7 +399,8 @@ void BedrockServer::worker(SData& args,
                     }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
-                    if (state != SQLiteNode::MASTERING ||
+                    if (true || /* DISABLE MULTI-WRITE*/
+                        state != SQLiteNode::MASTERING ||
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
@@ -409,7 +410,7 @@ void BedrockServer::worker(SData& args,
                         // look for another command to work on. We're also not handling a writable command anymore.
                         server._writableCommandsInProgress--;
                         break;
-                    }  else {
+                    } else {
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is

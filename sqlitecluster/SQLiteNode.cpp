@@ -1540,7 +1540,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getUncommittedHash().empty()) {
             throw "no outstanding transaction";
         }
-        SWARN("ROLLBACK received on slave for: " << message["ID"]);
+        SINFO("ROLLBACK received on slave for: " << message["ID"]);
         _db.rollback();
 
         // Look through our escalated commands and see if it's one being processed
