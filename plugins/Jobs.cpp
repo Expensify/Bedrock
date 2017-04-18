@@ -9,7 +9,7 @@
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
-    SASSERT(db.verifyTable("jobs", "CREATE TABLE jobs ( "
+    bool originalTable = db.verifyTable("jobs", "CREATE TABLE jobs ( "
                                    "created  TIMESTAMP NOT NULL, "
                                    "jobID    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                    "state    TEXT NOT NULL, "
@@ -19,8 +19,14 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "repeat   TEXT NOT NULL, "
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
-                                   "parentJobID INTEGER NOT NULL DEFAULT 0 )",
-                           ignore));
+                                   "parentJobID INTEGER NOT NULL DEFAULT 0, "
+                                   "timeout  TEXT DEFAULT NULL)",
+                           ignore);
+
+
+    if (!originalTable) {
+        SASSERT(db.write("ALTER TABLE jobs ADD COLUMN timeout TEXT DEFAULT NULL;"));
+    }
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
