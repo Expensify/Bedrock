@@ -263,8 +263,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& safeData = request["data"].empty() ? SQ("{}") : SQ(request["data"]);
 
         // If no timeout was passed, set to NULL
-        // @todo validate timeout
-        const string& safeTimeout = request["timeout"].empty() ? "NULL" : SQ(request["timeout"]);
+        const string& timeout = request["timeout"].empty() ? "NULL" : request["timeout"];
+        if (timeout != "NULL" && !_isValidSQLiteDateModifier(timeout)) {
+            throw "402 Malformed timeout";
+        }
+        const string& safeTimeout = SQ(timeout);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
