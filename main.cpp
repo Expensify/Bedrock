@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
         cout << "bedrock [-? | -h | -help]" << endl;
         cout << "bedrock -version" << endl;
         cout << "bedrock [-clean] [-v] [-db <filename>] [-serverHost <host:port>] [-nodeHost <host:port>] [-nodeName "
-                "<name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-readThreads <#>] "
+                "<name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-workerThreads <#>] "
                 "[-versionOverride <version>]"
              << endl;
         cout << endl;
@@ -184,7 +184,7 @@ int main(int argc, char* argv[]) {
         cout << "-priority       <value>     See '-peerList Details' below (defaults to 100)" << endl;
         cout << "-plugins        <list>      Enable these plugins (defaults to 'status,db,jobs,cache')" << endl;
         cout << "-cacheSize      <kb>        number of KB to allocate for a page cache (defaults to 1GB)" << endl;
-        cout << "-readThreads    <#>         Number of read threads to start (min 1, defaults to 1)" << endl;
+        cout << "-workerThreads  <#>         Number of worker threads to start (min 1, defaults to # of cores)" << endl;
         cout << "-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to "
                 "enable/disable)"
              << endl;
