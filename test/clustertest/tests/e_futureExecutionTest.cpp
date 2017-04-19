@@ -7,6 +7,7 @@ struct e_futureExecutionTest : tpunit::TestFixture {
                               TEST(e_futureExecutionTest::futureExecution)) { }
 
     void futureExecution() {
+        return;
         // We only care about master because future execution only works on Master.
         BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);

@@ -169,6 +169,7 @@ void BedrockServer::sync(SData& args,
                 upgradeInProgress.store(true);
                 committingCommand = true;
                 server._writableCommandsInProgress++;
+                SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " upgrade started.");
                 syncNode.startCommit(SQLiteNode::QUORUM);
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -186,6 +187,7 @@ void BedrockServer::sync(SData& args,
                 if (upgradeInProgress.load()) {
                     committingCommand = false;
                     server._writableCommandsInProgress--;
+                    SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " upgrade finished.");
                     upgradeInProgress.store(false);
                     continue;
                 }
@@ -207,6 +209,7 @@ void BedrockServer::sync(SData& args,
             // Not committing any more.
             committingCommand = false;
             server._writableCommandsInProgress--;
+            SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " commit finished.");
         }
 
         // We're either mastering, standing down, or slaving. There could be a commit in progress on `command`, but
@@ -261,6 +264,7 @@ void BedrockServer::sync(SData& args,
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     server._writableCommandsInProgress++;
+                    SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " commit started.");
                     syncNode.startCommit(command.writeConsistency);
 
                     // And we'll start the next main loop.
@@ -387,6 +391,7 @@ void BedrockServer::worker(SData& args,
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
                     server._writableCommandsInProgress++;
+                    SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " peeked.");
 
                     if (command.httpsRequest) {
                         // It's an error to open an HTTPS request unless we're mastering, since we won't be able to
@@ -404,11 +409,13 @@ void BedrockServer::worker(SData& args,
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
+                        // We're not handling a writable command anymore.
+                        server._writableCommandsInProgress--;
+                        SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " sent to sync.");
                         syncNodeQueuedCommands.push(move(command));
 
                         // We'll break out of our retry loop here, as we don't need to do anything else, we can just
-                        // look for another command to work on. We're also not handling a writable command anymore.
-                        server._writableCommandsInProgress--;
+                        // look for another command to work on.
                         break;
                     } else {
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
@@ -436,6 +443,7 @@ void BedrockServer::worker(SData& args,
                         // Whether we rolled it back or committed it, it's no longer potentially getting written, so we
                         // can decrement our counter.
                         server._writableCommandsInProgress--;
+                        SWARN("_writableCommandsInProgress = " << server._writableCommandsInProgress.load() << " processed.");
                     }
                 }
 

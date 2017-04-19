@@ -22,6 +22,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void slow()
     {
+        return;
         tester = BedrockClusterTester::testers.front();
 
         // Send some write commands to each node in the cluster.
@@ -69,6 +70,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
+        return;
         // Get the global tester object.
         tester = BedrockClusterTester::testers.front();
 

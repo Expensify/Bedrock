@@ -23,6 +23,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
     void test()
     {
+        return;
         // Get the global tester object.
         tester = BedrockClusterTester::testers.front();
 

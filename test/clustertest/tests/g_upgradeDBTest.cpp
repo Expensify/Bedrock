@@ -8,6 +8,7 @@ struct g_upgradeDBTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
     void test()
     {
+        return;
         BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         for (auto i : {0,1,2}) {
             BedrockTester* brtester = tester->getBedrockTester(i);

@@ -7,7 +7,7 @@ struct d_abandonedCommandTest : tpunit::TestFixture {
                               TEST(d_abandonedCommandTest::abandon)) { }
 
     void abandon() {
-
+        return;
         BedrockClusterTester* tester = BedrockClusterTester::testers.front();
 
         // Send three commands (one to each node) and immediately disconnect after each.

@@ -229,6 +229,13 @@ void SQLiteNode::_sendOutstandingTransactions() {
 }
 
 void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
+    // If the master is currently standing down, we won't escalate, we'll give the command back to the caller.
+    if((*_masterPeer)["State"] == "STANDINGDOWN") {
+        SINFO("Asked to escalate command but master standing down, letting server retry.");
+        _server.acceptCommand(move(command));
+        return;
+    }
+
     // Send this to the MASTER
     SASSERT(_masterPeer);
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
@@ -868,7 +875,7 @@ bool SQLiteNode::update() {
             if (!_server.canStandDown()) {
                 // Try again.
                 SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
-                return true;
+                return false;
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
