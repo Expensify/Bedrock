@@ -181,11 +181,13 @@ void BedrockServer::sync(SData& args,
         if (committingCommand && !syncNode.commitInProgress()) {
             // It should be impossible to get here if we're not mastering or standing down.
             SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
+
+            // We're done with the commit, we decrement our counter.
+            committingCommand = false;
+            server._writableCommandsInProgress--;
             if (syncNode.commitSucceeded()) {
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
-                    committingCommand = false;
-                    server._writableCommandsInProgress--;
                     upgradeInProgress.store(false);
                     continue;
                 }
@@ -193,7 +195,7 @@ void BedrockServer::sync(SData& args,
                 // Otherwise, mark this command as complete and reply.
                 command.complete = true;
                 if (command.initiatingPeerID) {
-                    // This is a command that came from a peer. Have the server send the response back to the peer.
+                    // This is a command that came from a peer. Have the sync node send the response back to the peer.
                     syncNode.sendResponse(command);
                 } else {
                     // The only other option is this came from a client, so respond via the server.
@@ -203,10 +205,6 @@ void BedrockServer::sync(SData& args,
                 // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
                 syncNodeQueuedCommands.push(move(command));
             }
-            
-            // Not committing any more.
-            committingCommand = false;
-            server._writableCommandsInProgress--;
         }
 
         // We're either mastering, standing down, or slaving. There could be a commit in progress on `command`, but
@@ -358,18 +356,36 @@ void BedrockServer::worker(SData& args,
             // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
             // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
             // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
-            // MASTERING, we'll just peek this command and return it's result, which should be harmless. IF we think
+            // MASTERING, we'll just peek this command and return it's result, which should be harmless. If we think
             // we're mastering, we'll go ahead and start a `process` for the command, but we'll synchronously verify
             // our state right before we commit.
             SQLiteNode::State state = replicationState.load();
+
+            // If we find that we've gotten a command with an initiatingPeerID, but we're not in a mastering or
+            // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
+            // original caller will need to re-send the request. This can happen if we're mastering, and receive a
+            // request from a peer, but then we stand down from mastering. The SQLiteNode should have already told its
+            // peers that their outstanding requests were being canceled at this point.
+            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || SQLiteNode::STANDINGDOWN)) {
+                SWARN("Found " << (command.complete ? "" : "in") << "complete " << "command "
+                      << command.request.methodLine << " from peer, but not mastering. Too late for it, discarding.");
+                continue;
+            }
 
             // If this command is already complete, then we should be a slave, and the sync node got a response back
             // from a command that had been escalated to master, and queued it for a worker to respond to. We'll send
             // that response now.
             if (command.complete) {
                 // If this command is already complete, we can return it to the caller.
-                // If it has an initiator, it should be returned to a peer by a sync node instead.
-                SASSERT(!command.initiatingPeerID);
+                // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
+                // just switched states out of mastering, we might have an old command in the queue. All we can do here
+                // is note that and discard it, as we have nobody to deliver it to.
+                if(command.initiatingPeerID) {
+                    SWARN("Found unexpected complete command " << command.request.methodLine
+                          << " from peer in worker thread. Discarding.");
+                    continue;
+                }
+
                 SASSERT(command.initiatingClientID);
                 server._reply(command);
 
@@ -387,7 +403,6 @@ void BedrockServer::worker(SData& args,
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
                     server._writableCommandsInProgress++;
-
                     if (command.httpsRequest) {
                         // It's an error to open an HTTPS request unless we're mastering, since we won't be able to
                         // record the response. Note that it's *possible* that the state of the node differs from what
@@ -404,11 +419,12 @@ void BedrockServer::worker(SData& args,
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
+                        // We're not handling a writable command anymore.
+                        server._writableCommandsInProgress--;
                         syncNodeQueuedCommands.push(move(command));
 
                         // We'll break out of our retry loop here, as we don't need to do anything else, we can just
-                        // look for another command to work on. We're also not handling a writable command anymore.
-                        server._writableCommandsInProgress--;
+                        // look for another command to work on.
                         break;
                     } else {
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
