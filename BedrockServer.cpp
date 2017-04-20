@@ -722,7 +722,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SAUTOLOCK(_socketIDMutex);
                     auto socketIt = _socketIDMap.find(s->id);
                     if (socketIt != _socketIDMap.end()) {
-                        SWARN("Can't dequeue a request while one is pending, or they could end up out-of-order.");
                         break;
                     }
                 }
