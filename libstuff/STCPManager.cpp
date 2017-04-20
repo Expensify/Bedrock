@@ -251,6 +251,7 @@ bool STCPManager::Socket::send() {
 // --------------------------------------------------------------------------
 bool STCPManager::Socket::send(const string& buffer) {
     // Append to the buffer and send
+    // TODO: The following line can segfault. We probably can delete this socket while it's sending.
     sendBuffer += buffer;
     return send();
 }

@@ -154,7 +154,7 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
         {"-priority",       "200"},
         {"-plugins",        "db,cache"},
         {"-readThreads",    "8"},
-        {"-maxJournalSize", "100"},
+        {"-maxJournalSize", "100000"},
         {"-v",              ""},
         {"-cache",          "10001"},
     };
@@ -220,8 +220,8 @@ void BedrockTester::startServer(map<string, string> args_, bool wait) {
         int count = 0;
         while (wait) {
             count++;
-            // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (count > 60 * 10) {
+            // Give up after ~~a minute~~ 5 seconds. This will fail the remainder of the test, but won't hang indefinitely.
+            if (count > 5 * 10) {
                 break;
             }
             try {

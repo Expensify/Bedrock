@@ -821,6 +821,50 @@ bool SQLiteNode::update() {
             SQLite::g_commitLock.unlock();
         }
 
+        // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
+        // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
+        // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
+        if (_commitState == CommitState::WAITING) {
+            // Lock the database. We'll unlock it when we complete in a future update cycle.
+            SQLite::g_commitLock.lock();
+            _commitState = CommitState::COMMITTING;
+
+            // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
+            // ones can be added until we release the lock.
+            _sendOutstandingTransactions();
+
+            // We'll send the commit count to peers.
+            uint64_t commitCount = _db.getCommitCount();
+
+            // If there was nothing changed, then we shouldn't have anything to commit.
+            SASSERT(!_db.getUncommittedQuery().empty());
+
+            // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
+            // something catastrophic like that.
+            SASSERT(_db.prepare());
+
+            // Begin the distributed transaction
+            SData transaction("BEGIN_TRANSACTION");
+            SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
+                  << _db.getUncommittedHash() << ")");
+            transaction.set("NewCount", commitCount + 1);
+            transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("ID", _lastSentTransactionID + 1);
+            transaction.content = _db.getUncommittedQuery();
+
+            for (auto peer : peerList) {
+                // Clear the response flag from the last transaction
+                (*peer)["TransactionResponse"].clear();
+            }
+
+            // And send it to everyone who's subscribed.
+            _sendToAllPeers(transaction, true);
+
+            // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
+            // asynchronous.
+            return true;
+        }
+
         // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
         if (_state == MASTERING) {
             string standDownReason;
@@ -887,48 +931,6 @@ bool SQLiteNode::update() {
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
             // slave node instead.
-            return true;
-        }
-
-        // At this point, we must be mastering, or we'd have returned. Let's see if there's a new transaction to start.
-        if (_commitState == CommitState::WAITING) {
-            // Lock the database. We'll unlock it when we complete in a future update cycle.
-            SQLite::g_commitLock.lock();
-            _commitState = CommitState::COMMITTING;
-
-            // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
-            // ones can be added until we release the lock.
-            _sendOutstandingTransactions();
-
-            // We'll send the commit count to peers.
-            uint64_t commitCount = _db.getCommitCount();
-
-            // If there was nothing changed, then we shouldn't have anything to commit.
-            SASSERT(!_db.getUncommittedQuery().empty());
-
-            // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
-            // something catastrophic like that.
-            SASSERT(_db.prepare());
-
-            // Begin the distributed transaction
-            SData transaction("BEGIN_TRANSACTION");
-            SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
-                  << _db.getUncommittedHash() << ")");
-            transaction.set("NewCount", commitCount + 1);
-            transaction.set("NewHash", _db.getUncommittedHash());
-            transaction.set("ID", _lastSentTransactionID + 1);
-            transaction.content = _db.getUncommittedQuery();
-
-            for (auto peer : peerList) {
-                // Clear the response flag from the last transaction
-                (*peer)["TransactionResponse"].clear();
-            }
-
-            // And send it to everyone who's subscribed.
-            _sendToAllPeers(transaction, true);
-
-            // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
-            // asynchronous.
             return true;
         }
         break;
@@ -1877,8 +1879,10 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
         string myHash, ignore;
-        if (!_db.getCommit(peerCommitCount, ignore, myHash))
+        if (!_db.getCommit(peerCommitCount, ignore, myHash)) {
+            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << _db.getCommitCount());
             throw "error getting hash";
+        }
         if (myHash != (*peer)["Hash"]) {
             SWARN("[TY5] Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << (*peer)["Hash"]
                   << ", but we have hash: " << myHash << " for that commit.");
