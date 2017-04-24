@@ -3,7 +3,6 @@
 
 struct LibStuff : tpunit::TestFixture {
     LibStuff() : tpunit::TestFixture("LibStuff",
-                                    TEST(LibStuff::testMaskPAN),
                                     TEST(LibStuff::testEncryptDecrpyt),
                                     TEST(LibStuff::testSHMACSHA1),
                                     TEST(LibStuff::testJSONDecode),
@@ -25,20 +24,6 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion))
     { }
-
-    void testMaskPAN() {
-        ASSERT_EQUAL(SMaskPAN(""), "");
-        ASSERT_EQUAL(SMaskPAN("123"), "XXX");
-        ASSERT_EQUAL(SMaskPAN("1234"), "1234");
-        ASSERT_EQUAL(SMaskPAN("12345"), "X2345");
-        ASSERT_EQUAL(SMaskPAN("1234567"), "XXX4567");
-        ASSERT_EQUAL(SMaskPAN("12345678"), "XXXX5678");
-        ASSERT_EQUAL(SMaskPAN("12345678a"), "XXXXX678X");
-        ASSERT_EQUAL(SMaskPAN("1234567890123"), "XXXXXXXXX0123");
-        ASSERT_EQUAL(SMaskPAN("12345678901234"), "123456XXXX1234");
-        ASSERT_EQUAL(SMaskPAN("12345678901234567"), "123456XXXXXXX4567");
-        ASSERT_EQUAL(SMaskPAN("123456789012345678901"), "123456XXXXXXXXXXX8901");
-    }
 
     void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";
