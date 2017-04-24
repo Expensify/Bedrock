@@ -41,6 +41,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             response.methodLine = "200 OK";
         }
 
+        // Add the commitCount header to the response.
+        response["commitCount"] = _db.getCommitCount();
+
         // Success. If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
         if (!content.empty()) {
@@ -109,6 +112,9 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
+
+        // Add the commitCount header to the response.
+        response["commitCount"] = _db.getCommitCount();
 
         // Success, this command will be committed.
         SINFO("Processed '" << response.methodLine << "' for '" << request.methodLine << "'.");
