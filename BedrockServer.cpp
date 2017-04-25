@@ -95,6 +95,29 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
+        // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
+        // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
+        // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
+        // iteration.
+        {
+            SAUTOLOCK(server._futureCommitCommandMutex);
+            if (!server._futureCommitCommands.empty()) {
+                uint64_t commitCount = db.getCommitCount();
+                auto it = server._futureCommitCommands.begin();
+                auto& eraseTo = it;
+                while (it != server._futureCommitCommands.end() && it->first <= commitCount) {
+                    SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
+                          << " to queue, now have commit " << commitCount);
+                    server._commandQueue.push(move(it->second));
+                    eraseTo = it;
+                    it++;
+                }
+                if (eraseTo != server._futureCommitCommands.begin()) {
+                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), eraseTo);
+                }
+            }
+        }
+
         // If we've been instructed to shutdown and we haven't yet, do it.
         if (nodeGracefulShutdown.load()) {
             syncNode.beginShutdown();
@@ -353,19 +376,21 @@ void BedrockServer::worker(SData& args,
                 usleep(10000);
             }
 
-            // If the command depends on a commitCount in the future, we'll just re-queue it and process it later,
-            // once our sync node is up-to-date enough to service it. Note that it's possible that this condition can
-            // cause a worker thread to spin while it waits for the sync thread to catch up to current commits,
-            // particularly if the command queue is short (or empty except for this command).
-            // A better solution would be to store these commands in a separate queue that's only checked when we
-            // update `commitCount`, so that adding a few commands with a commitCount far in the future doesn't cause
-            // this code to spin, constantly de-queuing and re-queuing the same commands. This requires a fair amount
-            // of extra work, but reduces the exposure here to a DDOS attack from specially crafted commands.
+            // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
+            // command that was escalated to master), we'll set it aside for later processing. When the sync node
+            // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
+            // updated commit count.
             uint64_t commitCount = db.getCommitCount();
-            if (command.request.calcU64("commitCount") > commitCount) {
-                SINFO("Command depends on future commit(" << command.request["commitCount"] << "), Currently at: "
-                      << commitCount << ", re-queuing.");
-                server._commandQueue.push(move(command));
+            uint64_t commandCommitCount = command.request.calcU64("commitCount");
+            if (commandCommitCount > commitCount) {
+                SAUTOLOCK(server._futureCommitCommandMutex);
+                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+                auto queueSize = server._futureCommitCommands.size();
+                SINFO("Command (" << command.request.methodLine << ") depends on future commit(" << commandCommitCount
+                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << queueSize);
+                if (queueSize > 100) {
+                    SHMMM("server._futureCommitCommands.size() == " << queueSize);
+                }
                 continue;
             }
 

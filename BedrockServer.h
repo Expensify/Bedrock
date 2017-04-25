@@ -162,4 +162,10 @@ class BedrockServer : public SQLiteServer {
     // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
     // it's 0.
     atomic<int> _writableCommandsInProgress;
+
+    // This is a mp of commit counts in the future to commands that depend on them. We can receive a command that
+    // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
+    // more current than ourselves, and a following request to us.
+    multimap<uint64_t, BedrockCommand> _futureCommitCommands;
+    recursive_mutex _futureCommitCommandMutex;
 };
