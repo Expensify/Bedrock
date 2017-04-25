@@ -24,6 +24,11 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
                 break;
         }
     }
+
+    // If the request doesn't specify an execution time, default to right now.
+    if (!request.isSet("commandExecuteTime")) {
+        request["commandExecuteTime"] = to_string(STimeNow());
+    }
 }
 
 SQLiteCommand::SQLiteCommand() :
