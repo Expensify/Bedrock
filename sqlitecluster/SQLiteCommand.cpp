@@ -6,7 +6,8 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     request(move(_request)),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    executeTimestamp(SToUInt64(request["commandExecuteTime"]) ?: STimeNow())
+    executeTimestamp(SToUInt64(request["commandExecuteTime"]) ?: STimeNow()),
+    commitCount(SToUInt64(request["commitCount"]) ?: 0)
 {
     // Initialize the consistency, if supplied.
     if (request.isSet("writeConsistency")) {

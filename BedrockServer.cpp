@@ -353,6 +353,22 @@ void BedrockServer::worker(SData& args,
                 usleep(10000);
             }
 
+            // If the command depends on a commitCount in the future, we'll just re-queue it and process it later,
+            // once our sync node is up-to-date enough to service it. Note that it's possible that this condition can
+            // cause a worker thread to spin while it waits for the sync thread to catch up to current commits,
+            // particularly if the command queue is short (or empty except for this command).
+            // A better solution would be to store these commands in a separate queue that's only checked when we
+            // update `commitCount`, so that adding a few commands with a commitCount far in the future doesn't cause
+            // this code to spin, constantly de-queuing and re-queuing the same commands. This requires a fair amount
+            // of extra work, but reduces the exposure here to a DDOS attack from specially crafted commands.
+            uint64_t commitCount = db.getCommitCount();
+            if (command.commitCount > commitCount) {
+                SINFO("Command depends on future commit(" << command.commitCount << "), Currently at: " << commitCount
+                      << ", re-queuing.");
+                server._commandQueue.push(move(command));
+                continue;
+            }
+
             // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
             // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
             // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
