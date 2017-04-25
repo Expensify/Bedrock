@@ -38,12 +38,6 @@ class SQLiteCommand {
     // Whether this command has been completed.
     bool complete;
 
-    // Specified in microseconds.
-    uint64_t executeTimestamp;
-
-    // If set, a commit count upon which this request depends, presumably a result from a previous request.
-    uint64_t commitCount;
-
     // Construct that takes a request object.
     SQLiteCommand(SData&& _request);
 
