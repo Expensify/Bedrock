@@ -95,7 +95,39 @@ class STableComp : binary_function<string, string, bool> {
         bool operator()(const unsigned char& c1, const unsigned char& c2) const { return tolower(c1) < tolower(c2); }
     };
 };
-typedef map<string, string, STableComp> STable;
+
+// An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
+// types.
+class SString : public string {
+  public:
+    // Templated assignment operator for arithmetic types.
+    template <typename T>
+    typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+        string::operator=(to_string(from));
+        return *this;
+    }
+
+    // Templated assignment operator for non-arithmetic types.
+    template <typename T>
+    typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+        string::operator=(from);
+        return *this;
+    }
+
+    // Chars are special, we don't treat them as integral types, even though they'd normally count.
+    SString& operator=(const char& from) {
+        string::operator=(from);
+        return *this;
+    }
+
+    // The above is also true for unsigned chars.
+    SString& operator=(const unsigned char& from) {
+        string::operator=(from);
+        return *this;
+    }
+};
+
+typedef map<string, SString, STableComp> STable;
 
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,

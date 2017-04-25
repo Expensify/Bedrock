@@ -632,7 +632,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                     int headerLength = (int)(parseEnd - buffer);
 
                     // If there is no content-length, just return the length of the headers
-                    int contentLength = (SContains<string, string>(nameValueMap, "Content-Length")
+                    int contentLength = (SContains(nameValueMap, "Content-Length")
                                              ? atoi(nameValueMap["Content-Length"].c_str())
                                              : 0);
                     if (!contentLength)
