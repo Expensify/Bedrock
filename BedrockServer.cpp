@@ -384,12 +384,12 @@ void BedrockServer::worker(SData& args,
             uint64_t commandCommitCount = command.request.calcU64("commitCount");
             if (commandCommitCount > commitCount) {
                 SAUTOLOCK(server._futureCommitCommandMutex);
-                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
-                auto queueSize = server._futureCommitCommands.size();
+                auto newQueueSize = server._futureCommitCommands.size() + 1;
                 SINFO("Command (" << command.request.methodLine << ") depends on future commit(" << commandCommitCount
-                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << queueSize);
-                if (queueSize > 100) {
-                    SHMMM("server._futureCommitCommands.size() == " << queueSize);
+                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+                if (newQueueSize > 100) {
+                    SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
                 }
                 continue;
             }
