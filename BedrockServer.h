@@ -163,9 +163,10 @@ class BedrockServer : public SQLiteServer {
     // it's 0.
     atomic<int> _writableCommandsInProgress;
 
-    // This is a mp of commit counts in the future to commands that depend on them. We can receive a command that
+    // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
-    // more current than ourselves, and a following request to us.
+    // more current than ourselves, and a following request to us. We'll move these commands to this special map until
+    // we catch up, and then move them back to the regular command queue.
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
     recursive_mutex _futureCommitCommandMutex;
 };
