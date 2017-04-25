@@ -362,7 +362,7 @@ void BedrockServer::worker(SData& args,
             // this code to spin, constantly de-queuing and re-queuing the same commands. This requires a fair amount
             // of extra work, but reduces the exposure here to a DDOS attack from specially crafted commands.
             uint64_t commitCount = db.getCommitCount();
-            if (SToUInt64(command.request["commitCount"]) > commitCount) {
+            if (command.request.calcU64("commitCount") > commitCount) {
                 SINFO("Command depends on future commit(" << command.request["commitCount"] << "), Currently at: "
                       << commitCount << ", re-queuing.");
                 server._commandQueue.push(move(command));

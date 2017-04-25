@@ -157,7 +157,7 @@ bool SQLiteNode::shutdownComplete() {
             for (auto& cmd : _escalatedCommandMap) {
                 string name = cmd.first;
                 SQLiteCommand& command = cmd.second;
-                int64_t created = SToUInt64(command.request["commandExecuteTime"]);
+                int64_t created = command.request.calcU64("commandExecuteTime");
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
                 SINFO("Escalated command remaining at shutdown(" << name << "): " << command.request.methodLine
@@ -239,7 +239,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     // Send this to the MASTER
     SASSERT(_masterPeer);
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
-    uint64_t elapsed = STimeNow() - SToUInt64(command.request["commandExecuteTime"]);
+    uint64_t elapsed = STimeNow() - command.request.calcU64("commandExecuteTime");
     SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer->name
           << "' after " << elapsed / STIME_US_PER_MS << " ms");
 

@@ -73,7 +73,7 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
 void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
-    queue.emplace(SToUInt64(item.request["commandExecuteTime"]), move(item));
+    queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
     _queueCondition.notify_one();
 }
 
