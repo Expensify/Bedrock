@@ -536,7 +536,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
     _suppressCommandPortManualOverride(false), _syncNode(nullptr)
 {
-    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : SVERSION;
+    _version = SVERSION;
 
     // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;
@@ -567,6 +567,11 @@ BedrockServer::BedrockServer(const SData& args)
     }
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
+
+    // If `versionOverride` is set, we throw away what we just did and use the overridden value.
+    if (args.isSet("-versionOverride")) {
+        _version = args["-versionOverride"];
+    }
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
