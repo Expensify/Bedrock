@@ -20,9 +20,6 @@ class BedrockCommand : public SQLiteCommand {
     // Move constructor.
     BedrockCommand(BedrockCommand&& from);
 
-    // Constructor to initialize via a request object (by move).
-    BedrockCommand(SData&& _request);
-
     // Constructor to initialize via a request object (by copy).
     BedrockCommand(SData _request);
 
