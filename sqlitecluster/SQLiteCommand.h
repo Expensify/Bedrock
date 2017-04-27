@@ -7,13 +7,17 @@ class SQLiteCommand {
     // this should only ever be set on master nodes, though it does not *need* to be set on master nodes, as they can
     // also accept connections directly from clients.
     // A value of zero is an invalid ID, and is interpreted to mean "not set".
-    uint64_t initiatingPeerID;
+    // A negative value indicates a valid ID of an invalid peer (a psuedo-peer, or a disconnected peer), that we can't
+    // respond to.
+    int64_t initiatingPeerID;
 
     // If this command was created via a direct client connection, this value should be set. This can be set on both
     // master and slaves, but should not be set simultaneously with `initiatingPeerID`. A command was initiated either
     // by a client, or by a peer.
     // A value of zero is an invalid ID, and is interpreted to mean "not set".
-    uint64_t initiatingClientID;
+    // A negative value indicates a valid ID of an invalid client (a psuedo-client, or a disconnected client), that we
+    // can't respond to.
+    int64_t initiatingClientID;
 
     // Each command is given a unique id that can be serialized and passed back and forth across nodes. Its id must be
     // uniquely identifiable for cases where, for instance, two peers escalate commands to the master, and master will

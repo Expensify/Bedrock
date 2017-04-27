@@ -427,8 +427,12 @@ void BedrockServer::worker(SData& args,
                     continue;
                 }
 
+                // Make sure we have an initiatingClientID at this point. If we do, but it's negative, it's for a
+                // client that we can't respond to, so we don't bother sending the response.
                 SASSERT(command.initiatingClientID);
-                server._reply(command);
+                if (command.initiatingClientID > 0) {
+                    server._reply(command);
+                }
 
                 // This command is done, move on to the next one.
                 continue;
