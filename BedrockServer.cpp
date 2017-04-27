@@ -430,10 +430,10 @@ void BedrockServer::worker(SData& args,
                     continue;
                 }
 
-                SASSERT(command.initiatingClientID);
                 if (!command.initiatingClientID) {
                     SWARN("TYLER replying to command with no initiatingClientID. request: " << command.request.serialize());
                 }
+                //SASSERT(command.initiatingClientID);
                 server._reply(command);
 
                 // This command is done, move on to the next one.
