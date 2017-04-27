@@ -38,16 +38,6 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     from.httpsRequest = nullptr;
 }
 
-BedrockCommand::BedrockCommand(SData&& _request) :
-    SQLiteCommand(move(request)),
-    httpsRequest(nullptr),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0)
-{
-    _init();
-}
-
 BedrockCommand::BedrockCommand(SData _request) :
     SQLiteCommand(move(_request)),
     httpsRequest(nullptr),
