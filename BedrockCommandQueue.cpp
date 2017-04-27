@@ -71,10 +71,6 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
 }
 
 void BedrockCommandQueue::push(BedrockCommand&& item) {
-    if (item.initiatingPeerID == 0 && item.initiatingClientID == 0) {
-        SWARN("TYLER Queueing command that will die on completion: request: " << item.request.serialize());
-    }
-
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));

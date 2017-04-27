@@ -363,9 +363,6 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
             SAUTOPREFIX(command.request["requestID"]);
-            if (command.initiatingPeerID == 0 && command.initiatingClientID == 0) {
-                SWARN("TYLER De-queueing command that will die on completion: request: " << command.request.serialize());
-            }
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (upgradeInProgress.load() ||
@@ -430,10 +427,7 @@ void BedrockServer::worker(SData& args,
                     continue;
                 }
 
-                if (!command.initiatingClientID) {
-                    SWARN("TYLER replying to command with no initiatingClientID. request: " << command.request.serialize());
-                }
-                //SASSERT(command.initiatingClientID);
+                SASSERT(command.initiatingClientID);
                 server._reply(command);
 
                 // This command is done, move on to the next one.
@@ -823,10 +817,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // And we and keep track of the client that initiated this command, so we can respond later.
                     command.initiatingClientID = s->id;
-
-                    if (!command.initiatingClientID) {
-                        SWARN("TYLER command.initiatingClientID is NULL. Reqeust: " << command.request.serialize());
-                    }
 
                     // Status requests are handled specially.
                     if (_isStatusCommand(command)) {
