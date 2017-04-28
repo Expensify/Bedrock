@@ -314,6 +314,7 @@ bool SQLite::prepare() {
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     g_commitLock.lock();
+    _mutexLocked = true;
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -336,7 +337,6 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        g_commitLock.unlock();
         return false;
     }
 
@@ -380,6 +380,7 @@ int SQLite::commit() {
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        _mutexLocked = false;
         g_commitLock.unlock();
     } else {
         SINFO("Commit failed, waiting for rollback.");
@@ -428,7 +429,13 @@ void SQLite::rollback() {
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
         SINFO("Rollback successful.");
-        g_commitLock.unlock();
+
+        // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
+        // ever having called `prepare`, which would have locked our mutex.
+        if (_mutexLocked) {
+            _mutexLocked = false;
+            g_commitLock.unlock();
+        }
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }

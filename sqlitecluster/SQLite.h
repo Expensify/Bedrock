@@ -206,6 +206,10 @@ class SQLite {
     uint64_t _commitElapsed;
     uint64_t _rollbackElapsed;
 
+    // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
+    // we call `rollback`.
+    bool _mutexLocked;
+
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
     // any transactions. Instead of reading from an atomic var, reads directly from the database.
     uint64_t _getCommitCount();
