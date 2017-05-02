@@ -1760,6 +1760,12 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
 void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SASSERT(peer);
     SASSERT(!message.empty());
+
+    // If a peer is currently disconnected, we can't send it a message.
+    if (!peer->s) {
+        PWARN("Can't send message to peer, no socket. Message '" << message.methodLine << "' will be discarded.");
+        return;
+    }
     // Piggyback on whatever we're sending to add the CommitCount/Hash
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
