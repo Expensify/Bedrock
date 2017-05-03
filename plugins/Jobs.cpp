@@ -659,8 +659,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
         verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
-
-        // Verify there is a job like this and it's running
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID "
                      "FROM jobs "
@@ -668,6 +666,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             throw "502 Select failed";
         }
+
+        // Verify there is a job like this and it's running
         if (result.empty()) {
             throw "404 No job with this jobID";
         }
