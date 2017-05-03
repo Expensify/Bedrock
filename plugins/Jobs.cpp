@@ -384,9 +384,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& name = request["name"];
         string safeNumResults = SQ(max(request.calc("numResults"),1)); 
         string selectQuery =
-            "SELECT jobID, name, data, parentJobID FROM ( "
+            "SELECT jobID, name, data, parentJobID, retryAfter FROM ( "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=1000"
@@ -396,7 +396,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=500"
@@ -406,7 +406,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
                     "WHERE state='QUEUED' "
                     "  AND priority=0"
@@ -437,12 +437,17 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Prepare to update the rows, while also creating all the child objects
         list<string> nonRetriableJobs;
+        list<string> retriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
-            SASSERT(result[c].size() == 4);
+            SASSERT(result[c].size() == 5);
 
-            // Add to the list
-            nonRetriableJobs.push_back(result[c][0]);
+            // Add jobID to the respective list
+            if (result[c][4] == "") {
+                nonRetriableJobs.push_back(result[c][0]);
+            } else {
+                retriableJobs.push_back(result[c][0]);
+            }
 
             // See if this job has any FINISHED child jobs, indicating it is being resumed
             SQResult finishedChildJobs;
@@ -474,12 +479,31 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
             jobList.push_back(SComposeJSONObject(job));
         }
-        string updateQuery = "UPDATE jobs "
-            " SET state='RUNNING', "
-              "lastRun=" + SCURRENT_TIMESTAMP() + " "
-            "WHERE jobID IN (" + SComposeList(nonRetriableJobs) + ");";
-        if (!db.write(updateQuery)) {
-            throw "502 Update failed";
+
+        // Update jobs without retryAfter
+        if (!nonRetriableJobs.empty()) {
+            string jobIDs = SComposeList(nonRetriableJobs);
+            SINFO("Updating jobs without retryAfter " << jobIDs);
+            string updateQuery = "UPDATE jobs "
+                                 "SET state='RUNNING', "
+                                 "lastRun=" + SCURRENT_TIMESTAMP() + " "
+                                 "WHERE jobID IN (" + jobIDs + ");";
+            if (!db.write(updateQuery)) {
+                throw "502 Update failed";
+            }
+        }
+
+        // Update jobs with retryAfter
+        if (!retriableJobs.empty()) {
+            string jobIDs = SComposeList(retriableJobs);
+            SINFO("Updating jobs with retryAfter " << jobIDs);
+            string updateQuery = "UPDATE jobs "
+                                 "SET state='RUNQUEUED', "
+                                 "  lastRun=" + SCURRENT_TIMESTAMP() + " "
+                                 "WHERE jobID IN (" + jobIDs + ");";
+            if (!db.write(updateQuery)) {
+                throw "502 Update failed";
+            }
         }
 
         // Format the results as is appropriate for what was requested
