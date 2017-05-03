@@ -195,7 +195,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t parentJobID = request.calc64("parentJobID");
         if (parentJobID) {
             SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
-
             SQResult result;
             if (!db.read("SELECT retryAfter "
                         "FROM jobs "
@@ -203,12 +202,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                         result)) {
                 throw "502 Select failed";
             }
-
             if (!result.empty() && result[0][0] != "0") {
                 throw "402 Auto-retrying parents cannot have children";
             }
         }
 
+        // Validate retryAfter
         if (request.isSet("retryAfter") && !_isValidSQLiteDateModifier("retryAfter")){
             throw "402 Malformed retryAfter";
         }
@@ -445,7 +444,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
+                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -455,7 +454,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
+                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -465,7 +464,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
+                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -556,7 +555,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Update jobs with retryAfter
         if (!retriableJobs.empty()) {
             SINFO("Updating jobs with retryAfter");
-
             for (auto job : retriableJobs) {
                 string jobID = job["jobID"];
                 string retryAfter = job["retryAfter"];
