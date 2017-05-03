@@ -626,7 +626,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // - RetryJob( jobID, delay, [data] )
         //
         //     Re-queues a RUNNING job for "delay" seconds in the future,
-        //     unless the job is configured to "repeat" in which it will
+        //     unless the job is configured to "repeat" in which case it will
         //     just schedule for the next repeat time.
         //     Use this when a job was only partially completed but
         //     interrupted in a non-fatal way.
