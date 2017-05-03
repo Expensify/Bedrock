@@ -82,7 +82,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         const string& name = request["name"];
         if (!db.read("SELECT 1 "
                      "FROM jobs "
-                     "WHERE state='QUEUED' "
+                     "WHERE state in ('QUEUED', 'RUNQUEUED') "
                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                      "  AND name GLOB " + SQ(name) + " "
                      "LIMIT 1;",
@@ -413,7 +413,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -423,7 +423,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -433,7 +433,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "SELECT * FROM ("
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter "
                     "FROM jobs "
-                    "WHERE state='QUEUED' "
+                    "WHERE state in ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
@@ -907,7 +907,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     if (!db.read("SELECT 1 "
                  "FROM jobs "
                  "WHERE parentJobID = " + SQ(jobID) + " " + 
-                 "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
+                 "  AND state IN ('QUEUED', 'RUNQUEUED' 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
