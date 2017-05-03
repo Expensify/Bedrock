@@ -162,6 +162,25 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CreateJob")) {
+        // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
+        int64_t parentJobID = request.calc64("parentJobID");
+        if (parentJobID) {
+            SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
+
+            // Verify unique
+            SQResult result;
+            if (!db.read("SELECT retryAfter "
+                        "FROM jobs "
+                        "WHERE jobID=" + SQ(parentJobID) + ";",
+                        result)) {
+                throw "502 Select failed";
+            }
+
+            if (!result.empty() && result[0][0] != "0") {
+                throw "402 Auto-retrying parents cannot have children";
+            }
+        }
+
         // If unique flag was passed and the job exist in the DB, then we can
         // finish the command without escalating to master.
         if (!request.test("unique")) {
@@ -290,12 +309,18 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Validate that the parentJobID exists and is in the right state if one was passed.
         int64_t parentJobID = request.calc64("parentJobID");
         if (parentJobID) {
-            auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-            if (parentState.empty()) {
+            SQResult result;
+            if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                throw "502 Select failed";
+            }
+            if (result.empty()) {
                 throw "404 parentJobID does not exist";
-            } else if (!SIEquals(parentState, "RUNNING") && !SIEquals(parentState, "PAUSED")) {
-                SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << parentState << ")");
+            } else if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                 throw "405 Can only create child job when parent is RUNNING or PAUSED";
+            }
+            else if (result[0][1] != "0") {
+                SALERT("Auto-retrying parents shouldn't have children, parentJobID:" << parentJobID );
             }
         }
 
