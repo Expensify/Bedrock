@@ -20,7 +20,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                    "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter INTEGER NOT NULL DEFAULT 0 )",
+                                   "retryAfter TEXT NOT NULL DEFAULT 0 )",
                            ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
