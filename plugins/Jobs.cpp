@@ -325,13 +325,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                      "VALUES( " +
-                        SCURRENT_TIMESTAMP() + ", " + 
-                        SQ(initialState) + ", " + 
-                        SQ(request["name"]) + ", " + 
+                        SCURRENT_TIMESTAMP() + ", " +
+                        SQ(initialState) + ", " +
+                        SQ(request["name"]) + ", " +
                         safeFirstRun + ", " +
-                        SQ(SToUpper(request["repeat"])) + ", " + 
-                        safeData + ", " + 
-                        SQ(priority) + ", " + 
+                        SQ(SToUpper(request["repeat"])) + ", " +
+                        safeData + ", " +
+                        SQ(priority) + ", " +
                         SQ(parentJobID) + ", " +
                         safeRetryAfter +
                      " );"))
