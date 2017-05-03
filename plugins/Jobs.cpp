@@ -203,7 +203,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "CreateJob")) {
-        // - CreateJob( name, [data], [firstRun], [repeat] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -217,6 +217,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //     return that jobID
         //     - parentJobID - The ID of the parent job (optional)
+        //     - retryAfter - The ID of the parent job (optional)
         //
         //     Returns:
         //     - jobID - Unique identifier of this job
@@ -266,7 +267,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 throw "402 Malformed repeat";
             }
         }
-
 
         // If no priority set, set it
         int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
@@ -319,8 +319,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
+            // If no data was provided, use an empty object
+            const string& safeRetryAfter = request["retryAfter"].empty() ? "" : SQ(request["retryAfter"]);
+
             // Create this new job
-            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
+            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                      "VALUES( " +
                         SCURRENT_TIMESTAMP() + ", " + 
                         SQ(initialState) + ", " + 
@@ -329,7 +332,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                         SQ(SToUpper(request["repeat"])) + ", " + 
                         safeData + ", " + 
                         SQ(priority) + ", " + 
-                        SQ(parentJobID) +
+                        SQ(parentJobID) + ", " +
+                        safeRetryAfter +
                      " );"))
             {
                 throw "502 insert query failed";
