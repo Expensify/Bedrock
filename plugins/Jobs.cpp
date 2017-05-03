@@ -436,12 +436,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         SASSERT(!SIEquals(request.methodLine, "GetJob") || result.size()<=1);
 
         // Prepare to update the rows, while also creating all the expense objects
-        string updateQuery = "UPDATE jobs SET state='RUNNING', lastRun=" + SCURRENT_TIMESTAMP() + " WHERE jobID IN (";
+        list<string> nonRetriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
-            // Add to the set, with a comma separator if necessary
             SASSERT(result[c].size() == 4);
-            updateQuery += (c ? ", " : "") + result[c][0];
+
+            // Add to the list
+            nonRetriableJobs.push_back(result[c][0]);
 
             // See if this job has any FINISHED child jobs, indicating it is being resumed
             SQResult finishedChildJobs;
@@ -473,7 +474,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
             jobList.push_back(SComposeJSONObject(job));
         }
-        updateQuery += ");";
+        string updateQuery = "UPDATE jobs "
+            " SET state='RUNNING', "
+              "lastRun=" + SCURRENT_TIMESTAMP() + " "
+            "WHERE jobID IN (" + SComposeList(nonRetriableJobs) + ");";
         if (!db.write(updateQuery)) {
             throw "502 Update failed";
         }
