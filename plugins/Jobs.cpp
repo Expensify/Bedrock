@@ -172,14 +172,24 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // Verify unique
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID, data "
+        if (!db.read("SELECT jobID, data, retryAfter "
                      "FROM jobs "
                      "WHERE name=" + SQ(request["name"]) + ";",
                      result)) {
             throw "502 Select failed";
         }
-        // If there's no job, or the existing job doesn't match the data we've been passed, escalate to master.
-        if (result.empty() || result[0][1] != request["data"]) {
+        // If there's no job, escalate to master.
+        if (result.empty()){
+            return false;
+        }
+
+        // Throw if retryAfter was passed for unique job
+        if (result[0][2] != "") {
+            throw "405 Unique jobs can't be retried";
+        }
+
+        // If the existing job doesn't match the data we've been passed, escalate to master.
+        if (result[0][1] != request["data"]) {
             return false;
         }
 
@@ -248,6 +258,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If we found a job, but the data was different, we'll need to update it.
             if (!result.empty()) {
                 updateJobID = SToInt64(result[0][0]);
+            }
+
+            // Alert if job is unique and retryAfter is set
+            // This shouldn't happen since we validate this peekCommand
+            if (request.isSet("retryAfter") && request["retryAfter"] != "") {
+                SALERT("Unique jobs shouldn't be retried");
             }
         }
 
