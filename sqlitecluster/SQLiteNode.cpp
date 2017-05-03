@@ -776,7 +776,7 @@ bool SQLiteNode::update() {
                     uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed master transaction for '"
-                          << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash() << "). "
+                          << _db.getCommitCount() << " (" << _db.getCommittedHash() << "). "
                           << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
                           << consistencyLevelNames[consistencyRequired] << "), " << numFullApproved << " of "
                           << numFullPeers << " approved (" << peerList.size() << " total) in "
@@ -797,7 +797,7 @@ bool SQLiteNode::update() {
                     _lastSentTransactionID = _db.getCommitCount();
 
                     // If this was a quorum commit, we'll reset our counter, otherwise, we'll update it.
-                    if (consistencyRequired != QUORUM) {
+                    if (consistencyRequired == QUORUM) {
                         _commitsSinceCheckpoint = 0;
                     } else {
                         _commitsSinceCheckpoint++;
