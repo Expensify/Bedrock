@@ -162,6 +162,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CreateJob")) {
+        if (request.isSet("repeat") && request.isSet("retryAfter")) {
+            throw "402 Repeatable & retryable jobs not supported";
+        }
+
         // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
         int64_t parentJobID = request.calc64("parentJobID");
         if (parentJobID) {
