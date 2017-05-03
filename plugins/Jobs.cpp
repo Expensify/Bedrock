@@ -917,19 +917,18 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
     }
 
     // Validate the sqlite date modifiers
-    // See: https://www.sqlite.org/lang_datefunc.html
+    if (!_isValidSQLiteDateModifier(SComposeList(parts))){
+        SWARN("Syntax error, failed parsing repeat");
+        return "";
+    }
+
     for (const string& part : parts) {
-        // Simple regexp validation
         if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
             safeParts.push_back(SQ(part));
         } else if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
             safeParts.push_back(SQ(part));
         } else if (SREMatch("^WEEKDAY [0-6]$", part)) {
             safeParts.push_back(SQ(part));
-        } else {
-            // Malformed part
-            SWARN("Syntax error, failed parsing repeat '" << repeat << "' on part '" << part << "'");
-            return "";
         }
     }
 
@@ -953,3 +952,25 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     return !result.empty();
 }
 
+bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
+    list<string> parts = SParseList(SToUpper(modifier));
+    for (const string& part : parts) {
+        // Simple regexp validation
+        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
+            continue;
+        }
+
+        if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
+            continue;
+        }
+
+        if (SREMatch("^WEEKDAY [0-6]$", part)) {
+            continue;
+        }
+
+        SINFO("Syntax error, failed parsing date modifier '" << modifier << "' on part '" << part << "'");
+        return false;
+    }
+
+    return true;
+}
