@@ -20,7 +20,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                    "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter TEXT NOT NULL DEFAULT 0 )",
+                                   "retryAfter TEXT NOT NULL DEFAULT "" )",
                            ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
@@ -202,13 +202,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                         result)) {
                 throw "502 Select failed";
             }
-            if (!result.empty() && result[0][0] != "0") {
+            if (!result.empty() && result[0][0] != "") {
                 throw "402 Auto-retrying parents cannot have children";
             }
         }
 
         // Validate retryAfter
-        if (request.isSet("retryAfter") && !_isValidSQLiteDateModifier("retryAfter")){
+        if (request.isSet("retryAfter") && request["retryAfter"] != "" && !_isValidSQLiteDateModifier("retryAfter")){
             throw "402 Malformed retryAfter";
         }
 
@@ -227,7 +227,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // Verify unique
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID, data, retryAfter "
+        if (!db.read("SELECT jobID, data "
                      "FROM jobs "
                      "WHERE name=" + SQ(request["name"]) + ";",
                      result)) {
@@ -312,7 +312,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Alert if job is unique and retryAfter is set
             // This shouldn't happen since we validate this peekCommand
-            if (request.isSet("retryAfter") && SToInt64(request["retryAfter"]) != 0) {
+            if (request.isSet("retryAfter") && request["retryAfter"] != "") {
                 SALERT("Unique jobs shouldn't be retried");
             }
         }
@@ -350,7 +350,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                 throw "405 Can only create child job when parent is RUNNING or PAUSED";
             }
-            else if (result[0][1] != "0") {
+            else if (result[0][1] != "") {
                 SALERT("Auto-retrying parents shouldn't have children, parentJobID:" << parentJobID );
             }
         }
@@ -392,7 +392,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no data was provided, use an empty object
-            const string& safeRetryAfter = request["retryAfter"].empty() ? SQ(0) : SQ(request["retryAfter"]);
+            const string& safeRetryAfter = request["retryAfter"].empty() ? "" : SQ(request["retryAfter"]);
 
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
