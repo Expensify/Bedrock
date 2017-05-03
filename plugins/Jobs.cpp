@@ -169,6 +169,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             return false;
         }
 
+        // Throw if retryAfter was passed for unique job
+        if (request.isSet("retryAfter")) {
+            throw "405 Unique jobs can't be retried";
+        }
+
         // Verify unique
         SQResult result;
         SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
@@ -181,11 +186,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // If there's no job, escalate to master.
         if (result.empty()){
             return false;
-        }
-
-        // Throw if retryAfter was passed for unique job
-        if (result[0][2] != "") {
-            throw "405 Unique jobs can't be retried";
         }
 
         // If the existing job doesn't match the data we've been passed, escalate to master.
@@ -262,7 +262,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Alert if job is unique and retryAfter is set
             // This shouldn't happen since we validate this peekCommand
-            if (request.isSet("retryAfter") && request["retryAfter"] != "") {
+            if (request.isSet("retryAfter") && SToInt64(request["retryAfter"]) != 0) {
                 SALERT("Unique jobs shouldn't be retried");
             }
         }
@@ -336,7 +336,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no data was provided, use an empty object
-            const string& safeRetryAfter = request["retryAfter"].empty() ? "" : SQ(request["retryAfter"]);
+            const string& safeRetryAfter = request["retryAfter"].empty() ? SQ(0) : SQ(request["retryAfter"]);
 
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
