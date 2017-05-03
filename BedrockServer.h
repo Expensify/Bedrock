@@ -147,6 +147,7 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
+    static constexpr auto STATUS_WHITELIST         = "SetCommandWhitelist";
 
     // This *only* exists so that status commands can pull info from this node.
     SQLiteNode* _syncNode;
@@ -173,4 +174,8 @@ class BedrockServer : public SQLiteServer {
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.
     set<string> _syncCommands;
+
+    // This is a list of command names than can be processed and committed in worker threads.
+    static set<string> _parallelCommands;
+    static recursive_mutex  _parallelCommandMutex;
 };
