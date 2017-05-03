@@ -435,7 +435,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // There should only be at most one result if GetJob
         SASSERT(!SIEquals(request.methodLine, "GetJob") || result.size()<=1);
 
-        // Prepare to update the rows, while also creating all the expense objects
+        // Prepare to update the rows, while also creating all the child objects
         list<string> nonRetriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
