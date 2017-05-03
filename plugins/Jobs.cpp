@@ -167,7 +167,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         if (parentJobID) {
             SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
 
-            // Verify unique
             SQResult result;
             if (!db.read("SELECT retryAfter "
                         "FROM jobs "
