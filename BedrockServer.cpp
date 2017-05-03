@@ -4,6 +4,9 @@
 #include "BedrockPlugin.h"
 #include "BedrockCore.h"
 
+set<string>BedrockServer::_parallelCommands;
+recursive_mutex BedrockServer::_parallelCommandMutex;
+
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     _commandQueue.push(BedrockCommand(move(command)));
 }
@@ -459,7 +462,13 @@ void BedrockServer::worker(SData& args,
                     }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
-                    if (true || /* DISABLE MULTI-WRITE*/
+                    bool canWriteParallel = false;
+                    { 
+                        SAUTOLOCK(_parallelCommandMutex);
+                        canWriteParallel =
+                            (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
+                    }
+                    if (!canWriteParallel              ||
                         state != SQLiteNode::MASTERING ||
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
@@ -487,10 +496,16 @@ void BedrockServer::worker(SData& args,
                                       << SQLiteNode::stateNames[replicationState.load()]
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
-                            } else if (core.commit()) {
-                                // So we must still be mastering, and at this point our commit has succeeded, let's
-                                // mark it as complete!
-                                command.complete = true;
+                            } else {
+                                if (core.commit()) {
+                                    SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                    // So we must still be mastering, and at this point our commit has succeeded, let's
+                                    // mark it as complete!
+                                    command.complete = true;
+                                } else {
+                                    SINFO("Conflict committing " << command.request.methodLine
+                                          << " on worker thread with " << retry << " retries remaining.");
+                                }
                             }
                         }
 
@@ -577,11 +592,22 @@ BedrockServer::BedrockServer(const SData& args)
         _version = args["-versionOverride"];
     }
 
+    // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
         SParseList(args["-synchronousCommands"], syncCommands);
         for (auto& command : syncCommands) {
             _syncCommands.insert(command);
+        }
+    }
+
+    // Check for commands that can be written by workers.
+    if (args.isSet("-parallelCommands")) {
+        SAUTOLOCK(_parallelCommandMutex);
+        list<string> parallelCommands;
+        SParseList(args["-parallelCommands"], parallelCommands);
+        for (auto& command : parallelCommands) {
+            _parallelCommands.insert(command);
         }
     }
 
@@ -929,7 +955,8 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, STATUS_IS_SLAVE)          ||
         SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command.request.methodLine, STATUS_PING)              ||
-        SIEquals(command.request.methodLine, STATUS_STATUS)) {
+        SIEquals(command.request.methodLine, STATUS_STATUS)            ||
+        SIEquals(command.request.methodLine, STATUS_WHITELIST)) {
         return true;
     }
     return false;
@@ -1013,6 +1040,26 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["escalatedCommandList"] = SComposeJSONArray(escalated);
 
         // Done, compose the response.
+        response.methodLine = "200 OK";
+        response.content = SComposeJSONObject(content);
+    }
+
+    else if (SIEquals(request.methodLine, STATUS_WHITELIST)) {
+        SAUTOLOCK(_parallelCommandMutex);
+
+        // Return the old list. We can check the list by not passing the "Commands" param.
+        STable content;
+        content["oldCommandWhitelist"] = SComposeList(_parallelCommands);
+
+        // If the Comamnds param is set, parse it and update our value.
+        if (request.isSet("Commands")) {
+            _parallelCommands.clear();
+            list<string> parallelCommands;
+            SParseList(request["Commands"], parallelCommands);
+            for (auto& command : parallelCommands) {
+                _parallelCommands.insert(command);
+            }
+        }
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
     }
