@@ -45,7 +45,32 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
+    if (SIEquals(request.methodLine, "UpdateJob")) {
+        // - UpdateJob( jobID, data, [repeat] )
+        //
+        //     Atomically updates the data associated with a job.
+        //
+        //     Parameters:
+        //     - jobID - ID of the job to delete
+        //     - data  - A JSON object describing work to be done
+        //     - repeat - A description of how to repeat (optional)
+        //     Returns:
+        //     - 200 - OK
+        //     - 402 - Auto-retrying jobs cannot be updated once running
+        //
+        verifyAttributeInt64(request, "jobID", 1);
+        verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
+
+        // Verify there is a job like this
+        SQResult result;
+        string state = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(request.calc64("jobID")) + ";");
+        if (state == "RUNQUEUED") {
+            throw "402 Auto-retrying jobs cannot be updated once running";
+        }
+    }
+
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
         // - GetJob( name )
         // - GetJobs( name, numResults )
         //
