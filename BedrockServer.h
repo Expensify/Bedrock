@@ -169,4 +169,8 @@ class BedrockServer : public SQLiteServer {
     // we catch up, and then move them back to the regular command queue.
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
     recursive_mutex _futureCommitCommandMutex;
+
+    // A set of command names that will always be run with QUORUM consistency level.
+    // Specified by the `-synchronousCommands` command-line switch.
+    set<string> _syncCommands;
 };

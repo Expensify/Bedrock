@@ -577,6 +577,14 @@ BedrockServer::BedrockServer(const SData& args)
         _version = args["-versionOverride"];
     }
 
+    if (args.isSet("-synchronousCommands")) {
+        list<string> syncCommands;
+        SParseList(args["-synchronousCommands"], syncCommands);
+        for (auto& command : syncCommands) {
+            _syncCommands.insert(command);
+        }
+    }
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(sync,
@@ -814,6 +822,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     BedrockCommand command(request);
+                    if (command.writeConsistency != SQLiteNode::QUORUM
+                        && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
+
+                        command.writeConsistency = SQLiteNode::QUORUM;
+                        SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
+                    }
 
                     // This is important! All commands passed through the entire cluster must have unique IDs, or they
                     // won't get routed properly from slave to master and back.
