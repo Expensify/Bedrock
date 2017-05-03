@@ -209,6 +209,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
+        if (request.isSet("retryAfter") && !_isValidSQLiteDateModifier("retryAfter")){
+            throw "402 Malformed retryAfter";
+        }
+
         // If unique flag was passed and the job exist in the DB, then we can
         // finish the command without escalating to master.
         if (!request.test("unique")) {
@@ -959,18 +963,18 @@ bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
         if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
             continue;
         }
-
         if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
             continue;
         }
-
         if (SREMatch("^WEEKDAY [0-6]$", part)) {
             continue;
         }
 
+        // Couldn't match this part to any valid syntax
         SINFO("Syntax error, failed parsing date modifier '" << modifier << "' on part '" << part << "'");
         return false;
     }
 
+    // Matched all parts, valid syntax
     return true;
 }
