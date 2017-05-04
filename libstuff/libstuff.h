@@ -689,32 +689,6 @@ string SAESEncrypt(const string& buffer, const string& iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
 
 // --------------------------------------------------------------------------
-// Credit card stuff
-// --------------------------------------------------------------------------
-// Determine if some input is a PAN
-inline bool SIsPAN(const string& value) { return SREMatch("^\\d{13,19}$", value); }
-inline bool SIsMaskedPAN(const string& value) { return SREMatch("^\\d{0,6}[Xx]+\\d{4,7}$", value); }
-
-// --------------------------------------------------------------------------
-// Helper function to mask out the necessary digits in a card number to
-// comply with PCI 3.3.  Namely, replace all but the first six and last four
-// digits with X.
-inline string SMaskPAN(const string& pan) {
-    // First, make sure it's valid
-    const string& safePAN = SReplaceAllBut(pan, "0123456789", 'X');
-
-    if (safePAN.size() < 4) {
-        return string(safePAN.size(), 'X');
-    }
-    else if (safePAN.size() < 14) {
-        // Card numbers smaller than 14 digits can only reveal the last 4 digits
-        return string(safePAN.size() - 4, 'X') + safePAN.substr(safePAN.size() - 4);
-    }
-    // Can show last 4 and first 6.
-    return safePAN.substr(0, 6) + string(safePAN.size() - 10, 'X') + safePAN.substr(safePAN.size() - 4);
-}
-
-// --------------------------------------------------------------------------
 // SQLite Stuff
 // --------------------------------------------------------------------------
 #include "sqlite3.h"
