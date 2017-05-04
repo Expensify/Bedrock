@@ -2,9 +2,19 @@
 #include "BedrockCommand.h"
 #include "BedrockCommandQueue.h"
 
+void BedrockCommandQueue::clear()  {
+    SAUTOLOCK(_queueMutex);
+    return _commandQueue.clear();
+}
+
 bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
     return _commandQueue.empty();
+}
+
+size_t BedrockCommandQueue::size()  {
+    SAUTOLOCK(_queueMutex);
+    return _commandQueue.size();
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
