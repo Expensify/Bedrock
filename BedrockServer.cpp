@@ -680,10 +680,33 @@ bool BedrockServer::shutdownComplete() {
         if (rs && qr) {
             retVal = true;
         } else {
-            SINFO("Conditions that failed and are blocking shutdown: " <<
-                  (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
-                  (qr ? "" : "_queuedRequests.empty(), ") <<
-                  "returning FALSE in shutdownComplete");
+            if (_gracefulShutdownTimeout.ringing()) {
+                // Timing out. Log some info and return true.
+                map<string, int> commandsInQueue;
+                auto methods = _commandQueue.getRequestMethodLines();
+                for (auto method : methods) {
+                    auto it = commandsInQueue.find(method);
+                    if (it != commandsInQueue.end()) {
+                        (it->second)++;
+                    } else {
+                        commandsInQueue[method] = 1;
+                    }
+                }
+                string commandCounts;
+                for (auto cmdPair : commandsInQueue) {
+                    commandCounts += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+                }
+                SWARN("Graceful shutdown timed out. "
+                      << "Replication State: " << SQLiteNode::stateNames[rs] << ". "
+                      << "Commands queue size: " << _commandQueue.size() << ". "
+                      << "Command Counts: " << commandCounts << "killing non gracefully.");
+                retVal = true;
+            } else {
+                SINFO("Conditions that failed and are blocking shutdown: " <<
+                      (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
+                      (qr ? "" : "_commandQueue.empty(), ") <<
+                      "returning FALSE in shutdownComplete");
+            }
         }
     }
 
@@ -781,6 +804,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SINFO("Beginning graceful shutdown due to '"
                       << SGetSignalNames(sigmask) << "', closing command port on '" << _args["-serverHost"] << "'");
                 _nodeGracefulShutdown.store(true);
+                _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+                _gracefulShutdownTimeout.start();
                 closePorts();
             }
         }

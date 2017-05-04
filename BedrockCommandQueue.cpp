@@ -7,6 +7,11 @@ bool BedrockCommandQueue::empty()  {
     return _commandQueue.empty();
 }
 
+size_t BedrockCommandQueue::size()  {
+    SAUTOLOCK(_queueMutex);
+    return _commandQueue.size();
+}
+
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     unique_lock<mutex> queueLock(_queueMutex);
 

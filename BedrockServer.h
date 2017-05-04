@@ -178,4 +178,7 @@ class BedrockServer : public SQLiteServer {
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _parallelCommands;
     static recursive_mutex  _parallelCommandMutex;
+
+    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
+    SStopwatch _gracefulShutdownTimeout;
 };
