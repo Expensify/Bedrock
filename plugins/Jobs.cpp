@@ -676,9 +676,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         int64_t parentJobID = SToInt(result[0][4]);
 
         // Make sure we're finishing a job that's actually running
-        if (state != "RUNNING") {
-            SWARN("Trying to finish job#" << jobID << ", but isn't RUNNING (" << state << ")");
-            throw "405 Can only retry/finish RUNNING jobs";
+        if (state != "RUNNING" && state != "RUNQUEUED") {
+            SWARN("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
+            throw "405 Can only retry/finish RUNNING and RUNQUEUED jobs";
         }
 
         // If we have a parent, make sure it is PAUSED.  This is to just
