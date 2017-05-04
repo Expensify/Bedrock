@@ -32,7 +32,7 @@ class SSynchronizedQueue {
     size_t size() const;
 
     // Apply a lambda to each item in the queue.
-    void each(const function<void (T&)>& f);
+    void each(const function<void (T&)> f);
 
   protected:
     list<T> _queue;
@@ -120,7 +120,7 @@ size_t SSynchronizedQueue<T>::size() const {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::each(const function<void (T&)>& f) {
+void SSynchronizedQueue<T>::each(const function<void (T&)> f) {
     SAUTOLOCK(_queueMutex);
     for_each(_queue.begin(), _queue.end(), f);
 }
