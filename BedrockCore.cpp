@@ -13,6 +13,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SData& response = command.response;
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
+    command.peekCount++;
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
@@ -23,7 +24,6 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             if (plugin->peekCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
-                command.peekCount++;
                 break;
             }
         }
@@ -75,6 +75,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     SData& response = command.response;
     STable& content = command.jsonContent;
     SDEBUG("Processing '" << request.methodLine << "'");
+    command.processCount++;
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
@@ -90,7 +91,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             if (plugin->processCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                 pluginProcessed = true;
-                command.processCount++;
                 break;
             }
         }
