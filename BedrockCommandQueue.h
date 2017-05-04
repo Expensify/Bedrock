@@ -3,6 +3,9 @@ class BedrockCommand;
 
 class BedrockCommandQueue {
   public:
+    // Remove all items from the queue.
+    void clear();
+
     // Returns true if there are no queued commands.
     bool empty();
 

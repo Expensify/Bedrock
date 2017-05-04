@@ -2,6 +2,11 @@
 #include "BedrockCommand.h"
 #include "BedrockCommandQueue.h"
 
+void BedrockCommandQueue::clear()  {
+    SAUTOLOCK(_queueMutex);
+    return _commandQueue.clear();
+}
+
 bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
     return _commandQueue.empty();

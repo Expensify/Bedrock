@@ -366,6 +366,13 @@ void BedrockServer::sync(SData& args,
         threadId++;
         workerThread.join();
     }
+
+    // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
+    if (server._commandQueue.size()) {
+        SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
+              << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
+        server._commandQueue.clear();
+    }
 }
 
 void BedrockServer::worker(SData& args,
@@ -570,7 +577,7 @@ void BedrockServer::worker(SData& args,
         }
 
         // Ok, we're done with this loop, see if we should exit.
-        if (nodeGracefulShutdown.load() && server._commandQueue.empty()) {
+        if (nodeGracefulShutdown.load()) {
             SINFO("Shutdown flag set and nothing left in queue. worker" << to_string(threadId) << " exiting.");
             break;
         }
