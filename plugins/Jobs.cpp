@@ -20,7 +20,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "data     TEXT NOT NULL, "
                                    "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                    "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter TEXT NOT NULL DEFAULT "" )",
+                                   "retryAfter TEXT NOT NULL DEFAULT \"\" )",
                            ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
@@ -208,7 +208,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Validate retryAfter
-        if (request.isSet("retryAfter") && request["retryAfter"] != "" && !_isValidSQLiteDateModifier("retryAfter")){
+        if (request.isSet("retryAfter") && request["retryAfter"] != "" && !_isValidSQLiteDateModifier(request["retryAfter"])){
             throw "402 Malformed retryAfter";
         }
 
@@ -392,7 +392,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no data was provided, use an empty object
-            const string& safeRetryAfter = request["retryAfter"].empty() ? "" : SQ(request["retryAfter"]);
+            const string& safeRetryAfter = request["retryAfter"].empty() ? "\"\"" : SQ(request["retryAfter"]);
 
             // Create this new job
             if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
@@ -561,7 +561,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 string updateQuery = "UPDATE jobs "
                                      "SET state='RUNQUEUED', "
                                      "  lastRun=" + SCURRENT_TIMESTAMP() + ", "
-                                     "  nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + retryAfter + ") "
+                                     "  nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(retryAfter) + ") "
                                      "WHERE jobID = " + jobID + ";";
                 if (!db.write(updateQuery)) {
                     throw "502 Update failed";
