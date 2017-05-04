@@ -190,7 +190,19 @@ void BedrockServer::sync(SData& args,
         // If we've just switched to the mastering state, we want to upgrade the DB. We'll set a global flag to let
         // worker threads know that a DB upgrade is in progress, and start the upgrade process, which works basically
         // like a regular distributed commit.
+        // We also want to mark anything in our command queue as 'unpeeked'. It's possible that plugins skipped the
+        // peek for various commands, because they'd intended to escalate them to master. We'll reset the peek count to
+        // 0 for everything currently in our queue, and they'll be peeked by the sync thread, as they've been
+        // effectively "escalated" to master without being sent to another server.
         if (preUpdateState != SQLiteNode::MASTERING && nodeState == SQLiteNode::MASTERING) {
+            auto queueSize = syncNodeQueuedCommands.size();
+            if (queueSize) {
+                SWARN("State changed to MASTERING with " << queueSize << " queued commands, resetting peek count.");
+
+                // Pass `each` a lambda function that resets the peek count.
+                syncNodeQueuedCommands.each([](BedrockCommand& c) { c.peekCount = 0; });
+            }
+
             if (server._upgradeDB(db)) {
                 upgradeInProgress.store(true);
                 committingCommand = true;
@@ -267,6 +279,21 @@ void BedrockServer::sync(SData& args,
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
+
+            // If a command hasn't been peeked yet (which should be unusual and only happen for commands that were
+            // already queued as we were promoted to MASTERING), we'll peek it now.
+            if (!command.peekCount) {
+                if (!command.httpsRequest) {
+                    if (core.peekCommand(command)) {
+                        // This command completed in peek, stick it back in the queue for a worker to respond to.
+                        SASSERT(command.complete);
+                        server._commandQueue.push(BedrockCommand(move(command)));
+                        continue;
+                    }
+                } else {
+                    SWARN("Command " << command.request.methodLine << " has peekCount of 0 but httpsRequest.");
+                }
+            }
 
             // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
             // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next

@@ -61,12 +61,19 @@ BedrockCommand::BedrockCommand(SData _request) :
 BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
     if (this != &from) {
         // The current incarnation of this object is going away, if it had an httpsRequest, we'll need to destroy it,
-        // or it will leak nad never get cleaned up.
+        // or it will leak and never get cleaned up.
         if (httpsRequest) {
             httpsRequest->owner.closeTransaction(httpsRequest);
         }
         httpsRequest = from.httpsRequest;
         from.httpsRequest = nullptr;
+
+        // Update our other properties.
+        peekCount = from.peekCount;
+        processCount = from.processCount;
+        priority = from.priority;
+
+        // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
     }
 
