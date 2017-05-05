@@ -1024,6 +1024,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     (*peer)["CommitCount"] = message["CommitCount"];
     (*peer)["Hash"] = message["Hash"];
 
+    // If we're in a state where we've preemptively rolled back a commit, and we're receiving a message from master,
+    // make sure it's a rollback.
+    if (preemptivelyRolledBack && _masterPeer == peer) {
+        SASSERT(SIEquals(message.methodLine, "ROLLBACK_TRANSACTION"));
+    }
+
     // Classify and process the message
     if (SIEquals(message.methodLine, "LOGIN")) {
         // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
@@ -1396,8 +1402,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
             throw "commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1);
-        } if (!_db.beginTransaction())
+        }
+        if (!_db.beginTransaction()) {
             throw "failed to begin transaction";
+        }
         try {
             // Inside transaction; get ready to back out on error
             if (!_db.write(message.content)) {
@@ -1407,11 +1415,19 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 throw "failed to prepare transaction";
             }
         } catch (const char* e) {
+            // This can happen if master sends us a transaction that will conflict, and it will need to rollback.
+            // So what we'll do is a preemptive rollback, and set a flag. The next command we receive from master
+            // *must* be a rollback, or we'll die.
+            SINFO("Preemptive rollback after transaction failure.");
+            preemptivelyRolledBack = true;
+            _db.rollback();
+            #if 0
             // Transaction failed, clean up
             SERROR("Can't begin master transaction (" << e << "); shutting down.");
             // **FIXME: Remove the above line once we can automatically handle?
             _db.rollback();
             throw e;
+            #endif
         }
 
         // Successful commit; we in the right state?
@@ -1550,7 +1566,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "no outstanding transaction";
         }
         SINFO("ROLLBACK received on slave for: " << message["ID"]);
-        _db.rollback();
+        if (preemptivelyRolledBack) {
+            SINFO("preemptivelyRolledBack flag was set, clearing, not rolling back. message: " << message["ID"]);
+            preemptivelyRolledBack = false;
+        } else {
+            _db.rollback();
+        }
 
         // Look through our escalated commands and see if it's one being processed
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
