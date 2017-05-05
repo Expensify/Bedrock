@@ -58,6 +58,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _version = version;
     _commitsSinceCheckpoint = 0;
     _quorumCheckpoint = quorumCheckpoint;
+    _preemptivelyRolledBack = false;
 
     // Get this party started
     _changeState(SEARCHING);
@@ -1026,7 +1027,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
     // If we're in a state where we've preemptively rolled back a commit, and we're receiving a message from master,
     // make sure it's a rollback.
-    if (preemptivelyRolledBack && _masterPeer == peer) {
+    if (_preemptivelyRolledBack && _masterPeer == peer) {
         SASSERT(SIEquals(message.methodLine, "ROLLBACK_TRANSACTION"));
     }
 
@@ -1419,7 +1420,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // So what we'll do is a preemptive rollback, and set a flag. The next command we receive from master
             // *must* be a rollback, or we'll die.
             SINFO("Preemptive rollback after transaction failure.");
-            preemptivelyRolledBack = true;
+            _preemptivelyRolledBack = true;
             _db.rollback();
             #if 0
             // Transaction failed, clean up
@@ -1566,9 +1567,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "no outstanding transaction";
         }
         SINFO("ROLLBACK received on slave for: " << message["ID"]);
-        if (preemptivelyRolledBack) {
+        if (_preemptivelyRolledBack) {
             SINFO("preemptivelyRolledBack flag was set, clearing, not rolling back. message: " << message["ID"]);
-            preemptivelyRolledBack = false;
+            _preemptivelyRolledBack = false;
         } else {
             _db.rollback();
         }
