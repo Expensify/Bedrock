@@ -154,9 +154,9 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
         {"-priority",         "200"},
         {"-plugins",          "db,cache"},
         {"-readThreads",      "8"},
-        {"-maxJournalSize",   "10000"},
+        {"-maxJournalSize",   "100"},
         {"-v",                ""},
-        {"-quorumCheckpoint", "5"},
+        {"-quorumCheckpoint", "50"},
         {"-parallelCommands", "Query,idcollision"},
         {"-cache",            "10001"},
     };

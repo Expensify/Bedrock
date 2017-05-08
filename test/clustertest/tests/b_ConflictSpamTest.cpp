@@ -32,10 +32,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 // What if we throw in a few sync commands?
                 query["writeConsistency"] = "ASYNC";
                 int cmdNum = cmdID.fetch_add(1);
-                string cmdIdString = (h < 10) ? "0" : "";
-                cmdIdString += to_string(h);
-                //query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdNum) + ", " + SQ("node:" + to_string(i) + ", cmd:" + cmdIdString + " slow_test") + " );";
-                query["value"] = cmdIdString;
+                query["value"] = "sent-" + to_string(cmdNum);
 
                 // Ok, send.
                 string result = brtester->executeWait(query);
