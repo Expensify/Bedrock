@@ -376,7 +376,7 @@ int SQLite::commit() {
         _commitCount++;
         _committedTransactionIDs.insert(_commitCount.load());
         _lastCommittedHash.store(_uncommittedHash);
-        SINFO("TYLER Commit successful (" << _commitCount.load() << "), releasing commitLock. Query: " << _uncommittedQuery << ", hash: " << _uncommittedHash);
+        SINFO("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
