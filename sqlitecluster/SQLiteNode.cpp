@@ -219,7 +219,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         commit["ID"] = transaction["ID"];
         commit["CommitCount"] = transaction["NewCount"];
         commit["Hash"] = hash;
-        SINFO("TYLER Sending COMMIT_TRANSACTION to all peers: " << commit.serialize() << ", Query was: " << query);
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
 
@@ -687,9 +686,9 @@ bool SQLiteNode::update() {
                         numFullResponded++;
                         numFullApproved += SIEquals(response, "approve");
                         if (!SIEquals(response, "approve")) {
-                            SWARN("TYLER Peer '" << peer->name << "' denied transaction: " << _db.getUncommittedQuery());
+                            SWARN("Peer '" << peer->name << "' denied transaction.");
                         } else {
-                            SDEBUG("TYLER Peer '" << peer->name << "' has approved transaction: " << _db.getUncommittedQuery());
+                            SDEBUG("Peer '" << peer->name << "' has approved transaction.");
                         }
                     }
                 }
@@ -735,14 +734,12 @@ bool SQLiteNode::update() {
                    << ", everybodyResponded="     << everybodyResponded
                    << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
 
-            if (!everybodyResponded) {
-                SWARN("Not everybody responded yet. Are we consistent enough anyway? " << (consistentEnough ? "yes" : "no"));
-            }
             if (everybodyResponded && !consistentEnough) {
                 // Abort this distributed transaction. Happened either because the initiator disappeared, or everybody
                 // has responded without enough consistency (indicating it'll never come). Failed, tell everyone to
                 // rollback.
-                SWARN("Rolling back transaction because everybody responded but not consistent enough. This transaction would likely have conflicted.");
+                SWARN("Rolling back transaction because everybody responded but not consistent enough."
+                      << "(This transaction would likely have conflicted.)");
                 _db.rollback();
 
                 // Notify everybody to rollback
@@ -754,7 +751,6 @@ bool SQLiteNode::update() {
                 _commitState = CommitState::FAILED;
             } else if (consistentEnough) {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
-                string lastQuery = _db.getUncommittedQuery();
                 int result = _db.commit();
 
                 // If this is the case, there was a commit conflict.
@@ -787,7 +783,7 @@ bool SQLiteNode::update() {
 
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
-                    SINFO("TYLER Sending COMMIT_TRANSACTION to all peers: " << commit.serialize() << ", Query was: " << lastQuery);
+                    SINFO("TYLER Sending COMMIT_TRANSACTION to peers.");
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
                     
                     // clear the unsent transactions, we've sent them all (including this one);
