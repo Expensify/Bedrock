@@ -29,7 +29,6 @@ void BedrockServer::sync(SData& args,
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
-    SAUTOPREFIX(args["-nodeName"]);
 
     // We currently have no writable commands in progress.
     server._writableCommandsInProgress.store(0);
@@ -279,7 +278,7 @@ void BedrockServer::sync(SData& args,
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
-            //SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request["requestID"]);
 
             // If a command hasn't been peeked yet (which should be unusual and only happen for commands that were
             // already queued as we were promoted to MASTERING), we'll peek it now.
@@ -388,7 +387,6 @@ void BedrockServer::worker(SData& args,
                            int threadCount)
 {
     SInitialize("worker" + to_string(threadId));
-    SAUTOPREFIX(args["-nodeName"]);
     SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), threadId, threadCount - 1);
     BedrockCore core(db, server);
 
@@ -401,7 +399,7 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
-            //SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request["requestID"]);
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (upgradeInProgress.load() ||
