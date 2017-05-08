@@ -183,8 +183,4 @@ class SQLiteNode : public STCPNode {
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
-
-    // A flag that indicates if we've preemptively rolled back a failed transaction, and are anticipating a rollback
-    // command from master.
-    bool _preemptivelyRolledBack;
 };
