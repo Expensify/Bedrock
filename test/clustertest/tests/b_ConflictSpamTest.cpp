@@ -28,15 +28,14 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
                 BedrockTester* brtester = tester->getBedrockTester(i);
-                SData query("Query");
+                SData query("idcollision");
                 // What if we throw in a few sync commands?
-                if (h != 2) {
-                    query["writeConsistency"] = "ASYNC";
-                }
+                query["writeConsistency"] = "ASYNC";
                 int cmdNum = cmdID.fetch_add(1);
                 string cmdIdString = (h < 10) ? "0" : "";
                 cmdIdString += to_string(h);
-                query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdNum) + ", " + SQ("node:" + to_string(i) + ", cmd:" + cmdIdString + " slow_test") + " );";
+                //query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdNum) + ", " + SQ("node:" + to_string(i) + ", cmd:" + cmdIdString + " slow_test") + " );";
+                query["value"] = cmdIdString;
 
                 // Ok, send.
                 string result = brtester->executeWait(query);
@@ -85,13 +84,10 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 vector<SData> requests;
                 int numCommands = 200;
                 for (int j = 0; j < numCommands; j++) {
-                    SData query("Query");
+                    SData query("idcollision");
                     query["writeConsistency"] = "ASYNC";
                     int cmdNum = cmdID.fetch_add(1);
-                    string cmdIdString = (j < 10) ? "0" : "";
-                    cmdIdString += to_string(j);
-                    string safeVal = SQ("node:" + to_string(i) + ", cmd:" + cmdIdString);
-                    query["query"] = "INSERT INTO test VALUES ( " + SQ(cmdNum) + ", " + safeVal + " );";
+                    query["value"] = "sent-" + to_string(cmdNum);
                     requests.push_back(query);
                 }
 

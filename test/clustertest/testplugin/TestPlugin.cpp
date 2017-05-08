@@ -63,6 +63,15 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         }
         return true;
     }
+    else if (command.request.methodLine == "idcollision") {
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        cout << nextID << endl;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+        return true;
+    }
     return false;
 }
 
