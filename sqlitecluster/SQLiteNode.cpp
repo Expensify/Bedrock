@@ -851,7 +851,6 @@ bool SQLiteNode::update() {
                   << _db.getUncommittedHash() << ")");
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
-            transaction.set("ID", _lastSentTransactionID + 1);
             if (_commitConsistency == ASYNC) {
                 transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
