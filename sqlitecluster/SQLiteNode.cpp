@@ -781,9 +781,9 @@ bool SQLiteNode::update() {
                           << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
                           << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
 
+                    SINFO("Sending COMMIT_TRANSACTION to peers.");
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
-                    SINFO("TYLER Sending COMMIT_TRANSACTION to peers.");
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
                     
                     // clear the unsent transactions, we've sent them all (including this one);
@@ -856,7 +856,6 @@ bool SQLiteNode::update() {
                 transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
                 transaction.set("ID", _lastSentTransactionID + 1);
-                SWARN("TYLER transaction " << (_lastSentTransactionID + 1) << " with query " << _db.getUncommittedQuery() << ", sent with consistency " << _commitConsistency);
             }
             transaction.content = _db.getUncommittedQuery();
 
