@@ -781,7 +781,7 @@ bool SQLiteNode::update() {
                           << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
                           << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
 
-                    SINFO("Sending COMMIT_TRANSACTION to peers.");
+                    SINFO("Successfully committed. Sending COMMIT_TRANSACTION to peers.");
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
