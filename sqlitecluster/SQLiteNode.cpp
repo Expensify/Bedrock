@@ -671,6 +671,7 @@ bool SQLiteNode::update() {
             int numFullSlaves = 0;    // Num full peers that are "subscribed"
             int numFullResponded = 0; // Num full peers that have responded approve/deny
             int numFullApproved = 0;  // Num full peers that have approved
+            int numFullDenied = 0;    // Num full peers that have denied
             for (auto peer : peerList) {
                 // Check this peer to see if it's full or a permaslave
                 if (peer->params["Permaslave"] != "true") {
@@ -687,6 +688,7 @@ bool SQLiteNode::update() {
                         numFullApproved += SIEquals(response, "approve");
                         if (!SIEquals(response, "approve")) {
                             SWARN("Peer '" << peer->name << "' denied transaction.");
+                            ++numFullDenied;
                         } else {
                             SDEBUG("Peer '" << peer->name << "' has approved transaction.");
                         }
@@ -734,7 +736,9 @@ bool SQLiteNode::update() {
                    << ", everybodyResponded="     << everybodyResponded
                    << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
 
-            if (everybodyResponded && !consistentEnough) {
+            // If everyone's responded, but we didn't get the required number of approvals, roll this back. Or, if
+            // *anyone* denied, we'll roll back without waiting for the rest of the cluster.
+            if ((everybodyResponded && !consistentEnough) || numFullDenied > 0) {
                 // Abort this distributed transaction. Happened either because the initiator disappeared, or everybody
                 // has responded without enough consistency (indicating it'll never come). Failed, tell everyone to
                 // rollback.
