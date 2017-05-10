@@ -1125,6 +1125,10 @@ void BedrockServer::_status(BedrockCommand& command) {
                 _parallelCommands.insert(command);
             }
         }
+        // Enable extra logging in the commit lock timer.
+        decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_parallelCommands.empty());
+
+        // PRepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
     }

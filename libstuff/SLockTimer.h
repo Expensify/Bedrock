@@ -5,6 +5,7 @@
 template<typename LOCKTYPE>
 class SLockTimer : public SPerformanceTimer {
   public:
+    static atomic<bool> enableExtraLogging;
     SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds = 10);
     ~SLockTimer();
 
@@ -22,6 +23,9 @@ class SLockTimer : public SPerformanceTimer {
     // Each thread keeps it's own counter of wait and lock time.
     map<string, pair<int,int>> _perThreadTiming;
 };
+
+template<typename LOCKTYPE>
+atomic<bool> SLockTimer<LOCKTYPE>::enableExtraLogging(false);
 
 template<typename LOCKTYPE>
 SLockTimer<LOCKTYPE>::SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds)
@@ -43,6 +47,7 @@ void SLockTimer<LOCKTYPE>::lock()
     // we're calling this recursively.
     int count = _lockCount.fetch_add(1);
     if (!count) {
+        uint64_t waitElapsed = waitEnd - waitStart;
 
         // We're locking, go ahead and update the per-thread map. This is already synchronized behind `_lock`, so no
         // need to grab a second mutex.
@@ -50,10 +55,14 @@ void SLockTimer<LOCKTYPE>::lock()
         if (it == _perThreadTiming.end()) {
             // We didn't find an entry for this thread name, so we'll insert one with the calculated wait time, and a
             // lock time of 0.
-            _perThreadTiming.emplace(make_pair(SThreadLogName, make_pair((waitEnd - waitStart), 0)));
+            _perThreadTiming.emplace(make_pair(SThreadLogName, make_pair((waitElapsed), 0)));
         } else {
             // We already have an entry, add to the wait time.
-            it->second.first += (waitEnd - waitStart);
+            it->second.first += (waitElapsed);
+        }
+        if (enableExtraLogging.load() && waitElapsed > 1000000) {
+            SWARN("[performance] Over 1s spent waiting for lock " << _description << ": " << waitElapsed << "us.");
+            SLogStackTrace();
         }
         start();
     }
@@ -68,14 +77,19 @@ void SLockTimer<LOCKTYPE>::unlock()
     // can stop the timer.
     if (count == 1) {
         stop();
+        uint64_t lockElapsed = _lastStop - _lastStart;
 
         // We're still holding `_lock`, so no further synchronization is required for the per-thread map.
         auto it = _perThreadTiming.find(SThreadLogName);
         if (it != _perThreadTiming.end()) {
             // We already have an entry, add to the lock time.
-            it->second.second += (_lastStop - _lastStart);
+            it->second.second += lockElapsed;
         } else {
             SWARN("Unlocking without ever locking.");
+        }
+        if (enableExtraLogging.load() && lockElapsed > 1000000) {
+            SWARN("[performance] Over 1s spent waiting in lock " << _description << ": " << lockElapsed << "us.");
+            SLogStackTrace();
         }
     }
     _lock.unlock();
@@ -91,6 +105,12 @@ void SLockTimer<LOCKTYPE>::log() {
         uint64_t waitTime = pair.second.first;
         uint64_t lockTime = pair.second.second;
         uint64_t freeTime = _timeLogged + _timeNotLogged - waitTime - lockTime;
+
+        // Catch overflow.
+        if (_timeLogged + _timeNotLogged < waitTime + lockTime) {
+            freeTime = 0;
+        }
+
         string threadName = pair.first;
 
         // Compute the percentage of time we've been busy since the last log period started, as a friendly floating point
