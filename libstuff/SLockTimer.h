@@ -91,6 +91,12 @@ void SLockTimer<LOCKTYPE>::log() {
         uint64_t waitTime = pair.second.first;
         uint64_t lockTime = pair.second.second;
         uint64_t freeTime = _timeLogged + _timeNotLogged - waitTime - lockTime;
+
+        // Catch overflow.
+        if (_timeLogged + _timeNotLogged < waitTime + lockTime) {
+            freeTime = 0;
+        }
+
         string threadName = pair.first;
 
         // Compute the percentage of time we've been busy since the last log period started, as a friendly floating point
