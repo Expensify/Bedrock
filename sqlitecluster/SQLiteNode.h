@@ -57,6 +57,7 @@ class SQLiteNode : public STCPNode {
     int           getPriority()      { return _priority; }
     const string& getMasterVersion() { return _masterVersion; }
     const string& getVersion()       { return _version; }
+    uint64_t      getCommitCount()   { return _db.getCommitCount(); }
 
     // Returns whether we're in the process of gracefully shutting down.
     bool gracefulShutdown() { return (_gracefulShutdownTimeout.alarmDuration != 0); }

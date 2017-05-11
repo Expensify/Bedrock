@@ -1077,6 +1077,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateNames[state];
         content["version"]  = _version;
+        content["host"]     = _args["-nodeHost"];
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
@@ -1084,6 +1085,9 @@ void BedrockServer::_status(BedrockCommand& command) {
         list<string> escalated;
         {
             SAUTOLOCK(_syncMutex);
+
+            // Set some information about this node.
+            content["CommitCount"] = to_string(_syncNode->getCommitCount());
 
             // Retrieve information about our peers.
             for (SQLiteNode::Peer* peer : _syncNode->peerList) {
