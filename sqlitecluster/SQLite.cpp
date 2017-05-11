@@ -354,7 +354,7 @@ int SQLite::commit() {
 
     // Do we need to truncate as we go?
     uint64_t newJournalSize = _journalSize + 1;
-    if (_journalSize + 1 > _maxJournalSize) {
+    if (newJournalSize > _maxJournalSize) {
         // Delete the oldest entry
         uint64_t before = STimeNow();
         string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_maxJournalSize);
