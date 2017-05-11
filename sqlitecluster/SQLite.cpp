@@ -353,7 +353,7 @@ int SQLite::commit() {
     int result = 0;
 
     // Do we need to truncate as we go?
-    uint64_t newJournalSize = 0;
+    uint64_t newJournalSize = _journalSize + 1;
     if (_journalSize + 1 > _maxJournalSize) {
         // Delete the oldest entry
         uint64_t before = STimeNow();
