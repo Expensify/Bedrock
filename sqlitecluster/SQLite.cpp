@@ -353,13 +353,22 @@ int SQLite::commit() {
     int result = 0;
 
     // Do we need to truncate as we go?
-    bool truncating = false;
+    uint64_t newJournalSize = 0;
     if (_journalSize + 1 > _maxJournalSize) {
         // Delete the oldest entry
-        truncating = true;
         uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_journalSize);
-        SASSERT(!SQuery(_db, "Deleting oldest row", query));
+        string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_maxJournalSize);
+        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
+
+        // Figure out the new journal size.
+        SQResult result;
+        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + SQ(_journalName), result));
+        uint64_t min = SToUInt64(result[0][0]);
+        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + SQ(_journalName), result));
+        uint64_t max = SToUInt64(result[0][0]);
+        newJournalSize = max - min;
+
+        // Log timing info.
         _writeElapsed += STimeNow() - before;
     }
 
@@ -372,7 +381,7 @@ int SQLite::commit() {
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         _commitElapsed += STimeNow() - before;
-        _journalSize += truncating ? 0 : 1;
+        _journalSize = newJournalSize;
         _commitCount++;
         _committedTransactionIDs.insert(_commitCount.load());
         _lastCommittedHash.store(_uncommittedHash);
