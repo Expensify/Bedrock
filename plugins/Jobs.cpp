@@ -203,6 +203,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CreateJob")) {
+
+        // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
+        // so we're intentionally not adding support for them them yet
         if (request.isSet("repeat") && request.isSet("retryAfter")) {
             throw "402 Repeatable auto-retrying jobs are not supported";
         }
