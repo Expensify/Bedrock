@@ -357,14 +357,16 @@ int SQLite::commit() {
     if (newJournalSize > _maxJournalSize) {
         // Delete the oldest entry
         uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_maxJournalSize);
+        string query = "DELETE FROM " + _journalName + " "
+                       "WHERE id < (SELECT MAX(id) " "FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
+                       "LIMIT 10";
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
 
         // Figure out the new journal size.
         SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + SQ(_journalName), result));
+        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
         uint64_t min = SToUInt64(result[0][0]);
-        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + SQ(_journalName), result));
+        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
         uint64_t max = SToUInt64(result[0][0]);
         newJournalSize = max - min;
 
