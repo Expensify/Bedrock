@@ -207,7 +207,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
         // so we're intentionally not adding support for them them yet
         if (request.isSet("repeat") && request.isSet("retryAfter")) {
-            throw "402 Repeatable auto-retrying jobs are not supported";
+            throw "402 Recurring auto-retrying jobs are not supported";
         }
 
         // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
@@ -767,7 +767,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // storing the last time this job was *scheduled* to be run;
             // lastRun contains when it was *actually* run.
             // NOTE: we're not including retryAfter when computing lastScheduled
-            //       because we currently don't support retryable and repeatable jobs
+            //       because we currently don't support retryable and recurring jobs
             const string& lastScheduled = nextRun;
             const string& newNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
             if (newNextRun.empty()) {
