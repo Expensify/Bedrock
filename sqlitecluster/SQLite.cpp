@@ -358,7 +358,7 @@ int SQLite::commit() {
         // Delete the oldest entry
         uint64_t before = STimeNow();
         string query = "DELETE FROM " + _journalName + " "
-                       "WHERE id < (SELECT MAX(id) " "FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
+                       "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
                        "LIMIT 10";
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
 
