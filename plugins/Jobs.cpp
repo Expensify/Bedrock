@@ -625,7 +625,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT 1 "
+        if (!db.read("SELECT jobID, nextRun, lastRun "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -635,11 +635,18 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             throw "404 No job with this jobID";
         }
 
+        const string& nextRun = result[0][1];
+        const string& lastRun = result[0][2];
+
+        // Are we rescheduling?
+        const string& newNextRun = request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
+
         // Update the data
         if (!db.write("UPDATE jobs "
                       "SET data=" +
                       SQ(request["data"]) + " " +
                       (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
+                      (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                           "WHERE jobID=" +
                       SQ(request.calc64("jobID")) + ";")) {
             throw "502 Update failed";

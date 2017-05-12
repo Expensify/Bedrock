@@ -3,8 +3,14 @@ class BedrockCommand;
 
 class BedrockCommandQueue {
   public:
+    // Remove all items from the queue.
+    void clear();
+
     // Returns true if there are no queued commands.
     bool empty();
+
+    // Returns the size of the queue.
+    size_t size();
 
     // Get an item from the queue. Optionally, a timeout can be specified.
     // If timeout is non-zero, an exception will be thrown after timeoutUS microseconds, if no work was available.

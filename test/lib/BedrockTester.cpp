@@ -147,16 +147,18 @@ string BedrockTester::getServerName() {
 list<string> BedrockTester::getServerArgs(map <string, string> args) {
 
     map <string, string> defaults = {
-        {"-db",             _dbFile.empty() ? DB_FILE : _dbFile},
-        {"-serverHost",     _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
-        {"-nodeName",       "bedrock_test"},
-        {"-nodeHost",       "localhost:9889"},
-        {"-priority",       "200"},
-        {"-plugins",        "db,cache"},
-        {"-readThreads",    "8"},
-        {"-maxJournalSize", "100"},
-        {"-v",              ""},
-        {"-cache",          "10001"},
+        {"-db",               _dbFile.empty() ? DB_FILE : _dbFile},
+        {"-serverHost",       _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
+        {"-nodeName",        "bedrock_test"},
+        {"-nodeHost",         "localhost:9889"},
+        {"-priority",         "200"},
+        {"-plugins",          "db,cache"},
+        {"-readThreads",      "8"},
+        {"-maxJournalSize",   "100"},
+        {"-v",                ""},
+        {"-quorumCheckpoint", "50"},
+        {"-parallelCommands", "Query,idcollision"},
+        {"-cache",            "10001"},
     };
 
     for (auto row : defaults) {

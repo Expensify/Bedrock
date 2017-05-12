@@ -41,9 +41,7 @@ void SPerformanceTimer::stop() {
     // If it's been longer than our log period, log our current statistics and start over on the next iteration.
     if (_lastLogStart + _logPeriod < timestamp) {
         log();
-        // Reset this to our period after our previous start time, not after the current time, to prevent slow skew as
-        // poll doesn't return precisely on these boundaries.
-        _lastLogStart += _logPeriod;
+        _lastLogStart = timestamp;
         _timeLogged = 0;
         _timeNotLogged = 0;
     }
