@@ -981,6 +981,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
 }
 
 bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
+    // See: https://www.sqlite.org/lang_datefunc.html
     list<string> parts = SParseList(SToUpper(modifier));
     for (const string& part : parts) {
         // Simple regexp validation
