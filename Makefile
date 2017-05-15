@@ -15,7 +15,7 @@ VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 
 # Turn on C++11.
 CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
-CXXFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
+CXXFLAGS =-std=gnu++11
 CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
