@@ -14,7 +14,8 @@ PROJECT = $(shell pwd)
 VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 
 # Turn on C++11.
-CXXFLAGS =-g -std=gnu++11 -DSVERSION="\"$(VERSION)\"" -Wall
+CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
+CXXFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
 CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
@@ -154,4 +155,4 @@ $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -o $@ -c $<
+	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -o $@ -c $<
