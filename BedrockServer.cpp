@@ -531,7 +531,7 @@ void BedrockServer::worker(SData& args,
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
-                                if (core.commit()) {
+                                if (core.commit(command.extraLogging)) {
                                     SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                     // So we must still be mastering, and at this point our commit has succeeded, let's
                                     // mark it as complete!

@@ -82,7 +82,7 @@ class SQLiteNode : public STCPNode {
 
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
-    void startCommit(ConsistencyLevel consistency);
+    void startCommit(ConsistencyLevel consistency, bool extraLogging = false);
 
     // If we have a command that can't be handled on a slave, we can escalate it to the master node. The SQLiteNode
     // takes ownership of the command until it receives a response from the slave. When the command completes, it will
@@ -146,6 +146,9 @@ class SQLiteNode : public STCPNode {
 
     // The write consistency requested for the current in-progress commit.
     ConsistencyLevel _commitConsistency;
+
+    // Whether or not we pass the extraLogging flag to the SQLite object on commit.
+    bool _commitExtraLogging;
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
