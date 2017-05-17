@@ -354,6 +354,7 @@ int SQLite::commit(bool extraLogging) {
 
     // Do we need to truncate as we go?
     uint64_t newJournalSize = _journalSize + 1;
+    string journalQueries;
     if (newJournalSize > _maxJournalSize) {
         // Delete the oldest entry
         uint64_t before = STimeNow();
@@ -369,6 +370,8 @@ int SQLite::commit(bool extraLogging) {
         SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
         uint64_t max = SToUInt64(result[0][0]);
         newJournalSize = max - min;
+        journalQueries += " " + query + " SELECT MIN(id) AS id FROM " + _journalName + ";"
+                                      + " SELECT MAX(id) AS id FROM " + _journalName + ";";
 
         // Log timing info.
         _writeElapsed += STimeNow() - before;
@@ -379,17 +382,17 @@ int SQLite::commit(bool extraLogging) {
     uint64_t before = STimeNow();
 
     if (extraLogging) {
-        SWARN("Extra logging enabled for commit. Pre-commit query is: " << _uncommittedQuery);
+        SWARN("Extra logging enabled for commit. Pre-commit query is: " << _uncommittedQuery + journalQueries);
     }
     result = SQuery(_db, "committing db transaction", "COMMIT");
 
     if (extraLogging) {
         if (result == SQLITE_OK) {
-            SWARN("Commit completed with SQLITE_OK. Pre-commit query was:" << _uncommittedQuery);
+            SWARN("Commit completed with SQLITE_OK. Pre-commit query was:" << _uncommittedQuery+ journalQueries);
         } else if (result == SQLITE_BUSY_SNAPSHOT) {
-            SWARN("Commit completed with SQLITE_BUSY_SNAPSHOT. Pre-commit query was:" << _uncommittedQuery);
+            SWARN("Commit completed with SQLITE_BUSY_SNAPSHOT. Pre-commit query was:" << _uncommittedQuery + journalQueries);
         } else {
-            SWARN("Commit completed with unexpected result code: " << result << ". Pre-commit query was:" << _uncommittedQuery);
+            SWARN("Commit completed with unexpected result code: " << result << ". Pre-commit query was:" << _uncommittedQuery + journalQueries);
         }
     }
 
