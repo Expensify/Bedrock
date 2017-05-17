@@ -106,15 +106,20 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     set<string> _include = include;
     set<string> _exclude = exclude;
     
+    // Create a list of threads, and have them each pull tests of the queue.
+    list<thread> threadList;
+    recursive_mutex m;
 
     // Run the `before` tests
     for (auto name : before) {
         for (auto fixture : testFixtureList) {
             if (fixture->_name && name == fixture->_name) {
-                cout << "Found `before` test " << name << ", running." << endl;
+               fixture->_threadID = 0;
+               fixture->_mutex = &m;
+               fixture->_multiThreaded = false;
 
-                // Add to exclude.
-                _exclude.insert(name);
+               // Add to exclude.
+               _exclude.insert(name);
 
                // Run the test.
                printf("[--------------]\n");
@@ -128,9 +133,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         }
     }
 
-    // Create a list of threads, and have them each pull tests of the queue.
-    list<thread> threadList;
-    recursive_mutex m;
+    list<TestFixture*> afterTests;
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
@@ -167,6 +170,8 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                     // Try the next test.
                     if (!should_run) {
+                        // Put in the after list, in case we want to run it there.
+                        afterTests.push_back(f);
                         continue;
                     }
 
@@ -200,9 +205,11 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
     // Run the `after` tests
     for (auto name : after) {
-        for (auto fixture : testFixtureList) {
+        for (auto fixture : afterTests) {
             if (fixture->_name && name == fixture->_name) {
-                cout << "Found `after` test " << name << ", running." << endl;
+               fixture->_threadID = 0;
+               fixture->_mutex = &m;
+               fixture->_multiThreaded = false;
 
                // Run the test.
                printf("[--------------]\n");
