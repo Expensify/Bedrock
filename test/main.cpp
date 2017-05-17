@@ -37,6 +37,7 @@ int main(int argc, char* argv[]) {
     // Tests to run (or skip);
     set<string> include;
     set<string> exclude;
+    int threads = 1;
 
     if (args.isSet("-only")) {
         list<string> includeList = SParseList(args["-only"]);
@@ -49,6 +50,9 @@ int main(int argc, char* argv[]) {
         for (string name : excludeList) {
             exclude.insert(name);
         }
+    }
+    if (args.isSet("-threads")) {
+        threads = SToInt(args["-threads"]);
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
@@ -72,7 +76,7 @@ int main(int argc, char* argv[]) {
 
     int retval = 0;
     try {
-        retval = tpunit::Tests::run(include, exclude);
+        retval = tpunit::Tests::run(include, exclude, threads);
     } catch (...) {
         cout << "Unhandled exception running tests!" << endl;
         retval = 1;
