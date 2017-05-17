@@ -133,6 +133,11 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         }
     }
 
+    // And exclude our `after` tests so they don't get run in the main loop.
+    for (auto name : after) {
+        _exclude.insert(name);
+    }
+
     list<TestFixture*> afterTests;
 
     for (int threadID = 0; threadID < threads; threadID++) {
@@ -171,6 +176,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                     // Try the next test.
                     if (!should_run) {
                         // Put in the after list, in case we want to run it there.
+                        lock_guard<recursive_mutex> lock(m);
                         afterTests.push_back(f);
                         continue;
                     }
