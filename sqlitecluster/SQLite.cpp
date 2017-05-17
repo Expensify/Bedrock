@@ -370,8 +370,8 @@ int SQLite::commit(bool extraLogging) {
         SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
         uint64_t max = SToUInt64(result[0][0]);
         newJournalSize = max - min;
-        journalQueries += " " + query + "SELECT MIN(id) AS id FROM " + _journalName + ";"
-                                      + "SELECT MAX(id) AS id FROM " + _journalName + ";";
+        journalQueries += " " + query + " SELECT MIN(id) AS id FROM " + _journalName + ";"
+                                      + " SELECT MAX(id) AS id FROM " + _journalName + ";";
 
         // Log timing info.
         _writeElapsed += STimeNow() - before;
