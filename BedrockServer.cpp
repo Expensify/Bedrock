@@ -312,7 +312,7 @@ void BedrockServer::sync(SData& args,
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     server._writableCommandsInProgress++;
-                    syncNode.startCommit(command.writeConsistency);
+                    syncNode.startCommit(command.writeConsistency, command.extraLogging);
 
                     // And we'll start the next main loop.
                     // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
