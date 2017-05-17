@@ -83,10 +83,12 @@ tpunit::TestFixture::~TestFixture() {
 
 int tpunit::TestFixture::tpunit_detail_do_run(int threads) {
     const std::set<std::string> include, exclude;
-    return tpunit_detail_do_run(include, exclude, threads);
+    const std::list<std::string> before, after;
+    return tpunit_detail_do_run(include, exclude, before, after, threads);
 }
 
-int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude, int threads) {
+int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
+                                              const list<string>& before, const list<string>& after, int threads) {
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
     * run unless it's in 'exclude'. If 'include' has at least one entry,
@@ -99,6 +101,32 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         }
         return false;
     });
+
+    // Make local, mutable copies of the include and exclude lists.
+    set<string> _include = include;
+    set<string> _exclude = exclude;
+    
+
+    // Run the `before` tests
+    for (auto name : before) {
+        for (auto fixture : testFixtureList) {
+            if (fixture->_name && name == fixture->_name) {
+                cout << "Found `before` test " << name << ", running." << endl;
+
+                // Add to exclude.
+                _exclude.insert(name);
+
+               // Run the test.
+               printf("[--------------]\n");
+               tpunit_detail_do_methods(fixture->_before_classes);
+               tpunit_detail_do_tests(fixture);
+               tpunit_detail_do_methods(fixture->_after_classes);
+               printf("[--------------]\n\n");
+
+               continue; // Don't bother checking the rest of the tests.
+            }
+        }
+    }
 
     // Create a list of threads, and have them each pull tests of the queue.
     list<thread> threadList;
@@ -128,12 +156,12 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                     // Determine if this test even should run.
                     bool should_run = true;
-                    if (include.size()) {
-                       if (!f->_name || (include.find(std::string(f->_name)) == include.end())) {
+                    if (_include.size()) {
+                       if (!f->_name || (_include.find(std::string(f->_name)) == _include.end())) {
                           should_run = false;
                        }
                     }
-                    else if (f->_name && (exclude.find(std::string(f->_name)) != exclude.end())) {
+                    else if (f->_name && (_exclude.find(std::string(f->_name)) != _exclude.end())) {
                        should_run = false;
                     }
 
@@ -169,13 +197,32 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         currentThread.join();
     }
     threadList.clear();
-     if (!exitFlag) {
-         printf("[==============]\n");
-         printf("[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
-         printf("[==============]\n");
-         return tpunit_detail_stats()._failures;
-     }
-     return 1;
+
+    // Run the `after` tests
+    for (auto name : after) {
+        for (auto fixture : testFixtureList) {
+            if (fixture->_name && name == fixture->_name) {
+                cout << "Found `after` test " << name << ", running." << endl;
+
+               // Run the test.
+               printf("[--------------]\n");
+               tpunit_detail_do_methods(fixture->_before_classes);
+               tpunit_detail_do_tests(fixture);
+               tpunit_detail_do_methods(fixture->_after_classes);
+               printf("[--------------]\n\n");
+
+               continue; // Don't bother checking the rest of the tests.
+            }
+        }
+    }
+
+    if (!exitFlag) {
+        printf("[==============]\n");
+        printf("[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
+        printf("[==============]\n");
+        return tpunit_detail_stats()._failures;
+    }
+    return 1;
 }
 
 bool tpunit::TestFixture::tpunit_detail_fp_equal(float lhs, float rhs, unsigned char ulps) {
@@ -324,6 +371,7 @@ int tpunit::Tests::run(int threads) {
     return TestFixture::tpunit_detail_do_run(threads);
 }
 
-int tpunit::Tests::run(const set<string>& include, const set<string>& exclude, int threads) {
-    return TestFixture::tpunit_detail_do_run(include, exclude, threads);
+int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
+                       const list<string>& before, const list<string>& after, int threads) {
+    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads);
 }

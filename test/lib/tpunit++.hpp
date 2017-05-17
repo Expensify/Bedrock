@@ -299,7 +299,8 @@ namespace tpunit {
 
          static int tpunit_detail_do_run(int threads = 1);
 
-         static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude, int threads);
+         static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude,
+                                         const std::list<std::string>& before, const std::list<std::string>& after, int threads);
 
       protected:
 
@@ -367,6 +368,7 @@ namespace tpunit {
        *
        * @return Number of failed assertions or zero if all tests pass.
        */
-      static int run(const std::set<std::string>& include, const std::set<std::string>& exclude, int threads = 1);
+      static int run(const std::set<std::string>& include, const std::set<std::string>& exclude,
+                     const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1);
    };
 }

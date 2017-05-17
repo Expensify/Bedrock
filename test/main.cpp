@@ -37,6 +37,8 @@ int main(int argc, char* argv[]) {
     // Tests to run (or skip);
     set<string> include;
     set<string> exclude;
+    list<string> before;
+    list<string> after;
     int threads = 1;
 
     if (args.isSet("-only")) {
@@ -49,6 +51,18 @@ int main(int argc, char* argv[]) {
         list<string> excludeList = SParseList(args["-except"]);
         for (string name : excludeList) {
             exclude.insert(name);
+        }
+    }
+    if (args.isSet("-before")) {
+        list<string> beforeList = SParseList(args["-before"]);
+        for (string name : beforeList) {
+            before.push_back(name);
+        }
+    }
+    if (args.isSet("-after")) {
+        list<string> afterList = SParseList(args["-after"]);
+        for (string name : afterList) {
+            after.push_back(name);
         }
     }
     if (args.isSet("-threads")) {
@@ -76,7 +90,7 @@ int main(int argc, char* argv[]) {
 
     int retval = 0;
     try {
-        retval = tpunit::Tests::run(include, exclude, threads);
+        retval = tpunit::Tests::run(include, exclude, before, after, threads);
     } catch (...) {
         cout << "Unhandled exception running tests!" << endl;
         retval = 1;
