@@ -347,7 +347,7 @@ bool SQLite::prepare() {
     return true;
 }
 
-int SQLite::commit() {
+int SQLite::commit(bool extraLogging) {
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
     int result = 0;
@@ -377,7 +377,21 @@ int SQLite::commit() {
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
+
+    if (extraLogging) {
+        SWARN("Extra logging enabled for commit. Pre-commit query is: " << _uncommittedQuery);
+    }
     result = SQuery(_db, "committing db transaction", "COMMIT");
+
+    if (extraLogging) {
+        if (result == SQLITE_OK) {
+            SWARN("Commit completed with SQLITE_OK. Pre-commit query was:" << _uncommittedQuery);
+        } else if (result == SQLITE_BUSY_SNAPSHOT) {
+            SWARN("Commit completed with SQLITE_BUSY_SNAPSHOT. Pre-commit query was:" << _uncommittedQuery);
+        } else {
+            SWARN("Commit completed with unexpected result code: " << result << ". Pre-commit query was:" << _uncommittedQuery);
+        }
+    }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);

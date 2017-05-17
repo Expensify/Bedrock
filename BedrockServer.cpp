@@ -312,7 +312,7 @@ void BedrockServer::sync(SData& args,
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     server._writableCommandsInProgress++;
-                    syncNode.startCommit(command.writeConsistency);
+                    syncNode.startCommit(command.writeConsistency, command.extraLogging);
 
                     // And we'll start the next main loop.
                     // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
@@ -531,7 +531,7 @@ void BedrockServer::worker(SData& args,
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
-                                if (core.commit()) {
+                                if (core.commit(command.extraLogging)) {
                                     SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                     // So we must still be mastering, and at this point our commit has succeeded, let's
                                     // mark it as complete!

@@ -83,7 +83,7 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 }
 
-void SQLiteNode::startCommit(ConsistencyLevel consistency)
+void SQLiteNode::startCommit(ConsistencyLevel consistency, bool extraLogging)
 {
     // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
     // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
@@ -92,6 +92,7 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
             _commitState == CommitState::FAILED);
     _commitState = CommitState::WAITING;
     _commitConsistency = consistency;
+    _commitExtraLogging = extraLogging;
 }
 
 void SQLiteNode::sendResponse(const SQLiteCommand& command)
@@ -755,7 +756,7 @@ bool SQLiteNode::update() {
                 _commitState = CommitState::FAILED;
             } else if (consistentEnough) {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
-                int result = _db.commit();
+                int result = _db.commit(_commitExtraLogging);
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
@@ -1533,7 +1534,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw "hash mismatch";
         }
 
-        _db.commit();
+        _db.commit(_commitExtraLogging);
         uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                              commitElapsed, rollbackElapsed);
@@ -1987,7 +1988,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Transaction succeeded, commit and go to the next
-        _db.commit();
+        _db.commit(_commitExtraLogging);
         if (_db.getCommittedHash() != commit["Hash"])
             throw "potential hash mismatch";
         --commitsRemaining;

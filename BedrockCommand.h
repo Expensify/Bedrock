@@ -42,6 +42,8 @@ class BedrockCommand : public SQLiteCommand {
     int peekCount;
     int processCount;
 
+    bool extraLogging;
+
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
