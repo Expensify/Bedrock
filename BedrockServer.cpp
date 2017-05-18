@@ -229,6 +229,7 @@ void BedrockServer::sync(SData& args,
                     upgradeInProgress.store(false);
                     continue;
                 }
+                SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
                 // Otherwise, mark this command as complete and reply.
                 command.complete = true;
@@ -241,6 +242,9 @@ void BedrockServer::sync(SData& args,
                 }
             } else {
                 // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
+                SINFO("[performance] Conflict committing in sync thread, requeueing command "
+                      << command.request.methodLine << ". Sync thread has "
+                      << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
         }
@@ -276,6 +280,8 @@ void BedrockServer::sync(SData& args,
 
             // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
+            SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
+                  << syncNodeQueuedCommands.size() << " queued commands.");
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
@@ -311,6 +317,7 @@ void BedrockServer::sync(SData& args,
                 if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
+                    SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);
                     server._writableCommandsInProgress++;
                     syncNode.startCommit(command.writeConsistency);
 
@@ -400,6 +407,8 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
             SAUTOPREFIX(command.request["requestID"]);
+            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
+                  << server._commandQueue.size() << " commands in queue.");
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (upgradeInProgress.load() ||
@@ -508,6 +517,9 @@ void BedrockServer::worker(SData& args,
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
                         // We're not handling a writable command anymore.
+                        SINFO("[performance] Sending non-parallel command " << command.request.methodLine
+                              << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
+                              << " queued commands.");
                         server._writableCommandsInProgress--;
                         syncNodeQueuedCommands.push(move(command));
 
@@ -569,7 +581,8 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                SINFO("Max retries hit in worker, forwarding command to sync node.");
+                SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
+                      << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {

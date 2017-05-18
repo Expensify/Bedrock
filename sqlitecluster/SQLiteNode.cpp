@@ -834,6 +834,9 @@ bool SQLiteNode::update() {
             if (_commitsSinceCheckpoint >= _quorumCheckpoint) {
                 _commitConsistency = QUORUM;
             }
+            if (_commitConsistency == QUORUM) {
+                SINFO("[performance] Beginning quorum commit.");
+            }
 
             // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
             // ones can be added until we release the lock.
