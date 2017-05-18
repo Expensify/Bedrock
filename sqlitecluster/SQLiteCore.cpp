@@ -5,7 +5,7 @@
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
-bool SQLiteCore::commit(bool extraLogging) {
+bool SQLiteCore::commit() {
     // Grab the global SQLite lock.
     SQLITE_COMMIT_AUTOLOCK;
 
@@ -19,7 +19,7 @@ bool SQLiteCore::commit(bool extraLogging) {
     }
 
     // Perform the actual commit, rollback if it fails.
-    int errorCode = _db.commit(extraLogging);
+    int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
         SINFO("Commit conflict, rolling back.");
         _db.rollback();

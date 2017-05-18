@@ -6,8 +6,7 @@ BedrockCommand::BedrockCommand() :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    extraLogging(false)
+    processCount(0)
 { }
 
 BedrockCommand::~BedrockCommand() {
@@ -22,8 +21,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    extraLogging(false)
+    processCount(0)
 {
     _init();
 }
@@ -33,8 +31,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     httpsRequest(from.httpsRequest),
     priority(from.priority),
     peekCount(from.peekCount),
-    processCount(from.processCount),
-    extraLogging(from.extraLogging)
+    processCount(from.processCount)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
     // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
@@ -46,8 +43,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    extraLogging(false)
+    processCount(0)
 {
     _init();
 }
@@ -57,8 +53,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    extraLogging(false)
+    processCount(0)
 {
     _init();
 }
@@ -77,7 +72,6 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         peekCount = from.peekCount;
         processCount = from.processCount;
         priority = from.priority;
-        extraLogging = from.extraLogging;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
