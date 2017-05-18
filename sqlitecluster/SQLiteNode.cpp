@@ -100,6 +100,9 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     SASSERT(peer);
     SData escalate("ESCALATE_RESPONSE");
     escalate["ID"] = command.id;
+    if (command.escalationTimeUS) {
+        escalate.set("escalationTimeUS", STimeNow() - command.escalationTimeUS);
+    }
     escalate.content = command.response.serialize();
     _sendToPeer(peer, escalate);
 }
@@ -249,6 +252,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     escalate.content = command.request.serialize();
 
     // Store the command as escalated.
+    command.escalationTimeUS = STimeNow();
     _escalatedCommandMap.emplace(command.id, move(command));
 
     // And send to master.
@@ -1607,6 +1611,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SQLiteCommand command(move(request));
             command.initiatingPeerID = peer->id;
             command.id = message["ID"];
+            command.escalationTimeUS = STimeNow();
             _server.acceptCommand(move(command));
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
@@ -1659,6 +1664,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
             SQLiteCommand& command = commandIt->second;
+            if (command.escalationTimeUS) {
+                command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+                SINFO("[performance] Total escalation time for command " << command.request.methodLine << " was "
+                      << command.escalationTimeUS << "us. Master processing time was: " << message["escalationTimeUS"]
+                      << "us.");
+            }
             command.response = response;
             command.complete = true;
             _server.acceptCommand(move(command));
