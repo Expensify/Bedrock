@@ -8,7 +8,7 @@ class SQLiteCore {
 
     // Commit the outstanding transaction on the DB.
     // Returns true on successful commit, false on conflict.
-    bool commit(bool extraLogging = false);
+    bool commit();
 
     // Roll back a transaction if we've decided not to commit it.
     void rollback();
