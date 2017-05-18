@@ -763,7 +763,8 @@ bool SQLiteNode::update() {
 
                     // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
                     // roll back.
-                    SINFO("Conflict committing in SQLiteNode, ROLLBACK");
+                    SINFO("[performance] Conflict committing " << consistencyLevelNames[_commitConsistency]
+                          << " commit, rolling back.");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
@@ -785,7 +786,8 @@ bool SQLiteNode::update() {
                           << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
                           << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
 
-                    SINFO("Successfully committed. Sending COMMIT_TRANSACTION to peers.");
+                    SINFO("[performance] Successfully committed " << consistencyLevelNames[_commitConsistency]
+                          << " transaction. Sending COMMIT_TRANSACTION to peers.");
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
@@ -834,9 +836,7 @@ bool SQLiteNode::update() {
             if (_commitsSinceCheckpoint >= _quorumCheckpoint) {
                 _commitConsistency = QUORUM;
             }
-            if (_commitConsistency == QUORUM) {
-                SINFO("[performance] Beginning quorum commit.");
-            }
+            SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
             // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
             // ones can be added until we release the lock.
