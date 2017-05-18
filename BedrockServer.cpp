@@ -951,6 +951,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 }
             }
             break;
+            case STCPManager::Socket::SHUTTINGDOWN:
+            {
+                // We do nothing in this state, we just wait until the next iteration of poll and let the CLOSED
+                // case run. This block just prevents default warning from firing.
+            }
+            break;
             default:
             {
                 SWARN("Socket in unhandled state: " << s->state);
