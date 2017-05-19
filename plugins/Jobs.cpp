@@ -9,8 +9,20 @@
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
+    bool oldSchema = db.verifyTable("jobs", "CREATE TABLE jobs ( "
+                                            "created  TIMESTAMP NOT NULL, "
+                                            "jobID    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
+                                            "state    TEXT NOT NULL, "
+                                            "name     TEXT NOT NULL, "
+                                            "nextRun  TIMESTAMP NOT NULL, "
+                                            "lastRun  TIMESTAMP, "
+                                            "repeat   TEXT NOT NULL, "
+                                            "data     TEXT NOT NULL, "
+                                            "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                                            "parentJobID INTEGER NOT NULL DEFAULT 0 )",
+                     ignore);
 
-    if (!db.verifyTable("jobs", "CREATE TABLE jobs ( "
+    bool newSchema = db.verifyTable("jobs", "CREATE TABLE jobs ( "
                                             "created  TIMESTAMP NOT NULL, "
                                             "jobID    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                             "state    TEXT NOT NULL, "
@@ -22,9 +34,10 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                             "priority INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                             "parentJobID INTEGER NOT NULL DEFAULT 0, "
                                             "retryAfter TEXT NOT NULL DEFAULT \"\" )",
-                     ignore)) {
-        SASSERT(db.write("ALTER TABLE jobs ADD COLUMN retryAfter TEXT NOT NULL DEFAULT \"\";"));
-    }
+                     ignore);
+
+    // @todo remove when we migrate to the new schema
+    SASSERT(oldSchema || newSchema);
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
