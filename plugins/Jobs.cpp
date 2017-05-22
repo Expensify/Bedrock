@@ -1,4 +1,5 @@
 #include "Jobs.h"
+#include <stack>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -191,6 +192,50 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
         content["jobID"] = result[0][0];
         return true;
+    }
+
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob(jobID)
+        //
+        //     Cancel a QUEUED job on all child jobs.  We call it on the parent, who
+        //     takes care of cancelling every QUEUED/PAUSED child.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the parent job to cancel
+        //
+        //     Returns:
+        //     - 200 - OK
+        //     - 402 - Cannot cancel jobs that are running
+        //
+        verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
+
+        SQResult result;
+        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID) "
+                     "FROM jobs j "
+                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
+                     result)) {
+            throw "502 Select failed";
+        }
+
+        // Verify there is a job like this
+        if (result.empty()) {
+            throw "404 No job with this jobID";
+        }
+
+        // Verify that the job is PAUSED (we are cancelling the parent job)
+        if (result[0][0] != "PAUSED") {
+            throw "404 Invalid jobID - Cannot cancel a job that is not PAUSED";
+        }
+
+        // If the job doesn't have any children, we are using the command in the wrong way
+        if (result[0][1].empty()) {
+            throw "404 Invalid jobID - Cannot cancel a job without children, use DeleteJob instead";
+        }
+
+        return false; // Need to process command
     }
 
     // Didn't recognize this command
@@ -552,7 +597,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - jobID  - ID of the job to finish
-        //     - data   - Data to associate with this finsihed job
+        //     - data   - Data to associate with this finished job
         //
         verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
@@ -668,7 +713,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     }
                 }
             } else {
-                // This is a standalone (not a child) job; delete it.  
+                // This is a standalone (not a child) job; delete it.
                 if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(jobID) + ";")) {
                     throw "502 Delete failed";
                 }
@@ -680,8 +725,57 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
         }
+    }
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob (jobID)
+        //
+        //     Cancel a QUEUED job on all child jobs.  We call it on the parent, who
+        //     takes care of cancelling every QUEUED/PAUSED child.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the parent job to cancel
+        //
+        int64_t jobID = request.calc64("jobID");
 
-        // Successfully processed
+        // Start by canceling the parent
+        stack<int64_t> nonVisited;
+        nonVisited.push(jobID);
+
+        // Change parent state to CANCELLED
+        if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+            throw "502 Failed to update job data";
+        }
+
+        while (!nonVisited.empty()) {
+            int64_t cancellingJobID = nonVisited.top();
+            nonVisited.pop();
+
+            // Cancel children if they are not running
+            if (!db.write("UPDATE jobs "
+                          "SET state='CANCELLED' "
+                          "WHERE parentJobID=" + SQ(cancellingJobID) + " "
+                            "AND (state = 'QUEUED' OR state = 'PAUSED');")) {
+                throw "502 Failed to update job data";
+            }
+
+            // Retrieve PAUSED children (potential parents)
+            SQResult result;
+            if (!db.read("SELECT j.jobID "
+                         "FROM jobs j "
+                         "WHERE j.parentJobID=" + SQ(cancellingJobID) + " "
+                           "AND j.state = 'PAUSED';",
+                         result)) {
+                throw "502 Select failed";
+            }
+
+            for (const auto& row : result.rows) {
+                // If paused, child may have more children, cancel them as well.
+                nonVisited.push(SToInt64(row[0]));
+            }
+        }
+
+        // All done processing this command
         return true;
     }
 
@@ -837,13 +931,14 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 }
 
 // ==========================================================================
+
 bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     // Returns true if there are any children of this jobID in a "pending" (eg,
     // running or yet to run) state
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " + 
+                 "WHERE parentJobID = " + SQ(jobID) + " " +
                  "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
