@@ -189,71 +189,85 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     } 
     
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "CreateJob")) {
+    else if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "GetJobs")) {
 
-        // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
-        // so we're intentionally not adding support for them them yet
-        if (request.isSet("repeat") && request.isSet("retryAfter")) {
-            throw "402 Recurring auto-retrying jobs are not supported";
+        vector<STable> jsonRows;
+        if (SIEquals(request.methodLine, "GetJob")) {
+            jsonRows.push_back(request);
+        } else {
+            STable rows;
+            rows = SComposeJSONArray(request["jobs"]);
+            for (size_t c = 0; c < rows.size(); ++c) {
+                jsonRows.push_back(SComposeJSONArray(rows[c]));
+            }
         }
 
-        // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
-        int64_t parentJobID = request.calc64("parentJobID");
-        if (parentJobID) {
-            SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
+        for (auto& job : jsonRows) {
+            // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
+            // so we're intentionally not adding support for them them yet
+            if (job.isSet("repeat") && job.isSet("retryAfter")) {
+                throw "402 Recurring auto-retrying jobs are not supported";
+            }
+
+            // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
+            int64_t parentJobID = job.calc64("parentJobID");
+            if (parentJobID) {
+                SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
+                SQResult result;
+                if (!db.read("SELECT retryAfter "
+                            "FROM jobs "
+                            "WHERE jobID=" + SQ(parentJobID) + ";",
+                            result)) {
+                    throw "502 Select failed";
+                }
+                if (!result.empty() && result[0][0] != "") {
+                    throw "402 Auto-retrying parents cannot have children";
+                }
+            }
+
+            // Validate retryAfter
+            if (job.isSet("retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
+                throw "402 Malformed retryAfter";
+            }
+
+            // If unique flag was passed and the job exist in the DB, then we can
+            // finish the command without escalating to master.
+            if (!job.test("unique")) {
+                // Not unique; need to process
+                return false;
+            }
+
+            // Throw if retryAfter was passed for unique job
+            if (job.isSet("retryAfter")) {
+                throw "405 Unique jobs can't be retried";
+            }
+
+            // Verify unique
             SQResult result;
-            if (!db.read("SELECT retryAfter "
-                        "FROM jobs "
-                        "WHERE jobID=" + SQ(parentJobID) + ";",
-                        result)) {
+            SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+            if (!db.read("SELECT jobID, data "
+                         "FROM jobs "
+                         "WHERE name=" + SQ(job["name"]) + ";",
+                         result)) {
                 throw "502 Select failed";
             }
-            if (!result.empty() && result[0][0] != "") {
-                throw "402 Auto-retrying parents cannot have children";
+            // If there's no job, escalate to master.
+            if (result.empty()){
+                return false;
             }
-        }
 
-        // Validate retryAfter
-        if (request.isSet("retryAfter") && request["retryAfter"] != "" && !_isValidSQLiteDateModifier(request["retryAfter"])){
-            throw "402 Malformed retryAfter";
-        }
+            // If the existing job doesn't match the data we've been passed, escalate to master.
+            if (result[0][1] != job["data"]) {
+                return false;
+            }
 
-        // If unique flag was passed and the job exist in the DB, then we can
-        // finish the command without escalating to master.
-        if (!request.test("unique")) {
-            // Not unique; need to process
-            return false;
-        }
+            // Supposed to be unique but not; notify the caller and return that we
+            // are processed
+            SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+            content["jobID"] = result[0][0];
+            return true;
 
-        // Throw if retryAfter was passed for unique job
-        if (request.isSet("retryAfter")) {
-            throw "405 Unique jobs can't be retried";
         }
-
-        // Verify unique
-        SQResult result;
-        SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID, data "
-                     "FROM jobs "
-                     "WHERE name=" + SQ(request["name"]) + ";",
-                     result)) {
-            throw "502 Select failed";
-        }
-        // If there's no job, escalate to master.
-        if (result.empty()){
-            return false;
-        }
-
-        // If the existing job doesn't match the data we've been passed, escalate to master.
-        if (result[0][1] != request["data"]) {
-            return false;
-        }
-
-        // Supposed to be unique but not; notify the caller and return that we
-        // are processed
-        SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
-        content["jobID"] = result[0][0];
-        return true;
     }
 
     // Didn't recognize this command
