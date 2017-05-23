@@ -15,5 +15,4 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
     bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
     bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
-    bool _isValidSQLiteDateModifier(const string& modifier);
 };
