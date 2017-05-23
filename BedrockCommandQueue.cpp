@@ -14,7 +14,11 @@ bool BedrockCommandQueue::empty()  {
 
 size_t BedrockCommandQueue::size()  {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.size();
+    size_t size = 0;
+    for (const auto& queue : _commandQueue) {
+        size += queue.second.size();
+    }
+    return size;
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
