@@ -14,7 +14,6 @@ class BedrockCommand : public SQLiteCommand {
     enum TIMING_INFO {
         PEEK,
         PROCESS,
-        QUEUE,
     };
 
     // Constructor to make an empty object.
@@ -51,7 +50,7 @@ class BedrockCommand : public SQLiteCommand {
     int peekCount;
     int processCount;
 
-    // A list of timing sets, With an info type, start, and end.
+    // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
   private:
