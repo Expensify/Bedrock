@@ -59,7 +59,12 @@ void SSendSignal(int signum) {
     if (signum == SIGABRT) {
         SERROR("Got SIGABRT, logging stack trace.");
     } else if (signum == SIGSEGV) {
-        SERROR("Got SIGSEGV, logging stack trace.");
+        // If we catch a segfault, let's log that, and then manually log a stack trace and call abort(), instead of
+        // calling SERROR. The reasoning behind that is because `SERROR` will just call `exit(1)`, which keeps us from
+        // being able to generate core files, which are sometimes useful.
+        SWARN("Got SIGSEGV, logging stack trace.");
+        SLogStackTrace();
+        abort();
     }
 }
 
