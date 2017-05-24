@@ -9,6 +9,7 @@ struct h_timingTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
     void test()
     {
+        // Test write commands.
         BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         for (auto i : {0,1,2}) {
             BedrockTester* brtester = tester->getBedrockTester(i);
@@ -56,6 +57,30 @@ struct h_timingTest : tpunit::TestFixture {
                 ASSERT_LESS_THAN(upstreamTotalTime, escalationTime);
                 ASSERT_LESS_THAN(upstreamPeekTime + upstreamProcessTime, upstreamTotalTime);
             }
+        }
+
+        // Test read commands
+        for (auto i : {0,1,2}) {
+            BedrockTester* brtester = tester->getBedrockTester(i);
+
+            // This just verifies that the dbupgrade table was created by TestPlugin.
+            SData query("Query");
+            query["query"] = "SELECT * FROM test;";
+            SData result = brtester->executeWaitData(query);
+            /* Uncomment for inspection.
+            for (const auto& row : result.nameValueMap) {
+                cout << row.first << ":" << row.second << endl;
+            }
+            cout << endl;
+            */
+
+            uint64_t peekTime = SToUInt64(result["peekTime"]);
+            uint64_t processTime = SToUInt64(result["processTime"]);
+            uint64_t totalTime = SToUInt64(result["totalTime"]);
+
+            ASSERT_GREATER_THAN(peekTime, 0);
+            ASSERT_EQUAL(processTime, 0);
+            ASSERT_LESS_THAN(peekTime + processTime, totalTime);
         }
     }
 } __h_timingTest;
