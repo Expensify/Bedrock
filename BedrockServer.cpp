@@ -235,6 +235,7 @@ void BedrockServer::sync(SData& args,
                 command.complete = true;
                 if (command.initiatingPeerID) {
                     // This is a command that came from a peer. Have the sync node send the response back to the peer.
+                    command.finalizeTimingInfo();
                     syncNode.sendResponse(command);
                 } else {
                     // The only other option is this came from a client, so respond via the server.
@@ -260,6 +261,7 @@ void BedrockServer::sync(SData& args,
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
+                    completedCommand.finalizeTimingInfo();
                     syncNode.sendResponse(completedCommand);
                 }
             } catch (out_of_range e) {
@@ -293,7 +295,7 @@ void BedrockServer::sync(SData& args,
                     if (core.peekCommand(command)) {
                         // This command completed in peek, stick it back in the queue for a worker to respond to.
                         SASSERT(command.complete);
-                        server._commandQueue.push(BedrockCommand(move(command)));
+                        server._commandQueue.push(move(command));
                         continue;
                     }
                 } else {
@@ -333,6 +335,7 @@ void BedrockServer::sync(SData& args,
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do. We'll just respond.
                     if (command.initiatingPeerID) {
+                        command.finalizeTimingInfo();
                         syncNode.sendResponse(command);
                     } else {
                         server._reply(command);
@@ -986,6 +989,9 @@ void BedrockServer::_reply(BedrockCommand& command) {
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
+
+        // The last thing we do is total up our timing info and add it to the response.
+        command.finalizeTimingInfo();
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];

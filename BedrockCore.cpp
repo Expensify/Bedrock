@@ -8,6 +8,7 @@ _server(server)
 { }
 
 bool BedrockCore::peekCommand(BedrockCommand& command) {
+    AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
@@ -70,6 +71,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 }
 
 bool BedrockCore::processCommand(BedrockCommand& command) {
+    AutoTimer timer(command, BedrockCommand::PROCESS);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;

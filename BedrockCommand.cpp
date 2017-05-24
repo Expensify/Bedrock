@@ -6,7 +6,8 @@ BedrockCommand::BedrockCommand() :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    creationTime(STimeNow())
 { }
 
 BedrockCommand::~BedrockCommand() {
@@ -21,7 +22,8 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    creationTime(STimeNow())
 {
     _init();
 }
@@ -31,7 +33,9 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     httpsRequest(from.httpsRequest),
     priority(from.priority),
     peekCount(from.peekCount),
-    processCount(from.processCount)
+    processCount(from.processCount),
+    creationTime(from.creationTime),
+    timingInfo(from.timingInfo)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
     // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
@@ -43,7 +47,8 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    creationTime(STimeNow())
 {
     _init();
 }
@@ -53,7 +58,8 @@ BedrockCommand::BedrockCommand(SData _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    creationTime(STimeNow())
 {
     _init();
 }
@@ -72,6 +78,8 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         peekCount = from.peekCount;
         processCount = from.processCount;
         priority = from.priority;
+        creationTime = from.creationTime;
+        timingInfo = from.timingInfo;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
@@ -99,5 +107,42 @@ void BedrockCommand::_init() {
                 priority = PRIORITY_NORMAL;
                 break;
         }
+    }
+}
+
+void BedrockCommand::finalizeTimingInfo() {
+    uint64_t peekTotal = 0;
+    uint64_t processTotal = 0;
+    for (const auto& entry: timingInfo) {
+        if (get<0>(entry) == PEEK) {
+            peekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == PROCESS) {
+            processTotal += get<2>(entry) - get<1>(entry);
+        }
+    }
+
+    // If someone upstream had set these (typically, master), we'll save those values and add our own.
+    if (response.isSet("peekTime")) {
+        response["upstreamPeekTime"] = response["peekTime"];
+    }
+    if (response.isSet("processTime")) {
+        response["upstreamProcessTime"] = response["processTime"];
+    }
+    if (response.isSet("totalTime")) {
+        response["upstreamTotalTime"] = response["totalTime"];
+    }
+
+    // And set the values we have, if any.
+    if(peekTotal) {
+        response["peekTime"] = to_string(peekTotal);
+    }
+    if (processTotal) {
+        response["processTime"] = to_string(processTotal);
+    }
+
+    // The entire lifetime of this object.
+    uint64_t total = STimeNow() - creationTime;
+    if (total) {
+        response["totalTime"] = to_string(total);
     }
 }
