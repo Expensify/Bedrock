@@ -51,10 +51,6 @@ class BedrockCommand : public SQLiteCommand {
     int peekCount;
     int processCount;
 
-    // Timestamp at which this command was created. This is specific to the current server - it's not persisted from
-    // slave to master.
-    uint64_t creationTime;
-
     // A list of timing sets, With an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 

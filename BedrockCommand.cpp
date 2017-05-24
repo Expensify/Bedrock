@@ -6,8 +6,7 @@ BedrockCommand::BedrockCommand() :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    creationTime(STimeNow())
+    processCount(0)
 { }
 
 BedrockCommand::~BedrockCommand() {
@@ -22,8 +21,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    creationTime(STimeNow())
+    processCount(0)
 {
     _init();
 }
@@ -34,7 +32,6 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
-    creationTime(from.creationTime),
     timingInfo(from.timingInfo)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
@@ -47,8 +44,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    creationTime(STimeNow())
+    processCount(0)
 {
     _init();
 }
@@ -58,8 +54,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0),
-    creationTime(STimeNow())
+    processCount(0)
 {
     _init();
 }
@@ -78,7 +73,6 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         peekCount = from.peekCount;
         processCount = from.processCount;
         priority = from.priority;
-        creationTime = from.creationTime;
         timingInfo = from.timingInfo;
 
         // And call the base class's move constructor as well.
@@ -121,6 +115,17 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
+    /*
+    for (const auto& upstream : {"peekTime", "processTime", "totalTime") {
+        auto it = response.nameValueMap.find(upstream);
+        if (it != response.nameValueMap.end()) {
+            auto temp = *it;
+            response.nameValueMap.erase(it);
+            response.nameValueMap[uppercase] = temp;
+        }
+    }
+    */
+
     // If someone upstream had set these (typically, master), we'll save those values and add our own.
     if (response.isSet("peekTime")) {
         response["upstreamPeekTime"] = response["peekTime"];
@@ -135,14 +140,27 @@ void BedrockCommand::finalizeTimingInfo() {
     // And set the values we have, if any.
     if(peekTotal) {
         response["peekTime"] = to_string(peekTotal);
+    } else {
+        response.erase("peekTime");
     }
     if (processTotal) {
         response["processTime"] = to_string(processTotal);
+    } else {
+        response.erase("processTime");
     }
 
     // The entire lifetime of this object.
     uint64_t total = STimeNow() - creationTime;
     if (total) {
         response["totalTime"] = to_string(total);
+    } else {
+        response.erase("totalTime");
+    }
+
+    // And the time it spent in escalation to master (if any).
+    if (escalationTimeUS) {
+        response["escalationTime"] = to_string(escalationTimeUS);
+    } else {
+        response.erase("escalationTime");
     }
 }
