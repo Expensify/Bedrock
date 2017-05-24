@@ -115,52 +115,30 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
-    /*
-    for (const auto& upstream : {"peekTime", "processTime", "totalTime") {
-        auto it = response.nameValueMap.find(upstream);
+    // Build a map of the values we care about.
+    map<string, uint64_t> valuePairs = {
+        {"peekTime",       peekTotal},
+        {"processTime",    processTotal},
+        {"totalTime",      STimeNow() - creationTime},
+        {"escalationTime", escalationTimeUS},
+    };
+
+    // Now promote any existing values that were set upstream. This prepends `upstream` and makes the first existing
+    // character of the name uppercase, (i.e. myValue -> upstreamMyValue), letting us keep anything that was set by the
+    // master server. We clear these values after setting the new ones, so that we can add our own values.
+    for (const auto& p : valuePairs) {
+        auto it = response.nameValueMap.find(p.first);
         if (it != response.nameValueMap.end()) {
-            auto temp = *it;
+            string temp = it->second;
             response.nameValueMap.erase(it);
-            response.nameValueMap[uppercase] = temp;
+            response.nameValueMap[string("upstream") + (char)toupper(p.first[0]) + (p.first.substr(1))] = temp;
         }
     }
-    */
 
-    // If someone upstream had set these (typically, master), we'll save those values and add our own.
-    if (response.isSet("peekTime")) {
-        response["upstreamPeekTime"] = response["peekTime"];
-    }
-    if (response.isSet("processTime")) {
-        response["upstreamProcessTime"] = response["processTime"];
-    }
-    if (response.isSet("totalTime")) {
-        response["upstreamTotalTime"] = response["totalTime"];
-    }
-
-    // And set the values we have, if any.
-    if(peekTotal) {
-        response["peekTime"] = to_string(peekTotal);
-    } else {
-        response.erase("peekTime");
-    }
-    if (processTotal) {
-        response["processTime"] = to_string(processTotal);
-    } else {
-        response.erase("processTime");
-    }
-
-    // The entire lifetime of this object.
-    uint64_t total = STimeNow() - creationTime;
-    if (total) {
-        response["totalTime"] = to_string(total);
-    } else {
-        response.erase("totalTime");
-    }
-
-    // And the time it spent in escalation to master (if any).
-    if (escalationTimeUS) {
-        response["escalationTime"] = to_string(escalationTimeUS);
-    } else {
-        response.erase("escalationTime");
+    // And here's where we set our own values.
+    for (const auto& p : valuePairs) {
+        if (p.second) {
+            response[p.first] = to_string(p.second);
+        }
     }
 }
