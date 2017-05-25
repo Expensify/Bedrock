@@ -161,23 +161,57 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
-        vector<STable> jsonJobs;
+        list<STable> jsonJobs;
         if (SIEquals(request.methodLine, "CreateJob")) {
+            verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
             for (auto& job : multipleJobs) {
+                if (!SContains(job, "name")) {
+                    throw "402 Missing name";
+                }
                 jsonJobs.push_back(SParseJSONObject(job));
             }
         }
 
         for (auto& job : jsonJobs) {
+            // If no priority set, set it
+            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+
+            // We'd initially intended for any value to be allowable here, but for
+            // performance reasons, we currently will only allow specific values to
+            // try and keep queries fast. If you pass an invalid value, we'll throw
+            // here so that the caller can know that he did something wrong rather
+            // than having his job sit unprocessed in the queue forever. Hopefully
+            // we can remove this restriction in the future.
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                throw "402 Invalid priority value";
+            }
+
+            // Validate that the parentJobID exists and is in the right state if one was passed.
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            if (parentJobID) {
+                SQResult result;
+                if (!db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                    throw "502 Select failed";
+                }
+                if (result.empty()) {
+                    throw "404 parentJobID does not exist";
+                } else if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
+                    throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                }
+            }
+
             // If unique flag was passed and the job exist in the DB, then we can
             // finish the command without escalating to master.
             if (!SContains(job ,"unique") || job["unique"] == "false") {
-                // Not unique; need to process
-                return false;
+                if (&job == &jsonJobs.back()) {
+                    return false;
+                }
+                continue;
             }
 
             // Verify unique
@@ -189,14 +223,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                          result)) {
                 throw "502 Select failed";
             }
-            // If there's no job, escalate to master.
-            if (result.empty()){
-                return false;
-            }
 
-            // If the existing job doesn't match the data we've been passed, escalate to master.
-            if (result[0][1] != job["data"]) {
-                return false;
+            // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
+            if (result.empty() || result[0][1] != job["data"]){
+                if (&job == &jsonJobs.back()) {
+                    return false;
+                }
+                continue;
             }
 
             // Supposed to be unique but not; notify the caller and return that we
@@ -227,12 +260,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     Parameters:
         //     - name  - An arbitrary string identifier (case insensitive)
         //     - data  - A JSON object describing work to be done (optional)
-        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when
-        //                  this job should next execute (optional)
+        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //     - repeat - A description of how to repeat (optional)
         //     - priority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
-        //     return that jobID
+        //                return that jobID
         //     - parentJobID - The ID of the parent job (optional)
         //
         //     Returns:
@@ -246,21 +278,19 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - jobs (json array):
         //          - name  - An arbitrary string identifier (case insensitive)
         //          - data  - A JSON object describing work to be done (optional)
-        //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when
-        //                  this job should next execute (optional)
+        //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //          - repeat - A description of how to repeat (optional)
         //          - priority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
-        //            return that jobID
+        //                     return that jobID
         //          - parentJobID - The ID of the parent job (optional)
         //
         //     Returns:
         //     - jobIDs - array with the unique identifier of the jobs
         //
 
-        vector<STable> jsonJobs;
+        list<STable> jsonJobs;
         if (SIEquals(request.methodLine, "CreateJob")) {
-            verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
@@ -290,8 +320,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
                           << result[0][0]);
 
-                    // If we are calling GetJob, return early, there are no more jobs to create.
-                    if(SIEquals(request.methodLine, "CreateJob")){
+                    // If we are calling CreateJob, return early, there are no more jobs to create.
+                    if (SIEquals(request.methodLine, "CreateJob")) {
                         content["jobID"] = result[0][0];
                         return true;
                     }
@@ -327,6 +357,16 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If no priority set, set it
             int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
 
+            // We'd initially intended for any value to be allowable here, but for
+            // performance reasons, we currently will only allow specific values to
+            // try and keep queries fast. If you pass an invalid value, we'll throw
+            // here so that the caller can know that he did something wrong rather
+            // than having his job sit unprocessed in the queue forever. Hopefully
+            // we can remove this restriction in the future.
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                throw "402 Invalid priority value";
+            }
+
             // Validate that the parentJobID exists and is in the right state if one was passed.
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
@@ -342,16 +382,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            // We'd initially intended for any value to be allowable here, but for
-            // performance reasons, we currently will only allow specific values to
-            // try and keep queries fast. If you pass an invalid value, we'll throw
-            // here so that the caller can know that he did something wrong rather
-            // than having his job sit unprocessed in the queue forever. Hopefully
-            // we can remove this restriction in the future.
-            if (priority != 0 && priority != 500 && priority != 1000) {
-                throw "402 Invalid priority value";
-            }
-
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
                 // Update the existing job.
@@ -364,8 +394,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     throw "502 update query failed";
                 }
 
-                // If we are calling GetJob, return early, there are no more jobs to create.
-                if(SIEquals(request.methodLine, "CreateJob")){
+                // If we are calling CreateJob, return early, there are no more jobs to create.
+                if (SIEquals(request.methodLine, "CreateJob")) {
                     content["jobID"] = SToStr(updateJobID);
                     return true;
                 }
@@ -390,7 +420,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = job["retryAfter"].empty() ? "\"\"" : SQ(job["retryAfter"]);
 
                 // Create this new job
-                if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
                          "VALUES( " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
@@ -399,12 +429,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                             SQ(SToUpper(job["repeat"])) + ", " +
                             safeData + ", " +
                             SQ(priority) + ", " +
-                            SQ(parentJobID) + ", " +
-                            safeRetryAfter +
+                            SQ(parentJobID) + " " +
                          " );"))
                 {
                     throw "502 insert query failed";
                 }
+
                 // Return the new jobID
                 const int64_t lastInsertRowID = db.getLastInsertRowID();
                 const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
@@ -413,7 +443,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                                                              << " lastInsertRowID=" << lastInsertRowID);
                 }
 
-                if(SIEquals(request.methodLine, "CreateJob")){
+                if (SIEquals(request.methodLine, "CreateJob")) {
                     content["jobID"] = SToStr(lastInsertRowID);
                     return true;
                 }
