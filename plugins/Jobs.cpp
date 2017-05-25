@@ -205,15 +205,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            // If unique flag was passed and the job exist in the DB, then we can
-            // finish the command without escalating to master.
-            if (!SContains(job ,"unique") || job["unique"] == "false") {
-                if (&job == &jsonJobs.back()) {
-                    return false;
-                }
-                continue;
-            }
-
             // Verify unique
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
@@ -225,19 +216,16 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
-            if (result.empty() || result[0][1] != job["data"]){
-                if (&job == &jsonJobs.back()) {
-                    return false;
+            if (!result.empty() && result[0][1] == job["data"]){
+                // If we are calling CreateJob, return early, there are no more jobs to create.
+                if (SIEquals(request.methodLine, "CreateJob")) {
+                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+                    content["jobID"] = result[0][0];
+                    return true;
                 }
-                continue;
             }
-
-            // Supposed to be unique but not; notify the caller and return that we
-            // are processed
-            SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
-            content["jobID"] = result[0][0];
         }
-        return true;
+        return false;
     }
 
     // Didn't recognize this command
