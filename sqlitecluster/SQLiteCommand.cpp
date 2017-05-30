@@ -6,7 +6,8 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     request(move(_request)),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    escalationTimeUS(0)
+    escalationTimeUS(0),
+    creationTime(STimeNow())
 {
     // Initialize the consistency, if supplied.
     if (request.isSet("writeConsistency")) {
@@ -37,5 +38,6 @@ SQLiteCommand::SQLiteCommand() :
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    escalationTimeUS(0)
+    escalationTimeUS(0),
+    creationTime(STimeNow())
 { }

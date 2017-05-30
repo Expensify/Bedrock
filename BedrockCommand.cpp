@@ -31,7 +31,8 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     httpsRequest(from.httpsRequest),
     priority(from.priority),
     peekCount(from.peekCount),
-    processCount(from.processCount)
+    processCount(from.processCount),
+    timingInfo(from.timingInfo)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
     // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
@@ -72,6 +73,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         peekCount = from.peekCount;
         processCount = from.processCount;
         priority = from.priority;
+        timingInfo = from.timingInfo;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
@@ -98,6 +100,45 @@ void BedrockCommand::_init() {
                 SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
                 priority = PRIORITY_NORMAL;
                 break;
+        }
+    }
+}
+
+void BedrockCommand::finalizeTimingInfo() {
+    uint64_t peekTotal = 0;
+    uint64_t processTotal = 0;
+    for (const auto& entry: timingInfo) {
+        if (get<0>(entry) == PEEK) {
+            peekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == PROCESS) {
+            processTotal += get<2>(entry) - get<1>(entry);
+        }
+    }
+
+    // Build a map of the values we care about.
+    map<string, uint64_t> valuePairs = {
+        {"peekTime",       peekTotal},
+        {"processTime",    processTotal},
+        {"totalTime",      STimeNow() - creationTime},
+        {"escalationTime", escalationTimeUS},
+    };
+
+    // Now promote any existing values that were set upstream. This prepends `upstream` and makes the first existing
+    // character of the name uppercase, (i.e. myValue -> upstreamMyValue), letting us keep anything that was set by the
+    // master server. We clear these values after setting the new ones, so that we can add our own values.
+    for (const auto& p : valuePairs) {
+        auto it = response.nameValueMap.find(p.first);
+        if (it != response.nameValueMap.end()) {
+            string temp = it->second;
+            response.nameValueMap.erase(it);
+            response.nameValueMap[string("upstream") + (char)toupper(p.first[0]) + (p.first.substr(1))] = temp;
+        }
+    }
+
+    // And here's where we set our own values.
+    for (const auto& p : valuePairs) {
+        if (p.second) {
+            response[p.first] = to_string(p.second);
         }
     }
 }

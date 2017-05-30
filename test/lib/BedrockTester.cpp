@@ -370,7 +370,12 @@ string BedrockTester::getServerAddr() {
     return _serverAddr.empty() ? SERVER_ADDR : _serverAddr;
 }
 
-string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
+string BedrockTester::executeWait(const SData& request, const string& correctResponse) {
+    SData response = executeWaitData(request, correctResponse);
+    return response.content;
+}
+
+SData BedrockTester::executeWaitData(const SData& request, const string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
     int socket = S_socket(getServerAddr(), true, false, true);
 
@@ -401,5 +406,8 @@ string BedrockTester::executeWait(const SData& request, const std::string& corre
 
     close(socket);
 
-    return content;
+    SData response(methodLine);
+    response.nameValueMap = headers;
+    response.content = content;
+    return response;
 }

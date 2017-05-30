@@ -11,6 +11,11 @@ class BedrockCommand : public SQLiteCommand {
         PRIORITY_MAX = 1000
     };
 
+    enum TIMING_INFO {
+        PEEK,
+        PROCESS,
+    };
+
     // Constructor to make an empty object.
     BedrockCommand();
 
@@ -32,6 +37,9 @@ class BedrockCommand : public SQLiteCommand {
     // Move assignment operator.
     BedrockCommand& operator=(BedrockCommand&& from);
 
+    // Add a summary of our timing info to our response object.
+    void finalizeTimingInfo();
+
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     SHTTPSManager::Transaction* httpsRequest;
 
@@ -41,6 +49,9 @@ class BedrockCommand : public SQLiteCommand {
     // We track how many times we `peek` and `process` each command.
     int peekCount;
     int processCount;
+
+    // A list of timing sets, with an info type, start, and end.
+    list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
