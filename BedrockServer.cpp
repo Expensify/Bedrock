@@ -490,7 +490,7 @@ void BedrockServer::worker(SData& args,
                     // able to cause a conflict on the sync thread. We only grab this after calling `peekCommand`, as
                     // we want to allow read-only commands to continue as usual even if the sync thread is busy
                     // writing. This lock is released when it goes out of scope.
-                    shared_lock<decltype(server._syncThreadCommitMutex)>(server._syncThreadCommitMutex);
+                    shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
 
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
