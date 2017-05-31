@@ -171,6 +171,12 @@ class BedrockServer : public SQLiteServer {
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
     recursive_mutex _futureCommitCommandMutex;
 
+    // This is a shared mutex. It can be locked by many readers at once, but if the writer (the sync thread) locks it,
+    // no other thread can access it. It's locked by the sync thread immediately before starting a transaction, and
+    // unlocked afterward. Workers do the same, so that they won't try to start a new transaction while the sync thread
+    // is committing. This mutex is *not* recursive.
+    shared_timed_mutex _syncThreadCommitMutex;
+
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.
     set<string> _syncCommands;
