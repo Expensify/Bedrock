@@ -484,14 +484,6 @@ void BedrockServer::worker(SData& args,
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
                 if (!core.peekCommand(command)) {
-                    // Now that we've unsuccessfully peeked this command, we want to grab a shared lock of our sync
-                    // thread's commit mutex. This will block if the sync thread is mid-transaction, keeping us from
-                    // writing anything while the sync thread is also doing so, and thus guaranteeing that we won't be
-                    // able to cause a conflict on the sync thread. We only grab this after calling `peekCommand`, as
-                    // we want to allow read-only commands to continue as usual even if the sync thread is busy
-                    // writing. This lock is released when it goes out of scope.
-                    shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
-
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
@@ -529,6 +521,16 @@ void BedrockServer::worker(SData& args,
                         // look for another command to work on.
                         break;
                     } else {
+                        // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs an
+                        // exclusive lock on this wrapping any transactions that it performs, we'll get this lock while
+                        // the sync thread isn't in the process of handling a transaction, thus guaranteeing that we
+                        // can't commit and cause a conflict on the sync thread. We can still get conflicts here, as
+                        // the sync thread might have performed a transaction after we called `processCommand` and
+                        // before we call `commit`, or we could conflict with another worker thread, but the sync
+                        // thread will never see a conflict as long as we don't commit while it's performing a
+                        // transaction.
+                        shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
+
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
