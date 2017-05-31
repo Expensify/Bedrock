@@ -73,12 +73,12 @@ void BackupDB(const string& dbPath) {
 }
 
 
-set<string> loadPlugins(SData& args) {
+list<string> loadPlugins(SData& args) {
     list<string> plugins = SParseList(args["-plugins"]);
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
     // Those are stored here.
-    set <string> postProcessedNames;
+    list<string> postProcessedNames;
 
     // Instantiate all of our built-in plugins.
     map<string, BedrockPlugin*> standardPluginMap = {
@@ -91,7 +91,7 @@ set<string> loadPlugins(SData& args) {
     for (string pluginName : plugins) {
         // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
         if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
-            postProcessedNames.insert(SToUpper(pluginName));
+            postProcessedNames.push_back(SToUpper(pluginName));
             continue;
         }
 
@@ -107,11 +107,11 @@ set<string> loadPlugins(SData& args) {
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
 
         // Save the base name of the plugin.
-        if(postProcessedNames.find(SToUpper(name)) != postProcessedNames.end()) {
+        if (find(postProcessedNames.begin(), postProcessedNames.end(), SToUpper(name)) != postProcessedNames.end()) {
             SWARN("Duplicate entry for plugin " << name << ", skipping.");
             continue;
         }
-        postProcessedNames.insert(SToUpper(name));
+        postProcessedNames.push_back(SToUpper(name));
 
         // Add the file extension if it's missing.
         if (!SEndsWith(pluginName, ".so")) {
