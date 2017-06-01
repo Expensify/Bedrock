@@ -1467,7 +1467,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             if (elapsed > 100 * STIME_US_PER_MS) {
                 SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
             }
-            if (!hostent || hostent->h_length != 4 || !hostent->h_addr_list || !*(uint32_t*)hostent->h_addr_list[0]) {
+            if (!hostent || hostent->h_length != 4 || !hostent->h_addr_list || !*hostent->h_addr_list[0]) {
                 throw "can't resolve host";
             }
             in_addr* addr = (in_addr*)hostent->h_addr_list[0];
