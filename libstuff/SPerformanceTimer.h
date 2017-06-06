@@ -2,10 +2,10 @@
 
 class SPerformanceTimer {
   public:
-    SPerformanceTimer(string description, bool reverse = false, uint64_t logIntervalSeconds = 60);
+    SPerformanceTimer(string description, bool reverse = false, uint64_t logIntervalSeconds = 10);
     void start();
     void stop();
-    void log();
+    virtual void log();
 
   protected:
     bool _reverse;

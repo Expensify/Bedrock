@@ -4,12 +4,19 @@
 #include "BedrockPlugin.h"
 #include "BedrockCore.h"
 
+set<string>BedrockServer::_parallelCommands;
+recursive_mutex BedrockServer::_parallelCommandMutex;
+
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     _commandQueue.push(BedrockCommand(move(command)));
 }
 
 void BedrockServer::cancelCommand(const string& commandID) {
     _commandQueue.removeByID(commandID);
+}
+
+bool BedrockServer::canStandDown() {
+    return _writableCommandsInProgress.load() == 0;
 }
 
 void BedrockServer::sync(SData& args,
@@ -22,6 +29,9 @@ void BedrockServer::sync(SData& args,
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
+
+    // We currently have no writable commands in progress.
+    server._writableCommandsInProgress.store(0);
 
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
@@ -88,6 +98,29 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
+        // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
+        // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
+        // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
+        // iteration.
+        {
+            SAUTOLOCK(server._futureCommitCommandMutex);
+            if (!server._futureCommitCommands.empty()) {
+                uint64_t commitCount = db.getCommitCount();
+                auto it = server._futureCommitCommands.begin();
+                auto& eraseTo = it;
+                while (it != server._futureCommitCommands.end() && it->first <= commitCount) {
+                    SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
+                          << " to queue, now have commit " << commitCount);
+                    server._commandQueue.push(move(it->second));
+                    eraseTo = it;
+                    it++;
+                }
+                if (eraseTo != server._futureCommitCommands.begin()) {
+                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), eraseTo);
+                }
+            }
+        }
+
         // If we've been instructed to shutdown and we haven't yet, do it.
         if (nodeGracefulShutdown.load()) {
             syncNode.beginShutdown();
@@ -160,7 +193,9 @@ void BedrockServer::sync(SData& args,
         if (preUpdateState != SQLiteNode::MASTERING && nodeState == SQLiteNode::MASTERING) {
             if (server._upgradeDB(db)) {
                 upgradeInProgress.store(true);
+                server._syncThreadCommitMutex.lock();
                 committingCommand = true;
+                server._writableCommandsInProgress++;
                 syncNode.startCommit(SQLiteNode::QUORUM);
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -171,20 +206,26 @@ void BedrockServer::sync(SData& args,
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !syncNode.commitInProgress()) {
-            // It should be impossible to get here if we're not mastering.
-            SASSERT(nodeState == SQLiteNode::MASTERING);
+            // It should be impossible to get here if we're not mastering or standing down.
+            SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
+
+            // We're done with the commit, we unlock our mutex and decrement our counter.
+            server._syncThreadCommitMutex.unlock();
+            committingCommand = false;
+            server._writableCommandsInProgress--;
             if (syncNode.commitSucceeded()) {
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
-                    committingCommand = false;
                     upgradeInProgress.store(false);
                     continue;
                 }
+                SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
                 // Otherwise, mark this command as complete and reply.
                 command.complete = true;
                 if (command.initiatingPeerID) {
-                    // This is a command that came from a peer. Have the server send the response back to the peer.
+                    // This is a command that came from a peer. Have the sync node send the response back to the peer.
+                    command.finalizeTimingInfo();
                     syncNode.sendResponse(command);
                 } else {
                     // The only other option is this came from a client, so respond via the server.
@@ -192,16 +233,16 @@ void BedrockServer::sync(SData& args,
                 }
             } else {
                 // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
+                SINFO("[performance] Conflict committing in sync thread, requeueing command "
+                      << command.request.methodLine << ". Sync thread has "
+                      << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
-            
-            // Not committing any more.
-            committingCommand = false;
         }
 
-        // We're either mastering, or slaving. There could be a commit in progress on `command`, but there could also
-        // be other finished work to handle while we wait for that to complete. Let's see if we can handle any of that
-        // work.
+        // We're either mastering, standing down, or slaving. There could be a commit in progress on `command`, but
+        // there could also be other finished work to handle while we wait for that to complete. Let's see if we can
+        // handle any of that work.
         try {
             // If there are any completed commands to respond to, we'll do that first.
             try {
@@ -210,6 +251,7 @@ void BedrockServer::sync(SData& args,
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
+                    completedCommand.finalizeTimingInfo();
                     syncNode.sendResponse(completedCommand);
                 }
             } catch (out_of_range e) {
@@ -221,11 +263,35 @@ void BedrockServer::sync(SData& args,
                 continue;
             }
 
-            // Now we can pull the next one off the queue and start on it.
+            // If we're STANDINGDOWN, we don't want to start on any new commands. We'll just start our next loop
+            // iteration without doing anything here, and maybe we'll be either MASTERING or SLAVING on the next
+            // iteration.
+            if (nodeState == SQLiteNode::STANDINGDOWN) {
+                continue;
+            }
+
+            // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
+            SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
+                  << syncNodeQueuedCommands.size() << " queued commands.");
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
+
+            // We peek commands here in the sync thread to be able to run peek and process as part of the same
+            // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
+            // have changed in the meantime.
+            // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
+            // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
+            // re-verify that any checks made in peek are still valid in process.
+            if (!command.httpsRequest) {
+                if (core.peekCommand(command)) {
+                    // This command completed in peek, stick it back in the queue for a worker to respond to.
+                    SASSERT(command.complete);
+                    server._commandQueue.push(move(command));
+                    continue;
+                }
+            }
 
             // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
             // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
@@ -237,12 +303,14 @@ void BedrockServer::sync(SData& args,
 
             // And now we'll decide how to handle it.
             if (nodeState == SQLiteNode::MASTERING) {
-                // If we're getting it on the sync thread, that means it's already been `peeked` unsuccessfully, and it
-                // needed to be processed. If it were `peeked` successfully, then the worker thread wouldn't have given
-                // it back to us.
+                // Now that we've peeked without finishing the command, we grab the commit mutex exclusively, so that none
+                // of our worker threads can attempt to write to the database until we're finished.
+                server._syncThreadCommitMutex.lock();
                 if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
+                    SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);
+                    server._writableCommandsInProgress++;
                     syncNode.startCommit(command.writeConsistency);
 
                     // And we'll start the next main loop.
@@ -256,7 +324,9 @@ void BedrockServer::sync(SData& args,
                 } else {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do. We'll just respond.
+                    server._syncThreadCommitMutex.unlock();
                     if (command.initiatingPeerID) {
+                        command.finalizeTimingInfo();
                         syncNode.sendResponse(command);
                     } else {
                         server._reply(command);
@@ -297,6 +367,13 @@ void BedrockServer::sync(SData& args,
         threadId++;
         workerThread.join();
     }
+
+    // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
+    if (server._commandQueue.size()) {
+        SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
+              << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
+        server._commandQueue.clear();
+    }
 }
 
 void BedrockServer::worker(SData& args,
@@ -324,6 +401,8 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
             SAUTOPREFIX(command.request["requestID"]);
+            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
+                  << server._commandQueue.size() << " commands in queue.");
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (upgradeInProgress.load() ||
@@ -337,23 +416,63 @@ void BedrockServer::worker(SData& args,
                 usleep(10000);
             }
 
+            // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
+            // command that was escalated to master), we'll set it aside for later processing. When the sync node
+            // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
+            // updated commit count.
+            uint64_t commitCount = db.getCommitCount();
+            uint64_t commandCommitCount = command.request.calcU64("commitCount");
+            if (commandCommitCount > commitCount) {
+                SAUTOLOCK(server._futureCommitCommandMutex);
+                auto newQueueSize = server._futureCommitCommands.size() + 1;
+                SINFO("Command (" << command.request.methodLine << ") depends on future commit(" << commandCommitCount
+                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+                if (newQueueSize > 100) {
+                    SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
+                }
+                continue;
+            }
+
             // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
             // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
             // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
-            // MASTERING, we'll just peek this command and return it's result, which should be harmless. IF we think
+            // MASTERING, we'll just peek this command and return it's result, which should be harmless. If we think
             // we're mastering, we'll go ahead and start a `process` for the command, but we'll synchronously verify
             // our state right before we commit.
             SQLiteNode::State state = replicationState.load();
+
+            // If we find that we've gotten a command with an initiatingPeerID, but we're not in a mastering or
+            // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
+            // original caller will need to re-send the request. This can happen if we're mastering, and receive a
+            // request from a peer, but then we stand down from mastering. The SQLiteNode should have already told its
+            // peers that their outstanding requests were being canceled at this point.
+            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || SQLiteNode::STANDINGDOWN)) {
+                SWARN("Found " << (command.complete ? "" : "in") << "complete " << "command "
+                      << command.request.methodLine << " from peer, but not mastering. Too late for it, discarding.");
+                continue;
+            }
 
             // If this command is already complete, then we should be a slave, and the sync node got a response back
             // from a command that had been escalated to master, and queued it for a worker to respond to. We'll send
             // that response now.
             if (command.complete) {
                 // If this command is already complete, we can return it to the caller.
-                // If it has an initiator, it should be returned to a peer by a sync node instead.
-                SASSERT(!command.initiatingPeerID);
+                // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
+                // just switched states out of mastering, we might have an old command in the queue. All we can do here
+                // is note that and discard it, as we have nobody to deliver it to.
+                if(command.initiatingPeerID) {
+                    SWARN("Found unexpected complete command " << command.request.methodLine
+                          << " from peer in worker thread. Discarding.");
+                    continue;
+                }
+
+                // Make sure we have an initiatingClientID at this point. If we do, but it's negative, it's for a
+                // client that we can't respond to, so we don't bother sending the response.
                 SASSERT(command.initiatingClientID);
-                server._reply(command);
+                if (command.initiatingClientID > 0) {
+                    server._reply(command);
+                }
 
                 // This command is done, move on to the next one.
                 continue;
@@ -365,6 +484,10 @@ void BedrockServer::worker(SData& args,
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
                 if (!core.peekCommand(command)) {
+                    // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
+                    // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
+                    // until we're finished with this command.
+                    server._writableCommandsInProgress++;
                     if (command.httpsRequest) {
                         // It's an error to open an HTTPS request unless we're mastering, since we won't be able to
                         // record the response. Note that it's *possible* that the state of the node differs from what
@@ -376,16 +499,38 @@ void BedrockServer::worker(SData& args,
                     }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
-                    if (state != SQLiteNode::MASTERING ||
+                    bool canWriteParallel = false;
+                    { 
+                        SAUTOLOCK(_parallelCommandMutex);
+                        canWriteParallel =
+                            (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
+                    }
+                    if (!canWriteParallel              ||
+                        state != SQLiteNode::MASTERING ||
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
+                        // We're not handling a writable command anymore.
+                        SINFO("[performance] Sending non-parallel command " << command.request.methodLine
+                              << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
+                              << " queued commands.");
+                        server._writableCommandsInProgress--;
                         syncNodeQueuedCommands.push(move(command));
 
                         // We'll break out of our retry loop here, as we don't need to do anything else, we can just
                         // look for another command to work on.
                         break;
-                    }  else {
+                    } else {
+                        // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs an
+                        // exclusive lock on this wrapping any transactions that it performs, we'll get this lock while
+                        // the sync thread isn't in the process of handling a transaction, thus guaranteeing that we
+                        // can't commit and cause a conflict on the sync thread. We can still get conflicts here, as
+                        // the sync thread might have performed a transaction after we called `processCommand` and
+                        // before we call `commit`, or we could conflict with another worker thread, but the sync
+                        // thread will never see a conflict as long as we don't commit while it's performing a
+                        // transaction.
+                        shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
+
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
@@ -401,12 +546,22 @@ void BedrockServer::worker(SData& args,
                                       << SQLiteNode::stateNames[replicationState.load()]
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
-                            } else if (core.commit()) {
-                                // So we must still be mastering, and at this point our commit has succeeded, let's
-                                // mark it as complete!
-                                command.complete = true;
+                            } else {
+                                if (core.commit()) {
+                                    SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                    // So we must still be mastering, and at this point our commit has succeeded, let's
+                                    // mark it as complete!
+                                    command.complete = true;
+                                } else {
+                                    SINFO("Conflict committing " << command.request.methodLine
+                                          << " on worker thread with " << retry << " retries remaining.");
+                                }
                             }
                         }
+
+                        // Whether we rolled it back or committed it, it's no longer potentially getting written, so we
+                        // can decrement our counter.
+                        server._writableCommandsInProgress--;
                     }
                 }
 
@@ -430,7 +585,8 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                SWARN("Max retries hit in worker, forwarding command to sync node.");
+                SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
+                      << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
         } catch(...) {
@@ -438,7 +594,7 @@ void BedrockServer::worker(SData& args,
         }
 
         // Ok, we're done with this loop, see if we should exit.
-        if (nodeGracefulShutdown.load() && server._commandQueue.empty()) {
+        if (nodeGracefulShutdown.load()) {
             SINFO("Shutdown flag set and nothing left in queue. worker" << to_string(threadId) << " exiting.");
             break;
         }
@@ -450,7 +606,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
     _suppressCommandPortManualOverride(false), _syncNode(nullptr)
 {
-    _version = args.isSet("-versionOverride") ? args["-versionOverride"] : args["version"];
+    _version = SVERSION;
 
     // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;
@@ -461,8 +617,9 @@ BedrockServer::BedrockServer(const SData& args)
         registeredPluginMap[pluginName] = plugin;
     }
 
-    // Enable the requested plugins
+    // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
+    vector<string> versions = {_version};
     for (string& pluginName : pluginNameList) {
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin) {
@@ -470,8 +627,42 @@ BedrockServer::BedrockServer(const SData& args)
         }
         plugin->initialize(args, *this);
         plugins.push_back(plugin);
+
+        // If the plugin has version info, add it to the list.
+        auto info = plugin->getInfo();
+        auto iterator = info.find("version");
+        if (iterator != info.end()) {
+            versions.push_back(plugin->getName() + "_" + iterator->second);
+        }
+    }
+    sort(versions.begin(), versions.end());
+    _version = SComposeList(versions, ":");
+
+    // If `versionOverride` is set, we throw away what we just did and use the overridden value.
+    if (args.isSet("-versionOverride")) {
+        _version = args["-versionOverride"];
     }
 
+    // Check for commands that will be forced to use QUORUM write consistency.
+    if (args.isSet("-synchronousCommands")) {
+        list<string> syncCommands;
+        SParseList(args["-synchronousCommands"], syncCommands);
+        for (auto& command : syncCommands) {
+            _syncCommands.insert(command);
+        }
+    }
+
+    // Check for commands that can be written by workers.
+    if (args.isSet("-parallelCommands")) {
+        SAUTOLOCK(_parallelCommandMutex);
+        list<string> parallelCommands;
+        SParseList(args["-parallelCommands"], parallelCommands);
+        for (auto& command : parallelCommands) {
+            _parallelCommands.insert(command);
+        }
+    }
+
+    // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(sync,
                          ref(_args),
@@ -501,26 +692,55 @@ BedrockServer::~BedrockServer() {
 }
 
 bool BedrockServer::shutdownComplete() {
-    // Shut down if requested and in the right state
-    bool gs = _nodeGracefulShutdown.load();
-    bool rs = (_replicationState.load() <= SQLiteNode::WAITING);
-    bool qr = _commandQueue.empty();
-    bool retVal = false;
+    // If we've been requested to shut down, we'll inspect our shutdown criteria.
+    if (_nodeGracefulShutdown.load()) {
 
-    // If we're *trying* to shutdown, (_nodeGracefulShutdown is set), we'll log what's blocking shutdown,
-    // or that nothing is.
-    if (gs) {
-        if (rs && qr) {
-            retVal = true;
-        } else {
-            SINFO("Conditions that failed and are blocking shutdown: " <<
-                  (rs ? "" : "_replicationState.get() <= SQLC_WAITING, ") <<
-                  (qr ? "" : "_queuedRequests.empty(), ") <<
-                  "returning FALSE in shutdownComplete");
+        // See if the replciation state is OK for shutdown, and if the command queue is empty.
+        // If so, we're done, we can shut down.
+        bool replicationStateOK = (_replicationState.load() <= SQLiteNode::WAITING);
+        bool commandQueueEmpty  = _commandQueue.empty();
+        if (replicationStateOK && commandQueueEmpty) {
+            return true;
         }
+
+        // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
+        // return true anyway.
+        if (_gracefulShutdownTimeout.ringing()) {
+            // Timing out. Log some info and return true.
+            map<string, int> commandsInQueue;
+            auto methods = _commandQueue.getRequestMethodLines();
+            for (auto method : methods) {
+                auto it = commandsInQueue.find(method);
+                if (it != commandsInQueue.end()) {
+                    (it->second)++;
+                } else {
+                    commandsInQueue[method] = 1;
+                }
+            }
+            string commandCounts;
+            for (auto cmdPair : commandsInQueue) {
+                commandCounts += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+            }
+            SWARN("Graceful shutdown timed out. "
+                  << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
+                  << "Commands queue size: " << _commandQueue.size() << ". "
+                  << "Command Counts: " << commandCounts << "killing non gracefully.");
+            return true;
+        }
+
+        // At this point, we've got something blocking shutdown, and our timeout hasn't passed, so we'll log and return
+        // false, and allow the caller to wait a bit longer.
+        string logLine = "Conditions that failed and are blocking shutdown:";
+        if (!replicationStateOK) {
+            logLine += " Replication State: " + SQLiteNode::stateNames[_replicationState.load()] + " > SQLC_WAITING.";
+        }
+        if (!commandQueueEmpty) {
+            logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
+        }
+        SWARN(logLine);
     }
 
-    return retVal;
+    return false;
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
@@ -614,6 +834,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SINFO("Beginning graceful shutdown due to '"
                       << SGetSignalNames(sigmask) << "', closing command port on '" << _args["-serverHost"] << "'");
                 _nodeGracefulShutdown.store(true);
+                _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+                _gracefulShutdownTimeout.start();
                 closePorts();
             }
         }
@@ -666,7 +888,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SAUTOLOCK(_socketIDMutex);
                     auto socketIt = _socketIDMap.find(s->id);
                     if (socketIt != _socketIDMap.end()) {
-                        SWARN("Can't dequeue a request while one is pending, or they could end up out-of-order.");
                         break;
                     }
                 }
@@ -709,6 +930,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     BedrockCommand command(request);
+                    if (command.writeConsistency != SQLiteNode::QUORUM
+                        && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
+
+                        command.writeConsistency = SQLiteNode::QUORUM;
+                        SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
+                    }
 
                     // This is important! All commands passed through the entire cluster must have unique IDs, or they
                     // won't get routed properly from slave to master and back.
@@ -726,6 +953,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _commandQueue.push(move(command));
                     }
                 }
+            }
+            break;
+            case STCPManager::Socket::SHUTTINGDOWN:
+            {
+                // We do nothing in this state, we just wait until the next iteration of poll and let the CLOSED
+                // case run. This block just prevents default warning from firing.
             }
             break;
             default:
@@ -757,6 +990,9 @@ void BedrockServer::_reply(BedrockCommand& command) {
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
+
+        // The last thing we do is total up our timing info and add it to the response.
+        command.finalizeTimingInfo();
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];
@@ -812,10 +1048,11 @@ void BedrockServer::suppressCommandPort(bool suppress, bool manualOverride) {
 }
 
 bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
-    if (command.request.methodLine == STATUS_IS_SLAVE          ||
-        command.request.methodLine == STATUS_HANDLING_COMMANDS ||
-        command.request.methodLine == STATUS_PING              ||
-        command.request.methodLine == STATUS_STATUS) {
+    if (SIEquals(command.request.methodLine, STATUS_IS_SLAVE)          ||
+        SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
+        SIEquals(command.request.methodLine, STATUS_PING)              ||
+        SIEquals(command.request.methodLine, STATUS_STATUS)            ||
+        SIEquals(command.request.methodLine, STATUS_WHITELIST)) {
         return true;
     }
     return false;
@@ -826,7 +1063,7 @@ void BedrockServer::_status(BedrockCommand& command) {
     SData& response = command.response;
 
     // We'll return whether or not this server is slaving.
-    if (request.methodLine == STATUS_IS_SLAVE) {
+    if (SIEquals(request.methodLine, STATUS_IS_SLAVE)) {
         // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
@@ -840,7 +1077,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         }
     }
 
-    else if (request.methodLine == STATUS_HANDLING_COMMANDS) {
+    else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
         SQLiteNode::State state = _replicationState.load();
         if (state != SQLiteNode::SLAVING) {
@@ -853,12 +1090,12 @@ void BedrockServer::_status(BedrockCommand& command) {
     }
 
     // All a ping message requires is some response.
-    else if (request.methodLine == STATUS_PING) {
+    else if (SIEquals(request.methodLine, STATUS_PING)) {
         response.methodLine = "200 OK";
     }
 
     // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
-    else if (request.methodLine == STATUS_STATUS) {
+    else if (SIEquals(request.methodLine, STATUS_STATUS)) {
         STable content;
         SQLiteNode::State state = _replicationState.load();
         list<string> pluginList;
@@ -871,6 +1108,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateNames[state];
         content["version"]  = _version;
+        content["host"]     = _args["-nodeHost"];
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
@@ -878,6 +1116,9 @@ void BedrockServer::_status(BedrockCommand& command) {
         list<string> escalated;
         {
             SAUTOLOCK(_syncMutex);
+
+            // Set some information about this node.
+            content["CommitCount"] = to_string(_syncNode->getCommitCount());
 
             // Retrieve information about our peers.
             for (SQLiteNode::Peer* peer : _syncNode->peerList) {
@@ -899,6 +1140,30 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["escalatedCommandList"] = SComposeJSONArray(escalated);
 
         // Done, compose the response.
+        response.methodLine = "200 OK";
+        response.content = SComposeJSONObject(content);
+    }
+
+    else if (SIEquals(request.methodLine, STATUS_WHITELIST)) {
+        SAUTOLOCK(_parallelCommandMutex);
+
+        // Return the old list. We can check the list by not passing the "Commands" param.
+        STable content;
+        content["oldCommandWhitelist"] = SComposeList(_parallelCommands);
+
+        // If the Comamnds param is set, parse it and update our value.
+        if (request.isSet("Commands")) {
+            _parallelCommands.clear();
+            list<string> parallelCommands;
+            SParseList(request["Commands"], parallelCommands);
+            for (auto& command : parallelCommands) {
+                _parallelCommands.insert(command);
+            }
+        }
+        // Enable extra logging in the commit lock timer.
+        decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_parallelCommands.empty());
+
+        // PRepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
     }

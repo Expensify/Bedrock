@@ -121,9 +121,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.18.0"
-#define SQLITE_VERSION_NUMBER 3018000
-#define SQLITE_SOURCE_ID      "2017-03-24 15:09:47 fd5676fe7f55b3d4fa15ca119af7c064c6f9d053affdfd5e748785e300affbeb"
+#define SQLITE_VERSION        "3.19.0"
+#define SQLITE_VERSION_NUMBER 3019000
+#define SQLITE_SOURCE_ID      "2017-06-02 09:31:27 f131677dcb4937e0dd62626afa91756aa28079e92acd6e9e127f6f676aa334f9"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -857,7 +857,7 @@ struct sqlite3_io_methods {
 ** opcode allows these two values (10 retries and 25 milliseconds of delay)
 ** to be adjusted.  The values are changed for all database connections
 ** within the same process.  The argument is a pointer to an array of two
-** integers where the first integer i the new retry count and the second
+** integers where the first integer is the new retry count and the second
 ** integer is the delay.  If either integer is negative, then the setting
 ** is not changed but instead the prior value of that setting is written
 ** into the array entry, allowing the current retry settings to be
@@ -2211,9 +2211,6 @@ SQLITE_API int sqlite3_total_changes(sqlite3*);
 ** ^A call to sqlite3_interrupt(D) that occurs when there are no running
 ** SQL statements is a no-op and has no effect on SQL statements
 ** that are started after the sqlite3_interrupt() call returns.
-**
-** If the database connection closes while [sqlite3_interrupt()]
-** is running then bad things will likely happen.
 */
 SQLITE_API void sqlite3_interrupt(sqlite3*);
 
@@ -2676,6 +2673,7 @@ SQLITE_API void sqlite3_randomness(int N, void *P);
 /*
 ** CAPI3REF: Compile-Time Authorization Callbacks
 ** METHOD: sqlite3
+** KEYWORDS: {authorizer callback}
 **
 ** ^This routine registers an authorizer callback with a particular
 ** [database connection], supplied in the first argument.
@@ -2703,8 +2701,10 @@ SQLITE_API void sqlite3_randomness(int N, void *P);
 ** parameter to the sqlite3_set_authorizer() interface. ^The second parameter
 ** to the callback is an integer [SQLITE_COPY | action code] that specifies
 ** the particular action to be authorized. ^The third through sixth parameters
-** to the callback are zero-terminated strings that contain additional
-** details about the action to be authorized.
+** to the callback are either NULL pointers or zero-terminated strings
+** that contain additional details about the action to be authorized.
+** Applications must always be prepared to encounter a NULL pointer in any
+** of the third through the sixth parameters of the authorization callback.
 **
 ** ^If the action code is [SQLITE_READ]
 ** and the callback returns [SQLITE_IGNORE] then the
@@ -2713,6 +2713,10 @@ SQLITE_API void sqlite3_randomness(int N, void *P);
 ** been read if [SQLITE_OK] had been returned.  The [SQLITE_IGNORE]
 ** return can be used to deny an untrusted user access to individual
 ** columns of a table.
+** ^When a table is referenced by a [SELECT] but no column values are
+** extracted from that table (for example in a query like
+** "SELECT count(*) FROM tab") then the [SQLITE_READ] authorizer callback
+** is invoked once for that table with a column name that is an empty string.
 ** ^If the action code is [SQLITE_DELETE] and the callback returns
 ** [SQLITE_IGNORE] then the [DELETE] operation proceeds but the
 ** [truncate optimization] is disabled and all rows are deleted individually.
@@ -3705,7 +3709,7 @@ SQLITE_API int sqlite3_stmt_busy(sqlite3_stmt*);
 ** The [sqlite3_value_blob | sqlite3_value_type()] family of
 ** interfaces require protected sqlite3_value objects.
 */
-typedef struct Mem sqlite3_value;
+typedef struct sqlite3_value sqlite3_value;
 
 /*
 ** CAPI3REF: SQL Function Context Object
@@ -4759,10 +4763,11 @@ SQLITE_API sqlite3 *sqlite3_context_db_handle(sqlite3_context*);
 ** the compiled regular expression can be reused on multiple
 ** invocations of the same function.
 **
-** ^The sqlite3_get_auxdata() interface returns a pointer to the metadata
-** associated by the sqlite3_set_auxdata() function with the Nth argument
-** value to the application-defined function. ^If there is no metadata
-** associated with the function argument, this sqlite3_get_auxdata() interface
+** ^The sqlite3_get_auxdata(C,N) interface returns a pointer to the metadata
+** associated by the sqlite3_set_auxdata(C,N,P,X) function with the Nth argument
+** value to the application-defined function.  ^N is zero for the left-most
+** function argument.  ^If there is no metadata
+** associated with the function argument, the sqlite3_get_auxdata(C,N) interface
 ** returns a NULL pointer.
 **
 ** ^The sqlite3_set_auxdata(C,N,P,X) interface saves P as metadata for the N-th
@@ -4792,6 +4797,10 @@ SQLITE_API sqlite3 *sqlite3_context_db_handle(sqlite3_context*);
 ** ^(In practice, metadata is preserved between function calls for
 ** function parameters that are compile-time constants, including literal
 ** values and [parameters] and expressions composed from the same.)^
+**
+** The value of the N parameter to these interfaces should be non-negative.
+** Future enhancements may make use of negative N values to define new
+** kinds of function caching behavior.
 **
 ** These routines must be called from the same thread in which
 ** the SQL function is running.
@@ -8487,6 +8496,31 @@ SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_cmp(
 SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_recover(sqlite3 *db, const char *zDb);
 
 /*
+** CAPI3REF: Wal related information regarding the most recent COMMIT
+** EXPERIMENTAL
+**
+** This function reports on the state of the wal file (if any) for database 
+** zDb, which should be "main", "temp", or the name of the attached database.
+** Its results - the values written to the output parameters - are only
+** defined if the most recent SQL command on the connection was a successful 
+** COMMIT that wrote data to wal-mode database zDb.
+**
+** Assuming the above conditions are met, output parameter (*pnFrame) is set
+** to the total number of frames in the wal file. Parameter (*pnPrior) is
+** set to the number of frames that were present in the wal file before the
+** most recent transaction was committed. So that the number of frames written
+** by the most recent transaction is (*pnFrame)-(*pnPrior).
+**
+** If successful, SQLITE_OK is returned. Otherwise, an SQLite error code. It
+** is not an error if this function is called at a time when the results
+** are undefined.
+*/
+SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_wal_info(
+  sqlite3 *db, const char *zDb, 
+  unsigned int *pnPrior, unsigned int *pnFrame
+);
+
+/*
 ** Undo the hack that converts floating point types to integer for
 ** builds on processors without floating point support.
 */
@@ -9400,7 +9434,7 @@ typedef struct sqlite3_changegroup sqlite3_changegroup;
 ** sqlite3changegroup_output() functions, also available are the streaming
 ** versions sqlite3changegroup_add_strm() and sqlite3changegroup_output_strm().
 */
-int sqlite3changegroup_new(sqlite3_changegroup **pp);
+SQLITE_API int sqlite3changegroup_new(sqlite3_changegroup **pp);
 
 /*
 ** CAPI3REF: Add A Changeset To A Changegroup
@@ -9477,7 +9511,7 @@ int sqlite3changegroup_new(sqlite3_changegroup **pp);
 **
 ** If no error occurs, SQLITE_OK is returned.
 */
-int sqlite3changegroup_add(sqlite3_changegroup*, int nData, void *pData);
+SQLITE_API int sqlite3changegroup_add(sqlite3_changegroup*, int nData, void *pData);
 
 /*
 ** CAPI3REF: Obtain A Composite Changeset From A Changegroup
@@ -9503,7 +9537,7 @@ int sqlite3changegroup_add(sqlite3_changegroup*, int nData, void *pData);
 ** responsibility of the caller to eventually free the buffer using a
 ** call to sqlite3_free().
 */
-int sqlite3changegroup_output(
+SQLITE_API int sqlite3changegroup_output(
   sqlite3_changegroup*,
   int *pnData,                    /* OUT: Size of output buffer in bytes */
   void **ppData                   /* OUT: Pointer to output buffer */
@@ -9512,7 +9546,7 @@ int sqlite3changegroup_output(
 /*
 ** CAPI3REF: Delete A Changegroup Object
 */
-void sqlite3changegroup_delete(sqlite3_changegroup*);
+SQLITE_API void sqlite3changegroup_delete(sqlite3_changegroup*);
 
 /*
 ** CAPI3REF: Apply A Changeset To A Database
@@ -9901,11 +9935,11 @@ SQLITE_API int sqlite3session_patchset_strm(
   int (*xOutput)(void *pOut, const void *pData, int nData),
   void *pOut
 );
-int sqlite3changegroup_add_strm(sqlite3_changegroup*, 
+SQLITE_API int sqlite3changegroup_add_strm(sqlite3_changegroup*, 
     int (*xInput)(void *pIn, void *pData, int *pnData),
     void *pIn
 );
-int sqlite3changegroup_output_strm(sqlite3_changegroup*,
+SQLITE_API int sqlite3changegroup_output_strm(sqlite3_changegroup*,
     int (*xOutput)(void *pOut, const void *pData, int nData), 
     void *pOut
 );

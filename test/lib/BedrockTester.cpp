@@ -147,16 +147,18 @@ string BedrockTester::getServerName() {
 list<string> BedrockTester::getServerArgs(map <string, string> args) {
 
     map <string, string> defaults = {
-        {"-db",             _dbFile.empty() ? DB_FILE : _dbFile},
-        {"-serverHost",     _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
-        {"-nodeName",       "bedrock_test"},
-        {"-nodeHost",       "localhost:9889"},
-        {"-priority",       "200"},
-        {"-plugins",        "db,cache"},
-        {"-readThreads",    "8"},
-        {"-maxJournalSize", "100"},
-        {"-v",              ""},
-        {"-cache",          "10001"},
+        {"-db",               _dbFile.empty() ? DB_FILE : _dbFile},
+        {"-serverHost",       _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
+        {"-nodeName",        "bedrock_test"},
+        {"-nodeHost",         "localhost:9889"},
+        {"-priority",         "200"},
+        {"-plugins",          "db,cache"},
+        {"-readThreads",      "8"},
+        {"-maxJournalSize",   "100"},
+        {"-v",                ""},
+        {"-quorumCheckpoint", "50"},
+        {"-parallelCommands", "Query,idcollision"},
+        {"-cache",            "10001"},
     };
 
     for (auto row : defaults) {
@@ -368,7 +370,12 @@ string BedrockTester::getServerAddr() {
     return _serverAddr.empty() ? SERVER_ADDR : _serverAddr;
 }
 
-string BedrockTester::executeWait(const SData& request, const std::string& correctResponse) {
+string BedrockTester::executeWait(const SData& request, const string& correctResponse) {
+    SData response = executeWaitData(request, correctResponse);
+    return response.content;
+}
+
+SData BedrockTester::executeWaitData(const SData& request, const string& correctResponse) {
     // We create a socket, send the message, wait for the response, close the socket, and parse the message.
     int socket = S_socket(getServerAddr(), true, false, true);
 
@@ -399,5 +406,8 @@ string BedrockTester::executeWait(const SData& request, const std::string& corre
 
     close(socket);
 
-    return content;
+    SData response(methodLine);
+    response.nameValueMap = headers;
+    response.content = content;
+    return response;
 }

@@ -6,7 +6,8 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     request(move(_request)),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    executeTimestamp(SToUInt64(request["commandExecuteTime"]) ?: STimeNow())
+    escalationTimeUS(0),
+    creationTime(STimeNow())
 {
     // Initialize the consistency, if supplied.
     if (request.isSet("writeConsistency")) {
@@ -25,6 +26,11 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
                 break;
         }
     }
+
+    // If the request doesn't specify an execution time, default to right now.
+    if (!request.isSet("commandExecuteTime")) {
+        request["commandExecuteTime"] = to_string(STimeNow());
+    }
 }
 
 SQLiteCommand::SQLiteCommand() :
@@ -32,5 +38,6 @@ SQLiteCommand::SQLiteCommand() :
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
-    executeTimestamp(0)
+    escalationTimeUS(0),
+    creationTime(STimeNow())
 { }

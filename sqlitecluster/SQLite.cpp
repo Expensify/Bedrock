@@ -318,6 +318,7 @@ bool SQLite::prepare() {
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     g_commitLock.lock();
+    _mutexLocked = true;
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
@@ -340,7 +341,6 @@ bool SQLite::prepare() {
         // Couldn't insert into the journal; roll back the original commit
         SWARN("Unable to prepare transaction, got result: " << result << ". Rolling back: " << _uncommittedQuery);
         rollback();
-        g_commitLock.unlock();
         return false;
     }
 
@@ -357,13 +357,24 @@ int SQLite::commit() {
     int result = 0;
 
     // Do we need to truncate as we go?
-    bool truncating = false;
-    if (_journalSize + 1 > _maxJournalSize) {
+    uint64_t newJournalSize = _journalSize + 1;
+    if (newJournalSize > _maxJournalSize) {
         // Delete the oldest entry
-        truncating = true;
         uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " WHERE id < (SELECT MAX(id) FROM " + SQ(_journalName) + ") - " + SQ(_journalSize);
-        SASSERT(!SQuery(_db, "Deleting oldest row", query));
+        string query = "DELETE FROM " + _journalName + " "
+                       "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
+                       "LIMIT 10";
+        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
+
+        // Figure out the new journal size.
+        SQResult result;
+        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
+        uint64_t min = SToUInt64(result[0][0]);
+        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
+        uint64_t max = SToUInt64(result[0][0]);
+        newJournalSize = max - min;
+
+        // Log timing info.
         _writeElapsed += STimeNow() - before;
     }
 
@@ -376,7 +387,7 @@ int SQLite::commit() {
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         _commitElapsed += STimeNow() - before;
-        _journalSize += truncating ? 0 : 1;
+        _journalSize = newJournalSize;
         _commitCount++;
         _committedTransactionIDs.insert(_commitCount.load());
         _lastCommittedHash.store(_uncommittedHash);
@@ -384,6 +395,7 @@ int SQLite::commit() {
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        _mutexLocked = false;
         g_commitLock.unlock();
     } else {
         SINFO("Commit failed, waiting for rollback.");
@@ -432,7 +444,13 @@ void SQLite::rollback() {
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
         SINFO("Rollback successful.");
-        g_commitLock.unlock();
+
+        // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
+        // ever having called `prepare`, which would have locked our mutex.
+        if (_mutexLocked) {
+            _mutexLocked = false;
+            g_commitLock.unlock();
+        }
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }

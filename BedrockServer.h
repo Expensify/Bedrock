@@ -47,6 +47,10 @@ class BedrockServer : public SQLiteServer {
     // in which case the `suppress` setting will be forced.
     void suppressCommandPort(bool suppress, bool manualOverride = false);
 
+    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
+    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
+    virtual bool canStandDown();
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -143,6 +147,7 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
+    static constexpr auto STATUS_WHITELIST         = "SetCommandWhitelist";
 
     // This *only* exists so that status commands can pull info from this node.
     SQLiteNode* _syncNode;
@@ -153,4 +158,33 @@ class BedrockServer : public SQLiteServer {
     // Functions for checking for and responding to status commands.
     bool _isStatusCommand(BedrockCommand& command);
     void _status(BedrockCommand& command);
+
+    // This counts the number of commands that are being processed that might be able to write to the database. We
+    // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
+    // it's 0.
+    atomic<int> _writableCommandsInProgress;
+
+    // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
+    // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
+    // more current than ourselves, and a following request to us. We'll move these commands to this special map until
+    // we catch up, and then move them back to the regular command queue.
+    multimap<uint64_t, BedrockCommand> _futureCommitCommands;
+    recursive_mutex _futureCommitCommandMutex;
+
+    // This is a shared mutex. It can be locked by many readers at once, but if the writer (the sync thread) locks it,
+    // no other thread can access it. It's locked by the sync thread immediately before starting a transaction, and
+    // unlocked afterward. Workers do the same, so that they won't try to start a new transaction while the sync thread
+    // is committing. This mutex is *not* recursive.
+    shared_timed_mutex _syncThreadCommitMutex;
+
+    // A set of command names that will always be run with QUORUM consistency level.
+    // Specified by the `-synchronousCommands` command-line switch.
+    set<string> _syncCommands;
+
+    // This is a list of command names than can be processed and committed in worker threads.
+    static set<string> _parallelCommands;
+    static recursive_mutex  _parallelCommandMutex;
+
+    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
+    SStopwatch _gracefulShutdownTimeout;
 };

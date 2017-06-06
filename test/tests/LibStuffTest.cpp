@@ -3,7 +3,6 @@
 
 struct LibStuff : tpunit::TestFixture {
     LibStuff() : tpunit::TestFixture("LibStuff",
-                                    TEST(LibStuff::testMaskPAN),
                                     TEST(LibStuff::testEncryptDecrpyt),
                                     TEST(LibStuff::testSHMACSHA1),
                                     TEST(LibStuff::testJSONDecode),
@@ -18,6 +17,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testConstantTimeEquals),
                                     TEST(LibStuff::testParseIntegerList),
                                     TEST(LibStuff::testSData),
+                                    TEST(LibStuff::testSTable),
                                     TEST(LibStuff::testFileIO),
                                     TEST(LibStuff::testSTimeNow),
                                     TEST(LibStuff::testCurrentTimestamp),
@@ -25,20 +25,6 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion))
     { }
-
-    void testMaskPAN() {
-        ASSERT_EQUAL(SMaskPAN(""), "");
-        ASSERT_EQUAL(SMaskPAN("123"), "XXX");
-        ASSERT_EQUAL(SMaskPAN("1234"), "1234");
-        ASSERT_EQUAL(SMaskPAN("12345"), "X2345");
-        ASSERT_EQUAL(SMaskPAN("1234567"), "XXX4567");
-        ASSERT_EQUAL(SMaskPAN("12345678"), "XXXX5678");
-        ASSERT_EQUAL(SMaskPAN("12345678a"), "XXXXX678X");
-        ASSERT_EQUAL(SMaskPAN("1234567890123"), "XXXXXXXXX0123");
-        ASSERT_EQUAL(SMaskPAN("12345678901234"), "123456XXXX1234");
-        ASSERT_EQUAL(SMaskPAN("12345678901234567"), "123456XXXXXXX4567");
-        ASSERT_EQUAL(SMaskPAN("123456789012345678901"), "123456XXXXXXXXXXX8901");
-    }
 
     void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";
@@ -374,6 +360,29 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(c["e"], "char*");
         ASSERT_EQUAL(c["f"], "string");
         ASSERT_EQUAL(SToInt(c["g"]), 97);
+    }
+
+    void testSTable() {
+        // Verify that auto-stringification works.
+        STable test;
+        test["a"] = 1;
+        test["b"] = -1;
+        test["c"] = 0;
+        test["d"] = 5000000001;
+        test["e"] = -5000000001;
+        test["f"] = 1.2;
+        test["g"] = (unsigned char)'a';
+        test["h"] = 'b';
+        test["i"] = "string";
+        ASSERT_EQUAL(test["a"], "1");
+        ASSERT_EQUAL(test["b"], "-1");
+        ASSERT_EQUAL(test["c"], "0");
+        ASSERT_EQUAL(test["d"], "5000000001");
+        ASSERT_EQUAL(test["e"], "-5000000001");
+        ASSERT_EQUAL(test["f"], "1.200000"); // default precision.
+        ASSERT_EQUAL(test["g"], "a");
+        ASSERT_EQUAL(test["h"], "b");
+        ASSERT_EQUAL(test["i"], "string");
     }
 
     void testFileIO() {

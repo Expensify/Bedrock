@@ -8,11 +8,13 @@ _server(server)
 { }
 
 bool BedrockCore::peekCommand(BedrockCommand& command) {
+    AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
+    command.peekCount++;
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
@@ -23,7 +25,6 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             if (plugin->peekCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                 pluginPeeked = true;
-                command.peekCount++;
                 break;
             }
         }
@@ -40,6 +41,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
+
+        // Add the commitCount header to the response.
+        response["commitCount"] = to_string(_db.getCommitCount());
 
         // Success. If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
@@ -67,11 +71,13 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 }
 
 bool BedrockCore::processCommand(BedrockCommand& command) {
+    AutoTimer timer(command, BedrockCommand::PROCESS);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
     SDEBUG("Processing '" << request.methodLine << "'");
+    command.processCount++;
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
@@ -87,7 +93,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             if (plugin->processCommand(_db, command)) {
                 SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                 pluginProcessed = true;
-                command.processCount++;
                 break;
             }
         }
@@ -109,6 +114,9 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
+
+        // Add the commitCount header to the response.
+        response["commitCount"] = to_string(_db.getCommitCount());
 
         // Success, this command will be committed.
         SINFO("Processed '" << response.methodLine << "' for '" << request.methodLine << "'.");
@@ -161,4 +169,7 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const string&
     if (command.response.methodLine.empty()) {
         command.response.methodLine = e;
     }
+
+    // Add the commitCount header to the response.
+    command.response["commitCount"] = to_string(_db.getCommitCount());
 }

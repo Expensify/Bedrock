@@ -2,9 +2,23 @@
 #include "BedrockCommand.h"
 #include "BedrockCommandQueue.h"
 
+void BedrockCommandQueue::clear()  {
+    SAUTOLOCK(_queueMutex);
+    return _commandQueue.clear();
+}
+
 bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
     return _commandQueue.empty();
+}
+
+size_t BedrockCommandQueue::size()  {
+    SAUTOLOCK(_queueMutex);
+    size_t size = 0;
+    for (const auto& queue : _commandQueue) {
+        size += queue.second.size();
+    }
+    return size;
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
@@ -62,6 +76,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 
 list<string> BedrockCommandQueue::getRequestMethodLines() {
     list<string> returnVal;
+    SAUTOLOCK(_queueMutex);
     for (auto& queue : _commandQueue) {
         for (auto& entry : queue.second) {
             returnVal.push_back(entry.second.request.methodLine);
@@ -73,7 +88,7 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
 void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
-    queue.emplace(item.executeTimestamp, move(item));
+    queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
     _queueCondition.notify_one();
 }
 

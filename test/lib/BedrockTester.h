@@ -29,6 +29,9 @@ class BedrockTester {
     // Executes a command and waits for the response
     string executeWait(const SData& request, const std::string& correctResponse = "200");
 
+    // Same as above, but returns entire SData for the response
+    SData executeWaitData(const SData& request, const std::string& correctResponse = "200");
+
     // like executeWait, except it will execute multiple requests in parallel over several simultaneous connections.
     // returns a pair of strings for each request, with the response code and the response text, in that order.
     vector<pair<string,string>> executeWaitMultiple(vector<SData> requests, int connections = 10);

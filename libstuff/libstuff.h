@@ -29,6 +29,7 @@
 #include <mutex>
 #include <random>
 #include <set>
+#include <shared_mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -95,7 +96,39 @@ class STableComp : binary_function<string, string, bool> {
         bool operator()(const unsigned char& c1, const unsigned char& c2) const { return tolower(c1) < tolower(c2); }
     };
 };
-typedef map<string, string, STableComp> STable;
+
+// An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
+// types.
+class SString : public string {
+  public:
+    // Templated assignment operator for arithmetic types.
+    template <typename T>
+    typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+        string::operator=(to_string(from));
+        return *this;
+    }
+
+    // Templated assignment operator for non-arithmetic types.
+    template <typename T>
+    typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+        string::operator=(from);
+        return *this;
+    }
+
+    // Chars are special, we don't treat them as integral types, even though they'd normally count.
+    SString& operator=(const char& from) {
+        string::operator=(from);
+        return *this;
+    }
+
+    // The above is also true for unsigned chars.
+    SString& operator=(const unsigned char& from) {
+        string::operator=(from);
+        return *this;
+    }
+};
+
+typedef map<string, SString, STableComp> STable;
 
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
@@ -655,32 +688,6 @@ string SHMACSHA1(const string& key, const string& buffer);
 #define SAES_BLOCK_SIZE 16
 string SAESEncrypt(const string& buffer, const string& iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
-
-// --------------------------------------------------------------------------
-// Credit card stuff
-// --------------------------------------------------------------------------
-// Determine if some input is a PAN
-inline bool SIsPAN(const string& value) { return SREMatch("^\\d{13,19}$", value); }
-inline bool SIsMaskedPAN(const string& value) { return SREMatch("^\\d{0,6}[Xx]+\\d{4,7}$", value); }
-
-// --------------------------------------------------------------------------
-// Helper function to mask out the necessary digits in a card number to
-// comply with PCI 3.3.  Namely, replace all but the first six and last four
-// digits with X.
-inline string SMaskPAN(const string& pan) {
-    // First, make sure it's valid
-    const string& safePAN = SReplaceAllBut(pan, "0123456789", 'X');
-
-    if (safePAN.size() < 4) {
-        return string(safePAN.size(), 'X');
-    }
-    else if (safePAN.size() < 14) {
-        // Card numbers smaller than 14 digits can only reveal the last 4 digits
-        return string(safePAN.size() - 4, 'X') + safePAN.substr(safePAN.size() - 4);
-    }
-    // Can show last 4 and first 6.
-    return safePAN.substr(0, 6) + string(safePAN.size() - 10, 'X') + safePAN.substr(safePAN.size() - 4);
-}
 
 // --------------------------------------------------------------------------
 // SQLite Stuff

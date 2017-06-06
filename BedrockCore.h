@@ -1,6 +1,6 @@
 #pragma once
 #include <sqlitecluster/SQLiteCore.h>
-class BedrockCommand;
+#include <BedrockCommand.h>
 class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
@@ -29,6 +29,20 @@ class BedrockCore : public SQLiteCore {
     bool processCommand(BedrockCommand& command);
 
   private:
+
+    // Automatic timing class that records an entry corresponding to its lifespan.
+    class AutoTimer {
+      public:
+        AutoTimer(BedrockCommand& command, BedrockCommand::TIMING_INFO type) :
+        _command(command), _type(type), _start(STimeNow()) { }
+        ~AutoTimer() {
+            _command.timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
+        }
+      private:
+        BedrockCommand& _command;
+        BedrockCommand::TIMING_INFO _type;
+        uint64_t _start;
+    };
     void _handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing);
     const BedrockServer& _server;
 };

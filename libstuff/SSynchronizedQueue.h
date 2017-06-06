@@ -31,6 +31,9 @@ class SSynchronizedQueue {
     // Returns the queue's size.
     size_t size() const;
 
+    // Apply a lambda to each item in the queue.
+    void each(const function<void (T&)> f);
+
   protected:
     list<T> _queue;
     mutable recursive_mutex _queueMutex;
@@ -114,4 +117,10 @@ template<typename T>
 size_t SSynchronizedQueue<T>::size() const {
     SAUTOLOCK(_queueMutex);
     return _queue.size();
+}
+
+template<typename T>
+void SSynchronizedQueue<T>::each(const function<void (T&)> f) {
+    SAUTOLOCK(_queueMutex);
+    for_each(_queue.begin(), _queue.end(), f);
 }
