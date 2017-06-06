@@ -14,7 +14,7 @@ PROJECT = $(shell pwd)
 VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 
 # Turn on C++14.
-CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
+CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall -Werror
 CXXFLAGS =-std=gnu++14
 CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
