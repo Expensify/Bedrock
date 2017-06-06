@@ -29,6 +29,7 @@
 #include <mutex>
 #include <random>
 #include <set>
+#include <shared_mutex>
 #include <sstream>
 #include <string>
 #include <thread>
