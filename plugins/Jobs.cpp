@@ -198,11 +198,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(request.methodLine, "CancelJob")) {
         // - CancelJob(jobID)
         //
-        //     Cancel a QUEUED job on all child jobs.  We call it on the parent, who
-        //     takes care of cancelling every QUEUED/PAUSED child.
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //     (actually, it allows you to cancel non siblings, but you
+        //     shouldn't do that as it can potentially leave lingering jobs).
         //
         //     Parameters:
-        //     - jobID  - ID of the parent job to cancel
+        //     - jobID  - ID of the job to cancel
         //
         //     Returns:
         //     - 200 - OK
@@ -225,14 +226,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             throw "404 No job with this jobID";
         }
 
-        // Verify that the job is PAUSED (we are cancelling the parent job)
-        if (result[0][0] != "PAUSED") {
-            throw "404 Invalid jobID - Cannot cancel a job that is not PAUSED";
+        // If the job have any children, we are using the command in the wrong way
+        if (!result[0][1].empty()) {
+            throw "404 Invalid jobID - Cannot cancel a job with children";
         }
 
-        // If the job doesn't have any children, we are using the command in the wrong way
-        if (result[0][1].empty()) {
-            throw "404 Invalid jobID - Cannot cancel a job without children, use DeleteJob instead";
+        // Don't process the command if the job has finished or it's already running.
+        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+            return true; // Done
+        }
+
+        // Verify that we are not trying to cancel a PAUSED job.
+        if (result[0][0] == "PAUSED") {
+            SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
+            return true; // Done
         }
 
         return false; // Need to process command
@@ -597,7 +604,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - jobID  - ID of the job to finish
-        //     - data   - Data to associate with this finished job
+        //     - data   - Data to associate with this finsihed job
         //
         verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
@@ -636,10 +643,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Delete any FINISHED child jobs, but leave any PAUSED children alone (as those will signal that
+        // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
-        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';")) {
-            throw "502 Failed deleting finished child jobs";
+        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
+            throw "502 Failed deleting finished/cancelled child jobs";
         }
 
         // If we've been asked to update the data, let's do that
@@ -725,54 +732,26 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
         }
+
+        // Successfully processed
+        return true;
     }
     // ----------------------------------------------------------------------
     else if (SIEquals(request.methodLine, "CancelJob")) {
         // - CancelJob (jobID)
         //
-        //     Cancel a QUEUED job on all child jobs.  We call it on the parent, who
-        //     takes care of cancelling every QUEUED/PAUSED child.
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //     (actually, it allows you to cancel non siblings, but you
+        //     shouldn't do that as it can potentially leave lingering jobs).
         //
         //     Parameters:
-        //     - jobID  - ID of the parent job to cancel
+        //     - jobID  - ID of the job to cancel
         //
         int64_t jobID = request.calc64("jobID");
 
-        // Start by canceling the parent
-        stack<int64_t> nonVisited;
-        nonVisited.push(jobID);
-
-        // Change parent state to CANCELLED
+        // Cancel the job
         if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
             throw "502 Failed to update job data";
-        }
-
-        while (!nonVisited.empty()) {
-            int64_t cancellingJobID = nonVisited.top();
-            nonVisited.pop();
-
-            // Retrieve PAUSED children (potential parents)
-            SQResult result;
-            if (!db.read("SELECT j.jobID "
-                         "FROM jobs j "
-                         "WHERE j.parentJobID=" + SQ(cancellingJobID) + " "
-                           "AND j.state = 'PAUSED';",
-                         result)) {
-                throw "502 Select failed";
-            }
-
-            for (const auto& row : result.rows) {
-                // If paused, child may have more children, cancel them as well.
-                nonVisited.push(SToInt64(row[0]));
-            }
-
-            // Cancel children if they are not running
-            if (!db.write("UPDATE jobs "
-                          "SET state='CANCELLED' "
-                          "WHERE parentJobID=" + SQ(cancellingJobID) + " "
-                            "AND (state = 'QUEUED' OR state = 'PAUSED');")) {
-                throw "502 Failed to update job data";
-            }
         }
 
         // All done processing this command
