@@ -16,7 +16,7 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID) :
-    blacklist(nullptr)
+    whitelist(nullptr)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -137,7 +137,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         }
     }
 
-    // Register the authorizer callback which allows callers to blacklist particular data in the DB.
+    // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, SQLite::_sqliteAuthorizerCallback, this);
 }
 
@@ -539,13 +539,13 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 }
 
 int SQLite::_authorize(int actionCode, const char* table, const char* column) {
-    // If the blacklist isn't set, we always return OK.
-    if (!blacklist) {
+    // If the whitelist isn't set, we always return OK.
+    if (!whitelist) {
         return SQLITE_OK;
     }
 
     switch (actionCode) {
-        // The following are *always* disallowed in blacklist mode.
+        // The following are *always* disallowed in whitelist mode.
         case SQLITE_CREATE_INDEX:
         case SQLITE_CREATE_TABLE:
         case SQLITE_CREATE_TEMP_INDEX:
@@ -579,30 +579,30 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
             return SQLITE_DENY;
             break;
 
-        // The following are *always* allowed in blacklist mode.
+        // The following are *always* allowed in whitelist mode.
         case SQLITE_SELECT:
         case SQLITE_ANALYZE:
         case SQLITE_FUNCTION:
             return SQLITE_OK;
             break;
 
-        // The following is the only special case where the blacklist actually applies.
+        // The following is the only special case where the whitelist actually applies.
         case SQLITE_READ:
         {
-            // See if there's an entry in the blacklist for this table.
-            auto tableIt = blacklist->find(table);
-            if (tableIt != blacklist->end()) {
+            // See if there's an entry in the whitelist for this table.
+            auto tableIt = whitelist->find(table);
+            if (tableIt != whitelist->end()) {
                 // If so, see if there's an entry for this column.
                 auto columnIt = tableIt->second.find(column);
                 if (columnIt != tableIt->second.end()) {
-                    // If so, then this column is blacklisted.
-                    SWARN("[security] Blacklisted column: " << column << " in table " << table << ".");
-                    return SQLITE_IGNORE;
+                    // If so, then this column is whitelisted.
+                    return SQLITE_OK;
                 }
             }
 
-            // If we didn't find it, not blacklisted.
-            return SQLITE_OK;
+            // If we didn't find it, not whitelisted.
+            SWARN("[security] Non-whitelisted column: " << column << " in table " << table << ".");
+            return SQLITE_IGNORE;
         }
     }
     return SQLITE_DENY;

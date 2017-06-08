@@ -109,11 +109,11 @@ class SQLite {
     // out to peers.
     map<uint64_t, pair<string,string>> getCommittedTransactions();
 
-    // The blacklist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
-    // column names that are disallowed for reading. Using blacklist at all put the database handle into a more
+    // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
+    // column names that are allowed for reading. Using whitelist at all put the database handle into a more
     // restrictive access mode that will deny access for write operations and other potentially risky operations, even
     // in the case that a specific table/column are not being directly requested.
-    map<string, set<string>>* blacklist;
+    map<string, set<string>>* whitelist;
 
   private:
     // This is the last committed hash by *any* thread.
