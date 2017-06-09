@@ -1000,12 +1000,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command.response.methodLine
                   << "' to request '" << command.request.methodLine << "'");
-            BedrockPlugin* plugin = BedrockPlugin::getPluginByName(pluginName);
-            if (plugin) {
-                plugin->onPortRequestComplete(command, socketIt->second);
-            } else {
-                SERROR("Couldn't find plugin '" << pluginName << ".");
-            }
+            BedrockPlugin::getPluginByName(pluginName)->onPortRequestComplete(command, socketIt->second);
         } else {
             // Otherwise we send the standard response.
             socketIt->second->send(command.response.serialize());
