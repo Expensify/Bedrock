@@ -109,12 +109,6 @@ class SQLite {
     // out to peers.
     map<uint64_t, pair<string,string>> getCommittedTransactions();
 
-    // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
-    // column names that are allowed for reading. Using whitelist at all put the database handle into a more
-    // restrictive access mode that will deny access for write operations and other potentially risky operations, even
-    // in the case that a specific table/column are not being directly requested.
-    map<string, set<string>>* whitelist;
-
   private:
     // This is the last committed hash by *any* thread.
     static atomic<string> _lastCommittedHash;
@@ -240,10 +234,4 @@ class SQLite {
     //  only insert the table name *between* adjacent entries in queryParts. We provide the 'append' flag to get around
     //  this limitation.
     string _getJournalQuery(const list<string>& queryParts, bool append = false);
-
-    // Callback function that we'll register for authorizing queries in sqlite.
-    static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
-
-    // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
-    int _authorize(int actionCode, const char* table, const char* column);
 };
