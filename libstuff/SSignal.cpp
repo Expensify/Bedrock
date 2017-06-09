@@ -54,12 +54,18 @@ void SSendSignal(int signum) {
     //         inside a non-reentrant system call.
     _SSignal_sentBitmask |= (1 << signum);
 
-    // We *do* do logging for SIGABRT, because we have no way to recover from
-    // this, the process will be terminated as soon as we return from this handler.
+    // If we get SIGABRT or SIGSEGV, we want to exit abnormally. That is to say, either explicitly call abort() or let
+    // it continue naturally. 
+    // We don't call `SERROR` because that calls `exit(1)`, which can interrupt our signal handling process and never
+    // return. Instead, we explictly let this function return, so that abort() can complete, and we can generate core
+    // files.
     if (signum == SIGABRT) {
-        SERROR("Got SIGABRT, logging stack trace.");
+        SWARN("Got SIGABRT, logging stack trace.");
+        SLogStackTrace();
     } else if (signum == SIGSEGV) {
-        SERROR("Got SIGSEGV, logging stack trace.");
+        SWARN("Got SIGSEGV, logging stack trace.");
+        SLogStackTrace();
+        abort();
     }
 }
 

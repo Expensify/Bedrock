@@ -1,4 +1,4 @@
-# # Set the compiler, if it's not set by the environment.
+# Set the compiler, if it's not set by the environment.
 ifndef GXX
 	GXX = g++-6
 endif
@@ -13,10 +13,10 @@ PROJECT = $(shell pwd)
 # Extract our version information from git.
 VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 
-# Turn on C++11.
+# Turn on C++14.
 CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
-CXXFLAGS =-std=gnu++11
-CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include
+CXXFLAGS =-std=gnu++14
+CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include -Werror -Wno-unused-result
 
 # This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
 PRODUCTION=false

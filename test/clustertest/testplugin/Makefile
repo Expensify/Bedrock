@@ -13,8 +13,8 @@ PROJECT = $(shell pwd)/../../..
 # Extract our version information from git.
 VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 
-# Turn on C++11.
-CXXFLAGS =-g -std=gnu++11 -fpic -DSVERSION="\"$(VERSION)\"" -Wall
+# Turn on C++14.
+CXXFLAGS =-g -std=gnu++14 -fpic -DSVERSION="\"$(VERSION)\"" -Wall -Werror -Wno-unused-result
 CXXFLAGS +=-I$(PROJECT) -I../../../mbedtls/include
 
 # This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.

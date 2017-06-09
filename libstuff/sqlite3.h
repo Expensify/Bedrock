@@ -121,9 +121,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.19.0"
-#define SQLITE_VERSION_NUMBER 3019000
-#define SQLITE_SOURCE_ID      "2017-05-19 19:57:15 9527089b7aa3695cd577f31b263b4777e9bd62dbbc1bd3af892c570e52e8c3a1"
+#define SQLITE_VERSION        "3.19.3"
+#define SQLITE_VERSION_NUMBER 3019003
+#define SQLITE_SOURCE_ID      "2017-06-08 16:23:55 8e311a6dba202e8733830d8f31b8f0ce11eaefb3a0ab5e5e95ac0d2e5136043b"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -8494,6 +8494,31 @@ SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_cmp(
 ** SQLITE_OK is returned if successful, or an SQLite error code otherwise.
 */
 SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_recover(sqlite3 *db, const char *zDb);
+
+/*
+** CAPI3REF: Wal related information regarding the most recent COMMIT
+** EXPERIMENTAL
+**
+** This function reports on the state of the wal file (if any) for database 
+** zDb, which should be "main", "temp", or the name of the attached database.
+** Its results - the values written to the output parameters - are only
+** defined if the most recent SQL command on the connection was a successful 
+** COMMIT that wrote data to wal-mode database zDb.
+**
+** Assuming the above conditions are met, output parameter (*pnFrame) is set
+** to the total number of frames in the wal file. Parameter (*pnPrior) is
+** set to the number of frames that were present in the wal file before the
+** most recent transaction was committed. So that the number of frames written
+** by the most recent transaction is (*pnFrame)-(*pnPrior).
+**
+** If successful, SQLITE_OK is returned. Otherwise, an SQLite error code. It
+** is not an error if this function is called at a time when the results
+** are undefined.
+*/
+SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_wal_info(
+  sqlite3 *db, const char *zDb, 
+  unsigned int *pnPrior, unsigned int *pnFrame
+);
 
 /*
 ** Undo the hack that converts floating point types to integer for

@@ -76,6 +76,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 
 list<string> BedrockCommandQueue::getRequestMethodLines() {
     list<string> returnVal;
+    SAUTOLOCK(_queueMutex);
     for (auto& queue : _commandQueue) {
         for (auto& entry : queue.second) {
             returnVal.push_back(entry.second.request.methodLine);
