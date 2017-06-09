@@ -294,7 +294,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
             // master.
             uint64_t updateJobID = 0;
-            if (SContains(job, "unique")) {
+            if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
                 if (!db.read("SELECT jobID, data "
