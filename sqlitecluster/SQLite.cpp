@@ -15,7 +15,8 @@ atomic_flag                         SQLite::_sqliteInitialized = ATOMIC_FLAG_INI
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
-               int maxRequiredJournalTableID)
+               int maxRequiredJournalTableID) :
+    whitelist(nullptr)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -135,6 +136,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
             SWARN("Loaded commit count " << commitCount << " with empty hash.");
         }
     }
+
+    // Register the authorizer callback which allows callers to whitelist particular data in the DB.
+    sqlite3_set_authorizer(_db, SQLite::_sqliteAuthorizerCallback, this);
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
@@ -525,4 +529,81 @@ uint64_t SQLite::_getCommitCount() {
 size_t SQLite::getLastWriteChangeCount() {
     int count = sqlite3_changes(_db);
     return count > 0 ? (size_t)count : 0;
+}
+
+int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const char* detail1, const char* detail2,
+                                      const char* detail3, const char* detail4)
+{
+    SQLite* db = static_cast<SQLite*>(pUserData);
+    return db->_authorize(actionCode, detail1, detail2);
+}
+
+int SQLite::_authorize(int actionCode, const char* table, const char* column) {
+    // If the whitelist isn't set, we always return OK.
+    if (!whitelist) {
+        return SQLITE_OK;
+    }
+
+    switch (actionCode) {
+        // The following are *always* disallowed in whitelist mode.
+        case SQLITE_CREATE_INDEX:
+        case SQLITE_CREATE_TABLE:
+        case SQLITE_CREATE_TEMP_INDEX:
+        case SQLITE_CREATE_TEMP_TABLE:
+        case SQLITE_CREATE_TEMP_TRIGGER:
+        case SQLITE_CREATE_TEMP_VIEW:
+        case SQLITE_CREATE_TRIGGER:
+        case SQLITE_CREATE_VIEW:
+        case SQLITE_DELETE:
+        case SQLITE_DROP_INDEX:
+        case SQLITE_DROP_TABLE:
+        case SQLITE_DROP_TEMP_INDEX:
+        case SQLITE_DROP_TEMP_TABLE:
+        case SQLITE_DROP_TEMP_TRIGGER:
+        case SQLITE_DROP_TEMP_VIEW:
+        case SQLITE_DROP_TRIGGER:
+        case SQLITE_DROP_VIEW:
+        case SQLITE_INSERT:
+        case SQLITE_PRAGMA:
+        case SQLITE_TRANSACTION:
+        case SQLITE_UPDATE:
+        case SQLITE_ATTACH:
+        case SQLITE_DETACH:
+        case SQLITE_ALTER_TABLE:
+        case SQLITE_REINDEX:
+        case SQLITE_CREATE_VTABLE:
+        case SQLITE_DROP_VTABLE:
+        case SQLITE_SAVEPOINT:
+        case SQLITE_COPY:
+        case SQLITE_RECURSIVE:
+            return SQLITE_DENY;
+            break;
+
+        // The following are *always* allowed in whitelist mode.
+        case SQLITE_SELECT:
+        case SQLITE_ANALYZE:
+        case SQLITE_FUNCTION:
+            return SQLITE_OK;
+            break;
+
+        // The following is the only special case where the whitelist actually applies.
+        case SQLITE_READ:
+        {
+            // See if there's an entry in the whitelist for this table.
+            auto tableIt = whitelist->find(table);
+            if (tableIt != whitelist->end()) {
+                // If so, see if there's an entry for this column.
+                auto columnIt = tableIt->second.find(column);
+                if (columnIt != tableIt->second.end()) {
+                    // If so, then this column is whitelisted.
+                    return SQLITE_OK;
+                }
+            }
+
+            // If we didn't find it, not whitelisted.
+            SWARN("[security] Non-whitelisted column: " << column << " in table " << table << ".");
+            return SQLITE_IGNORE;
+        }
+    }
+    return SQLITE_DENY;
 }
