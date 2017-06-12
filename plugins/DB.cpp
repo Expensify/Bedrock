@@ -60,6 +60,12 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
             // Seems to be read-only
             SINFO("Query appears to be read-only, peeking.");
         } else {
+            if (shouldRequireWhere && !SContains(upperQuery, "WHERE")) {
+                SALERT("Query failed, it has no 'where' clause: '" << query << "'");
+
+                throw "502 Query failed";
+            }
+
             // Assume it's read/write
             SINFO("Query appears to be read/write, queuing for processing.");
             return false;
