@@ -46,8 +46,16 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         //         read-write command is mis-classified as read-only an executed in
         //         the peek, but even then we'll detect it after the fact and shut
         //         the node down.
-        const string& query = request["query"] + ";";
+        const string& query = request["query"];
         const string& upperQuery = SToUpper(STrim(query));
+        const bool shouldRequireWhere = !request.isSet("nowhere");
+
+        if (!SEndsWith(upperQuery, ";")) {
+                SALERT("Query failed, query must end in ';'");
+
+                throw "502 Query failed";
+        }
+
         if (SStartsWith(upperQuery, "SELECT ")) {
             // Seems to be read-only
             SINFO("Query appears to be read-only, peeking.");
