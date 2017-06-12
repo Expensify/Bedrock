@@ -194,6 +194,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 throw "402 Invalid priority value";
             }
 
+            // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
+            if (SContains(job, "data") && SParseJSONObject(job["data"]).empty()) {
+                throw "402 Data is not a valid JSON Object";
+            }
+
             // Validate that the parentJobID exists and is in the right state if one was passed.
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
