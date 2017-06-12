@@ -34,6 +34,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         //     Executes a simple query
         //
         verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
+        verifyAttributeSize(request, "nowhere",  0, MAX_SIZE_NONCOLUMN);
 
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
@@ -48,7 +49,8 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         //         the node down.
         const string& query = request["query"];
         const string& upperQuery = SToUpper(STrim(query));
-        const bool shouldRequireWhere = !request.isSet("nowhere");
+        const string& nowhere = request["nowhere"];
+        const bool shouldRequireWhere = !nowhere.size() || SToUpper(nowhere) == "false";
 
         if (!SEndsWith(upperQuery, ";")) {
                 SALERT("Query failed, query must end in ';'");
@@ -60,7 +62,9 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
             // Seems to be read-only
             SINFO("Query appears to be read-only, peeking.");
         } else {
-            if (shouldRequireWhere && !SContains(upperQuery, "WHERE")) {
+            if (shouldRequireWhere &&
+               (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
+               !SContains(upperQuery, "WHERE")) {
                 SALERT("Query failed, it has no 'where' clause: '" << query << "'");
 
                 throw "502 Query failed";
