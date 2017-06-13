@@ -53,8 +53,8 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         bool shouldRequireWhere = nowhere.empty() || SToUpper(nowhere) == "FALSE";
 
         if (!SEndsWith(upperQuery, ";")) {
-                SALERT("Query failed, query must end in ';'");
-                throw "502 Query failed";
+            SALERT("Query failed, query must end in ';'");
+            throw "502 Query failed";
         }
 
         if (SStartsWith(upperQuery, "SELECT ")) {
