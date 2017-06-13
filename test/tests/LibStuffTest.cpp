@@ -43,15 +43,15 @@ struct LibStuff : tpunit::TestFixture {
     }
 
     void testJSONDecode() {
-        const string& samplePolicy = SFileLoad("sample_data/samplePolicy.json");
-        ASSERT_FALSE(samplePolicy.empty());
+        const string& sampleJson = SFileLoad("sample_data/lottoNumbers.json");
+        ASSERT_FALSE(sampleJson.empty());
 
-        STable obj = SParseJSONObject(samplePolicy);
-        STable units = SParseJSONObject(obj["units"]);
-        STable distance = SParseJSONObject(units["distance"]);
-        ASSERT_EQUAL(obj["name"], "Name Test");
-        ASSERT_EQUAL(distance["km"], "null");
-        ASSERT_EQUAL(distance["defaultUnit"], "mi");
+        STable obj = SParseJSONObject(sampleJson);
+        STable metaData = SParseJSONObject(obj["meta"]);
+        STable view = SParseJSONObject(metaData["view"]);
+        ASSERT_EQUAL(obj["top"], "top level attribute");
+        ASSERT_EQUAL(metaData["null_attribute"], "null");
+        ASSERT_EQUAL(view["name"], "Lottery Mega Millions Winning Numbers: Beginning 2002");
     }
 
     void testJSON() {
