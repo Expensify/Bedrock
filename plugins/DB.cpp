@@ -50,11 +50,10 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         const string& query = request["query"];
         const string& upperQuery = SToUpper(STrim(query));
         const string& nowhere = request["nowhere"];
-        const bool shouldRequireWhere = !nowhere.size() || SToUpper(nowhere) == "false";
+        bool shouldRequireWhere = nowhere.empty() || SToUpper(nowhere) == "FALSE";
 
         if (!SEndsWith(upperQuery, ";")) {
                 SALERT("Query failed, query must end in ';'");
-
                 throw "502 Query failed";
         }
 
@@ -64,9 +63,8 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         } else {
             if (shouldRequireWhere &&
                (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
-               !SContains(upperQuery, "WHERE")) {
+               !SContains(upperQuery, " WHERE ")) {
                 SALERT("Query failed, it has no 'where' clause: '" << query << "'");
-
                 throw "502 Query failed";
             }
 

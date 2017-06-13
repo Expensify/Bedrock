@@ -104,7 +104,7 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "DELETE FROM foo;";
-        status["nowhere"] = false;
+        status["nowhere"] = "false";
         tester->executeWait(status, "502 Query failed");
     }
 
@@ -112,7 +112,7 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "DELETE FROM foo;";
-        status["nowhere"] = true;
+        status["nowhere"] = "true";
         tester->executeWait(status);
     }
 
@@ -147,7 +147,7 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "UPDATE foo SET bar = 0;";
-        status["nowhere"] = false;
+        status["nowhere"] = "false";
         tester->executeWait(status, "502 Query failed");
     }
 
@@ -155,7 +155,7 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "UPDATE foo SET bar = 0;";
-        status["nowhere"] = true;
+        status["nowhere"] = "true";
         tester->executeWait(status);
     }
 
