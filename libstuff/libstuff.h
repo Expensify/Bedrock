@@ -126,6 +126,12 @@ class SString : public string {
         string::operator=(from);
         return *this;
     }
+
+    // Booleans get converted to strings.
+    SString& operator=(const bool from) {
+        string::operator=(from ? "true" : "false");
+        return *this;
+    }
 };
 
 typedef map<string, SString, STableComp> STable;
