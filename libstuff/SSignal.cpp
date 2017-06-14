@@ -113,6 +113,11 @@ void SSignal::_signalHandlerThreadFunc() {
 
 void SSignal::_signalHandler(int signum, siginfo_t *info, void *ucontext) {
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
+        // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
+        // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
+        if (!_threadCaughtSignalNumber) {
+            _threadCaughtSignalNumber = signum;
+        }
         if (signum == SIGABRT) {
             // What we'd like to do here is log a stack trace to syslog. Unfortunately, neither computing the stack
             // trace nor logging to to syslog are signal safe, so we try a couple things, doing as little as possible,
@@ -143,10 +148,8 @@ void SSignal::_signalHandler(int signum, siginfo_t *info, void *ucontext) {
             // possible that we might have data that we don't want getting written to disk, but `memset` is signal
             // safe, so we could keep a list of addresses to 0, and do that here before returning. Then the core file
             // wouldn't contain that data.
-        } else if (signum == SIGSEGV) {
-            // We'd like to log here, but it's not signal-safe, so we defer until later. We store the signal number we
-            // got for logging in the "abort" handler that we're about to trigger.
-            _threadCaughtSignalNumber = signum;
+        } else {
+            // We just call abort here, so that we'll generate a second signal that will be picked up above.
             abort();
         }
     } else {
