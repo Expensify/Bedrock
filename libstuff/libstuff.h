@@ -268,9 +268,11 @@ public:
     static void clearSignals();
 
 private:
-    // The function that will handle signals.
+    // The function to call in our thread that handles signals.
     static void _signalHandlerThreadFunc();
 
+    // The function to call in threads handling their own signals. This is only used for exception signals like SEGV
+    // and FPE.
     static void _signalHandler(int signum, siginfo_t *info, void *ucontext);
 
     // A boolean indicating whether or not we've initialized our signal thread.
@@ -279,8 +281,8 @@ private:
     // The signals we've received since the last time this was cleared.
     static atomic<uint64_t> _pendingSignalBitMask;
 
-    // The thread that will wait for process-wide signals.
-    // TODO: figure out how to shut this down.
+    // The thread that will wait for process-wide signals. It will be immediately detached once created and live until
+    // the process exits otherwise.
     static thread _signalThread;
 };
 

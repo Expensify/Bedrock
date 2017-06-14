@@ -282,28 +282,16 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
-    // Signals we care about:
-    // SIGUSR1
-    // SIGUSR2
-    // SIGHUP
-    // SIGTSTP
-    //
-    // SIGTERM
-    // SIGINT
-
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SSignal::getSignal(SIGTERM) || SSignal::getSignal(SIGINT))) {
-        // Log any uncaught signals
-        // TODO: There's a pretty obvious race condition here, but I guess it rarely matters.
         if (SSignal::getSignals()) {
-            // Log and clear
-            SALERT("Uncaught exceptions (" << SSignal::getSignalDescription() << "), ignoring.");
+            // Log and clear any outstanding signals.
+            SALERT("Uncaught signals (" << SSignal::getSignalDescription() << "), ignoring.");
             SSignal::clearSignals();
         }
 
-        // Make sure the BedrockServer is destroyed before VACUUM so it lets go of the db files.
+        // Run the server. Scoped to allow us to create a new server after a backup.
         {
-            // Run the server
             SINFO("Starting bedrock server");
             BedrockServer server(args);
             uint64_t nextActivity = STimeNow();
@@ -319,16 +307,15 @@ int main(int argc, char* argv[]) {
             SINFO("Graceful bedrock shutdown complete");
         }
 
-        // Database backup on HUP signal.
+        // Backup the main database on HUP signal.
         if (SSignal::getSignal(SIGHUP)) {
-            // Backup the main database
-            const string& mainDB = args["-db"];
-            BackupDB(mainDB);
+            BackupDB(args["-db"]);
         }
     }
 
     // Log how much time we spent in our main mutex.
     SQLite::g_commitLock.log();
+
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;
