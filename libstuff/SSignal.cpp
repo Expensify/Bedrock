@@ -6,7 +6,7 @@ void _SSignal_signalHandlerThreadFunc();
 
 // The function to call in threads handling their own signals. This is only used for exception signals like SEGV
 // and FPE.
-void _SSignal_signalHandler(int signum, siginfo_t *info, void *ucontext);
+void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext);
 
 // A boolean indicating whether or not we've initialized our signal thread.
 atomic_flag _SSignal_threadInitialized = ATOMIC_FLAG_INIT;
@@ -77,8 +77,8 @@ void SInitializeSignals() {
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
 
-    // The new style handler is _SSignal_signalHandler.
-    newAction.sa_sigaction = &_SSignal_signalHandler;
+    // The new style handler is _SSignal_StackTrace.
+    newAction.sa_sigaction = &_SSignal_StackTrace;
 
     // While we're inside the signal handler, we want to block any other signals from occurring until we return.
     sigset_t allSignals;
@@ -117,7 +117,7 @@ void _SSignal_signalHandlerThreadFunc() {
         if (!result) {
             // Do the same handling for these functions here as any other thread.
             if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
-                _SSignal_signalHandler(signum, nullptr, nullptr);
+                _SSignal_StackTrace(signum, nullptr, nullptr);
             } else {
                 // Handle every other signal just by setting the mask. Anyone that cares can look them up.
                 SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
@@ -127,7 +127,7 @@ void _SSignal_signalHandlerThreadFunc() {
     }
 }
 
-void _SSignal_signalHandler(int signum, siginfo_t *info, void *ucontext) {
+void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
         // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
