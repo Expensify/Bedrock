@@ -18,19 +18,19 @@ void BedrockConflictInfo::conflict() {
     _resultsPtr %= COMMAND_COUNT;
 }
 
-int BedrockConflictInfo::recentSuccessCount() const {
+int BedrockConflictInfo::recentSuccessCount() {
     return _results.count();
 }
 
-int BedrockConflictInfo::recentConflictCount() const {
+int BedrockConflictInfo::recentConflictCount() {
     return COMMAND_COUNT - _results.count();
 }
 
-uint64_t BedrockConflictInfo::totalSuccessCount() const {
+uint64_t BedrockConflictInfo::totalSuccessCount() {
     return _totalSuccessCount;
 }
 
-uint64_t BedrockConflictInfo::totalConflictCount() const {
+uint64_t BedrockConflictInfo::totalConflictCount() {
     return _totalConflictCount;
 }
 
@@ -62,7 +62,7 @@ void BedrockConflictManager::commandSucceeded(const string& commandName) {
     it->second.conflict();
 }
 
-bool BedrockConflictManager::multiWriteEnabled(const string& commandName) const {
+bool BedrockConflictManager::multiWriteEnabled(const string& commandName) {
     SAUTOLOCK(_mutex);
     auto it = _conflictInfoMap.find(commandName);
     if (it == _conflictInfoMap.end()) {

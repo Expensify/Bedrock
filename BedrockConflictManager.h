@@ -16,16 +16,16 @@ public:
     void conflict();
 
     // Returns the count of recent successes.
-    int recentSuccessCount() const;
+    int recentSuccessCount();
 
     // Returns the count of recent successes.
-    int recentConflictCount() const;
+    int recentConflictCount();
 
     // Returns the count of all successful commits.
-    uint64_t totalSuccessCount() const;
+    uint64_t totalSuccessCount();
 
     // Returns the count of all conflicting commits.
-    uint64_t totalConflictCount() const;
+    uint64_t totalConflictCount();
 
 private:
     // The results of the most recent COMMAND_COUNT commands.
@@ -45,13 +45,13 @@ private:
 class BedrockConflictManager {
 public:
     // Caller should call this when an attempt was made to commit that resulted in a conflict.
-    void commandConflicted(const string& commandName);
+    static void commandConflicted(const string& commandName);
 
     // Caller should call this when an attempt was made to commit that succeeded.
-    void commandSucceeded(const string& commandName);
+    static void commandSucceeded(const string& commandName);
 
     // Returns whether or not commands with this name are currently able to be written in parallel.
-    bool multiWriteEnabled(const string& commandName) const;
+    static bool multiWriteEnabled(const string& commandName);
 
 private:
     // Synchronization object.
