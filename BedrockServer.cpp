@@ -798,22 +798,24 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     //         on the assumption that we'll be able to process them before the browser times out.
 
     // Is the OS trying to communicate with us?
-    uint64_t sigmask = SGetSignals();
-    if (sigmask) {
+    // SIGNALS WE CARE ABOUT:
+    // SIGTTIN
+    // SIGTTOU
+    // SIGUSR2
+    // SIGQUIT
+    if (SSignal::getSignals()) {
         // We've received a signal -- what does it mean?
-        if (SCatchSignal(SIGTTIN)) {
+        if (SSignal::getSignal(SIGTTIN)) {
             // Suppress command port, but only if we haven't already cleared it
-            if (!SCatchSignal(SIGTTOU)) {
+            if (!SSignal::getSignal(SIGTTOU)) {
                 SHMMM("Suppressing command port due to SIGTTIN");
                 suppressCommandPort(true, true);
-                SClearSignals();
             }
-        } else if (SCatchSignal(SIGTTOU)) {
+        } else if (SSignal::getSignal(SIGTTOU)) {
             // Clear command port suppression
             SHMMM("Clearing command port supression due to SIGTTOU");
             suppressCommandPort(false, true);
-            SClearSignals();
-        } else if (SCatchSignal(SIGUSR2)) {
+        } else if (SSignal::getSignal(SIGUSR2)) {
             // Begin logging queries to -queryLog
             if (_args.isSet("-queryLog")) {
                 SHMMM("Logging queries to '" << _args["-queryLog"] << "'");
@@ -821,18 +823,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             } else {
                 SWARN("Can't begin logging queries because -queryLog isn't set, ignoring.");
             }
-            SClearSignals();
-        } else if (SCatchSignal(SIGQUIT)) {
+        } else if (SSignal::getSignal(SIGQUIT)) {
             // Stop query logging
             SHMMM("Stopping query logging");
             SQueryLogClose();
-            SClearSignals();
         } else {
             // For anything else, just shutdown -- but only if we're not already shutting down
             if (!_nodeGracefulShutdown.load()) {
                 // Begin a graceful shutdown; close our port
-                SINFO("Beginning graceful shutdown due to '"
-                      << SGetSignalNames(sigmask) << "', closing command port on '" << _args["-serverHost"] << "'");
+                SINFO("Beginning graceful shutdown due to '" << SSignal::getSignalDescription()
+                      << "', closing command port on '" << _args["-serverHost"] << "'");
                 _nodeGracefulShutdown.store(true);
                 _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
                 _gracefulShutdownTimeout.start();

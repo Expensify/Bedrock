@@ -139,6 +139,7 @@ set<string> loadPlugins(SData& args) {
 /////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
     // Start libstuff
+    // True tells this to spawn the signal handler thread.
     SInitialize("main");
     SLogLevel(LOG_INFO);
 
@@ -281,13 +282,23 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
+    // Signals we care about:
+    // SIGUSR1
+    // SIGUSR2
+    // SIGHUP
+    // SIGTSTP
+    //
+    // SIGTERM
+    // SIGINT
+
     // Keep going until someone kills it (either via TERM or Control^C)
-    while (!(SCatchSignal(SIGTERM) || SCatchSignal(SIGINT))) {
+    while (!(SSignal::getSignal(SIGTERM) || SSignal::getSignal(SIGINT))) {
         // Log any uncaught signals
-        if (SGetSignals()) {
+        // TODO: There's a pretty obvious race condition here, but I guess it rarely matters.
+        if (SSignal::getSignals()) {
             // Log and clear
-            SALERT("Uncaught exceptions (" << SGetSignalNames(SGetSignals()) << "), ignoring.");
-            SClearSignals();
+            SALERT("Uncaught exceptions (" << SSignal::getSignalDescription() << "), ignoring.");
+            SSignal::clearSignals();
         }
 
         // Make sure the BedrockServer is destroyed before VACUUM so it lets go of the db files.
@@ -309,7 +320,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Vacuum on USR1 signal.
-        if (SCatchSignal(SIGUSR1)) {
+        if (SSignal::getSignal(SIGUSR1)) {
             // Vacuum and analyze the database
             VacuumDB(args["-db"]);
             SINFO("Starting main analyze.");
@@ -318,7 +329,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Checkpoint databases on USR2 signal.
-        if (SCatchSignal(SIGUSR2)) {
+        if (SSignal::getSignal(SIGUSR2)) {
             // Cleanup the wal file.
             // Note, we get out of control growth in wal files sometimes.
             // The sqlite3 tool cleans it up if you simply run a query.
@@ -330,14 +341,14 @@ int main(int argc, char* argv[]) {
         }
 
         // Database backup on HUP signal.
-        if (SCatchSignal(SIGHUP)) {
+        if (SSignal::getSignal(SIGHUP)) {
             // Backup the main database
             const string& mainDB = args["-db"];
             BackupDB(mainDB);
         }
 
         // Analyze indicies on TSTP signal
-        if (SCatchSignal(SIGTSTP)) {
+        if (SSignal::getSignal(SIGTSTP)) {
             SINFO("Starting main analyze.");
             RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
             SINFO("Finished main analyze.");

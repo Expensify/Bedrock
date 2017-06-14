@@ -247,23 +247,42 @@ struct SStopwatch {
 // --------------------------------------------------------------------------
 // Signal stuff
 // --------------------------------------------------------------------------
-// Returns whether or not a single signal has been sent
-bool SCatchSignal(int signum);
+class SSignal {
+public:
+    // Initializes the signal handling for this thread in particular. The first call to this function will initialize
+    // the general-purpose signal handling thread.
+    static void initializeSignals();
 
-// Clears all signals that have been previously sent
-void SClearSignals();
+    // Returns true if the given signal has been raised. Clears the value of the given signal.
+    static bool getSignal(int signum);
 
-// Returns the bitmask of which signals have been sent
-uint64_t SGetSignals();
+    // Checks whether the given signal has been raised without clearing it.
+    static bool checkSignal(int signum);
 
-// Manually "sends" one of the signals
-void SSendSignal(int signum);
+    // Return the current set of signals.
+    static uint64_t getSignals();
 
-// Returns the name of a signal
-string SGetSignalName(int signum);
+    // Get a descriptive string for all the currently raised signals.
+    static string getSignalDescription();
 
-// Returns all signals set in a bitmask
-string SGetSignalNames(uint64_t sigmask);
+    static void clearSignals();
+
+private:
+    // The function that will handle signals.
+    static void _signalHandlerThreadFunc();
+
+    static void _signalHandler(int signum, siginfo_t *info, void *ucontext);
+
+    // A boolean indicating whether or not we've initialized our signal thread.
+    static atomic_flag _threadInitialized;
+
+    // The signals we've received since the last time this was cleared.
+    static atomic<uint64_t> _pendingSignalBitMask;
+
+    // The thread that will wait for process-wide signals.
+    // TODO: figure out how to shut this down.
+    static thread _signalThread;
+};
 
 // --------------------------------------------------------------------------
 // Log stuff
