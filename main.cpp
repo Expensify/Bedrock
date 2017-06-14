@@ -319,39 +319,11 @@ int main(int argc, char* argv[]) {
             SINFO("Graceful bedrock shutdown complete");
         }
 
-        // Vacuum on USR1 signal.
-        if (SSignal::getSignal(SIGUSR1)) {
-            // Vacuum and analyze the database
-            VacuumDB(args["-db"]);
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
-        }
-
-        // Checkpoint databases on USR2 signal.
-        if (SSignal::getSignal(SIGUSR2)) {
-            // Cleanup the wal file.
-            // Note, we get out of control growth in wal files sometimes.
-            // The sqlite3 tool cleans it up if you simply run a query.
-            const string& cmdCheckpointMainWal = "sqlite3 " + args["-db"] + " 'SELECT * FROM accounts LIMIT 1;'";
-            SINFO("Starting main wal checkpoint. WAL filesize="
-                  << SToStr(SFileSize(args["-db"] + "-wal") / (float)(1024 * 1024)) << " MB");
-            RetrySystem(cmdCheckpointMainWal);
-            SINFO("Done with checkpointing.");
-        }
-
         // Database backup on HUP signal.
         if (SSignal::getSignal(SIGHUP)) {
             // Backup the main database
             const string& mainDB = args["-db"];
             BackupDB(mainDB);
-        }
-
-        // Analyze indicies on TSTP signal
-        if (SSignal::getSignal(SIGTSTP)) {
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
         }
     }
 

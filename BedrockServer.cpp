@@ -769,7 +769,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         suppressCommandPort(true);
     } else if (_suppressCommandPort && (state == SQLiteNode::MASTERING || (masterVersion == _version))) {
         // If we become master, or if master's version resumes matching ours, open the command port again.
-        SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
+        if (!_suppressCommandPortManualOverride) {
+            // Only generate this logline if we haven't manually blocked this.
+            SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
+        }
         suppressCommandPort(false);
     }
     if (!_suppressCommandPort && portList.empty() && (state == SQLiteNode::MASTERING || state == SQLiteNode::SLAVING) &&
@@ -798,16 +801,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     //         on the assumption that we'll be able to process them before the browser times out.
 
     // Is the OS trying to communicate with us?
-    // SIGNALS WE CARE ABOUT:
-    // SIGTTIN
-    // SIGTTOU
-    // SIGUSR2
-    // SIGQUIT
     if (SSignal::getSignals()) {
-        // We've received a signal -- what does it mean?
         if (SSignal::getSignal(SIGTTIN)) {
             // Suppress command port, but only if we haven't already cleared it
-            if (!SSignal::getSignal(SIGTTOU)) {
+            if (!SSignal::checkSignal(SIGTTOU)) {
                 SHMMM("Suppressing command port due to SIGTTIN");
                 suppressCommandPort(true, true);
             }
@@ -815,18 +812,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             // Clear command port suppression
             SHMMM("Clearing command port supression due to SIGTTOU");
             suppressCommandPort(false, true);
-        } else if (SSignal::getSignal(SIGUSR2)) {
-            // Begin logging queries to -queryLog
-            if (_args.isSet("-queryLog")) {
-                SHMMM("Logging queries to '" << _args["-queryLog"] << "'");
-                SQueryLogOpen(_args["-queryLog"]);
-            } else {
-                SWARN("Can't begin logging queries because -queryLog isn't set, ignoring.");
-            }
-        } else if (SSignal::getSignal(SIGQUIT)) {
-            // Stop query logging
-            SHMMM("Stopping query logging");
-            SQueryLogClose();
         } else {
             // For anything else, just shutdown -- but only if we're not already shutting down
             if (!_nodeGracefulShutdown.load()) {

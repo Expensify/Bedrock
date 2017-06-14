@@ -43,6 +43,9 @@ void SSignal::initializeSignals() {
     sigfillset(&signals);
     sigdelset(&signals, SIGSEGV);
     sigdelset(&signals, SIGABRT);
+    sigdelset(&signals, SIGFPE);
+    sigdelset(&signals, SIGILL);
+    sigdelset(&signals, SIGBUS);
 
     // Block all the signals on this thread except SIGSEGV and SIGABRT. They'll be handled by the signal handler thread
     // instead.
@@ -66,14 +69,22 @@ void SSignal::initializeSignals() {
     // And set the handlers for the two signals we care about.
     sigaction(SIGSEGV, &newAction, 0);
     sigaction(SIGABRT, &newAction, 0);
+    sigaction(SIGFPE, &newAction, 0);
+    sigaction(SIGILL, &newAction, 0);
+    sigaction(SIGBUS, &newAction, 0);
 
     bool threadAlreadyStarted = _threadInitialized.test_and_set();
     if (!threadAlreadyStarted) {
         _signalThread = thread(_signalHandlerThreadFunc);
+        _signalThread.detach();
     }
 }
 
 void SSignal::_signalHandlerThreadFunc() {
+    // Initialize logging for this thread.
+    SLogSetThreadName("signal");
+    SLogSetThreadPrefix("xxxxx ");
+
     // Make a set of all signals.
     sigset_t signals;
     sigfillset(&signals);
@@ -86,11 +97,11 @@ void SSignal::_signalHandlerThreadFunc() {
         int result = sigwait(&signals, &signum);
         if (!result) {
             // Do the same handling for these functions here as any other thread gets.
-            if (signum == SIGABRT || signum == SIGSEGV) {
+            if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
                 _signalHandler(signum, nullptr, nullptr);
             } else {
                 // Handle every other signal just by setting the mask. Functions that care can look them up.
-                SWARN("Got Signal: " << signum);
+                SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
                 _pendingSignalBitMask.fetch_or(1 << signum);
             }
         } else {
@@ -100,13 +111,16 @@ void SSignal::_signalHandlerThreadFunc() {
 }
 
 void SSignal::_signalHandler(int signum, siginfo_t *info, void *ucontext) {
-    if (signum == SIGABRT) {
-        SWARN("Got SIGABRT, logging stack trace.");
-        SLogStackTrace();
-    } else if (signum == SIGSEGV) {
-        SWARN("Got SIGSEGV, calling abort().");
-        abort();
+    if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
+        if (signum == SIGABRT) {
+            SWARN("Got SIGABRT, logging stack trace.");
+            // backtrace_symbols_fd(); // Should be safe in signal handler.
+            SLogStackTrace();
+        } else if (signum == SIGSEGV) {
+            SWARN("Got " << strsignal(signum) << ", calling abort().");
+            abort();
+        }
     } else {
-        SWARN("Non-signal thread got signal " << signum << ", which wasn't expected");
+        SWARN("Non-signal thread got signal " << strsignal(signum) << ", which wasn't expected");
     }
 }
