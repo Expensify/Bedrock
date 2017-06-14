@@ -56,9 +56,6 @@
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
 
-// Initializes signal handling; only call in SInitialize()
-extern void _SInitializeSignals();
-
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
@@ -66,7 +63,7 @@ void SInitialize(string threadName) {
     // Initialize signal handling
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxx ");
-    _SInitializeSignals();
+    SInitializeSignals();
 }
 
 // Thread-local log prefix

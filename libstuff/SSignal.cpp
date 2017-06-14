@@ -1,141 +1,174 @@
-// SSignal.cpp
 #include "libstuff.h"
+#include <execinfo.h> // for backtrace
 
-// Defines some signals missing on various platforms
-#ifdef __APPLE__
-#define SIGPOLL SIGTERM
-#define SIGSTKFLT SIGTERM
-#define SIGCLD SIGTERM
-#define SIGPWR SIGTERM
-#define SIGUNUSED SIGTERM
-#define SIGLOST SIGTERM
-#elif __linux__
-#define SIGEMT SIGTERM
-#define SIGINFO SIGTERM
-#define SIGLOST SIGTERM
-#endif
+// The function to call in our thread that handles signals.
+void _SSignal_signalHandlerThreadFunc();
 
-// Store in a bitmask for which signals sent
-uint64_t _SSignal_sentBitmask = 0;
+// The function to call in threads handling their own signals. This is only used for exception signals like SEGV
+// and FPE.
+void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext);
 
-// --------------------------------------------------------------------------
-bool SCatchSignal(int signum) {
-    // Signals are stored in the bitmask shifted by their signal number.  See
-    // if this signal was sent.
-    if (_SSignal_sentBitmask & (1 << signum)) {
-        // It was!  Clear this signal so we don't re-catch it
-        SHMMM("Caught signal '" << SGetSignalName(signum) << "'");
-        _SSignal_sentBitmask &= ~(1 << signum);
-        return true;
-    }
+// A boolean indicating whether or not we've initialized our signal thread.
+atomic_flag _SSignal_threadInitialized = ATOMIC_FLAG_INIT;
 
-    // Didn't catch this one
-    return false;
+// The signals we've received since the last time this was cleared.
+atomic<uint64_t> _SSignal_pendingSignalBitMask(0);
+
+// The thread that will wait for process-wide signals. It will be immediately detached once created and live until
+// the process exits otherwise.
+thread _SSignal_signalThread;
+
+// Each thread gets an int it can store a signal number in. Since all signals caught by threads result in
+// `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
+thread_local int _SSignal_threadCaughtSignalNumber = 0;
+
+bool SCheckSignal(int signum) {
+    uint64_t signals = _SSignal_pendingSignalBitMask.load();
+    signals >>= signum;
+    bool result = signals & 1;
+    return result;
 }
 
-// --------------------------------------------------------------------------
-void SClearSignals() {
-    // Clear all signals
-    _SSignal_sentBitmask = 0;
+bool SGetSignal(int signum) {
+    uint64_t signals = _SSignal_pendingSignalBitMask.fetch_and(~(1 << signum));
+    signals >>= signum;
+    bool result = signals & 1;
+    return result;
 }
 
-// --------------------------------------------------------------------------
 uint64_t SGetSignals() {
-    // Just return the bitmask
-    return _SSignal_sentBitmask;
-}
-// --------------------------------------------------------------------------
-void SSendSignal(int signum) {
-    // Store the signal
-    //
-    // **NOTE: We don't do any logging or call any system calls here because
-    //         this signal function is also used as the signal handler, and
-    //         this will interrupt a thread at any time -- including while
-    //         inside a non-reentrant system call.
-    _SSignal_sentBitmask |= (1 << signum);
-
-    // If we get SIGABRT or SIGSEGV, we want to exit abnormally. That is to say, either explicitly call abort() or let
-    // it continue naturally. 
-    // We don't call `SERROR` because that calls `exit(1)`, which can interrupt our signal handling process and never
-    // return. Instead, we explictly let this function return, so that abort() can complete, and we can generate core
-    // files.
-    if (signum == SIGABRT) {
-        SWARN("Got SIGABRT, logging stack trace.");
-        SLogStackTrace();
-    } else if (signum == SIGSEGV) {
-        SWARN("Got SIGSEGV, logging stack trace.");
-        SLogStackTrace();
-        abort();
-    }
+    return _SSignal_pendingSignalBitMask.load();
 }
 
-// --------------------------------------------------------------------------
-string SGetSignalName(int signum) {
-// There is some ambiguity on a per-system basis, so rather than using a
-// name table, just use if
-#define GETSIGNALNAME(_NAME_)                                                                                          \
-    if (signum == _NAME_)                                                                                              \
-        return #_NAME_;
-    GETSIGNALNAME(SIGHUP);
-    GETSIGNALNAME(SIGINT);
-    GETSIGNALNAME(SIGQUIT);
-    GETSIGNALNAME(SIGILL);
-    GETSIGNALNAME(SIGABRT);
-    GETSIGNALNAME(SIGFPE);
-    GETSIGNALNAME(SIGKILL);
-    GETSIGNALNAME(SIGSEGV);
-    GETSIGNALNAME(SIGPIPE);
-    GETSIGNALNAME(SIGALRM);
-    GETSIGNALNAME(SIGTERM);
-    GETSIGNALNAME(SIGUSR1);
-    GETSIGNALNAME(SIGUSR2);
-    GETSIGNALNAME(SIGCHLD);
-    GETSIGNALNAME(SIGCONT);
-    GETSIGNALNAME(SIGSTOP);
-    GETSIGNALNAME(SIGTSTP);
-    GETSIGNALNAME(SIGTTIN);
-    GETSIGNALNAME(SIGTTOU);
-    GETSIGNALNAME(SIGBUS);
-    GETSIGNALNAME(SIGPOLL);
-    GETSIGNALNAME(SIGPROF);
-    GETSIGNALNAME(SIGSYS);
-    GETSIGNALNAME(SIGTRAP);
-    GETSIGNALNAME(SIGURG);
-    GETSIGNALNAME(SIGVTALRM);
-    GETSIGNALNAME(SIGXCPU);
-    GETSIGNALNAME(SIGXFSZ);
-    GETSIGNALNAME(SIGIOT);
-    GETSIGNALNAME(SIGEMT);
-    GETSIGNALNAME(SIGSTKFLT);
-    GETSIGNALNAME(SIGIO);
-    GETSIGNALNAME(SIGCLD);
-    GETSIGNALNAME(SIGPWR);
-    GETSIGNALNAME(SIGINFO);
-    GETSIGNALNAME(SIGLOST);
-    GETSIGNALNAME(SIGWINCH);
-    GETSIGNALNAME(SIGUNUSED);
-    return "(unknown#" + SToStr(signum) + ")";
-}
-
-// --------------------------------------------------------------------------
-string SGetSignalNames(uint64_t sigmask) {
-    // Just loop across and accumulate what signals are ready to be caught, but
-    // don't actually catch them right now.
-    list<string> signalList;
-    for (int signum = 0; signum < 64; ++signum) {
-        // Did we catch this signal?
-        if (_SSignal_sentBitmask & (1 << signum)) {
-            // Yep!
-            signalList.push_back(SGetSignalName(signum));
+string SGetSignalDescription() {
+    list<string> descriptions;
+    for (int i = 0; i < 64; i++) {
+        if (SCheckSignal(i)) {
+            descriptions.push_back(strsignal(i));
         }
     }
-    return SComposeList(signalList);
+    return SComposeList(descriptions);
 }
 
-// --------------------------------------------------------------------------
-void _SInitializeSignals() {
-    // Catch all signals (or, rather, every signal we are able to catch).
-    for (int signum = 0; signum < 64; ++signum) {
-        signal(signum, SSendSignal);
+void SClearSignals() {
+    _SSignal_pendingSignalBitMask.store(0);
+}
+
+void SInitializeSignals() {
+    // Clear the thread-local signal number.
+    _SSignal_threadCaughtSignalNumber = 0;
+
+    // Make a set of all signals except certain exceptions. These exceptions will cause an `abort()` and attempt to log
+    // a stack trace before esiting. All other signals will get passed to the signal handling thread.
+    sigset_t signals;
+    sigfillset(&signals);
+    sigdelset(&signals, SIGSEGV);
+    sigdelset(&signals, SIGABRT);
+    sigdelset(&signals, SIGFPE);
+    sigdelset(&signals, SIGILL);
+    sigdelset(&signals, SIGBUS);
+
+    // Block all signals not specified above.
+    sigprocmask(SIG_BLOCK, &signals, 0);
+
+    // This is the signal action structure we'll use to specify what to listen for.
+    struct sigaction newAction;
+
+    // The old style handler is explicitly null
+    newAction.sa_handler = nullptr;
+
+    // The new style handler is _SSignal_StackTrace.
+    newAction.sa_sigaction = &_SSignal_StackTrace;
+
+    // While we're inside the signal handler, we want to block any other signals from occurring until we return.
+    sigset_t allSignals;
+    sigfillset(&allSignals);
+    newAction.sa_mask = allSignals;
+
+    // And set the handlers for the few signals we care about in each thread.
+    sigaction(SIGSEGV, &newAction, 0);
+    sigaction(SIGABRT, &newAction, 0);
+    sigaction(SIGFPE, &newAction, 0);
+    sigaction(SIGILL, &newAction, 0);
+    sigaction(SIGBUS, &newAction, 0);
+
+    // If we haven't started the signal handler thread, start it now.
+    bool threadAlreadyStarted = _SSignal_threadInitialized.test_and_set();
+    if (!threadAlreadyStarted) {
+        _SSignal_signalThread = thread(_SSignal_signalHandlerThreadFunc);
+        _SSignal_signalThread.detach();
+    }
+}
+
+void _SSignal_signalHandlerThreadFunc() {
+    // Initialize logging for this thread.
+    SLogSetThreadName("signal");
+    SLogSetThreadPrefix("xxxxx ");
+
+    // Make a set of all signals.
+    sigset_t signals;
+    sigfillset(&signals);
+
+    // Now we wait for any signal to occur.
+    while (true) {
+        // Wait for a signal to appear.
+        int signum = 0;
+        int result = sigwait(&signals, &signum);
+        if (!result) {
+            // Do the same handling for these functions here as any other thread.
+            if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
+                _SSignal_StackTrace(signum, nullptr, nullptr);
+            } else {
+                // Handle every other signal just by setting the mask. Anyone that cares can look them up.
+                SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
+                _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
+            }
+        }
+    }
+}
+
+void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
+    if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
+        // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
+        // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
+        if (!_SSignal_threadCaughtSignalNumber) {
+            _SSignal_threadCaughtSignalNumber = signum;
+        }
+        if (signum == SIGABRT) {
+            // What we'd like to do here is log a stack trace to syslog. Unfortunately, neither computing the stack
+            // trace nor logging to to syslog are signal safe, so we try a couple things, doing as little as possible,
+            // and hope that they work (they usually do, though it's not guaranteed).
+
+            // Build the callstack. Not signal-safe, so hopefully it works.
+            void* callstack[100];
+            int depth = backtrace(callstack, 100);
+
+            // Log it to a file.Everything in this block should be signal-safe, if we managed to generate the
+            // backtrace in the first place.
+            int fd = creat("/tmp/bedrock_crash.log", 0666);
+            if (fd != -1) {
+                backtrace_symbols_fd(callstack, depth, fd);
+                close(fd);
+            }
+
+            // Then try and log it to syslog. Neither backtrace_symbols() nor syslog() are signal-safe, either, so this
+            // also might not do what we hope.
+            SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
+                  << ") generated ABORT, logging stack trace.");
+            char** symbols = backtrace_symbols(callstack, depth);
+            for (int c = 0; c < depth; ++c) {
+                SWARN(symbols[c]);
+            }
+
+            // NOTE: The best thing to do here is probably just record core files, which should work as expected. It's
+            // possible that we might have data that we don't want getting written to disk, but `memset` is signal
+            // safe, so we could keep a list of addresses to 0, and do that here before returning. Then the core file
+            // wouldn't contain that data.
+        } else {
+            // We just call abort here, so that we'll generate a second signal that will be picked up above.
+            abort();
+        }
+    } else {
+        SALERT("Non-signal thread got signal " << strsignal(signum) << "(" << signum << "), which wasn't expected");
     }
 }
