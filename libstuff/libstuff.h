@@ -284,6 +284,10 @@ private:
     // The thread that will wait for process-wide signals. It will be immediately detached once created and live until
     // the process exits otherwise.
     static thread _signalThread;
+
+    // Each thread gets an int it can store a signal number in. Since all signals caught by threads result in
+    // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
+    static thread_local int _threadCaughtSignalNumber;
 };
 
 // --------------------------------------------------------------------------

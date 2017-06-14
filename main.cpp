@@ -139,7 +139,6 @@ set<string> loadPlugins(SData& args) {
 /////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
     // Start libstuff
-    // True tells this to spawn the signal handler thread.
     SInitialize("main");
     SLogLevel(LOG_INFO);
 
