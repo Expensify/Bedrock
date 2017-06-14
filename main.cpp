@@ -282,11 +282,11 @@ int main(int argc, char* argv[]) {
     }
 
     // Keep going until someone kills it (either via TERM or Control^C)
-    while (!(SSignal::getSignal(SIGTERM) || SSignal::getSignal(SIGINT))) {
-        if (SSignal::getSignals()) {
+    while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
+        if (SGetSignals()) {
             // Log and clear any outstanding signals.
-            SALERT("Uncaught signals (" << SSignal::getSignalDescription() << "), ignoring.");
-            SSignal::clearSignals();
+            SALERT("Uncaught signals (" << SGetSignalDescription() << "), ignoring.");
+            SClearSignals();
         }
 
         // Run the server. Scoped to allow us to create a new server after a backup.
@@ -307,7 +307,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Backup the main database on HUP signal.
-        if (SSignal::getSignal(SIGHUP)) {
+        if (SGetSignal(SIGHUP)) {
             BackupDB(args["-db"]);
         }
     }

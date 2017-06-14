@@ -801,14 +801,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     //         on the assumption that we'll be able to process them before the browser times out.
 
     // Is the OS trying to communicate with us?
-    if (SSignal::getSignals()) {
-        if (SSignal::getSignal(SIGTTIN)) {
+    if (SGetSignals()) {
+        if (SGetSignal(SIGTTIN)) {
             // Suppress command port, but only if we haven't already cleared it
-            if (!SSignal::checkSignal(SIGTTOU)) {
+            if (!SCheckSignal(SIGTTOU)) {
                 SHMMM("Suppressing command port due to SIGTTIN");
                 suppressCommandPort(true, true);
             }
-        } else if (SSignal::getSignal(SIGTTOU)) {
+        } else if (SGetSignal(SIGTTOU)) {
             // Clear command port suppression
             SHMMM("Clearing command port supression due to SIGTTOU");
             suppressCommandPort(false, true);
@@ -816,7 +816,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             // For anything else, just shutdown -- but only if we're not already shutting down
             if (!_nodeGracefulShutdown.load()) {
                 // Begin a graceful shutdown; close our port
-                SINFO("Beginning graceful shutdown due to '" << SSignal::getSignalDescription()
+                SINFO("Beginning graceful shutdown due to '" << SGetSignalDescription()
                       << "', closing command port on '" << _args["-serverHost"] << "'");
                 _nodeGracefulShutdown.store(true);
                 _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up

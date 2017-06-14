@@ -247,48 +247,24 @@ struct SStopwatch {
 // --------------------------------------------------------------------------
 // Signal stuff
 // --------------------------------------------------------------------------
-class SSignal {
-public:
-    // Initializes the signal handling for this thread in particular. The first call to this function will initialize
-    // the general-purpose signal handling thread.
-    static void initializeSignals();
+// Initializes the signal handling for this thread in particular. The first call to this function will initialize
+// the general-purpose signal handling thread.
+void SInitializeSignals();
 
-    // Returns true if the given signal has been raised. Clears the value of the given signal.
-    static bool getSignal(int signum);
+// Returns true if the given signal has been raised. Clears the value of the given signal.
+bool SGetSignal(int signum);
 
-    // Checks whether the given signal has been raised without clearing it.
-    static bool checkSignal(int signum);
+// Checks whether the given signal has been raised without clearing it.
+bool SCheckSignal(int signum);
 
-    // Return the current set of signals.
-    static uint64_t getSignals();
+// Return the current set of signals.
+uint64_t SGetSignals();
 
-    // Get a descriptive string for all the currently raised signals.
-    static string getSignalDescription();
+// Get a descriptive string for all the currently raised signals.
+string SGetSignalDescription();
 
-    static void clearSignals();
-
-private:
-    // The function to call in our thread that handles signals.
-    static void _signalHandlerThreadFunc();
-
-    // The function to call in threads handling their own signals. This is only used for exception signals like SEGV
-    // and FPE.
-    static void _signalHandler(int signum, siginfo_t *info, void *ucontext);
-
-    // A boolean indicating whether or not we've initialized our signal thread.
-    static atomic_flag _threadInitialized;
-
-    // The signals we've received since the last time this was cleared.
-    static atomic<uint64_t> _pendingSignalBitMask;
-
-    // The thread that will wait for process-wide signals. It will be immediately detached once created and live until
-    // the process exits otherwise.
-    static thread _signalThread;
-
-    // Each thread gets an int it can store a signal number in. Since all signals caught by threads result in
-    // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
-    static thread_local int _threadCaughtSignalNumber;
-};
+// Clear all outstanding signals.
+void SClearSignals();
 
 // --------------------------------------------------------------------------
 // Log stuff

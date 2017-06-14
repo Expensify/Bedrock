@@ -63,7 +63,7 @@ void SInitialize(string threadName) {
     // Initialize signal handling
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxx ");
-    SSignal::initializeSignals();
+    SInitializeSignals();
 }
 
 // Thread-local log prefix
