@@ -109,5 +109,6 @@ void BedrockConflictMetrics::setFraction(double fraction) {
     if (fraction > 0.0 && fraction < 1.0) {
         _fraction = fraction;
         _threshold = _fraction * COMMAND_COUNT;
+        SINFO("Multi-write conflict limit fraction set to " << _fraction << ".");
     }
 }
