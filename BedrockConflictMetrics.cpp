@@ -60,33 +60,33 @@ void BedrockConflictMetrics::recordSuccess(const string& commandName) {
 
 bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
     SAUTOLOCK(_mutex);
-    bool result;
 
     // Look up the command in the list of commands.
     auto it = _conflictInfoMap.find(commandName);
     if (it == _conflictInfoMap.end()) {
         // If we don't find it, we assume it's OK to multi-write.
         SINFO("Multi-write command '" << commandName << "' not tracked in BedrockConflictMetrics. Assuming OK.");
-        result = true;
-    } else {
-        // Otherwise, we check to see if it's recent conflict count is too high for multi-write.
-        auto& metric = it->second;
-        int conflicts = metric.recentConflictCount();
-        uint64_t totalAttempts = metric._totalConflictCount + metric._totalSuccessCount;
-        result = conflicts < THRESHOLD;
-        string resultString = result ? "OK" : "DENIED";
-        SINFO("Multi-write " << resultString << " for command '" << commandName << "' recent conflicts: "
-              << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts) << ".");
-
-        // And now that we know whether or not we can multi-write this, see if that's different than the last time we
-        // checked for this command, so we can do extra logging if so.
-        if (result != metric._lastCheckOK) {
-            SINFO("Multi-write changing to " << resultString << " for command '" << commandName
-                  << "' recent conflicts: " << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts)
-                  << ", total conflicts: " << metric._totalConflictCount << "/" << totalAttempts << ".");
-        }
-        metric._lastCheckOK = result;
+        return true;
     }
+
+    // Otherwise, we check to see if it's recent conflict count is too high for multi-write.
+    auto& metric = it->second;
+    int conflicts = metric.recentConflictCount();
+    uint64_t totalAttempts = metric._totalConflictCount + metric._totalSuccessCount;
+    bool result = conflicts < THRESHOLD;
+    string resultString = result ? "OK" : "DENIED";
+    SINFO("Multi-write " << resultString << " for command '" << commandName << "' recent conflicts: "
+          << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts) << ".");
+
+    // And now that we know whether or not we can multi-write this, see if that's different than the last time we
+    // checked for this command, so we can do extra logging if so.
+    if (result != metric._lastCheckOK) {
+        SINFO("Multi-write changing to " << resultString << " for command '" << commandName
+              << "' recent conflicts: " << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts)
+              << ", total conflicts: " << metric._totalConflictCount << "/" << totalAttempts << ".");
+    }
+    metric._lastCheckOK = result;
+
     return result;
 }
 
