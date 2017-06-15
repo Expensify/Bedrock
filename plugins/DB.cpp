@@ -34,7 +34,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         //     Executes a simple query
         //
         verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
-        verifyAttributeSize(request, "nowhere",  0, MAX_SIZE_NONCOLUMN);
+        verifyAttributeBool(request, "nowhere",  false);
 
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
