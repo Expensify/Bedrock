@@ -30,6 +30,9 @@ public:
     // Returns a comma-separated list of command names that are currently disabled due to conflicts.
     static string getMultiWriteDeniedCommands();
 
+    // Change the fraction of commands required to decide that multiWriteOK will return false.
+    static void setFraction(double fraction);
+
 private:
     // The number of most recent commands to keep track of the results from.
     static constexpr int COMMAND_COUNT = 100;
@@ -60,9 +63,9 @@ private:
 
     // The fraction of commands of a given name that are allowed to conflict before we decide the sync thread will
     // process them all.
-    static constexpr double FRACTION = 0.10;
+    static double _fraction;
 
     // The count of conflicts of the last BedrockConflictMetrics::COMMAND_COUNT commands that we'll allow to have failed
     // before we decide that this command needs to be executed on the sync thread.
-    static constexpr int THRESHOLD = FRACTION * COMMAND_COUNT;
+    static int _threshold;
 };

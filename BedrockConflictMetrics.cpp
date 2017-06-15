@@ -3,6 +3,8 @@
 // Initialize non-const static variables.
 recursive_mutex BedrockConflictMetrics::_mutex;
 map<string, BedrockConflictMetrics> BedrockConflictMetrics::_conflictInfoMap;
+double BedrockConflictMetrics::_fraction = 0.10;
+int BedrockConflictMetrics::_threshold = _fraction * COMMAND_COUNT;
 
 BedrockConflictMetrics::BedrockConflictMetrics(const string& commandName) :
 _commandName(commandName)
@@ -73,7 +75,7 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
     auto& metric = it->second;
     int conflicts = metric.recentConflictCount();
     uint64_t totalAttempts = metric._totalConflictCount + metric._totalSuccessCount;
-    bool result = conflicts < THRESHOLD;
+    bool result = conflicts < _threshold;
     string resultString = result ? "OK" : "DENIED";
     SINFO("Multi-write " << resultString << " for command '" << commandName << "' recent conflicts: "
           << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts) << ".");
@@ -95,9 +97,17 @@ string BedrockConflictMetrics::getMultiWriteDeniedCommands() {
     set<string> commands;
     for (auto& pair : _conflictInfoMap) {
         auto& metric = pair.second;
-        if (metric.recentConflictCount() >= THRESHOLD) {
+        if (metric.recentConflictCount() >= _threshold) {
             commands.insert(metric._commandName);
         }
     }
     return SComposeList(commands);
+}
+
+void BedrockConflictMetrics::setFraction(double fraction) {
+    SAUTOLOCK(_mutex);
+    if (fraction > 0.0 && fraction < 1.0) {
+        _fraction = fraction;
+        _threshold = _fraction * COMMAND_COUNT;
+    }
 }

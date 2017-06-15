@@ -1178,6 +1178,10 @@ void BedrockServer::_status(BedrockCommand& command) {
                 _parallelCommands.insert(command);
             }
         }
+        if (request.isSet("autoBlacklistConflictFraction")) {
+            BedrockConflictMetrics::setFraction(SToFloat(request["autoBlacklistConflictFraction"]));
+        }
+
         // Enable extra logging in the commit lock timer.
         decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_parallelCommands.empty());
 
