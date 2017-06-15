@@ -90,14 +90,14 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "INSERT INTO foo VALUES ( RANDOM() )";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
     void failedDeleteNoWhere() {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "DELETE FROM foo;";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
     void deleteNoWhereFalse() {
@@ -105,7 +105,7 @@ struct WriteTest : tpunit::TestFixture {
         status["writeConsistency"] = "ASYNC";
         status["query"] = "DELETE FROM foo;";
         status["nowhere"] = "false";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
     void deleteNoWhereTrue() {
@@ -140,7 +140,7 @@ struct WriteTest : tpunit::TestFixture {
         SData status("Query");
         status["writeConsistency"] = "ASYNC";
         status["query"] = "UPDATE foo SET bar = 0;";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
     void failedUpdateNoWhereFalse() {
@@ -148,7 +148,7 @@ struct WriteTest : tpunit::TestFixture {
         status["writeConsistency"] = "ASYNC";
         status["query"] = "UPDATE foo SET bar = 0;";
         status["nowhere"] = "false";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
     void failedUpdateNoWhereTrue() {

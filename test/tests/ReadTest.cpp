@@ -25,7 +25,7 @@ struct ReadTest : tpunit::TestFixture {
     void readNoSemicolon() {
         SData status("Query");
         status["query"] = "SELECT 1";
-        tester->executeWait(status, "502 Query failed");
+        tester->executeWait(status, "502 Query aborted");
     }
 
 } __ReadTest;
