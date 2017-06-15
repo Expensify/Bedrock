@@ -36,6 +36,9 @@ public:
     // Returns whether or not commands with this name are currently able to be written in parallel.
     static bool multiWriteOK(const string& commandName);
 
+    // Returns a comma-separated list of command names that are currently disabled due to conflicts.
+    static string getMultiWriteDeniedCommands();
+
 private:
     // The results of the most recent COMMAND_COUNT commands of this name.
     // A bit set to 0 is success. A bit set to 1 is conflict.

@@ -1123,6 +1123,11 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
+        // On master, return the current multi-write blacklist.
+        if (state == SQLiteNode::MASTERING) {
+            content["multiWriteBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
+        }
+
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
         list<STable> peerData;

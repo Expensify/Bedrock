@@ -97,3 +97,15 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
     }
     return result;
 }
+
+string BedrockConflictMetrics::getMultiWriteDeniedCommands() {
+    SAUTOLOCK(_mutex);
+    set<string> commands;
+    for (auto& pair : _conflictInfoMap) {
+        auto& metric = pair.second;
+        if (metric.recentConflictCount() >= THRESHOLD) {
+            commands.insert(metric._commandName);
+        }
+    }
+    return SComposeList(commands);
+}
