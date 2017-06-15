@@ -30,14 +30,6 @@ int BedrockConflictMetrics::recentConflictCount() {
     return _results.count();
 }
 
-uint64_t BedrockConflictMetrics::totalSuccessCount() {
-    return _totalSuccessCount;
-}
-
-uint64_t BedrockConflictMetrics::totalConflictCount() {
-    return _totalConflictCount;
-}
-
 void BedrockConflictMetrics::recordConflict(const string& commandName) {
     SAUTOLOCK(_mutex);
 
@@ -80,7 +72,7 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
         // Otherwise, we check to see if it's recent conflict count is too high for multi-write.
         auto& metric = it->second;
         int conflicts = metric.recentConflictCount();
-        uint64_t totalAttempts = metric.totalConflictCount() + metric.totalSuccessCount();
+        uint64_t totalAttempts = metric._totalConflictCount + metric._totalSuccessCount;
         result = conflicts < THRESHOLD;
         string resultString = result ? "OK" : "DENIED";
         SINFO("Multi-write " << resultString << " for command '" << commandName << "' recent conflicts: "
@@ -91,7 +83,7 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
         if (result != metric._lastCheckOK) {
             SINFO("Multi-write changing to " << resultString << " for command '" << commandName
                   << "' recent conflicts: " << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts)
-                  << ", total conflicts: " << metric.totalConflictCount() << "/" << totalAttempts << ".");
+                  << ", total conflicts: " << metric._totalConflictCount << "/" << totalAttempts << ".");
         }
         metric._lastCheckOK = result;
     }

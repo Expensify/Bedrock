@@ -18,12 +18,6 @@ public:
     // Returns the count of recent successes for this command.
     int recentConflictCount();
 
-    // Returns the count of all successful commits for this command.
-    uint64_t totalSuccessCount();
-
-    // Returns the count of all conflicting commits for this command.
-    uint64_t totalConflictCount();
-
     // The number of most recent commands to keep track of the results from.
     static constexpr int COMMAND_COUNT = 100;
 
