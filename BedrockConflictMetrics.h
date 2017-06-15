@@ -38,17 +38,22 @@ public:
 
 private:
     // The results of the most recent COMMAND_COUNT commands of this name.
+    // A bit set to 0 is success. A bit set to 1 is conflict.
     bitset<COMMAND_COUNT> _results;
 
     // Pointer to the next spot in _results to update.
     int _resultsPtr = 0;
 
     // Total counts of this command's successes/conflicts since object creation.
-    uint64_t _totalSuccessCount;
-    uint64_t _totalConflictCount;
+    uint64_t _totalSuccessCount = 0;
+    uint64_t _totalConflictCount = 0;
 
     // Name of this command.
     string _commandName;
+
+    // This records what we returned for the last call to `multiWriteOK` for this command. This is for extra logging
+    // when this value changes.
+    bool _lastCheckOK = true;
 
     // Synchronization object.
     static recursive_mutex _mutex;
@@ -58,9 +63,9 @@ private:
 
     // The fraction of commands of a given name that are allowed to conflict before we decide the sync thread will
     // process them all.
-    static constexpr double _fraction = 0.10;
+    static constexpr double FRACTION = 0.10;
 
-    // The number of conflicts of the last BedrockConflictMetrics::COMMAND_COUNT commands that we'll allow to have failed
+    // The count of conflicts of the last BedrockConflictMetrics::COMMAND_COUNT commands that we'll allow to have failed
     // before we decide that this command needs to be executed on the sync thread.
-    static int _threshold;
+    static constexpr int THRESHOLD = FRACTION * COMMAND_COUNT;
 };
