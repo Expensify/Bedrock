@@ -220,7 +220,6 @@ void BedrockServer::sync(SData& args,
                     upgradeInProgress.store(false);
                     continue;
                 }
-
                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                 SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
@@ -235,8 +234,9 @@ void BedrockServer::sync(SData& args,
                     server._reply(command);
                 }
             } else {
-                // TODO: This else block should be unreachable since the sync thread now blocks workers for entire
-                // transactions. It should probably be removed.
+                // TODO: This `else` block should be unreachable since the sync thread now blocks workers for entire
+                // transactions. It should probably be removed, but we'll leave it in for the time being until the
+                // final implementation of multi-write is stabilized.
                 BedrockConflictMetrics::recordConflict(command.request.methodLine);
 
                 // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
