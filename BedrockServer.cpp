@@ -2,6 +2,7 @@
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
+#include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
 
 set<string>BedrockServer::_parallelCommands;
@@ -219,6 +220,7 @@ void BedrockServer::sync(SData& args,
                     upgradeInProgress.store(false);
                     continue;
                 }
+                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                 SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
                 // Otherwise, mark this command as complete and reply.
@@ -232,6 +234,11 @@ void BedrockServer::sync(SData& args,
                     server._reply(command);
                 }
             } else {
+                // TODO: This `else` block should be unreachable since the sync thread now blocks workers for entire
+                // transactions. It should probably be removed, but we'll leave it in for the time being until the
+                // final implementation of multi-write is stabilized.
+                BedrockConflictMetrics::recordConflict(command.request.methodLine);
+
                 // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
                 SINFO("[performance] Conflict committing in sync thread, requeueing command "
                       << command.request.methodLine << ". Sync thread has "
@@ -505,6 +512,10 @@ void BedrockServer::worker(SData& args,
                         canWriteParallel =
                             (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
                     }
+
+                    // For now, commands need to be in `_parallelCommands` *and* `multiWriteOK`. When we're
+                    // confident in BedrockConflictMetrics, we can remove `_parallelCommands`.
+                    canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
                     if (!canWriteParallel              ||
                         state != SQLiteNode::MASTERING ||
                         command.httpsRequest           ||
@@ -548,11 +559,13 @@ void BedrockServer::worker(SData& args,
                                 core.rollback();
                             } else {
                                 if (core.commit()) {
+                                    BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                                     SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                     // So we must still be mastering, and at this point our commit has succeeded, let's
                                     // mark it as complete!
                                     command.complete = true;
                                 } else {
+                                    BedrockConflictMetrics::recordConflict(command.request.methodLine);
                                     SINFO("Conflict committing " << command.request.methodLine
                                           << " on worker thread with " << retry << " retries remaining.");
                                 }
@@ -1095,6 +1108,11 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
+        // On master, return the current multi-write blacklist.
+        if (state == SQLiteNode::MASTERING) {
+            content["multiWriteBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
+        }
+
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
         list<STable> peerData;
@@ -1145,6 +1163,10 @@ void BedrockServer::_status(BedrockCommand& command) {
                 _parallelCommands.insert(command);
             }
         }
+        if (request.isSet("autoBlacklistConflictFraction")) {
+            BedrockConflictMetrics::setFraction(SToFloat(request["autoBlacklistConflictFraction"]));
+        }
+
         // Enable extra logging in the commit lock timer.
         decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_parallelCommands.empty());
 
