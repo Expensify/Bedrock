@@ -374,6 +374,8 @@ struct LibStuff : tpunit::TestFixture {
         test["g"] = (unsigned char)'a';
         test["h"] = 'b';
         test["i"] = "string";
+        test["j"] = true;
+        test["k"] = false;
         ASSERT_EQUAL(test["a"], "1");
         ASSERT_EQUAL(test["b"], "-1");
         ASSERT_EQUAL(test["c"], "0");
@@ -383,6 +385,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(test["g"], "a");
         ASSERT_EQUAL(test["h"], "b");
         ASSERT_EQUAL(test["i"], "string");
+        ASSERT_EQUAL(test["j"], "true");
+        ASSERT_EQUAL(test["k"], "false");
     }
 
     void testFileIO() {

@@ -282,17 +282,15 @@ int main(int argc, char* argv[]) {
     }
 
     // Keep going until someone kills it (either via TERM or Control^C)
-    while (!(SCatchSignal(SIGTERM) || SCatchSignal(SIGINT))) {
-        // Log any uncaught signals
+    while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
         if (SGetSignals()) {
-            // Log and clear
-            SALERT("Uncaught exceptions (" << SGetSignalNames(SGetSignals()) << "), ignoring.");
+            // Log and clear any outstanding signals.
+            SALERT("Uncaught signals (" << SGetSignalDescription() << "), ignoring.");
             SClearSignals();
         }
 
-        // Make sure the BedrockServer is destroyed before VACUUM so it lets go of the db files.
+        // Run the server. Scoped to allow us to create a new server after a backup.
         {
-            // Run the server
             SINFO("Starting bedrock server");
             BedrockServer server(args);
             uint64_t nextActivity = STimeNow();
@@ -308,44 +306,15 @@ int main(int argc, char* argv[]) {
             SINFO("Graceful bedrock shutdown complete");
         }
 
-        // Vacuum on USR1 signal.
-        if (SCatchSignal(SIGUSR1)) {
-            // Vacuum and analyze the database
-            VacuumDB(args["-db"]);
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
-        }
-
-        // Checkpoint databases on USR2 signal.
-        if (SCatchSignal(SIGUSR2)) {
-            // Cleanup the wal file.
-            // Note, we get out of control growth in wal files sometimes.
-            // The sqlite3 tool cleans it up if you simply run a query.
-            const string& cmdCheckpointMainWal = "sqlite3 " + args["-db"] + " 'SELECT * FROM accounts LIMIT 1;'";
-            SINFO("Starting main wal checkpoint. WAL filesize="
-                  << SToStr(SFileSize(args["-db"] + "-wal") / (float)(1024 * 1024)) << " MB");
-            RetrySystem(cmdCheckpointMainWal);
-            SINFO("Done with checkpointing.");
-        }
-
-        // Database backup on HUP signal.
-        if (SCatchSignal(SIGHUP)) {
-            // Backup the main database
-            const string& mainDB = args["-db"];
-            BackupDB(mainDB);
-        }
-
-        // Analyze indicies on TSTP signal
-        if (SCatchSignal(SIGTSTP)) {
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
+        // Backup the main database on HUP signal.
+        if (SGetSignal(SIGHUP)) {
+            BackupDB(args["-db"]);
         }
     }
 
     // Log how much time we spent in our main mutex.
     SQLite::g_commitLock.log();
+
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;
