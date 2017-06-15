@@ -18,9 +18,6 @@ public:
     // Returns the count of recent successes for this command.
     int recentConflictCount();
 
-    // The number of most recent commands to keep track of the results from.
-    static constexpr int COMMAND_COUNT = 100;
-
     // Record a conflict for the given command name.
     static void recordConflict(const string& commandName);
 
@@ -34,6 +31,9 @@ public:
     static string getMultiWriteDeniedCommands();
 
 private:
+    // The number of most recent commands to keep track of the results from.
+    static constexpr int COMMAND_COUNT = 100;
+
     // The results of the most recent COMMAND_COUNT commands of this name.
     // A bit set to 0 is success. A bit set to 1 is conflict.
     bitset<COMMAND_COUNT> _results;
