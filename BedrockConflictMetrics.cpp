@@ -77,27 +77,23 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
         SINFO("Multi-write command '" << commandName << "' not tracked in BedrockConflictMetrics. Assuming OK.");
         result = true;
     } else {
-        // Otherwise, we check to see if it's recent conflcit count is too high for multi-write.
-        int conflicts = it->second.recentConflictCount();
-        if (conflicts >= THRESHOLD) {
-            SINFO("Multi-write DENIED for command '" << commandName << "' recent conflicts: "
-                  << conflicts << "/" << COMMAND_COUNT << ".");
-            result = false;
-        } else {
-            SINFO("Multi-write OK for command '" << commandName << "' recent conflicts: "
-                  << conflicts << "/" << COMMAND_COUNT << ".");
-            result = true;
-        }
+        // Otherwise, we check to see if it's recent conflict count is too high for multi-write.
+        auto& metric = it->second;
+        int conflicts = metric.recentConflictCount();
+        uint64_t totalAttempts = metric.totalConflictCount() + metric.totalSuccessCount();
+        result = conflicts < THRESHOLD;
+        string resultString = result ? "OK" : "DENIED";
+        SINFO("Multi-write " << resultString << " for command '" << commandName << "' recent conflicts: "
+              << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts) << ".");
 
         // And now that we know whether or not we can multi-write this, see if that's different than the last time we
         // checked for this command, so we can do extra logging if so.
-        if (result != it->second._lastCheckOK) {
-            string resultString = result ? "OK" : "DENIED";
+        if (result != metric._lastCheckOK) {
             SINFO("Multi-write changing to " << resultString << " for command '" << commandName
-                  << "' recent conflicts: " << conflicts << "/" << COMMAND_COUNT << ", total conflicts: "
-                  << it->second.totalConflictCount() << "/" << it->second.totalSuccessCount() << ".");
+                  << "' recent conflicts: " << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts)
+                  << ", total conflicts: " << metric.totalConflictCount() << "/" << totalAttempts << ".");
         }
-        it->second._lastCheckOK = result;
+        metric._lastCheckOK = result;
     }
     return result;
 }
