@@ -24,6 +24,7 @@ class BedrockPlugin {
     // Utility functions for verifying expected input.
     static void verifyAttributeInt64(const SData& request, const string& name, size_t minSize);
     static void verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize);
+    static void verifyAttributeBool(const SData& request, const string& name, bool require = true);
 
     // Standard constructor, inserts the created plugin in `g_registeredPluginList`.
     BedrockPlugin();
