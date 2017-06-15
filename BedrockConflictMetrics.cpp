@@ -1,44 +1,45 @@
-#include "BedrockConflictManager.h"
+#include "BedrockConflictMetrics.h"
 
-BedrockConflictInfo::BedrockConflictInfo(const string& commandName) :
+// Initialize static variables.
+recursive_mutex BedrockConflictMetrics::_mutex;
+map<string, BedrockConflictMetrics> BedrockConflictMetrics::_conflictInfoMap;
+int BedrockConflictMetrics::_threshold = (int)(BedrockConflictMetrics::_fraction * BedrockConflictMetrics::COMMAND_COUNT);
+
+BedrockConflictMetrics::BedrockConflictMetrics(const string& commandName) :
 _commandName(commandName)
 { }
 
-void BedrockConflictInfo::success() {
+void BedrockConflictMetrics::success() {
     ++_totalSuccessCount;
     _results.set(_resultsPtr);
     ++_resultsPtr;
     _resultsPtr %= COMMAND_COUNT;
 }
 
-void BedrockConflictInfo::conflict() {
+void BedrockConflictMetrics::conflict() {
     ++_totalConflictCount;
     _results.reset(_resultsPtr);
     ++_resultsPtr;
     _resultsPtr %= COMMAND_COUNT;
 }
 
-int BedrockConflictInfo::recentSuccessCount() {
+int BedrockConflictMetrics::recentSuccessCount() {
     return _results.count();
 }
 
-int BedrockConflictInfo::recentConflictCount() {
+int BedrockConflictMetrics::recentConflictCount() {
     return COMMAND_COUNT - _results.count();
 }
 
-uint64_t BedrockConflictInfo::totalSuccessCount() {
+uint64_t BedrockConflictMetrics::totalSuccessCount() {
     return _totalSuccessCount;
 }
 
-uint64_t BedrockConflictInfo::totalConflictCount() {
+uint64_t BedrockConflictMetrics::totalConflictCount() {
     return _totalConflictCount;
 }
 
-recursive_mutex BedrockConflictManager::_mutex;
-map<string, BedrockConflictInfo> BedrockConflictManager::_conflictInfoMap;
-int BedrockConflictManager::_threshold = (int)(BedrockConflictManager::_fraction * BedrockConflictInfo::COMMAND_COUNT);
-
-void BedrockConflictManager::commandConflicted(const string& commandName) {
+void BedrockConflictMetrics::recordConflict(const string& commandName) {
     SAUTOLOCK(_mutex);
     // Look up, and create if necessary, the info object for this command.
     auto it = _conflictInfoMap.find(commandName);
@@ -50,7 +51,7 @@ void BedrockConflictManager::commandConflicted(const string& commandName) {
     it->second.success();
 }
 
-void BedrockConflictManager::commandSucceeded(const string& commandName) {
+void BedrockConflictMetrics::recordSuccess(const string& commandName) {
     SAUTOLOCK(_mutex);
     // Look up, and create if necessary, the info object for this command.
     auto it = _conflictInfoMap.find(commandName);
@@ -62,20 +63,20 @@ void BedrockConflictManager::commandSucceeded(const string& commandName) {
     it->second.conflict();
 }
 
-bool BedrockConflictManager::multiWriteEnabled(const string& commandName) {
+bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
     SAUTOLOCK(_mutex);
     auto it = _conflictInfoMap.find(commandName);
     if (it == _conflictInfoMap.end()) {
-        SINFO("Command '" << commandName << "' not tracked in BedrockConflictManager. Assuming OK.");
+        SINFO("Command '" << commandName << "' not tracked in BedrockConflictMetrics. Assuming OK.");
         return true;
     }
     int conflicts = it->second.recentConflictCount();
     if (conflicts >= _threshold) {
         SINFO("Not multi-writing command '" << commandName << "' because " << conflicts << " of the last "
-              << BedrockConflictInfo::COMMAND_COUNT << " calls have conflicted.");
+              << COMMAND_COUNT << " calls have conflicted.");
         return false;
     }
     SINFO("Multi-writing command '" << commandName << "'. Only " << conflicts << " of the last "
-          << BedrockConflictInfo::COMMAND_COUNT << " calls have conflicted.");
+          << COMMAND_COUNT << " calls have conflicted.");
     return true;
 }
