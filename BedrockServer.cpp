@@ -293,9 +293,15 @@ void BedrockServer::sync(SData& args,
             // re-verify that any checks made in peek are still valid in process.
             if (!command.httpsRequest) {
                 if (core.peekCommand(command)) {
-                    // This command completed in peek, stick it back in the queue for a worker to respond to.
+                    // This command completed in peek, respond to it appropriately, either directly or by sending it
+                    // back to the sync thread.
                     SASSERT(command.complete);
-                    server._commandQueue.push(move(command));
+                    if (command.initiatingPeerID) {
+                        command.finalizeTimingInfo();
+                        syncNode.sendResponse(command);
+                    } else {
+                        server._reply(command);
+                    }
                     continue;
                 }
             }
@@ -468,9 +474,11 @@ void BedrockServer::worker(SData& args,
                 // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
                 // just switched states out of mastering, we might have an old command in the queue. All we can do here
                 // is note that and discard it, as we have nobody to deliver it to.
-                if(command.initiatingPeerID) {
+                if (command.initiatingPeerID) {
+                    // Let's note how old this command is.
+                    uint64_t ageSeconds = (STimeNow() - command.creationTime) / STIME_US_PER_S;
                     SWARN("Found unexpected complete command " << command.request.methodLine
-                          << " from peer in worker thread. Discarding.");
+                          << " from peer in worker thread. Discarding (command was " << ageSeconds << "s old).");
                     continue;
                 }
 
