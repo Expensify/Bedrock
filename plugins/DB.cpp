@@ -28,7 +28,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "Query")) {
+    if (SIEquals(request.getVerb(), "Query")) {
         // - Query( query )
         //
         //     Executes a simple query
@@ -93,7 +93,7 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
     SData& response = command.response;
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "Query")) {
+    if (SIEquals(request.getVerb(), "Query")) {
         // - Query( query )
         //
         //     Executes a simple read/write query
