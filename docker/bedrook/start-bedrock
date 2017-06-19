@@ -5,6 +5,8 @@ export DB=/db/bedrock.db
 export PRIO=30
 export RUN=/var/run/bedrock.pid
 
+syslogd -S
+
 if [ ! -f $DB ]
 then
 	touch $DB

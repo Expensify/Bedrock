@@ -9,7 +9,7 @@ RUN adduser -h /db -u 1000 -D bed \
 
 COPY bedrock start-bedrock /usr/local/bin/
 
-USER bed
+#USER bed
 WORKDIR /db
 
 ENTRYPOINT ["start-bedrock"]
