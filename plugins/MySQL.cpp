@@ -237,6 +237,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
         case 3: { // COM_QUERY
             // Decode the query
             string query = packet.payload.substr(1, packet.payload.size() - 1);
+            if (!SEndsWith(query, ";")) {
+                // We translate our query to one we can pass to `DB`, for which this is mandatory.
+                query += ";";
+            }
             SINFO("Processing query '" << query << "'");
 
             // See if it's asking for a global variable
