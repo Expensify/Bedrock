@@ -42,6 +42,14 @@ clustertest: test/clustertest/clustertest testplugin
 testplugin:
 	cd test/clustertest/testplugin && make
 
+.PHONY: docker
+
+docker:
+	docker build -t bedbugs $(PROJECT)/docker/bedbugs
+	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock
+	cp $(PROJECT)/bedrock $(PROJECT)/docker/bedrook/bedrock
+	docker build -t bedrock $(PROJECT)/docker/bedrook
+
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
 # Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
@@ -53,7 +61,9 @@ PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
+ ifneq ($(MAKECMDGOALS),docker)
 -include  libstuff/libstuff.d
+ endif
 endif
 endif
 
@@ -109,11 +119,13 @@ CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
 ifneq ($(MAKECMDGOALS),clean)
+ ifneq ($(MAKECMDGOALS),docker)
 -include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
 -include $(BEDROCKDEP)
 #-include $(TESTDEP)
 #-include $(CLUSTERTESTDEP)
+ endif
 endif
 
 # Our static libraries just depend on their object files.
@@ -138,14 +150,6 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
-
-.PHONY: docker
-
-docker:
-	docker build -t bedbugs $(PROJECT)/docker/bedbugs
-	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock
-	cp $(PROJECT)/bedrock $(PROJECT)/docker/bedrook/bedrock
-	docker build -t bedrock $(PROJECT)/docker/bedrook
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only

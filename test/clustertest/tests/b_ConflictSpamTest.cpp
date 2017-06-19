@@ -204,7 +204,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             auto journals = tables[0];
             vector <SData> commands;
             for (auto journal : journals) {
-                string query = "SELECT COUNT(id) FROM " + journal;
+                string query = "SELECT COUNT(id) FROM " + journal + ";";
 
                 SData cmd("Query");
                 cmd["query"] = query;
