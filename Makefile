@@ -1,10 +1,10 @@
 # Set the compiler, if it's not set by the environment.
 ifndef GXX
-	GXX = g++-6
+	GXX = g++
 endif
 
 ifndef CC
-	CC = gcc-6
+	CC = gcc
 endif
 
 # We use our project directory as a search path so we don't need "../../../.." all over the place.
@@ -124,7 +124,7 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 
 # We use the same library paths and required libraries for both binaries.
 LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lexecinfo
 
 # The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
 # times in parallel.
@@ -138,6 +138,14 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(GXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+
+.PHONY: docker
+
+docker:
+	docker build -t bedbugs $(PROJECT)/docker/bedbugs
+	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock
+	cp $(PROJECT)/bedrock $(PROJECT)/docker/bedrook/bedrock
+	docker build -t bedrock $(PROJECT)/docker/bedrook
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only

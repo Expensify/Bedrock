@@ -1,0 +1,5 @@
+#!/bin/sh
+
+echo makeme "$@"
+
+make -C /src "$@"

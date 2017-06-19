@@ -13,6 +13,9 @@
 #define SIGEMT SIGTERM
 #define SIGINFO SIGTERM
 #define SIGLOST SIGTERM
+#ifndef SIGCLD
+#define SIGCLD SIGCHLD
+#endif
 #endif
 
 // Store in a bitmask for which signals sent

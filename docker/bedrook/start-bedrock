@@ -1,0 +1,20 @@
+#!/bin/sh
+
+export NODE=ohio
+export DB=/db/bedrock.db
+export PRIO=30
+export RUN=/var/run/bedrock.pid
+
+if [ ! -f $DB ]
+then
+	touch $DB
+fi
+
+bedrock -v -db $DB -plugins db,jobs,cache,mysql
+
+#bedrock -fork -nodeName $NODE -db $DB \
+#	 -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIO -pidfile $RUN \
+#	 -quorumCheckpoint 100 -readThreads 4 -cache 10001 -plugins status,db,jobs,cache,mysql \
+#	 -v
+
+sh -i
