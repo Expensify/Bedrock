@@ -1,5 +1,4 @@
 #include "Jobs.h"
-#include <stack>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -199,8 +198,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // - CancelJob(jobID)
         //
         //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
-        //     (actually, it allows you to cancel non siblings, but you
-        //     shouldn't do that as it can potentially leave lingering jobs).
         //
         //     Parameters:
         //     - jobID  - ID of the job to cancel
@@ -221,18 +218,19 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             throw "502 Select failed";
         }
 
-        // Verify there is a job like this
+        // Verify the job exists
         if (result.empty()) {
             throw "404 No job with this jobID";
         }
 
-        // If the job have any children, we are using the command in the wrong way
+        // If the job has any children, we are using the command in the wrong way
         if (!result[0][1].empty()) {
             throw "404 Invalid jobID - Cannot cancel a job with children";
         }
 
         // Don't process the command if the job has finished or it's already running.
         if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+            SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
             return true; // Done
         }
 
@@ -741,8 +739,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // - CancelJob (jobID)
         //
         //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
-        //     (actually, it allows you to cancel non siblings, but you
-        //     shouldn't do that as it can potentially leave lingering jobs).
         //
         //     Parameters:
         //     - jobID  - ID of the job to cancel
