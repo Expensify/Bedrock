@@ -414,9 +414,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                         initialState = "PAUSED";
                     }
                 }
-                
-                // If no data was provided, use an empty object
-                const string& safeRetryAfter = job["retryAfter"].empty() ? "\"\"" : SQ(job["retryAfter"]);
 
                 // Create this new job
                 if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
