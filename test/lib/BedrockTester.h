@@ -4,6 +4,10 @@
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
 
+// Instead of being a static member of BedrockTester, this is declared as a global to make the linker work reasonably
+// when a shared library wants to access it.
+extern list<string> BedrockTester_locations;
+
 class BedrockTester {
   public:
     // The location of the database. This is static so we can re-use it for the life of the test app.
@@ -14,7 +18,6 @@ class BedrockTester {
     static void stopServer(int pid);
     static bool deleteFile(string name);
     static bool startServers;
-    static list<string> locations;
     //static set<string> plugins;
     static string plugins;
 

@@ -4,7 +4,7 @@ string BedrockTester::DB_FILE = "";
 string BedrockTester::SERVER_ADDR = "";
 bool BedrockTester::startServers = true;
 set<int> BedrockTester::serverPIDs;
-list<string> BedrockTester::locations = {
+list<string> BedrockTester_locations = {
     "../bedrock",
     "../../bedrock"
 };
@@ -143,7 +143,7 @@ bool BedrockTester::createFile(string name) {
 }
 
 string BedrockTester::getServerName() {
-    for (auto location : locations) {
+    for (auto location : BedrockTester_locations) {
         if (SFileExists(location)) {
             return location;
         }
