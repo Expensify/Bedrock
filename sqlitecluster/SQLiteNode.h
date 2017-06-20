@@ -47,6 +47,9 @@ class SQLiteNode : public STCPNode {
         FAILED
     };
 
+    // The number of commits to send at once in response to a `SYNCHRONIZE` request.
+    static constexpr int SYNCHRONIZE_COMMIT_COUNT = 100;
+
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
                int priority, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0);
@@ -162,6 +165,9 @@ class SQLiteNode : public STCPNode {
 
     // The number of commits we've actually done since the last quorum command.
     int _commitsSinceCheckpoint;
+
+    // Timestamp for the last time we sent a `SYNCHRONIZE` message, for performance metrics.
+    uint64_t _synchronizeStart;
 
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);
