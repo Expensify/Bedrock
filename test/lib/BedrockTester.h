@@ -6,7 +6,6 @@
 
 // Instead of being a static member of BedrockTester, this is declared as a global to make the linker work reasonably
 // when a shared library wants to access it.
-extern list<string> BedrockTester_locations;
 
 class BedrockTester {
   public:
@@ -18,8 +17,8 @@ class BedrockTester {
     static void stopServer(int pid);
     static bool deleteFile(string name);
     static bool startServers;
-    //static set<string> plugins;
-    static string plugins;
+    static list<string> locations;
+    static set<string> plugins;
 
     uint64_t nextActivity;
     int serverPID = 0;
