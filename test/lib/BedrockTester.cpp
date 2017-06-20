@@ -4,6 +4,17 @@ string BedrockTester::DB_FILE = "";
 string BedrockTester::SERVER_ADDR = "";
 bool BedrockTester::startServers = true;
 set<int> BedrockTester::serverPIDs;
+list<string> BedrockTester::locations = {
+    "../bedrock",
+    "../../bedrock"
+};
+string BedrockTester::plugins = "db,cache";
+/*
+set<string> BedrockTester::plugins = {
+    "db",
+    "cache"
+};
+*/
 
 // Make llvm and gcc get along.
 #ifdef _NOEXCEPT
@@ -132,10 +143,6 @@ bool BedrockTester::createFile(string name) {
 }
 
 string BedrockTester::getServerName() {
-    list<string> locations = {
-        "../bedrock",
-        "../../bedrock",
-    };
     for (auto location : locations) {
         if (SFileExists(location)) {
             return location;
@@ -152,7 +159,8 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
         {"-nodeName",        "bedrock_test"},
         {"-nodeHost",         "localhost:9889"},
         {"-priority",         "200"},
-        {"-plugins",          "db,cache"},
+        //{"-plugins",          SComposeList(plugins)},
+        {"-plugins",          plugins},
         {"-readThreads",      "8"},
         {"-maxJournalSize",   "100"},
         {"-v",                ""},
