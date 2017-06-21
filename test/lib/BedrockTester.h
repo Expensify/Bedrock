@@ -14,6 +14,8 @@ class BedrockTester {
     static void stopServer(int pid);
     static bool deleteFile(string name);
     static bool startServers;
+    static list<string> locations;
+    static set<string> plugins;
 
     uint64_t nextActivity;
     int serverPID = 0;

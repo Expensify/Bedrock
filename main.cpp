@@ -121,7 +121,7 @@ set<string> loadPlugins(SData& args) {
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
         if(!lib) {
-            cout << dlerror() << endl;
+            cout << "Error loading bedrock plugin " << pluginName << ": " << dlerror() << endl;
         } else {
             void* sym = dlsym(lib, symbolName.c_str());
             if (!sym) {

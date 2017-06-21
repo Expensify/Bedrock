@@ -6,6 +6,7 @@ struct ReadTest : tpunit::TestFixture {
                               BEFORE_CLASS(ReadTest::setup),
                               TEST(ReadTest::simpleRead),
                               TEST(ReadTest::simpleReadWithHttp),
+                              TEST(ReadTest::readNoSemicolon),
                               AFTER_CLASS(ReadTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -28,6 +29,12 @@ struct ReadTest : tpunit::TestFixture {
         string response = tester->executeWait(status);
         int val = SToInt(response);
         ASSERT_EQUAL(val, 1);
+    }
+
+    void readNoSemicolon() {
+        SData status("Query");
+        status["query"] = "SELECT 1";
+        tester->executeWait(status, "502 Query aborted");
     }
 
 } __ReadTest;
