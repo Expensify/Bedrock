@@ -138,10 +138,6 @@ set<string> loadPlugins(SData& args) {
 
 /////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
-    // Start libstuff
-    SInitialize("main");
-    SLogLevel(LOG_INFO);
-
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
     if (args.empty()) {
@@ -149,6 +145,34 @@ int main(int argc, char* argv[]) {
         // -- let's provide some help just in case
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
+
+    // Fork if requested
+    if (args.isSet("-fork")) {
+        // Do the fork
+        int pid = fork();
+        SASSERT(pid >= 0);
+        if (pid > 0) {
+            // Successful fork -- write the pidfile (if requested) and exit
+            if (args.isSet("-pidfile"))
+                SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
+            return 0;
+        }
+
+        // Daemonize
+        // **NOTE: See http://www-theorie.physik.unizh.ch/~dpotter/howto/daemonize
+        umask(0);
+        SASSERT(setsid() >= 0);
+        SASSERT(chdir("/") >= 0);
+        freopen("/dev/null", "r", stdin);
+        freopen("/dev/null", "w", stdout);
+        freopen("/dev/null", "w", stderr);
+    }
+
+    // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
+    // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
+    SInitialize("main");
+    SLogLevel(LOG_INFO);
+
     if (args.isSet("-version")) {
         // Just output the version
         cout << SVERSION << endl;
@@ -227,28 +251,6 @@ int main(int argc, char* argv[]) {
     } else if (args.isSet("-q")) {
         // Quiet logging
         SLogLevel(LOG_WARNING);
-    }
-
-    // Fork if requested
-    if (args.isSet("-fork")) {
-        // Do the fork
-        int pid = fork();
-        SASSERT(pid >= 0);
-        if (pid > 0) {
-            // Successful fork -- write the pidfile (if requested) and exit
-            if (args.isSet("-pidfile"))
-                SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
-            return 0;
-        }
-
-        // Daemonize
-        // **NOTE: See http://www-theorie.physik.unizh.ch/~dpotter/howto/daemonize
-        umask(0);
-        SASSERT(setsid() >= 0);
-        SASSERT(chdir("/") >= 0);
-        freopen("/dev/null", "r", stdin);
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
     }
 
 // Set the defaults
