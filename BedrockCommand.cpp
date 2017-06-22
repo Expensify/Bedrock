@@ -125,7 +125,7 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
     if (get<0>(_inProgressTiming) != type ||
         get<1>(_inProgressTiming) == 0
        ) {
-        SWARN("Stoping timing, but looks like it wasn't already running.");
+        SWARN("Stopping timing, but looks like it wasn't already running.");
     }
 
     // Add it to the list of timing info.
@@ -170,8 +170,8 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Log all this info.
     SINFO("command '" << request.methodLine << "' timing info (us): "
-          << peekTotal << "(" << peekCount << "), "
-          << processTotal << "(" << processCount << "), "
+          << peekTotal << " (" << peekCount << "), "
+          << processTotal << " (" << processCount << "), "
           << commitWorkerTotal << ", "
           << commitSyncTotal << ", "
           << queueWorkerTotal << ", "
