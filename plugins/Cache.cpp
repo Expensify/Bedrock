@@ -70,7 +70,7 @@ BedrockPlugin_Cache::~BedrockPlugin_Cache() {
 }
 
 // ==========================================================================
-void BedrockPlugin_Cache::initialize(const SData& args) {
+void BedrockPlugin_Cache::initialize(const SData& args, BedrockServer& server) {
     // Check the configuration
     const string& maxCache = SToUpper(args["-cache.max"]);
     int64_t maxCacheSize = SToInt64(maxCache);
@@ -94,10 +94,10 @@ void BedrockPlugin_Cache::initialize(const SData& args) {
 }
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << node->name << ":" << getName() << "} "
+#define SLOGPREFIX "{" << getName() << "} "
 
 // ==========================================================================
-void BedrockPlugin_Cache::upgradeDatabase(SQLiteNode* node, SQLite& db) {
+void BedrockPlugin_Cache::upgradeDatabase(SQLite& db) {
     // Create or verify the cache table
     bool ignore;
     while (!db.verifyTable("cache", "CREATE TABLE cache ( "
@@ -135,14 +135,13 @@ void BedrockPlugin_Cache::upgradeDatabase(SQLiteNode* node, SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Cache::peekCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_Cache::peekCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    SData& response = command->response;
-    // STable& content  = command->jsonContent; // Not used
+    SData& request = command.request;
+    SData& response = command.response;
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "ReadCache")) {
+    if (SIEquals(request.getVerb(), "ReadCache")) {
         // - ReadCache( name )
         //
         //     Looks up the cached value corresponding to a name, if any.
@@ -191,14 +190,12 @@ bool BedrockPlugin_Cache::peekCommand(SQLiteNode* node, SQLite& db, BedrockComma
 }
 
 // ==========================================================================
-bool BedrockPlugin_Cache::processCommand(SQLiteNode* node, SQLite& db, BedrockCommand* command) {
+bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
-    SData& request = command->request;
-    // SData&  response = command->response; -- Not used
-    // STable& content  = command->jsonContent; -- Not used
+    SData& request = command.request;
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "WriteCache")) {
+    if (SIEquals(request.getVerb(), "WriteCache")) {
         // - WriteCache( name, value, [invalidateName] )
         //
         //     Records a named value into the cache, overwriting any other value
