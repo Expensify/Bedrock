@@ -46,9 +46,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
+    const string& requestVerb = request.getVerb();
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
+    if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // - GetJob( name )
         // - GetJobs( name, numResults )
         //
@@ -72,8 +73,8 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //     - 404 - No jobs found
         //
         verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
-        if (SIEquals(request.methodLine, "GetJobs") != request.isSet("numResults")) {
-            if (SIEquals(request.methodLine, "GetJobs")) {
+        if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
+            if (SIEquals(requestVerb, "GetJobs")) {
                 throw "402 Missing numResults";
             } else {
                 throw "402 Cannot use numResults with GetJob; try GetJobs";
@@ -119,7 +120,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "QueryJob")) {
+    else if (SIEquals(requestVerb, "QueryJob")) {
         // - QueryJob( jobID )
         //
         //     Returns all known information about a given job.
@@ -161,10 +162,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         content["repeat"] = result[0][6];
         content["data"] = result[0][7];
         return true; // Successfully processed
-    } 
-    
+    }
+
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "CreateJob")) {
+    else if (SIEquals(requestVerb, "CreateJob")) {
         // If unique flag was passed and the job exist in the DB, then we can
         // finish the command without escalating to master.
         if (!request.test("unique")) {
@@ -203,10 +204,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
+    const string& requestVerb = request.getVerb();
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "CreateJob")) {
-        // - CreateJob( name, [data], [firstRun], [repeat] )
+    if (SIEquals(requestVerb, "CreateJob")) {
+        // - CreateJob( name, [data], [firstRun], [repeat] ) // tested
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -355,7 +357,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
+    else if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // If we're here it's because peekCommand found some data; re-execute
         // the query for real now.  However, this time we will order by
         // priority.  We do this as three separate queries so we only have one
@@ -416,7 +418,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // There should only be at most one result if GetJob
-        SASSERT(!SIEquals(request.methodLine, "GetJob") || result.size()<=1);
+        SASSERT(!SIEquals(requestVerb, "GetJob") || result.size()<=1);
 
         // Prepare to update the rows, while also creating all the expense objects
         string updateQuery = "UPDATE jobs SET state='RUNNING', lastRun=" + SCURRENT_TIMESTAMP() + " WHERE jobID IN (";
@@ -462,20 +464,20 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Format the results as is appropriate for what was requested
-        if (SIEquals(request.methodLine, "GetJob")) {
+        if (SIEquals(requestVerb, "GetJob")) {
             // Single response
             SASSERT(jobList.size() == 1);
             response.content = jobList.front();
         } else {
             // Multiple responses
-            SASSERT(SIEquals(request.methodLine, "GetJobs"));
+            SASSERT(SIEquals(requestVerb, "GetJobs"));
             content["jobs"] = SComposeJSONArray(jobList);
         }
         return true; // Successfully processed
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "UpdateJob")) {
+    else if (SIEquals(requestVerb, "UpdateJob")) {
         // - UpdateJob( jobID, data, [repeat] )
         //
         //     Atomically updates the data associated with a job.
@@ -531,7 +533,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "RetryJob") || SIEquals(request.methodLine, "FinishJob")) {
+    else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
         // - RetryJob( jobID, delay, [data] )
         //
         //     Re-queues a RUNNING job for "delay" seconds in the future,
@@ -606,7 +608,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If we are finishing a job that has child jobs, set its state to paused.
-        if (SIEquals(request.methodLine, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
+        if (SIEquals(requestVerb, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
             if (!db.write("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
@@ -625,7 +627,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If we're doing RetryJob and there isn't a repeat, construct one with the delay
-        if (repeat.empty() && SIEquals(request.methodLine, "RetryJob")) {
+        if (repeat.empty() && SIEquals(requestVerb, "RetryJob")) {
             // Make sure there is a delay
             int64_t delay = request.calc64("delay");
             if (delay < 0) {
@@ -652,7 +654,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         } else {
             // We are done with this job.  What do we do with it?
-            SASSERT(!SIEquals(request.methodLine, "RetryJob"));
+            SASSERT(!SIEquals(requestVerb, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
                 if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
@@ -668,7 +670,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     }
                 }
             } else {
-                // This is a standalone (not a child) job; delete it.  
+                // This is a standalone (not a child) job; delete it.
                 if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(jobID) + ";")) {
                     throw "502 Delete failed";
                 }
@@ -687,7 +689,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
 
-    else if (SIEquals(request.methodLine, "FailJob")) {
+    else if (SIEquals(requestVerb, "FailJob")) {
         // - FailJob( jobID, [data] )
         //
         //     Fails a job.
@@ -738,7 +740,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
 
-    else if (SIEquals(request.methodLine, "DeleteJob")) {
+    else if (SIEquals(requestVerb, "DeleteJob")) {
         // - DeleteJob( jobID )
         //
         //     Deletes a given job.

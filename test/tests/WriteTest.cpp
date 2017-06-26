@@ -15,6 +15,7 @@ struct WriteTest : tpunit::TestFixture {
                               TEST(WriteTest::failedUpdateNoWhere),
                               TEST(WriteTest::failedUpdateNoWhereTrue),
                               TEST(WriteTest::failedUpdateNoWhereFalse),
+                              TEST(WriteTest::updateAndInsertWithHttp),
                               AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -156,6 +157,16 @@ struct WriteTest : tpunit::TestFixture {
         status["writeConsistency"] = "ASYNC";
         status["query"] = "UPDATE foo SET bar = 0;";
         status["nowhere"] = "true";
+        tester->executeWait(status);
+    }
+
+    void updateAndInsertWithHttp() {
+        SData status("Query / HTTP/1.1");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWait(status);
+
+        status["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
         tester->executeWait(status);
     }
 
