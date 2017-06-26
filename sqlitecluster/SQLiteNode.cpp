@@ -1538,6 +1538,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
 
         _db.commit();
+
+        // Clear the list of committed transactions. We're slaving, so we don't need to send these.
+        _db.getCommittedTransactions();
+
+        // Log timing info.
+        // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
         uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                              commitElapsed, rollbackElapsed);

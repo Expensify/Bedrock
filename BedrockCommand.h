@@ -12,8 +12,13 @@ class BedrockCommand : public SQLiteCommand {
     };
 
     enum TIMING_INFO {
+        INVALID,
         PEEK,
         PROCESS,
+        COMMIT_WORKER,
+        COMMIT_SYNC,
+        QUEUE_WORKER,
+        QUEUE_SYNC,
     };
 
     // Constructor to make an empty object.
@@ -37,6 +42,13 @@ class BedrockCommand : public SQLiteCommand {
     // Move assignment operator.
     BedrockCommand& operator=(BedrockCommand&& from);
 
+    // Start recording time for a given action type.
+    void startTiming(TIMING_INFO type);
+
+    // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
+    // `startTiming`.
+    void stopTiming(TIMING_INFO type);
+
     // Add a summary of our timing info to our response object.
     void finalizeTimingInfo();
 
@@ -56,4 +68,7 @@ class BedrockCommand : public SQLiteCommand {
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
+
+    // used as a temporary variable for startTiming and stopTiming.
+    tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
 };

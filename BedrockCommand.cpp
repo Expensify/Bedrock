@@ -6,7 +6,8 @@ BedrockCommand::BedrockCommand() :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    _inProgressTiming(INVALID, 0, 0)
 { }
 
 BedrockCommand::~BedrockCommand() {
@@ -21,7 +22,8 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    _inProgressTiming(INVALID, 0, 0)
 {
     _init();
 }
@@ -32,7 +34,8 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
-    timingInfo(from.timingInfo)
+    timingInfo(from.timingInfo),
+    _inProgressTiming(from._inProgressTiming)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
     // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
@@ -44,7 +47,8 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    _inProgressTiming(INVALID, 0, 0)
 {
     _init();
 }
@@ -54,7 +58,8 @@ BedrockCommand::BedrockCommand(SData _request) :
     httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
-    processCount(0)
+    processCount(0),
+    _inProgressTiming(INVALID, 0, 0)
 {
     _init();
 }
@@ -74,6 +79,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         processCount = from.processCount;
         priority = from.priority;
         timingInfo = from.timingInfo;
+        _inProgressTiming = from._inProgressTiming;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
@@ -104,22 +110,81 @@ void BedrockCommand::_init() {
     }
 }
 
+void BedrockCommand::startTiming(TIMING_INFO type) {
+    if (get<0>(_inProgressTiming) != INVALID ||
+        get<1>(_inProgressTiming) != 0
+       ) {
+        SWARN("Starting timing, but looks like it was already running.");
+    }
+    get<0>(_inProgressTiming) = type;
+    get<1>(_inProgressTiming) = STimeNow();
+    get<2>(_inProgressTiming) = 0;
+}
+
+void BedrockCommand::stopTiming(TIMING_INFO type) {
+    if (get<0>(_inProgressTiming) != type ||
+        get<1>(_inProgressTiming) == 0
+       ) {
+        SWARN("Stopping timing, but looks like it wasn't already running.");
+    }
+
+    // Add it to the list of timing info.
+    get<2>(_inProgressTiming) = STimeNow();
+    timingInfo.push_back(_inProgressTiming);
+
+    // And reset it for next use.
+    get<0>(_inProgressTiming) = INVALID;
+    get<1>(_inProgressTiming) = 0;
+    get<2>(_inProgressTiming) = 0;
+}
+
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t peekTotal = 0;
     uint64_t processTotal = 0;
+    uint64_t commitWorkerTotal = 0;
+    uint64_t commitSyncTotal = 0;
+    uint64_t queueWorkerTotal = 0;
+    uint64_t queueSyncTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == COMMIT_WORKER) {
+            commitWorkerTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == COMMIT_SYNC) {
+            commitSyncTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == QUEUE_WORKER) {
+            queueWorkerTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == QUEUE_SYNC) {
+            queueSyncTotal += get<2>(entry) - get<1>(entry);
         }
     }
+
+    // The lifespan of the object up until now.
+    uint64_t totalTime = STimeNow() - creationTime;
+
+    // Time that wasn't accounted for in all the other metrics.
+    uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
+                                            queueWorkerTotal + queueSyncTotal);
+
+    // Log all this info.
+    SINFO("command '" << request.methodLine << "' timing info (us): "
+          << peekTotal << " (" << peekCount << "), "
+          << processTotal << " (" << processCount << "), "
+          << commitWorkerTotal << ", "
+          << commitSyncTotal << ", "
+          << queueWorkerTotal << ", "
+          << queueSyncTotal << ", "
+          << totalTime << ", "
+          << unaccountedTime << "."
+    );
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
         {"peekTime",       peekTotal},
         {"processTime",    processTotal},
-        {"totalTime",      STimeNow() - creationTime},
+        {"totalTime",      totalTime},
         {"escalationTime", escalationTimeUS},
     };
 
@@ -141,4 +206,29 @@ void BedrockCommand::finalizeTimingInfo() {
             response[p.first] = to_string(p.second);
         }
     }
+}
+
+// pop and push specializations for SSynchronizedQueue that record timing info.
+template<>
+BedrockCommand SSynchronizedQueue<BedrockCommand>::pop() {
+    SAUTOLOCK(_queueMutex);
+    if (!_queue.empty()) {
+        BedrockCommand item = move(_queue.front());
+        _queue.pop_front();
+        item.stopTiming(BedrockCommand::QUEUE_SYNC);
+        return item;
+    }
+    throw out_of_range("No commands");
+}
+
+template<>
+void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& rhs) {
+    SAUTOLOCK(_queueMutex);
+    // Just add to the queue
+    _queue.push_back(move(rhs));
+    _queue.back().startTiming(BedrockCommand::QUEUE_SYNC);
+
+    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    SASSERT(write(_pipeFD[1], "A", 1));
 }

@@ -94,19 +94,13 @@ STUFFC = $(shell find libstuff -name '*.c')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-$(info $$STUFFCPP is [${STUFFCPP}])
-
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-$(info $$LIBBEDROCKCPP is [${LIBBEDROCKCPP}])
-
 BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
-
-$(info $$BEDROCKCPP is [${BEDROCKCPP}])
 
 TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)

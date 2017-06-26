@@ -210,6 +210,9 @@ void BedrockServer::sync(SData& args,
             // It should be impossible to get here if we're not mastering or standing down.
             SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
 
+            // Record the time spent.
+            command.stopTiming(BedrockCommand::COMMIT_SYNC);
+
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
             committingCommand = false;
@@ -324,6 +327,8 @@ void BedrockServer::sync(SData& args,
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);
                     server._writableCommandsInProgress++;
+                    // START TIMING.
+                    command.startTiming(BedrockCommand::COMMIT_SYNC);
                     syncNode.startCommit(command.writeConsistency);
 
                     // And we'll start the next main loop.
@@ -566,7 +571,13 @@ void BedrockServer::worker(SData& args,
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
-                                if (core.commit()) {
+                                bool commitSuccess;
+                                {
+                                    // Scoped for auto-timer.
+                                    BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
+                                    commitSuccess = core.commit();
+                                }
+                                if (commitSuccess) {
                                     BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                                     SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                     // So we must still be mastering, and at this point our commit has succeeded, let's

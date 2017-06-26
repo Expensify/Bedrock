@@ -815,11 +815,11 @@ struct STestTimer {
 #include "STCPServer.h"
 #include "STCPNode.h"
 #include "SHTTPSManager.h"
-#include "SSynchronizedQueue.h"
 
 // Other libstuff headers.
 #include "SRandom.h"
 #include "SPerformanceTimer.h"
 #include "SLockTimer.h"
+#include "SSynchronizedQueue.h"
 
 #endif	// LIBSTUFF_H
