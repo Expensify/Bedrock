@@ -293,7 +293,12 @@ void BedrockServer::sync(SData& args,
                 // We need to grab this before peekCommand (or wherever our transaction is started), to verify that
                 // no worker thread can commit in the middle of our transaction. We need our entire transaction to
                 // happen with no other commits to ensure that we can't get a conflict.
+                uint64_t beforeLock = STimeNow();
                 server._syncThreadCommitMutex.lock();
+
+                // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
+                // explicit logging for it to check.
+                SINFO("[performance] Waited " << (STimeNow() - beforeLock) << "us for _syncThreadCommitMutex.");
 
                 // We peek commands here in the sync thread to be able to run peek and process as part of the same
                 // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
@@ -570,16 +575,6 @@ void BedrockServer::worker(SData& args,
                         // look for another command to work on.
                         break;
                     } else {
-                        // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs an
-                        // exclusive lock on this wrapping any transactions that it performs, we'll get this lock while
-                        // the sync thread isn't in the process of handling a transaction, thus guaranteeing that we
-                        // can't commit and cause a conflict on the sync thread. We can still get conflicts here, as
-                        // the sync thread might have performed a transaction after we called `processCommand` and
-                        // before we call `commit`, or we could conflict with another worker thread, but the sync
-                        // thread will never see a conflict as long as we don't commit while it's performing a
-                        // transaction.
-                        shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
-
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
@@ -597,6 +592,16 @@ void BedrockServer::worker(SData& args,
                                 core.rollback();
                             } else {
                                 bool commitSuccess;
+
+                                // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs
+                                // an exclusive lock on this wrapping any transactions that it performs, we'll get this
+                                // lock while the sync thread isn't in the process of handling a transaction, thus
+                                // guaranteeing that we can't commit and cause a conflict on the sync thread. We can
+                                // still get conflicts here, as the sync thread might have performed a transaction
+                                // after we called `processCommand` and before we call `commit`, or we could conflict
+                                // with another worker thread, but the sync thread will never see a conflict as long
+                                // as we don't commit while it's performing a transaction.
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
                                 {
                                     // Scoped for auto-timer.
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
