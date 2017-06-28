@@ -18,6 +18,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
+        if (!_db.beginConcurrentTransaction()) {
+            throw "501 Failed to begin concurrent transaction";
+        }
         // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
         for (auto plugin : _server.plugins) {
@@ -67,11 +70,22 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
     // If we get here, it means the command is fully completed.
     command.complete = true;
+
+    // Back out of the current transaction, it doesn't need to do anything.
+    _db.rollback();
+
+    // Done.
     return true;
 }
 
-bool BedrockCore::processCommand(BedrockCommand& command) {
+bool BedrockCore::processCommand(BedrockCommand& command, bool beginTransaction) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
+
+    if (beginTransaction) {
+        if (!_db.beginConcurrentTransaction()) {
+            throw "501 Failed to begin concurrent transaction";
+        }
+    }
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
@@ -82,10 +96,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
-        if (!_db.beginConcurrentTransaction()) {
-            throw "501 Failed to begin concurrent transaction";
-        }
-
         // Loop across the plugins to see which wants to take this.
         bool pluginProcessed = false;
         for (auto plugin : _server.plugins) {
