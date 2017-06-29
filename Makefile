@@ -54,7 +54,9 @@ docker:
 udf: udf.so
 
 UDFSRC = udf.c
+UDFCPP = udfplug.cpp
 UDFOBJ = $(UDFSRC:%.c=$(INTERMEDIATEDIR)/%.o)
+UDFOBJ += $(UDFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 
 CFLAGS += -fPIC -I$(PROJECT)/libstuff
 
@@ -105,7 +107,7 @@ STUFFC = $(shell find libstuff -name '*.c')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
+LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -name udfplug.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 

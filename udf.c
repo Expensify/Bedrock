@@ -1,65 +1,30 @@
+/*
+   Copyright 2017 Guy Riddle
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 #include "sqlite3ext.h"
 SQLITE_EXTENSION_INIT1
 
-#if 0
-static void rot13func(
-  sqlite3_context *context,
-  int argc,
-  sqlite3_value **argv
-){
-  const unsigned char *zIn;
-  int nIn;
-  unsigned char *zOut;
-  char *zToFree = 0;
-  int i;
-  char zTemp[100];
-  assert( argc==1 );
-  if( sqlite3_value_type(argv[0])==SQLITE_NULL ) return;
-  zIn = (const unsigned char*)sqlite3_value_text(argv[0]);
-  nIn = sqlite3_value_bytes(argv[0]);
-  if( nIn<sizeof(zTemp)-1 ){
-    zOut = zTemp;
-  }else{
-    zOut = zToFree = sqlite3_malloc( nIn+1 );
-    if( zOut==0 ){
-      sqlite3_result_error_nomem(context);
-      return;
-    }
-  }
-  for(i=0; i<nIn; i++) zOut[i] = rot13(zIn[i]);
-  zOut[i] = 0;
-  sqlite3_result_text(context, (char*)zOut, i, SQLITE_TRANSIENT);
-  sqlite3_free(zToFree);
-}
-
-int sqlite3_rot_init(
-  sqlite3 *db, 
-  char **pzErrMsg, 
-  const sqlite3_api_routines *pApi
-){
-  int rc = SQLITE_OK;
-  SQLITE_EXTENSION_INIT2(pApi);
-  (void)pzErrMsg;  /* Unused parameter */
-  rc = sqlite3_create_function(db, "rot13", 1, SQLITE_UTF8, 0,
-                               rot13func, 0, 0);
-  if( rc==SQLITE_OK ){
-    rc = sqlite3_create_collation(db, "rot13", SQLITE_UTF8, 0, rot13CollFunc);
-  }
-  return rc;
-}
-#endif
 /*
-int sqlite3_create_function(
-  sqlite3 *db,
-  const char *zFunctionName,
-  int nArg,
-  int eTextRep,
-  void *pApp,
-  void (*xFunc)(sqlite3_context*,int,sqlite3_value**),
-  void (*xStep)(sqlite3_context*,int,sqlite3_value**),
-  void (*xFinal)(sqlite3_context*)
-);
-*/
+ * One sample SQLite stored function that is automatically loaded into each database opened.
+ *
+ * You might use a different cheese, of course.
+ *
+ * Demonstrate via:		"SELECT gouda(1.2, 2.3, 5.0, 3.4);"
+ *
+ */
 
 	static void 
 gouda_function(
@@ -86,22 +51,15 @@ load_udf_definitions(
 ){
 	int									rc = SQLITE_OK;
 	SQLITE_EXTENSION_INIT2(pApi);
-	(void)pzErrMsg;						/* Unused parameter */
 
-	rc = sqlite3_create_function(db, "gouda", 4, SQLITE_UTF8|SQLITE_DETERMINISTIC,
-									0, gouda_function, 0, 0);
+	rc = sqlite3_create_function(db, "gouda", 4, SQLITE_UTF8|SQLITE_DETERMINISTIC, 0, gouda_function, 0, 0);
 
 	return(rc);
 };
 
 #undef sqlite3_auto_extension
 
-//int sqlite3_auto_extension(void(*xEntryPoint)(void));
-
-//int sqlite3_auto_extension(int xEntryPoint(sqlite3 *db, const char **pzErrMsg, const struct sqlite3_api_routines *pThunk));
-
-//extern "C" void BEDROCK_PLUGIN_REGISTER_UDF() {
-void BEDROCK_PLUGIN_REGISTER_UDF() {
-//	sqlite3_auto_extension(load_udf_definitions);
+	void
+udf_initialize(){
 	sqlite3_auto_extension((void *) &load_udf_definitions);
 }

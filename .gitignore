@@ -9,3 +9,4 @@ libstuff.a
 sqlitecluster/sqlitecluster
 libstuff/libstuff.d
 libstuff/libstuff.h.gch
+udf.so
