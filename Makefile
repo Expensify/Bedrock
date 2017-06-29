@@ -42,13 +42,24 @@ clustertest: test/clustertest/clustertest testplugin
 testplugin:
 	cd test/clustertest/testplugin && make
 
-.PHONY: docker
+.PHONY: docker udf
 
 docker:
 	docker build -t bedbugs $(PROJECT)/docker/bedbugs
-	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock
+	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock udf
 	cp $(PROJECT)/bedrock $(PROJECT)/docker/bedrook/bedrock
+	cp $(PROJECT)/udf.so $(PROJECT)/docker/bedrook/udf.so
 	docker build -t bedrock $(PROJECT)/docker/bedrook
+
+udf: udf.so
+
+UDFSRC = udf.c
+UDFOBJ = $(UDFSRC:%.c=$(INTERMEDIATEDIR)/%.o)
+
+CFLAGS += -fPIC -I$(PROJECT)/libstuff
+
+udf.so: $(UDFOBJ)
+	$(GXX) $(CXXFLAGS) -shared -o $@ $(UDFOBJ)
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.

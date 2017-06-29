@@ -8,6 +8,7 @@ RUN adduser -h /db -u 1000 -D bed \
 	&& chmod 775 /lib
 
 COPY bedrock start-bedrock /usr/local/bin/
+COPY udf.so /usr/local/lib/
 
 #USER bed
 VOLUME /db
