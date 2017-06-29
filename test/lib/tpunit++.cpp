@@ -69,7 +69,6 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
        }
     }
     _threadID = 0;
-    _name     = 0;
     _mutex    = 0;
 }
 

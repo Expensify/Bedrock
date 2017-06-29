@@ -6,6 +6,16 @@ struct WriteTest : tpunit::TestFixture {
                               BEFORE_CLASS(WriteTest::setup),
                               TEST(WriteTest::insert),
                               TEST(WriteTest::parallelInsert),
+                              TEST(WriteTest::failedInsertNoSemiColon),
+                              TEST(WriteTest::failedDeleteNoWhere),
+                              TEST(WriteTest::deleteNoWhereFalse),
+                              TEST(WriteTest::deleteNoWhereTrue),
+                              TEST(WriteTest::deleteWithWhere),
+                              TEST(WriteTest::update),
+                              TEST(WriteTest::failedUpdateNoWhere),
+                              TEST(WriteTest::failedUpdateNoWhereTrue),
+                              TEST(WriteTest::failedUpdateNoWhereFalse),
+                              TEST(WriteTest::updateAndInsertWithHttp),
                               AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -76,4 +86,88 @@ struct WriteTest : tpunit::TestFixture {
         int val = SToInt(secondLine);
         ASSERT_EQUAL(val, numCommands);
     }
+
+    void failedInsertNoSemiColon() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "INSERT INTO foo VALUES ( RANDOM() )";
+        tester->executeWait(status, "502 Query aborted");
+    }
+
+    void failedDeleteNoWhere() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "DELETE FROM foo;";
+        tester->executeWait(status, "502 Query aborted");
+    }
+
+    void deleteNoWhereFalse() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "DELETE FROM foo;";
+        status["nowhere"] = "false";
+        tester->executeWait(status, "502 Query aborted");
+    }
+
+    void deleteNoWhereTrue() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "DELETE FROM foo;";
+        status["nowhere"] = "true";
+        tester->executeWait(status);
+    }
+
+    void deleteWithWhere() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWait(status);
+
+        status["query"] = "DELETE FROM foo WHERE bar = 666;";
+        tester->executeWait(status);
+    }
+
+    void update() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWait(status);
+
+        status["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
+        tester->executeWait(status);
+    }
+
+    void failedUpdateNoWhere() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "UPDATE foo SET bar = 0;";
+        tester->executeWait(status, "502 Query aborted");
+    }
+
+    void failedUpdateNoWhereFalse() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "UPDATE foo SET bar = 0;";
+        status["nowhere"] = "false";
+        tester->executeWait(status, "502 Query aborted");
+    }
+
+    void failedUpdateNoWhereTrue() {
+        SData status("Query");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "UPDATE foo SET bar = 0;";
+        status["nowhere"] = "true";
+        tester->executeWait(status);
+    }
+
+    void updateAndInsertWithHttp() {
+        SData status("Query / HTTP/1.1");
+        status["writeConsistency"] = "ASYNC";
+        status["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWait(status);
+
+        status["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
+        tester->executeWait(status);
+    }
+
 } __WriteTest;

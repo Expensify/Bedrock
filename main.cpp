@@ -121,7 +121,7 @@ set<string> loadPlugins(SData& args) {
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
         if(!lib) {
-            cout << dlerror() << endl;
+            cout << "Error loading bedrock plugin " << pluginName << ": " << dlerror() << endl;
         } else {
             void* sym = dlsym(lib, symbolName.c_str());
             if (!sym) {
@@ -138,10 +138,6 @@ set<string> loadPlugins(SData& args) {
 
 /////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
-    // Start libstuff
-    SInitialize("main");
-    SLogLevel(LOG_INFO);
-
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
     if (args.empty()) {
@@ -149,6 +145,34 @@ int main(int argc, char* argv[]) {
         // -- let's provide some help just in case
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
+
+    // Fork if requested
+    if (args.isSet("-fork")) {
+        // Do the fork
+        int pid = fork();
+        SASSERT(pid >= 0);
+        if (pid > 0) {
+            // Successful fork -- write the pidfile (if requested) and exit
+            if (args.isSet("-pidfile"))
+                SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
+            return 0;
+        }
+
+        // Daemonize
+        // **NOTE: See http://www-theorie.physik.unizh.ch/~dpotter/howto/daemonize
+        umask(0);
+        SASSERT(setsid() >= 0);
+        SASSERT(chdir("/") >= 0);
+        freopen("/dev/null", "r", stdin);
+        freopen("/dev/null", "w", stdout);
+        freopen("/dev/null", "w", stderr);
+    }
+
+    // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
+    // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
+    SInitialize("main");
+    SLogLevel(LOG_INFO);
+
     if (args.isSet("-version")) {
         // Just output the version
         cout << SVERSION << endl;
@@ -229,28 +253,6 @@ int main(int argc, char* argv[]) {
         SLogLevel(LOG_WARNING);
     }
 
-    // Fork if requested
-    if (args.isSet("-fork")) {
-        // Do the fork
-        int pid = fork();
-        SASSERT(pid >= 0);
-        if (pid > 0) {
-            // Successful fork -- write the pidfile (if requested) and exit
-            if (args.isSet("-pidfile"))
-                SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
-            return 0;
-        }
-
-        // Daemonize
-        // **NOTE: See http://www-theorie.physik.unizh.ch/~dpotter/howto/daemonize
-        umask(0);
-        SASSERT(setsid() >= 0);
-        SASSERT(chdir("/") >= 0);
-        freopen("/dev/null", "r", stdin);
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
-    }
-
 // Set the defaults
 #define SETDEFAULT(_NAME_, _VAL_)                                                                                      \
     do {                                                                                                               \
@@ -282,17 +284,15 @@ int main(int argc, char* argv[]) {
     }
 
     // Keep going until someone kills it (either via TERM or Control^C)
-    while (!(SCatchSignal(SIGTERM) || SCatchSignal(SIGINT))) {
-        // Log any uncaught signals
+    while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
         if (SGetSignals()) {
-            // Log and clear
-            SALERT("Uncaught exceptions (" << SGetSignalNames(SGetSignals()) << "), ignoring.");
+            // Log and clear any outstanding signals.
+            SALERT("Uncaught signals (" << SGetSignalDescription() << "), ignoring.");
             SClearSignals();
         }
 
-        // Make sure the BedrockServer is destroyed before VACUUM so it lets go of the db files.
+        // Run the server. Scoped to allow us to create a new server after a backup.
         {
-            // Run the server
             SINFO("Starting bedrock server");
             BedrockServer server(args);
             uint64_t nextActivity = STimeNow();
@@ -308,44 +308,15 @@ int main(int argc, char* argv[]) {
             SINFO("Graceful bedrock shutdown complete");
         }
 
-        // Vacuum on USR1 signal.
-        if (SCatchSignal(SIGUSR1)) {
-            // Vacuum and analyze the database
-            VacuumDB(args["-db"]);
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
-        }
-
-        // Checkpoint databases on USR2 signal.
-        if (SCatchSignal(SIGUSR2)) {
-            // Cleanup the wal file.
-            // Note, we get out of control growth in wal files sometimes.
-            // The sqlite3 tool cleans it up if you simply run a query.
-            const string& cmdCheckpointMainWal = "sqlite3 " + args["-db"] + " 'SELECT * FROM accounts LIMIT 1;'";
-            SINFO("Starting main wal checkpoint. WAL filesize="
-                  << SToStr(SFileSize(args["-db"] + "-wal") / (float)(1024 * 1024)) << " MB");
-            RetrySystem(cmdCheckpointMainWal);
-            SINFO("Done with checkpointing.");
-        }
-
-        // Database backup on HUP signal.
-        if (SCatchSignal(SIGHUP)) {
-            // Backup the main database
-            const string& mainDB = args["-db"];
-            BackupDB(mainDB);
-        }
-
-        // Analyze indicies on TSTP signal
-        if (SCatchSignal(SIGTSTP)) {
-            SINFO("Starting main analyze.");
-            RetrySystem("sqlite3 " + args["-db"] + " 'ANALYZE;'");
-            SINFO("Finished main analyze.");
+        // Backup the main database on HUP signal.
+        if (SGetSignal(SIGHUP)) {
+            BackupDB(args["-db"]);
         }
     }
 
     // Log how much time we spent in our main mutex.
     SQLite::g_commitLock.log();
+
     // All done
     SINFO("Graceful process shutdown complete");
     return 0;

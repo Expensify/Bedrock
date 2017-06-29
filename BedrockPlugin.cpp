@@ -34,6 +34,16 @@ void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name
     }
 }
 
+void BedrockPlugin::verifyAttributeBool(const SData& request, const string& name, bool require)
+{
+    if (require && !request[name].size()) {
+        throw "402 Missing " + name;
+    }
+    if (!request[name].empty() && !SIEquals(request[name], "true") && !SIEquals(request[name], "false")) {
+        throw "402 Malformed " + name;
+    }
+}
+
 STable BedrockPlugin::getInfo() {
     return STable();
 }

@@ -126,6 +126,12 @@ class SString : public string {
         string::operator=(from);
         return *this;
     }
+
+    // Booleans get converted to strings.
+    SString& operator=(const bool from) {
+        string::operator=(from ? "true" : "false");
+        return *this;
+    }
 };
 
 typedef map<string, SString, STableComp> STable;
@@ -241,23 +247,24 @@ struct SStopwatch {
 // --------------------------------------------------------------------------
 // Signal stuff
 // --------------------------------------------------------------------------
-// Returns whether or not a single signal has been sent
-bool SCatchSignal(int signum);
+// Initializes the signal handling for this thread in particular. The first call to this function will initialize
+// the general-purpose signal handling thread.
+void SInitializeSignals();
 
-// Clears all signals that have been previously sent
-void SClearSignals();
+// Returns true if the given signal has been raised. Clears the value of the given signal.
+bool SGetSignal(int signum);
 
-// Returns the bitmask of which signals have been sent
+// Checks whether the given signal has been raised without clearing it.
+bool SCheckSignal(int signum);
+
+// Return the current set of signals.
 uint64_t SGetSignals();
 
-// Manually "sends" one of the signals
-void SSendSignal(int signum);
+// Get a descriptive string for all the currently raised signals.
+string SGetSignalDescription();
 
-// Returns the name of a signal
-string SGetSignalName(int signum);
-
-// Returns all signals set in a bitmask
-string SGetSignalNames(uint64_t sigmask);
+// Clear all outstanding signals.
+void SClearSignals();
 
 // --------------------------------------------------------------------------
 // Log stuff
@@ -808,11 +815,11 @@ struct STestTimer {
 #include "STCPServer.h"
 #include "STCPNode.h"
 #include "SHTTPSManager.h"
-#include "SSynchronizedQueue.h"
 
 // Other libstuff headers.
 #include "SRandom.h"
 #include "SPerformanceTimer.h"
 #include "SLockTimer.h"
+#include "SSynchronizedQueue.h"
 
 #endif	// LIBSTUFF_H

@@ -7,6 +7,20 @@ class BedrockCore : public SQLiteCore {
   public:
     BedrockCore(SQLite& db, const BedrockServer& server);
 
+    // Automatic timing class that records an entry corresponding to its lifespan.
+    class AutoTimer {
+      public:
+        AutoTimer(BedrockCommand& command, BedrockCommand::TIMING_INFO type) :
+        _command(command), _type(type), _start(STimeNow()) { }
+        ~AutoTimer() {
+            _command.timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
+        }
+      private:
+        BedrockCommand& _command;
+        BedrockCommand::TIMING_INFO _type;
+        uint64_t _start;
+    };
+
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
     // command, and it *may be called multiple times*. Preventing duplicate actions on calling peek multiple times is
     // up to the implementer, and may happen *across multiple servers*. I.e., a slave server may call `peek`, and on
@@ -29,20 +43,6 @@ class BedrockCore : public SQLiteCore {
     bool processCommand(BedrockCommand& command);
 
   private:
-
-    // Automatic timing class that records an entry corresponding to its lifespan.
-    class AutoTimer {
-      public:
-        AutoTimer(BedrockCommand& command, BedrockCommand::TIMING_INFO type) :
-        _command(command), _type(type), _start(STimeNow()) { }
-        ~AutoTimer() {
-            _command.timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
-        }
-      private:
-        BedrockCommand& _command;
-        BedrockCommand::TIMING_INFO _type;
-        uint64_t _start;
-    };
     void _handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing);
     const BedrockServer& _server;
 };
