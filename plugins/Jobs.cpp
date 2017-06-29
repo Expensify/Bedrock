@@ -173,14 +173,21 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         } else {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
+            if (multipleJobs.empty()) {
+                throw "401 Invalid JSON";
+            }
+
             for (auto& job : multipleJobs) {
                 STable jobObject = SParseJSONObject(job);
                 if (jobObject.empty()) {
                     throw "401 Invalid JSON";
                 }
+
+                // Verify that name is present for every job
                 if (!SContains(job, "name")) {
                     throw "402 Missing name";
                 }
+
                 jsonJobs.push_back(jobObject);
             }
         }
@@ -299,8 +306,17 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         } else {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
+            if (multipleJobs.empty()) {
+                throw "401 Invalid JSON";
+            }
+
             for (auto& job : multipleJobs) {
-                jsonJobs.push_back(SParseJSONObject(job));
+                STable jobObject = SParseJSONObject(job);
+                if (jobObject.empty()) {
+                    throw "401 Invalid JSON";
+                }
+
+                jsonJobs.push_back(jobObject);
             }
         }
 
