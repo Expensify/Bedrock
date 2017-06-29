@@ -173,10 +173,14 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
             for (auto& job : multipleJobs) {
+                STable jobObject = SParseJSONObject(job);
+                if (jobObject.empty()) {
+                    throw "401 Invalid JSON";
+                }
                 if (!SContains(job, "name")) {
                     throw "402 Missing name";
                 }
-                jsonJobs.push_back(SParseJSONObject(job));
+                jsonJobs.push_back(jobObject);
             }
         }
 
