@@ -591,8 +591,6 @@ void BedrockServer::worker(SData& args,
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
-                                bool commitSuccess;
-
                                 // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs
                                 // an exclusive lock on this wrapping any transactions that it performs, we'll get this
                                 // lock while the sync thread isn't in the process of handling a transaction, thus
@@ -601,6 +599,7 @@ void BedrockServer::worker(SData& args,
                                 // after we called `processCommand` and before we call `commit`, or we could conflict
                                 // with another worker thread, but the sync thread will never see a conflict as long
                                 // as we don't commit while it's performing a transaction.
+                                bool commitSuccess;
                                 shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
                                 {
                                     // Scoped for auto-timer.

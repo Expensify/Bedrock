@@ -18,9 +18,13 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
+        // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
+        // through process. This allows for consistency through this two-phase process. I.e., anything checked in
+        // peek is guaranteed to still be valid in process, because they're done together as one transaction.
         if (!_db.beginConcurrentTransaction()) {
             throw "501 Failed to begin concurrent transaction";
         }
+
         // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
         for (auto plugin : _server.plugins) {
