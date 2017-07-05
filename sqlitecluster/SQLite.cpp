@@ -177,7 +177,9 @@ SQLite::~SQLite() {
 }
 
 bool SQLite::beginTransaction() {
-    SASSERT(!_insideTransaction);
+    if (_insideTransaction) {
+        return true;
+    }
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     SDEBUG("Beginning transaction");
@@ -193,7 +195,9 @@ bool SQLite::beginTransaction() {
 }
 
 bool SQLite::beginConcurrentTransaction() {
-    SASSERT(!_insideTransaction);
+    if (_insideTransaction) {
+        return true;
+    }
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
     SDEBUG("[concurrent] Beginning transaction");

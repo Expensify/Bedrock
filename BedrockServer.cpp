@@ -306,7 +306,6 @@ void BedrockServer::sync(SData& args,
                 // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
-                bool alreadyHadHttpsRequest = false;
                 if (!command.httpsRequest) {
                     if (core.peekCommand(command)) {
                         // Finished with this.
@@ -323,10 +322,6 @@ void BedrockServer::sync(SData& args,
                         }
                         continue;
                     }
-                } else {
-                    // If the command had an https request before we tried to peek it, we record that, as we'll need to
-                    // restart the transaction.
-                    alreadyHadHttpsRequest = true;
                 }
 
                 // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
@@ -344,10 +339,7 @@ void BedrockServer::sync(SData& args,
                     httpsCommands.push_back(move(command));
                     continue;
                 }
-
-                // if alreadyHadHttpsRequest is set, then we peeked this request at some point in the past and ended
-                // that transaction, so we need to start a new one, so we pass that as the `beginTransaction` flag.
-                if (core.processCommand(command, alreadyHadHttpsRequest)) {
+                if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);

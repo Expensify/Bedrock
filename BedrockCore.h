@@ -40,10 +40,7 @@ class BedrockCore : public SQLiteCore {
     // replicate the transaction to slave nodes. Upon being returned `true`, the caller will attempt to perform a
     // `COMMIT` and replicate the transaction to slave nodes. It's allowable for this `COMMIT` to fail, in which case
     // this command *will be passed to process again in the future to retry*.
-    // The `beginTransaction` flag allows the caller to force this function to begin a transaction if it knows one has
-    // already been started. This is used to allow handling commands with httpsRequests without re-peeking them, which
-    // would potentially duplicate the httpsRequest.
-    bool processCommand(BedrockCommand& command, bool beginTransaction = false);
+    bool processCommand(BedrockCommand& command);
 
   private:
     void _handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing);
