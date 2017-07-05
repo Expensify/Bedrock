@@ -288,40 +288,57 @@ void BedrockServer::sync(SData& args,
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
 
-            // We peek commands here in the sync thread to be able to run peek and process as part of the same
-            // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
-            // have changed in the meantime.
-            // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
-            // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
-            // re-verify that any checks made in peek are still valid in process.
-            if (!command.httpsRequest) {
-                if (core.peekCommand(command)) {
-                    // This command completed in peek, respond to it appropriately, either directly or by sending it
-                    // back to the sync thread.
-                    SASSERT(command.complete);
-                    if (command.initiatingPeerID) {
-                        command.finalizeTimingInfo();
-                        syncNode.sendResponse(command);
-                    } else {
-                        server._reply(command);
-                    }
-                    continue;
-                }
-            }
-
-            // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
-            // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
-            // command.
-            if (command.httpsRequest && !command.httpsRequest->response) {
-                httpsCommands.push_back(move(command));
-                continue;
-            }
-
             // And now we'll decide how to handle it.
             if (nodeState == SQLiteNode::MASTERING) {
-                // Now that we've peeked without finishing the command, we grab the commit mutex exclusively, so that none
-                // of our worker threads can attempt to write to the database until we're finished.
+                // We need to grab this before peekCommand (or wherever our transaction is started), to verify that
+                // no worker thread can commit in the middle of our transaction. We need our entire transaction to
+                // happen with no other commits to ensure that we can't get a conflict.
+                uint64_t beforeLock = STimeNow();
                 server._syncThreadCommitMutex.lock();
+
+                // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
+                // explicit logging for it to check.
+                SINFO("[performance] Waited " << (STimeNow() - beforeLock) << "us for _syncThreadCommitMutex.");
+
+                // We peek commands here in the sync thread to be able to run peek and process as part of the same
+                // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
+                // have changed in the meantime.
+                // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
+                // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
+                // re-verify that any checks made in peek are still valid in process.
+                if (!command.httpsRequest) {
+                    if (core.peekCommand(command)) {
+                        // Finished with this.
+                        server._syncThreadCommitMutex.unlock();
+
+                        // This command completed in peek, respond to it appropriately, either directly or by sending it
+                        // back to the sync thread.
+                        SASSERT(command.complete);
+                        if (command.initiatingPeerID) {
+                            command.finalizeTimingInfo();
+                            syncNode.sendResponse(command);
+                        } else {
+                            server._reply(command);
+                        }
+                        continue;
+                    }
+                }
+
+                // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
+                // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
+                // command.
+                if (command.httpsRequest && !command.httpsRequest->response) {
+                    // We can't finish this transaction right now, so we roll it back. We'll restart it later when the
+                    // httpsRequest is complete.
+                    core.rollback();
+
+                    // Done with the lock.
+                    server._syncThreadCommitMutex.unlock();
+
+                    // Set this aside and move on to the next command.
+                    httpsCommands.push_back(move(command));
+                    continue;
+                }
                 if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
@@ -338,10 +355,12 @@ void BedrockServer::sync(SData& args,
                     // be a much smaller fraction of all our traffic. We set nextActivity here so that there's no
                     // timeout before we'll give up on poll() if there's nothing to read.
                     nextActivity = STimeNow();
+
+                    // Don't unlock _syncThreadCommitMutex here, we'll hold the lock till the commit completes.
                     continue;
                 } else {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
-                    // to do. We'll just respond.
+                    // to do). We'll just respond.
                     server._syncThreadCommitMutex.unlock();
                     if (command.initiatingPeerID) {
                         command.finalizeTimingInfo();
@@ -534,6 +553,9 @@ void BedrockServer::worker(SData& args,
                         command.httpsRequest           ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
+                        // Roll back the transaction, it'll get re-run in the sync thread.
+                        core.rollback();
+
                         // We're not handling a writable command anymore.
                         SINFO("[performance] Sending non-parallel command " << command.request.methodLine
                               << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
@@ -545,16 +567,6 @@ void BedrockServer::worker(SData& args,
                         // look for another command to work on.
                         break;
                     } else {
-                        // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs an
-                        // exclusive lock on this wrapping any transactions that it performs, we'll get this lock while
-                        // the sync thread isn't in the process of handling a transaction, thus guaranteeing that we
-                        // can't commit and cause a conflict on the sync thread. We can still get conflicts here, as
-                        // the sync thread might have performed a transaction after we called `processCommand` and
-                        // before we call `commit`, or we could conflict with another worker thread, but the sync
-                        // thread will never see a conflict as long as we don't commit while it's performing a
-                        // transaction.
-                        shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
-
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
@@ -571,7 +583,16 @@ void BedrockServer::worker(SData& args,
                                       << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
+                                // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs
+                                // an exclusive lock on this wrapping any transactions that it performs, we'll get this
+                                // lock while the sync thread isn't in the process of handling a transaction, thus
+                                // guaranteeing that we can't commit and cause a conflict on the sync thread. We can
+                                // still get conflicts here, as the sync thread might have performed a transaction
+                                // after we called `processCommand` and before we call `commit`, or we could conflict
+                                // with another worker thread, but the sync thread will never see a conflict as long
+                                // as we don't commit while it's performing a transaction.
                                 bool commitSuccess;
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
                                 {
                                     // Scoped for auto-timer.
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
