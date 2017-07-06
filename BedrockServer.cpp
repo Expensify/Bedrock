@@ -328,9 +328,14 @@ void BedrockServer::sync(SData& args,
                 // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
                 // command.
                 if (command.httpsRequest && !command.httpsRequest->response) {
-                    // We can't finish this transaction right now, so we roll it back. We'll restart it later when the
-                    // httpsRequest is complete.
-                    core.rollback();
+                    // We can't finish this transaction right now. We'll restart it later when the httpsRequest is
+                    // complete.
+                    if (db.insideTransaction()) {
+                        // We only rollback if we're inside a transaction. This will happen if `peekCommand` created an
+                        // httpsRequest above. However, if `peekCommand` was done in a worker thread, then this has
+                        // already been done, so we won't roll it back again.
+                        core.rollback();
+                    }
 
                     // Done with the lock.
                     server._syncThreadCommitMutex.unlock();
