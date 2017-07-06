@@ -23,7 +23,6 @@ bool BedrockServer::canStandDown() {
 void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
-                         atomic<bool>& nodeGracefulShutdown,
                          atomic<string>& masterVersion,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
@@ -78,7 +77,6 @@ void BedrockServer::sync(SData& args,
                                       ref(args),
                                       ref(replicationState),
                                       ref(upgradeInProgress),
-                                      ref(nodeGracefulShutdown),
                                       ref(masterVersion),
                                       ref(syncNodeQueuedCommands),
                                       ref(completedCommands),
@@ -122,8 +120,9 @@ void BedrockServer::sync(SData& args,
             }
         }
 
-        // If we've been instructed to shutdown and we haven't yet, do it.
-        if (nodeGracefulShutdown.load()) {
+        // If we're in a state where we can initialize shutdown, then go ahead and do so.
+        if (server._shutdownState.load() == QUEUE_PROCESSED && syncNodeQueuedCommands.empty()) {
+            SINFO("Beginning sync node shutdown.");
             syncNode.beginShutdown();
         }
 
@@ -389,6 +388,10 @@ void BedrockServer::sync(SData& args,
     // Done with the global lock.
     server._syncMutex.unlock();
 
+    // We've finished shutting down the sync node, tell the workers that it's finished.
+    server._shutdownState.store(SYNC_SHUTDOWN);
+    SINFO("SYNC_SHUTDOWN. Sync thread finished with commands.");
+
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
     replicationState.store(syncNode.getState());
@@ -421,7 +424,6 @@ void BedrockServer::sync(SData& args,
 void BedrockServer::worker(SData& args,
                            atomic<SQLiteNode::State>& replicationState,
                            atomic<bool>& upgradeInProgress,
-                           atomic<bool>& nodeGracefulShutdown,
                            atomic<string>& masterVersion,
                            CommandQueue& syncNodeQueuedCommands,
                            CommandQueue& syncNodeCompletedCommands,
@@ -651,9 +653,23 @@ void BedrockServer::worker(SData& args,
             // No commands to process after 1 second.
         }
 
-        // Ok, we're done with this loop, see if we should exit.
-        if (nodeGracefulShutdown.load()) {
-            SINFO("Shutdown flag set and nothing left in queue. worker" << to_string(threadId) << " exiting.");
+        // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
+        // inform the sync thread that we're done with this queue.
+        if (server._shutdownState.load() == SOCKETS_CLOSED) {
+            server._shutdownState.store(QUEUE_PROCESSED);
+            SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
+        }
+
+        // If the sync thread is finished, and the worker queue is empty, then we're really done.
+        if (server._shutdownState.load() == SYNC_SHUTDOWN) {
+            SINFO("Shutdown state is SYNC_SHUTDOWN, and queue empty. Worker" << to_string(threadId) << " exiting.");
+            server._shutdownState.store(DONE);
+            break;
+        }
+
+        // If another worker marked us done, we can exit as well.
+        if (server._shutdownState.load() == DONE) {
+            SINFO("Shutdown state is DONE. Worker" << to_string(threadId) << " exiting.");
             break;
         }
     }
@@ -661,8 +677,8 @@ void BedrockServer::worker(SData& args,
 
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
-    _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
-    _suppressCommandPortManualOverride(false), _syncNode(nullptr)
+    _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
+    _syncNode(nullptr), _shutdownState(RUNNING)
 {
     _version = SVERSION;
 
@@ -726,7 +742,6 @@ BedrockServer::BedrockServer(const SData& args)
                          ref(_args),
                          ref(_replicationState),
                          ref(_upgradeInProgress),
-                         ref(_nodeGracefulShutdown),
                          ref(_masterVersion),
                          ref(_syncNodeQueuedCommands),
                          ref(*this));
@@ -750,53 +765,51 @@ BedrockServer::~BedrockServer() {
 }
 
 bool BedrockServer::shutdownComplete() {
-    // If we've been requested to shut down, we'll inspect our shutdown criteria.
-    if (_nodeGracefulShutdown.load()) {
-
-        // See if the replciation state is OK for shutdown, and if the command queue is empty.
-        // If so, we're done, we can shut down.
-        bool replicationStateOK = (_replicationState.load() <= SQLiteNode::WAITING);
-        bool commandQueueEmpty  = _commandQueue.empty();
-        if (replicationStateOK && commandQueueEmpty) {
-            return true;
-        }
-
-        // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
-        // return true anyway.
-        if (_gracefulShutdownTimeout.ringing()) {
-            // Timing out. Log some info and return true.
-            map<string, int> commandsInQueue;
-            auto methods = _commandQueue.getRequestMethodLines();
-            for (auto method : methods) {
-                auto it = commandsInQueue.find(method);
-                if (it != commandsInQueue.end()) {
-                    (it->second)++;
-                } else {
-                    commandsInQueue[method] = 1;
-                }
-            }
-            string commandCounts;
-            for (auto cmdPair : commandsInQueue) {
-                commandCounts += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
-            }
-            SWARN("Graceful shutdown timed out. "
-                  << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
-                  << "Commands queue size: " << _commandQueue.size() << ". "
-                  << "Command Counts: " << commandCounts << "killing non gracefully.");
-            return true;
-        }
-
-        // At this point, we've got something blocking shutdown, and our timeout hasn't passed, so we'll log and return
-        // false, and allow the caller to wait a bit longer.
-        string logLine = "Conditions that failed and are blocking shutdown:";
-        if (!replicationStateOK) {
-            logLine += " Replication State: " + SQLiteNode::stateNames[_replicationState.load()] + " > SQLC_WAITING.";
-        }
-        if (!commandQueueEmpty) {
-            logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
-        }
-        SWARN(logLine);
+    // If nobody's asked us to shut down, we're not done.
+    if (_shutdownState.load() == RUNNING) {
+        return false;
     }
+
+    // If we're totally done, we can return true.
+    if (_shutdownState.load() == DONE) {
+        return true;
+    }
+
+    // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
+    // return true anyway.
+    if (_gracefulShutdownTimeout.ringing()) {
+        // Timing out. Log some info and return true.
+        map<string, int> commandsInQueue;
+        auto methods = _commandQueue.getRequestMethodLines();
+        for (auto method : methods) {
+            auto it = commandsInQueue.find(method);
+            if (it != commandsInQueue.end()) {
+                (it->second)++;
+            } else {
+                commandsInQueue[method] = 1;
+            }
+        }
+        string commandCounts;
+        for (auto cmdPair : commandsInQueue) {
+            commandCounts += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+        }
+        SWARN("Graceful shutdown timed out. "
+              << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
+              << "Commands queue size: " << _commandQueue.size() << ". "
+              << "Command Counts: " << commandCounts << "killing non gracefully.");
+        return true;
+    }
+
+    // At this point, we've got something blocking shutdown, and our timeout hasn't passed, so we'll log and return
+    // false, and allow the caller to wait a bit longer.
+    string logLine = "Conditions that failed and are blocking shutdown:";
+    if (_replicationState.load() > SQLiteNode::WAITING) {
+        logLine += " Replication State: " + SQLiteNode::stateNames[_replicationState.load()] + " > SQLC_WAITING.";
+    }
+    if (!_commandQueue.empty()) {
+        logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
+    }
+    SWARN(logLine);
 
     return false;
 }
@@ -834,7 +847,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         suppressCommandPort(false);
     }
     if (!_suppressCommandPort && portList.empty() && (state == SQLiteNode::MASTERING || state == SQLiteNode::SLAVING) &&
-        !_nodeGracefulShutdown.load()) {
+        _shutdownState.load() == RUNNING) {
         // Open the port
         SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
         openPort(_args["-serverHost"]);
@@ -872,14 +885,17 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             suppressCommandPort(false, true);
         } else {
             // For anything else, just shutdown -- but only if we're not already shutting down
-            if (!_nodeGracefulShutdown.load()) {
+            if (_shutdownState.load() == RUNNING) {
                 // Begin a graceful shutdown; close our port
                 SINFO("Beginning graceful shutdown due to '" << SGetSignalDescription()
                       << "', closing command port on '" << _args["-serverHost"] << "'");
-                _nodeGracefulShutdown.store(true);
                 _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
                 _gracefulShutdownTimeout.start();
-                closePorts();
+
+                // Shutdown the ports. We'll close() them after we run through the buffers one last time.
+                shutdownPorts();
+                _shutdownState.store(START_SHUTDOWN);
+                SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
             }
         }
     }
@@ -920,6 +936,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case STCPManager::Socket::CONNECTED:
             {
+                // We try and read here, so that we're sure to have all the latest data from newly connected sockets.
+                // This is primarily a concern when we're trying to shut down, but had still receiving new requests
+                // right up until the end.
+                s->recv();
+
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
                     break;
@@ -1024,6 +1045,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 plugin->timerFired(timer);
             }
         }
+    }
+
+    // If we started shutting down, we can now finish that process.
+    if (_shutdownState.load() == START_SHUTDOWN) {
+        closePorts();
+        _shutdownState.store(SOCKETS_CLOSED);
+        SINFO("SOCKETS_CLOSED. All ports closed.");
     }
 }
 
