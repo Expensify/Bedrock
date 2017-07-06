@@ -396,7 +396,7 @@ void BedrockServer::sync(SData& args,
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Sync thread exiting in state " << replicationState.load() << ". Setting to SEARCHING.");
+        SWARN("sync thread exiting in state " << replicationState.load() << ". Setting to SEARCHING.");
         replicationState.store(SQLiteNode::SEARCHING);
     } else {
         SINFO("Sync thread exiting, setting state to: " << replicationState.load());
@@ -416,6 +416,9 @@ void BedrockServer::sync(SData& args,
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
     }
+
+    // Tell the server we're done and it can finish up.
+    server._syncThreadFinished.store(true);
 }
 
 void BedrockServer::worker(SData& args,
@@ -662,7 +665,7 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _nodeGracefulShutdown(false), _suppressCommandPort(false),
-    _suppressCommandPortManualOverride(false), _syncNode(nullptr)
+    _suppressCommandPortManualOverride(false), _syncThreadFinished(false), _syncNode(nullptr)
 {
     _version = SVERSION;
 
@@ -736,28 +739,29 @@ BedrockServer::~BedrockServer() {
     // Just warn if we have outstanding requests
     SASSERTWARN(_requestCountSocketMap.empty());
 
+    // Wait for the sync thread to finish. We do this before we shut down any sockets, in case it still needs them.
+    // This will, in turn, wait for any worker threads to finish.
+    SINFO("Closing sync thread '" << _syncThreadName << "'");
+    _syncThread.join();
+    SINFO("Threads closed.");
+
     // Shut down any outstanding keepalive connections
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
         closeSocket(s);
     }
-
-    // Shut down the sync thread, (which will shut down worker threads in turn).
-    SINFO("Closing sync thread '" << _syncThreadName << "'");
-    _syncThread.join();
-    SINFO("Threads closed.");
 }
 
 bool BedrockServer::shutdownComplete() {
     // If we've been requested to shut down, we'll inspect our shutdown criteria.
     if (_nodeGracefulShutdown.load()) {
 
-        // See if the replciation state is OK for shutdown, and if the command queue is empty.
-        // If so, we're done, we can shut down.
+        // If the replication state is OK, and the command queue is empty, and the sync thread is done, then we can
+        // shut down.
         bool replicationStateOK = (_replicationState.load() <= SQLiteNode::WAITING);
         bool commandQueueEmpty  = _commandQueue.empty();
-        if (replicationStateOK && commandQueueEmpty) {
+        if (replicationStateOK && commandQueueEmpty && _syncThreadFinished.load()) {
             return true;
         }
 
@@ -782,7 +786,8 @@ bool BedrockServer::shutdownComplete() {
             SWARN("Graceful shutdown timed out. "
                   << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
                   << "Commands queue size: " << _commandQueue.size() << ". "
-                  << "Command Counts: " << commandCounts << "killing non gracefully.");
+                  << "Command Counts: " << commandCounts << ". "
+                  << "Sync thread finished: " << _syncThreadFinished << ". Killing non gracefully.");
             return true;
         }
 
@@ -794,6 +799,9 @@ bool BedrockServer::shutdownComplete() {
         }
         if (!commandQueueEmpty) {
             logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
+        }
+        if (!_syncThreadFinished.load()) {
+            logLine += " Sync thread not finished.";
         }
         SWARN(logLine);
     }

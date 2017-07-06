@@ -108,6 +108,9 @@ class BedrockServer : public SQLiteServer {
     // The actual thread object for the sync thread.
     thread _syncThread;
 
+    // We set this to true when the sync thread finishes execution and is ready to be joined.
+    atomic<bool> _syncThreadFinished;
+
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes master. It will return true if the DB has changed and needs to be committed.
     bool _upgradeDB(SQLite& db);
