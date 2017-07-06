@@ -469,9 +469,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // Append new jobID to list of created jobs.
                 jobIDs.push_back(SToStr(lastInsertRowID));            
             }
-
-            content["jobIDs"] = SComposeJSONArray(jobIDs);
         }
+
+        content["jobIDs"] = SComposeJSONArray(jobIDs);
 
         // Release workers waiting on this state
         // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
