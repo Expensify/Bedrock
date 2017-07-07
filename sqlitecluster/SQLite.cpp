@@ -72,8 +72,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // These other pragmas only relate to read/write databases.
     SASSERT(!SQuery(_db, "disabling synchronous commits", "PRAGMA synchronous = OFF;"));
     SASSERT(!SQuery(_db, "disabling change counting", "PRAGMA count_changes = OFF;"));
-    DBINFO("Enabling automatic checkpointing every " << to_string(autoCheckpoint) << " pages.");
-    SASSERT(!SQuery(_db, "enabling auto-checkpointing", "PRAGMA wal_autocheckpoint = " + SQ(autoCheckpoint) + ";"));
+
+    DBINFO("Enabling automatic checkpointing every " << autoCheckpoint << " pages.");
+    sqlite3_wal_autocheckpoint(_db, autoCheckpoint);
 
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
