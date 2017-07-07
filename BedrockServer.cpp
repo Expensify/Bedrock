@@ -430,6 +430,7 @@ void BedrockServer::worker(SData& args,
                            int threadCount)
 {
     SInitialize("worker" + to_string(threadId));
+
     // We pass `0` as the checkpoint size to disable checkpointing from workers. This can be a slow operation, and we
     // don't want workers to be able to block the sync thread while it happens.
     SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1);
