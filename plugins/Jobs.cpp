@@ -194,6 +194,56 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         return true;
     }
 
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob(jobID)
+        //
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to cancel
+        //
+        //     Returns:
+        //     - 200 - OK
+        //     - 402 - Cannot cancel jobs that are running
+        //
+        verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
+
+        SQResult result;
+        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID) "
+                     "FROM jobs j "
+                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
+                     result)) {
+            throw "502 Select failed";
+        }
+
+        // Verify the job exists
+        if (result.empty()) {
+            throw "404 No job with this jobID";
+        }
+
+        // If the job has any children, we are using the command in the wrong way
+        if (!result[0][1].empty()) {
+            throw "404 Invalid jobID - Cannot cancel a job with children";
+        }
+
+        // Don't process the command if the job has finished or it's already running.
+        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+            SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
+            return true; // Done
+        }
+
+        // Verify that we are not trying to cancel a PAUSED job.
+        if (result[0][0] == "PAUSED") {
+            SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
+            return true; // Done
+        }
+
+        return false; // Need to process command
+    }
+
     // Didn't recognize this command
     return false;
 }
@@ -593,10 +643,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Delete any FINISHED child jobs, but leave any PAUSED children alone (as those will signal that
+        // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
-        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';")) {
-            throw "502 Failed deleting finished child jobs";
+        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
+            throw "502 Failed deleting finished/cancelled child jobs";
         }
 
         // If we've been asked to update the data, let's do that
@@ -684,6 +734,25 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Successfully processed
+        return true;
+    }
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob (jobID)
+        //
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to cancel
+        //
+        int64_t jobID = request.calc64("jobID");
+
+        // Cancel the job
+        if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+            throw "502 Failed to update job data";
+        }
+
+        // All done processing this command
         return true;
     }
 
@@ -839,13 +908,14 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 }
 
 // ==========================================================================
+
 bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     // Returns true if there are any children of this jobID in a "pending" (eg,
     // running or yet to run) state
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " + 
+                 "WHERE parentJobID = " + SQ(jobID) + " " +
                  "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
