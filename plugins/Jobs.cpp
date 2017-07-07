@@ -286,6 +286,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << parentState << ")");
                 throw "405 Can only create child job when parent is RUNNING or PAUSED";
             }
+            
+            // Prevent jobs from creating grandchildren when children are still PAUSED
+            auto children = db.read("SELECT COUNT(*) FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+            if (SIEquals(parentState, "PAUSED") && children.empty()) {
+                SWARN("Trying to create grandchild job with parent jobID#" << parentJobID << ", but job is still not QUEUED because its parent is running itself");
+                throw "405 Cannot create grandchildren while grandfather is RUNNING and parent is PAUSED";
+            }
         }
 
         // We'd initially intended for any value to be allowable here, but for
