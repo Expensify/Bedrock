@@ -290,7 +290,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Prevent jobs from creating grandchildren when children are still PAUSED.
             // If we don't do this, we can create jobs that will be QUEUED and therefore can end up being run
             // at the same time as their parents.
-            auto children = db.read("SELECT COUNT(*) FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+            auto children = db.read("SELECT COUNT(*) FROM jobs WHERE parentJobID=" + SQ(parentJobID) + ";");
             if (SIEquals(parentState, "PAUSED") && children.empty()) {
                 SWARN("Trying to create grandchild job with parent jobID#" << parentJobID << ", but job is still not QUEUED because its parent is running itself");
                 throw "405 Cannot create grandchildren while grandfather is RUNNING and parent is PAUSED";
