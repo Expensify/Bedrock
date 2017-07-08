@@ -15,13 +15,12 @@ class BedrockServer : public SQLiteServer {
         RUNNING,
 
         // In postPoll, this will be set if we received a SIGTERM or SIGINT since gthe last poll iteration. This will
-        // call `shutdown()` on all of our sockets accepting incoming requests, so that they will not accept any new
-        // connections.
+        // happen as soon as we've begun the shutdown process.
         START_SHUTDOWN,
 
-        // postPoll will run through the remaining sockets, make sure everything's been read, deserialized, and queued
-        // for processing, and then call `close()` on sockets that it previously called `shutdown()` on.
-        SOCKETS_CLOSED,
+        // postPoll will run through the remaining listening sockets, make sure everything's been read, deserialized,
+        // and queued for processing, and close the listening ports, then set this state.
+        PORTS_CLOSED,
 
         // We let the workers run trough commands until their queue is empty. When that happens, we set this state,
         // indicating that everything that might need to be escalated to the sync thread has been escalated.

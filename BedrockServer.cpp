@@ -655,7 +655,7 @@ void BedrockServer::worker(SData& args,
 
         // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
         // inform the sync thread that we're done with this queue.
-        if (server._shutdownState.load() == SOCKETS_CLOSED) {
+        if (server._shutdownState.load() == PORTS_CLOSED) {
             server._shutdownState.store(QUEUE_PROCESSED);
             SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
         }
@@ -893,7 +893,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _gracefulShutdownTimeout.start();
 
                 // Shutdown the ports. We'll close() them after we run through the buffers one last time.
-                shutdownPorts();
+                closePorts();
                 _shutdownState.store(START_SHUTDOWN);
                 SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
             }
@@ -936,11 +936,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case STCPManager::Socket::CONNECTED:
             {
-                // We try and read here, so that we're sure to have all the latest data from newly connected sockets.
-                // This is primarily a concern when we're trying to shut down, but had still receiving new requests
-                // right up until the end.
-                s->recv();
-
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
                     break;
@@ -1049,9 +1044,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we started shutting down, we can now finish that process.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        closePorts();
-        _shutdownState.store(SOCKETS_CLOSED);
-        SINFO("SOCKETS_CLOSED. All ports closed.");
+        _shutdownState.store(PORTS_CLOSED);
+        SINFO("PORTS_CLOSED. All ports closed.");
     }
 }
 

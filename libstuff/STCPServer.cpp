@@ -23,17 +23,6 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     return &*portIt;
 }
 
-
-void STCPServer::shutdownPorts() {
-    if (!portList.empty()) {
-        for (Port& port : portList) {
-            shutdown(port.s, SHUT_RDWR);
-        }
-    } else {
-        SHMMM("No ports to shutdown.");
-    }
-}
-
 void STCPServer::closePorts() {
     // Are there any ports to close?
     if (!portList.empty()) {
