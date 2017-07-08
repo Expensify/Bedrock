@@ -892,7 +892,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
                 _gracefulShutdownTimeout.start();
 
-                // Shutdown the ports. We'll close() them after we run through the buffers one last time.
+                // Close our listening ports, we won't accept any new connections on them.
                 closePorts();
                 _shutdownState.store(START_SHUTDOWN);
                 SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
