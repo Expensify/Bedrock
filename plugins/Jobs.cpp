@@ -190,71 +190,139 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "CreateJob")) {
+    else if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
+        list<STable> jsonJobs;
+        if (SIEquals(request.methodLine, "CreateJob")) {
+            verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+            jsonJobs.push_back(request.nameValueMap);
+        } else {
+            list<string> multipleJobs;
+            multipleJobs = SParseJSONArray(request["jobs"]);
+            if (multipleJobs.empty()) {
+                throw "401 Invalid JSON";
+            }
 
-        // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
-        // so we're intentionally not adding support for them them yet
-        if (request.isSet("repeat") && request.isSet("retryAfter")) {
-            throw "402 Recurring auto-retrying jobs are not supported";
+            for (auto& job : multipleJobs) {
+                STable jobObject = SParseJSONObject(job);
+                if (jobObject.empty()) {
+                    throw "401 Invalid JSON";
+                }
+
+                // Verify that name is present for every job
+                if (!SContains(job, "name")) {
+                    throw "402 Missing name";
+                }
+
+                jsonJobs.push_back(jobObject);
+            }
         }
 
-        // If parentJobID is passed, verify that the parent job doesn't have a retryAfter set
-        int64_t parentJobID = request.calc64("parentJobID");
-        if (parentJobID) {
-            SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
+        for (auto& job : jsonJobs) {
+            // If no priority set, set it
+            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+
+            // We'd initially intended for any value to be allowable here, but for
+            // performance reasons, we currently will only allow specific values to
+            // try and keep queries fast. If you pass an invalid value, we'll throw
+            // here so that the caller can know that he did something wrong rather
+            // than having his job sit unprocessed in the queue forever. Hopefully
+            // we can remove this restriction in the future.
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                throw "402 Invalid priority value";
+            }
+
+            // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
+            if (SContains(job, "data") && SParseJSONObject(job["data"]).empty()) {
+                throw "402 Data is not a valid JSON Object";
+            }
+
+            // Validate that the parentJobID exists and is in the right state if one was passed.
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            if (parentJobID) {
+                SQResult result;
+                if (!db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                    throw "502 Select failed";
+                }
+                if (result.empty()) {
+                    throw "404 parentJobID does not exist";
+                }
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
+                    throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                }
+            }
+
+            // Verify unique
             SQResult result;
-            if (!db.read("SELECT retryAfter "
-                        "FROM jobs "
-                        "WHERE jobID=" + SQ(parentJobID) + ";",
-                        result)) {
+            SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+            if (!db.read("SELECT jobID, data "
+                         "FROM jobs "
+                         "WHERE name=" + SQ(job["name"]) + ";",
+                         result)) {
                 throw "502 Select failed";
             }
-            if (!result.empty() && result[0][0] != "") {
-                throw "402 Auto-retrying parents cannot have children";
+
+            // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
+            if (!result.empty() && result[0][1] == job["data"]){
+                // If we are calling CreateJob, return early, there are no more jobs to create.
+                if (SIEquals(request.methodLine, "CreateJob")) {
+                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+                    content["jobID"] = result[0][0];
+                    return true;
+                }
             }
         }
+        return false;
+    }
 
-        // Validate retryAfter
-        if (request.isSet("retryAfter") && request["retryAfter"] != "" && !_isValidSQLiteDateModifier(request["retryAfter"])){
-            throw "402 Malformed retryAfter";
-        }
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob(jobID)
+        //
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to cancel
+        //
+        //     Returns:
+        //     - 200 - OK
+        //     - 402 - Cannot cancel jobs that are running
+        //
+        verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
 
-        // If unique flag was passed and the job exist in the DB, then we can
-        // finish the command without escalating to master.
-        if (!request.test("unique")) {
-            // Not unique; need to process
-            return false;
-        }
-
-        // Throw if retryAfter was passed for unique job
-        if (request.isSet("retryAfter")) {
-            throw "405 Unique jobs can't be retried";
-        }
-
-        // Verify unique
         SQResult result;
-        SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-        if (!db.read("SELECT jobID, data "
-                     "FROM jobs "
-                     "WHERE name=" + SQ(request["name"]) + ";",
+        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID) "
+                     "FROM jobs j "
+                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
                      result)) {
             throw "502 Select failed";
         }
-        // If there's no job, escalate to master.
-        if (result.empty()){
-            return false;
+
+        // Verify the job exists
+        if (result.empty()) {
+            throw "404 No job with this jobID";
         }
 
-        // If the existing job doesn't match the data we've been passed, escalate to master.
-        if (result[0][1] != request["data"]) {
-            return false;
+        // If the job has any children, we are using the command in the wrong way
+        if (!result[0][1].empty()) {
+            throw "404 Invalid jobID - Cannot cancel a job with children";
         }
 
-        // Supposed to be unique but not; notify the caller and return that we
-        // are processed
-        SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
-        content["jobID"] = result[0][0];
-        return true;
+        // Don't process the command if the job has finished or it's already running.
+        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+            SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
+            return true; // Done
+        }
+
+        // Verify that we are not trying to cancel a PAUSED job.
+        if (result[0][0] == "PAUSED") {
+            SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
+            return true; // Done
+        }
+
+        return false; // Need to process command
     }
 
     // Didn't recognize this command
@@ -270,7 +338,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     const string& requestVerb = request.getVerb();
 
     // ----------------------------------------------------------------------
-    if (SIEquals(requestVerb, "CreateJob")) {
+    if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
@@ -278,44 +346,53 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     Parameters:
         //     - name  - An arbitrary string identifier (case insensitive)
         //     - data  - A JSON object describing work to be done (optional)
-        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when
-        //                  this job should next execute (optional)
+        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //     - repeat - A description of how to repeat (optional)
         //     - priority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
-        //     return that jobID
+        //                return that jobID
         //     - parentJobID - The ID of the parent job (optional)
         //     - retryAfter - The ID of the parent job (optional)
         //
         //     Returns:
         //     - jobID - Unique identifier of this job
         //
-        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+        // - CreateJobs (jobs)
+        //
+        //     Creates a list of jobs.
+        //
+        //     Parameters:
+        //     - jobs (json array):
+        //          - name  - An arbitrary string identifier (case insensitive)
+        //          - data  - A JSON object describing work to be done (optional)
+        //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
+        //          - repeat - A description of how to repeat (optional)
+        //          - priority - High priorities go first (optional, default 500)
+        //          - unique - if true, it will check that no other job with this name already exists, if it does it will
+        //                     return that jobID
+        //          - parentJobID - The ID of the parent job (optional)
+        //
+        //     Returns:
+        //     - jobIDs - array with the unique identifier of the jobs
+        //
 
-        // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
-        // master.
-        uint64_t updateJobID = 0;
-        if (request.test("unique")) {
-            SQResult result;
-            SINFO("Unique flag was passed, checking existing job with name " << request["name"]);
-            if (!db.read("SELECT jobID, data "
-                         "FROM jobs "
-                         "WHERE name=" + SQ(request["name"]) + ";",
-                         result)) {
-                throw "502 Select failed";
+        list<STable> jsonJobs;
+        if (SIEquals(request.methodLine, "CreateJob")) {
+            jsonJobs.push_back(request.nameValueMap);
+        } else {
+            list<string> multipleJobs;
+            multipleJobs = SParseJSONArray(request["jobs"]);
+            if (multipleJobs.empty()) {
+                throw "401 Invalid JSON";
             }
 
-            // If we got a result, and it's data is the same as passed, we won't change anything.
-            if (!result.empty() && result[0][1] == request["data"]) {
-                SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                      << result[0][0]);
-                content["jobID"] = result[0][0];
-                return true;
-            }
+            for (auto& job : multipleJobs) {
+                STable jobObject = SParseJSONObject(job);
+                if (jobObject.empty()) {
+                    throw "401 Invalid JSON";
+                }
 
-            // If we found a job, but the data was different, we'll need to update it.
-            if (!result.empty()) {
-                updateJobID = SToInt64(result[0][0]);
+                jsonJobs.push_back(jobObject);
             }
 
             // Alert if job is unique and retryAfter is set
@@ -325,108 +402,158 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // If no "firstRun" was provided, use right now
-        const string& safeFirstRun = request["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(request["firstRun"]);
+        list<string> jobIDs;
+        for (auto& job : jsonJobs) {
+            // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
+            // master.
+            uint64_t updateJobID = 0;
+            if (SContains(job, "unique") && job["unique"] == "true") {
+                SQResult result;
+                SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+                if (!db.read("SELECT jobID, data "
+                             "FROM jobs "
+                             "WHERE name=" + SQ(job["name"]) + ";",
+                             result)) {
+                    throw "502 Select failed";
+                }
 
-        // If no data was provided, use an empty object
-        const string& safeData = request["data"].empty() ? SQ("{}") : SQ(request["data"]);
+                // If we got a result, and it's data is the same as passed, we won't change anything.
+                if (!result.empty() && result[0][1] == job["data"]) {
+                    SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
+                          << result[0][0]);
 
-        // If a repeat is provided, validate it
-        if (request.isSet("repeat")) {
-            if (request["repeat"].empty()) {
-                SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
-                      << request["name"] << ", removing attribute.");
-                request.erase("repeat");
-            } else if (!_validateRepeat(request["repeat"])) {
-                throw "402 Malformed repeat";
-            }
-        }
+                    // If we are calling CreateJob, return early, there are no more jobs to create.
+                    if (SIEquals(request.methodLine, "CreateJob")) {
+                        content["jobID"] = result[0][0];
+                        return true;
+                    }
 
-        // If no priority set, set it
-        int64_t priority = request.isSet("priority") ? request.calc("priority") : JOBS_DEFAULT_PRIORITY;
+                    // Append new jobID to list of created jobs.
+                    jobIDs.push_back(result[0][0]);
+                    continue;
+                }
 
-        // Validate that the parentJobID exists and is in the right state if one was passed.
-        int64_t parentJobID = request.calc64("parentJobID");
-        if (parentJobID) {
-            SQResult result;
-            if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
-                throw "502 Select failed";
-            }
-            if (result.empty()) {
-                throw "404 parentJobID does not exist";
-            } else if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
-                SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                throw "405 Can only create child job when parent is RUNNING or PAUSED";
-            }
-            else if (result[0][1] != "") {
-                SALERT("Auto-retrying parents shouldn't have children, parentJobID:" << parentJobID );
-            }
-        }
-
-        // We'd initially intended for any value to be allowable here, but for
-        // performance reasons, we currently will only allow specific values to
-        // try and keep queries fast. If you pass an invalid value, we'll throw
-        // here so that the caller can know that he did something wrong rather
-        // than having his job sit unprocessed in the queue forever. Hopefully
-        // we can remove this restriction in the future.
-        if (priority != 0 && priority != 500 && priority != 1000) {
-            throw "402 Invalid priority value";
-        }
-
-        // Are we creating a new job, or updating an existing job?
-        if (updateJobID) {
-            // Update the existing job.
-            if(!db.write("UPDATE JOBS SET "
-                           "repeat   = " + SQ(SToUpper(request["repeat"])) + ", " +
-                           "data     = JSON_PATCH(data, " + safeData + "), " +
-                           "priority = " + SQ(priority) + " " +
-                         "WHERE jobID = " + SQ(updateJobID) + ";"))
-            {
-                throw "502 update query failed";
-            }
-            content["jobID"] = SToStr(updateJobID);
-        } else {
-            // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
-            // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
-            // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
-            // the child is created (indicating a child is creating a sibling) then the new child starts
-            // in the QUEUED state.
-            auto initialState = "QUEUED";
-            if (parentJobID) {
-                auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-                if (SIEquals(parentState, "RUNNING")) {
-                    initialState = "PAUSED";
+                // If we found a job, but the data was different, we'll need to update it.
+                if (!result.empty()) {
+                    updateJobID = SToInt64(result[0][0]);
                 }
             }
 
-            // If no data was provided, use an empty object
-            const string& safeRetryAfter = request["retryAfter"].empty() ? "\"\"" : SQ(request["retryAfter"]);
+            // If no "firstRun" was provided, use right now
+            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
 
-            // Create this new job
-            if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
-                     "VALUES( " +
-                        SCURRENT_TIMESTAMP() + ", " +
-                        SQ(initialState) + ", " +
-                        SQ(request["name"]) + ", " +
-                        safeFirstRun + ", " +
-                        SQ(SToUpper(request["repeat"])) + ", " +
-                        safeData + ", " +
-                        SQ(priority) + ", " +
-                        SQ(parentJobID) + ", " +
-                        safeRetryAfter +
-                     " );"))
-            {
-                throw "502 insert query failed";
+            // If no data was provided, use an empty object
+            const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
+
+            // If a repeat is provided, validate it
+            if (SContains(job, "repeat")) {
+                if (job["repeat"].empty()) {
+                    SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
+                          << job["name"] << ", removing attribute.");
+                    job.erase("repeat");
+                } else if (!_validateRepeat(job["repeat"])) {
+                    throw "402 Malformed repeat";
+                }
             }
-            // Return the new jobID
-            const int64_t lastInsertRowID = db.getLastInsertRowID();
-            const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
-            if (lastInsertRowID != maxJobID) {
-                SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
-                                                                         << " lastInsertRowID=" << lastInsertRowID);
+
+            // If no priority set, set it
+            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+
+            // We'd initially intended for any value to be allowable here, but for
+            // performance reasons, we currently will only allow specific values to
+            // try and keep queries fast. If you pass an invalid value, we'll throw
+            // here so that the caller can know that he did something wrong rather
+            // than having his job sit unprocessed in the queue forever. Hopefully
+            // we can remove this restriction in the future.
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                throw "402 Invalid priority value";
             }
-            content["jobID"] = SToStr(lastInsertRowID);
-         }
+
+            // Validate that the parentJobID exists and is in the right state if one was passed.
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            if (parentJobID) {
+                SQResult result;
+                if (!db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                    throw "502 Select failed";
+                }
+                if (result.empty()) {
+                    throw "404 parentJobID does not exist";
+                }
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
+                    throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                }
+            }
+
+            // Are we creating a new job, or updating an existing job?
+            if (updateJobID) {
+                // Update the existing job.
+                if(!db.write("UPDATE JOBS SET "
+                               "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
+                               "data     = JSON_PATCH(data, " + safeData + "), " +
+                               "priority = " + SQ(priority) + " " +
+                             "WHERE jobID = " + SQ(updateJobID) + ";"))
+                {
+                    throw "502 update query failed";
+                }
+
+                // If we are calling CreateJob, return early, there are no more jobs to create.
+                if (SIEquals(request.methodLine, "CreateJob")) {
+                    content["jobID"] = SToStr(updateJobID);
+                    return true;
+                }
+
+                // Append new jobID to list of created jobs.
+                jobIDs.push_back(SToStr(updateJobID));
+            } else {
+                // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
+                // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
+                // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
+                // the child is created (indicating a child is creating a sibling) then the new child starts
+                // in the QUEUED state.
+                auto initialState = "QUEUED";
+                if (parentJobID) {
+                    auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+                    if (SIEquals(parentState, "RUNNING")) {
+                        initialState = "PAUSED";
+                    }
+                }
+
+                // Create this new job
+                if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID ) "
+                         "VALUES( " +
+                            SCURRENT_TIMESTAMP() + ", " +
+                            SQ(initialState) + ", " +
+                            SQ(job["name"]) + ", " +
+                            safeFirstRun + ", " +
+                            SQ(SToUpper(job["repeat"])) + ", " +
+                            safeData + ", " +
+                            SQ(priority) + ", " +
+                            SQ(parentJobID) + " " +
+                         " );"))
+                {
+                    throw "502 insert query failed";
+                }
+
+                // Return the new jobID
+                const int64_t lastInsertRowID = db.getLastInsertRowID();
+                const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
+                if (lastInsertRowID != maxJobID) {
+                    SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
+                                                                             << " lastInsertRowID=" << lastInsertRowID);
+                }
+
+                if (SIEquals(request.methodLine, "CreateJob")) {
+                    content["jobID"] = SToStr(lastInsertRowID);
+                    return true;
+                }
+
+                // Append new jobID to list of created jobs.
+                jobIDs.push_back(SToStr(lastInsertRowID));            
+            }
+        }
+
+        content["jobIDs"] = SComposeJSONArray(jobIDs);
 
         // Release workers waiting on this state
         // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
@@ -707,10 +834,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Delete any FINISHED child jobs, but leave any PAUSED children alone (as those will signal that
+        // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
-        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state='FINISHED';")) {
-            throw "502 Failed deleting finished child jobs";
+        if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
+            throw "502 Failed deleting finished/cancelled child jobs";
         }
 
         // If we've been asked to update the data, let's do that
@@ -800,6 +927,25 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Successfully processed
+        return true;
+    }
+    // ----------------------------------------------------------------------
+    else if (SIEquals(request.methodLine, "CancelJob")) {
+        // - CancelJob (jobID)
+        //
+        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //
+        //     Parameters:
+        //     - jobID  - ID of the job to cancel
+        //
+        int64_t jobID = request.calc64("jobID");
+
+        // Cancel the job
+        if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+            throw "502 Failed to update job data";
+        }
+
+        // All done processing this command
         return true;
     }
 
@@ -954,6 +1100,7 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 }
 
 // ==========================================================================
+
 bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     // Returns true if there are any children of this jobID in a "pending" (eg,
     // running or yet to run) state
