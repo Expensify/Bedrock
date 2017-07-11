@@ -211,15 +211,39 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 throw "402 Data is not a valid JSON Object";
             }
 
+            // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
+            // so we're intentionally not adding support for them them yet
+            if (SContains(job, "repeat") && SContains(job, "retryAfter")) {
+                throw "402 Recurring auto-retrying jobs are not supported";
+            }
+
+            // Validate retryAfter
+            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
+                throw "402 Malformed retryAfter";
+            }
+
+            // Throw if retryAfter was passed for unique job
+            if (SContains(job, "retryAfter") && SContains(job, "unique") && job["unique"] == "true") {
+                throw "405 Unique jobs can't be retried";
+            }
+
             // Validate that the parentJobID exists and is in the right state if one was passed.
+            // Also verify that the parent job doesn't have a retryAfter set.
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
+                SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, retryAfter "
+                            "FROM jobs "
+                            "WHERE jobID=" + SQ(parentJobID) + ";",
+                            result)) {
                     throw "502 Select failed";
                 }
                 if (result.empty()) {
                     throw "404 parentJobID does not exist";
+                }
+                if (!result.empty() && result[0][1] != "") {
+                    throw "402 Auto-retrying parents cannot have children";
                 }
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
@@ -677,7 +701,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT jobID, nextRun, lastRun "
+        if (!db.read("SELECT jobID, nextRun, lastRun, state "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -689,6 +713,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
+        const string& state = result[0][3];
+
+        if (state == "RUNQUEUED") {
+            throw "402 Auto-retrying jobs cannot be updated once running";
+        }
 
         // Are we rescheduling?
         const string& newNextRun = request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
