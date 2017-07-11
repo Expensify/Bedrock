@@ -895,8 +895,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Configured to repeat.  The "nextRun" at this point is still
             // storing the last time this job was *scheduled* to be run;
             // lastRun contains when it was *actually* run.
-            // NOTE: we're not including retryAfter when computing lastScheduled
-            //       because we currently don't support retryable and recurring jobs
             const string& lastScheduled = nextRun;
             const string& newNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
             if (newNextRun.empty()) {
@@ -1093,7 +1091,11 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
     }
 
     // Validate the sqlite date modifiers
-    // See: https://www.sqlite.org/lang_datefunc.html
+    if (!_isValidSQLiteDateModifier(SComposeList(parts))){
+        SWARN("Syntax error, failed parsing repeat");
+        return "";
+    }
+
     for (const string& part : parts) {
         // Simple regexp validation
         if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
@@ -1102,10 +1104,6 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
             safeParts.push_back(SQ(part));
         } else if (SREMatch("^WEEKDAY [0-6]$", part)) {
             safeParts.push_back(SQ(part));
-        } else {
-            // Malformed part
-            SWARN("Syntax error, failed parsing repeat '" << repeat << "' on part '" << part << "'");
-            return "";
         }
     }
 
@@ -1122,7 +1120,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     if (!db.read("SELECT 1 "
                  "FROM jobs "
                  "WHERE parentJobID = " + SQ(jobID) + " " +
-                 "  AND state IN ('QUEUED', 'RUNNING', 'PAUSED') "
+                 "  AND state IN ('QUEUED', 'RUNQUEUED', RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
@@ -1130,3 +1128,26 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     return !result.empty();
 }
 
+bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
+    // See: https://www.sqlite.org/lang_datefunc.html
+    list<string> parts = SParseList(SToUpper(modifier));
+    for (const string& part : parts) {
+        // Simple regexp validation
+        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
+            continue;
+        }
+        if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
+            continue;
+        }
+        if (SREMatch("^WEEKDAY [0-6]$", part)) {
+            continue;
+        }
+
+        // Couldn't match this part to any valid syntax
+        SINFO("Syntax error, failed parsing date modifier '" << modifier << "' on part '" << part << "'");
+        return false;
+    }
+
+    // Matched all parts, valid syntax
+    return true;
+}
