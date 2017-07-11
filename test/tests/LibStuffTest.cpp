@@ -23,7 +23,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testCurrentTimestamp),
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
-                                    TEST(LibStuff::testHexConversion))
+                                    TEST(LibStuff::testHexConversion),
+                                    TEST(LibStuff::testContains))
     { }
 
     void testEncryptDecrpyt() {
@@ -590,5 +591,15 @@ struct LibStuff : tpunit::TestFixture {
 
         string start = "I wish I was an Oscar Meyer Weiner";
         ASSERT_EQUAL(SStrFromHex(SToHex(start)), start);
+    }
+
+    void testContains() {
+        list<string> stringList = list<string>();
+        stringList.push_back("asdf");
+        ASSERT_TRUE(SContains(stringList, "asdf"));
+        ASSERT_FALSE(SContains(stringList, "fdsa"));
+
+        ASSERT_TRUE(SContains(string("asdf"), "a"));
+        ASSERT_TRUE(SContains(string("asdf"), string("asd")));
     }
 } __LibStuff;
