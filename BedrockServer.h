@@ -7,6 +7,34 @@
 
 class BedrockServer : public SQLiteServer {
   public:
+
+    // Shutting down a bedrock server correctly is a multi-step process that ensures we will still respond to any
+    // requests we received right up until we are about to shut down.
+    enum SHUTDOWN_STATE {
+        // This is the state until we begin shutting down.
+        RUNNING,
+
+        // In postPoll, this will be set if we received a SIGTERM or SIGINT since gthe last poll iteration. This will
+        // happen as soon as we've begun the shutdown process.
+        START_SHUTDOWN,
+
+        // postPoll will run through the remaining listening sockets, make sure everything's been read, deserialized,
+        // and queued for processing, and close the listening ports, then set this state.
+        PORTS_CLOSED,
+
+        // We let the workers run trough commands until their queue is empty. When that happens, we set this state,
+        // indicating that everything that might need to be escalated to the sync thread has been escalated.
+        QUEUE_PROCESSED,
+
+        // Once QUEUE_PROCESSED is set, the sync thread can process commands until it's queue is empty, and then we can
+        // set this flag, indicating the sync thread is done.
+        SYNC_SHUTDOWN,
+
+        // Finally, when the worker's queue is empty again (the sync thread can add items to it via escalation
+        // responses), we're actually done, and we can finish shutting everything down.
+        DONE
+    };
+
     // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
     // initialized at construction based on the arguments passed in.
     list<BedrockPlugin*> plugins;
@@ -82,10 +110,6 @@ class BedrockServer : public SQLiteServer {
     // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
     atomic<bool> _upgradeInProgress;
 
-    // This flag will be raised when we want to start shutting down. A reference is passed to the sync thread to allow
-    // it to shut down its SQLiteNode.
-    atomic<bool> _nodeGracefulShutdown;
-
     // This is the current version of the master node, updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
     atomic<string> _masterVersion;
@@ -121,7 +145,6 @@ class BedrockServer : public SQLiteServer {
     static void sync(SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
-                     atomic<bool>& nodeGracefulShutdown,
                      atomic<string>& masterVersion,
                      CommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
@@ -130,7 +153,6 @@ class BedrockServer : public SQLiteServer {
     static void worker(SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
-                       atomic<bool>& nodeGracefulShutdown,
                        atomic<string>& masterVersion,
                        CommandQueue& syncNodeQueuedCommands,
                        CommandQueue& syncNodeCompletedCommands,
@@ -187,4 +209,7 @@ class BedrockServer : public SQLiteServer {
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
+
+    // The current state of shutdown. Starts as RUNNING.
+    atomic<SHUTDOWN_STATE> _shutdownState;
 };

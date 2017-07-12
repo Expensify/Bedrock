@@ -433,6 +433,7 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
 
+inline bool SContains(const list<string>& valueList, const char* value) { return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end(); }
 inline bool SContains(const string& haystack, const string& needle) { return haystack.find(needle) != string::npos; }
 inline bool SContains(const string& haystack, char needle) { return haystack.find(needle) != string::npos; }
 inline bool SContains(const STable& nameValueMap, const string& name) {
