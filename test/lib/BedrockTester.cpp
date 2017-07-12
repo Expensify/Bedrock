@@ -10,7 +10,8 @@ list<string> BedrockTester::locations = {
 };
 set<string> BedrockTester::plugins = {
     "db",
-    "cache"
+    "cache",
+    "jobs"
 };
 
 // Make llvm and gcc get along.
