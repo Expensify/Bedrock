@@ -17,7 +17,6 @@ struct CreateJobsTest : tpunit::TestFixture {
 
     void create() {
         SData command("CreateJobs");
-        string jobName = "testCreate";
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
         STable response = getJsonResult(command);
         list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
@@ -29,7 +28,6 @@ struct CreateJobsTest : tpunit::TestFixture {
 
     void createWithInvalidJson() {
         SData command("CreateJobs");
-        string jobName = "testCreate";
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"parentJobID\":\"1000\", \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
         tester->executeWait(command, "401 Invalid JSON");
     }
@@ -43,7 +41,6 @@ struct CreateJobsTest : tpunit::TestFixture {
         // Now try to create two new jobs
         command.clear();
         command.methodLine = "CreateJobs";
-        string jobName = "testCreate";
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"parentJobID\":\"" + response["jobID"] +"\", \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
         tester->executeWait(command, "405 Can only create child job when parent is RUNNING or PAUSED");
     }
