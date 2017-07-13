@@ -178,5 +178,3 @@ struct CreateJobTest : tpunit::TestFixture {
         return SParseJSONObject(resultJson);
     }
 } __CreateJobTest;
-
-
