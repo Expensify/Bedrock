@@ -239,7 +239,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
-                if (!result.empty() && result[0][1] == job["data"]) {
+                if (!result.empty() && result[0][1] == (job["data"].empty() ? SToStr("{}") : job["data"])) {
                     // Return early, no need to pass to master, there are no more jobs to create.
                     SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
                     content["jobID"] = result[0][0];
@@ -386,7 +386,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && result[0][1] == job["data"]) {
+                if (!result.empty() && result[0][1] == (job["data"].empty() ? SToStr("{}") : job["data"])) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
                           << result[0][0]);
 
