@@ -227,20 +227,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            // Verify unique
-            SQResult result;
-            SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
-            if (!db.read("SELECT jobID, data "
-                         "FROM jobs "
-                         "WHERE name=" + SQ(job["name"]) + ";",
-                         result)) {
-                throw "502 Select failed";
-            }
+            // Verify unique, but only do so when creating a single job using CreateJob
+            if (SIEquals(request.methodLine, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+                SQResult result;
+                SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+                if (!db.read("SELECT jobID, data "
+                             "FROM jobs "
+                             "WHERE name=" + SQ(job["name"]) + ";",
+                             result)) {
+                    throw "502 Select failed";
+                }
 
-            // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
-            if (!result.empty() && result[0][1] == job["data"]){
-                // If we are calling CreateJob, return early, there are no more jobs to create.
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
+                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                    // Return early, no need to pass to master, there are no more jobs to create.
                     SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
                     content["jobID"] = result[0][0];
                     return true;
@@ -386,7 +386,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && result[0][1] == job["data"]) {
+                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
                           << result[0][0]);
 
