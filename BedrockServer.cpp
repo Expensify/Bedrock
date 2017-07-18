@@ -1181,6 +1181,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         // On master, return the current multi-write blacklist.
         if (state == SQLiteNode::MASTERING) {
             content["multiWriteBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
+            content["multiWriteWhiteList"] = SComposeJSONArray(_parallelCommands);
         }
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
