@@ -434,7 +434,7 @@ void SQLite::rollback() {
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Cancel this transaction
-        SINFO("Rolling back transaction: " << _uncommittedQuery);
+        SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
         uint64_t before = STimeNow();
         SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
         _rollbackElapsed += STimeNow() - before;
