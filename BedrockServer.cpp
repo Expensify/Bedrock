@@ -812,6 +812,34 @@ bool BedrockServer::shutdownComplete() {
     if (!_commandQueue.empty()) {
         logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
     }
+
+    // Also log the shutdown state.
+    SHUTDOWN_STATE state = _shutdownState.load();
+    string stateString;
+    switch (state) {
+        case RUNNING:
+            stateString = "RUNNING";
+            break;
+        case START_SHUTDOWN:
+            stateString = "START_SHUTDOWN";
+            break;
+        case PORTS_CLOSED:
+            stateString = "PORTS_CLOSED";
+            break;
+        case QUEUE_PROCESSED:
+            stateString = "QUEUE_PROCESSED";
+            break;
+        case SYNC_SHUTDOWN:
+            stateString = "SYNC_SHUTDOWN";
+            break;
+        case DONE:
+            stateString = "DONE";
+            break;
+        default:
+            stateString = "UNKNOWN";
+            break;
+    }
+    logLine += " Shutdown State: " + stateString + ".";
     SWARN(logLine);
 
     return false;
