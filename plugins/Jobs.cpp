@@ -441,7 +441,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, parentJobID FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     throw "502 Select failed";
                 }
                 if (result.empty()) {
@@ -450,6 +450,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                }
+              
+                // Prevent jobs from creating grandchildren
+                if (!SIEquals(result[0][1], "0")) {
+                    SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
+                    throw "405 Cannot create grandchildren";
                 }
             }
 
