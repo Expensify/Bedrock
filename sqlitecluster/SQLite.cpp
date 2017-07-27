@@ -42,7 +42,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // operation, and any other threads will be blocked until it's complete.
     SQLITE_COMMIT_AUTOLOCK;
     bool initializer = !_sqliteInitialized.test_and_set();
-    
+
     // We need to initialize sqlite. Only the first thread to get here will do this.
     if (initializer) {
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
@@ -391,7 +391,7 @@ int SQLite::commit() {
         _commitCount++;
         _committedTransactionIDs.insert(_commitCount.load());
         _lastCommittedHash.store(_uncommittedHash);
-        SINFO("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
+        SDEBUG("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
@@ -472,7 +472,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
     // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit
-    string q= _getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)}); 
+    string q= _getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)});
     SQResult result;
     SASSERT(!SQuery(_db, "getting commit", q, result));
     if (!result.empty()) {
@@ -489,7 +489,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     return (!query.empty() && !hash.empty());
 }
 
-string SQLite::getCommittedHash() { 
+string SQLite::getCommittedHash() {
     return _lastCommittedHash.load();
 }
 
