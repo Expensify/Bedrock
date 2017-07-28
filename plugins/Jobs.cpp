@@ -608,9 +608,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SASSERT(result[c].size() == 4);
             updateQuery += (c ? ", " : "") + result[c][0];
 
-            // See if this job has any FINISHED child jobs, indicating it is being resumed
-            SQResult finishedChildJobs;
-            if (!db.read("SELECT jobID, data FROM jobs WHERE parentJobID=" + result[c][0] + " AND state='FINISHED';", finishedChildJobs)) {
+            // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
+            SQResult childJobs;
+            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
                 throw "502 Failed to select finished child jobs";
             }
 
@@ -625,16 +625,23 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 job["parentJobID"] = SToStr(parentJobID);;
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
-            if (!finishedChildJobs.empty()) {
-                // Add an associative array of all children
+            if (!childJobs.empty()) {
+                // Add associative arrays of all children depending on their states
                 list<string> finishedChildJobArray;
-                for (auto row : finishedChildJobs.rows) {
-                    STable finishedChildJob;
-                    finishedChildJob["jobID"] = row[0];
-                    finishedChildJob["data"] = row[1];
-                    finishedChildJobArray.push_back(SComposeJSONObject(finishedChildJob));
+                list<string> cancelledChildJobArray;
+                for (auto row : childJobs.rows) {
+                    STable childJob;
+                    childJob["jobID"] = row[0];
+                    childJob["data"] = row[1];
+
+                    if (row[2] ==  "FINISHED") {
+                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                    } else {
+                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
+                    }
                 }
                 job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
             jobList.push_back(SComposeJSONObject(job));
         }
