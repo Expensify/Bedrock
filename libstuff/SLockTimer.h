@@ -89,7 +89,6 @@ void SLockTimer<LOCKTYPE>::unlock()
         }
         if (enableExtraLogging.load() && lockElapsed > 1000000) {
             SWARN("[performance] Over 1s spent waiting in lock " << _description << ": " << lockElapsed << "us.");
-            SLogStackTrace();
         }
     }
     _lock.unlock();
