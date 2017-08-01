@@ -1089,6 +1089,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // The last thing we do is total up our timing info and add it to the response.
         command.finalizeTimingInfo();
+        command.response["nodeName"] = _args["-nodeName"];
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];
