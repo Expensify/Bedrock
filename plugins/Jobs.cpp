@@ -616,6 +616,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Add this object to our output
             STable job;
+            SINFO("Returning jobID " << result[c][0] << " from " << requestVerb);
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];
