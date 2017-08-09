@@ -176,7 +176,7 @@ int main(int argc, char* argv[]) {
     if (args.isSet("-version")) {
         // Just output the version
         cout << SVERSION << endl;
-        return 1;
+        return 0;
     }
     if (args.isSet("-h") || args.isSet("-?") || args.isSet("-help")) {
         // Ouput very basic documentation
