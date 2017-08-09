@@ -8,10 +8,6 @@ list<string> BedrockTester::locations = {
     "../bedrock",
     "../../bedrock"
 };
-set<string> BedrockTester::plugins = {
-    "db",
-    "cache"
-};
 
 // Make llvm and gcc get along.
 #ifdef _NOEXCEPT
@@ -141,7 +137,7 @@ bool BedrockTester::createFile(string name) {
 
 string BedrockTester::getServerName() {
     for (auto location : locations) {
-        if (SFileExists(location)) {
+        if (true || SFileExists(location)) {
             return location;
         }
     }
@@ -150,19 +146,21 @@ string BedrockTester::getServerName() {
 
 list<string> BedrockTester::getServerArgs(map <string, string> args) {
 
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+
     map <string, string> defaults = {
         {"-db",               _dbFile.empty() ? DB_FILE : _dbFile},
         {"-serverHost",       _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
         {"-nodeName",        "bedrock_test"},
         {"-nodeHost",         "localhost:9889"},
         {"-priority",         "200"},
-        {"-plugins",          SComposeList(plugins)},
         {"-readThreads",      "8"},
         {"-maxJournalSize",   "100"},
         {"-v",                ""},
         {"-quorumCheckpoint", "50"},
         {"-parallelCommands", "Query,idcollision"},
-        {"-cache",            "10001"},
+        {"-cacheSize",        "1000"},
     };
 
     for (auto row : defaults) {
@@ -254,12 +252,21 @@ void BedrockTester::stopServer() {
 }
 
 vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> requests, int connections) {
+    auto results = executeWaitMultipleData(requests, connections);
+    vector<pair<string,string>> response;
+    for (auto p : results) {
+        response.push_back(make_pair(p.first, p.second.content));
+    }
+    return response;
+}
+
+vector<pair<string,SData>> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections) {
 
     // Synchronize dequeuing requessts, and saving results.
     recursive_mutex listLock;
 
     // Our results go here.
-    vector<pair<string,string>> results;
+    vector<pair<string,SData>> results;
     results.resize(requests.size());
 
     // This is the next index of `requests` that needs processing.
@@ -334,7 +341,7 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
                             //SAUTOLOCK(listLock);
                             //cout << "Timeout (" << timeouts << ") waiting on socket, will try again." << endl;
                         }
-                        if (timeouts == 60) {
+                        if (timeouts == 300) {
                             SAUTOLOCK(listLock);
                             cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest["Query"] << endl;
                             break;
@@ -348,9 +355,13 @@ vector<pair<string,string>> BedrockTester::executeWaitMultiple(vector<SData> req
                     SAUTOLOCK(listLock);
                     if (timeouts == 60) {
                         // cout << "this failed: " << myRequest.serialize() << endl;
-                        results[myIndex] = make_pair("000 Timeout", myRequest.serialize());
+                        results[myIndex] = make_pair("000 Timeout", myRequest);
                     } else {
                         // Ok, done, let's lock again and insert this in the results.
+                        SData responseData;
+                        responseData.nameValueMap = headers;
+                        responseData.methodLine = methodLine;
+                        responseData.content = content;
                         results[myIndex] = make_pair(methodLine, content);
                     }
                 }
