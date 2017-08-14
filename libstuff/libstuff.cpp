@@ -1983,7 +1983,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
                     SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
                 }
                 completeBytes += numRead;
-                int percent = (completeBytes * 100) / fromSize;
+                int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
                 if (percent > completePercent) {
                     SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
                     completePercent = percent;
