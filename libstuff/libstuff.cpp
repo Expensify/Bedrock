@@ -1941,23 +1941,65 @@ bool SFileSave(const string& path, const string& buffer) {
 
 // --------------------------------------------------------------------------
 bool SFileCopy(const string& fromPath, const string& toPath) {
-    // Open the from and to
+    // Figure out the size of the file we're copying.
+    uint64_t fromSize = SFileSize(fromPath);
+    if (!fromSize) {
+        SWARN("File " << fromPath << " is empty! Copying anyway.");
+    }
+
+    // Open both the source and destination files.
     FILE* from = fopen(fromPath.c_str(), "rb");
+    if (!from) {
+        SWARN("Couldn't open file " << fromPath << " for reading. Error: " << errno << ", " << strerror(errno) << ".");
+        return false;
+    }
+    SINFO("Successfully opened " << fromPath << " for reading.");
     FILE* to = fopen(toPath.c_str(), "wb");
+    if (!to) {
+        SWARN("Couldn't open file " << toPath << " for writing. Error: " << errno << ", " << strerror(errno) << ".");
+        return false;
+    }
+    SINFO("Successfully opened " << toPath << " for writing.");
     bool success = false;
     try {
-        // Make sure they opened fined
-        if (!from)
-            throw "read open error";
-        if (!to)
-            throw "write open error";
-
         // Read and write
         char buf[1024 * 64];
         size_t numRead = 0;
-        while ((numRead = fread(buf, 1, sizeof(buf), from)) > 0)
-            if (fwrite(buf, 1, numRead, to) != numRead)
+        uint64_t completeBytes = 0;
+        int completePercent = 0;
+        bool readAny = false;
+        bool writtenAny = false;
+        while ((numRead = fread(buf, 1, sizeof(buf), from)) > 0) {
+            if (!readAny) {
+                readAny = true;
+                SINFO("Read first " << numRead << " bytes from " << fromPath << ".");
+            }
+            if (fwrite(buf, 1, numRead, to) != numRead) {
+                SWARN("Failure writing to " << toPath << " Error: " << errno << ", " << strerror(errno) << ".");
                 throw "write error";
+            } else {
+                if (!writtenAny) {
+                    writtenAny = true;
+                    SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
+                }
+                completeBytes += numRead;
+                int percent = (completeBytes * 100) / fromSize;
+                if (percent > completePercent) {
+                    SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
+                    completePercent = percent;
+                }
+            }
+        }
+
+        // See if we failed, or if we hit EOF.
+        if (ferror(from)) {
+            SWARN("Failure reading from " << fromPath << " Error: " << errno << ", " << strerror(errno) << ".");
+        } else {
+            // If there was no error, we should be at the end of the file.
+            if (!feof(from)) {
+                SWARN("Done reading from " << fromPath << " with no error, but not EOF.");
+            }
+        }
 
         // Done
         success = true;
@@ -1965,10 +2007,8 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
         // Problem
         SWARN("Failed copying file '" << fromPath << "' to '" << toPath << "' (" << e << ")");
     }
-    if (from)
-        fclose(from);
-    if (to)
-        fclose(to);
+    fclose(from);
+    fclose(to);
     return success;
 }
 
