@@ -121,9 +121,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.21.0"
-#define SQLITE_VERSION_NUMBER 3021000
-#define SQLITE_SOURCE_ID      "2017-08-12 14:06:15 4256072399f44f48ed0856aa8112226af6feaf8676923612bde6cea239ebf920"
+#define SQLITE_VERSION        "3.20.0"
+#define SQLITE_VERSION_NUMBER 3020000
+#define SQLITE_SOURCE_ID      "2017-08-15 01:07:03 346a710da4b50c9eaf327a4960174ec1f79adea0d41cd0a1c43ef82a0ba05ad7"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -494,9 +494,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOERR_CONVPATH          (SQLITE_IOERR | (26<<8))
 #define SQLITE_IOERR_VNODE             (SQLITE_IOERR | (27<<8))
 #define SQLITE_IOERR_AUTH              (SQLITE_IOERR | (28<<8))
-#define SQLITE_IOERR_BEGIN_ATOMIC      (SQLITE_IOERR | (29<<8))
-#define SQLITE_IOERR_COMMIT_ATOMIC     (SQLITE_IOERR | (30<<8))
-#define SQLITE_IOERR_ROLLBACK_ATOMIC   (SQLITE_IOERR | (31<<8))
 #define SQLITE_LOCKED_SHAREDCACHE      (SQLITE_LOCKED |  (1<<8))
 #define SQLITE_BUSY_RECOVERY           (SQLITE_BUSY   |  (1<<8))
 #define SQLITE_BUSY_SNAPSHOT           (SQLITE_BUSY   |  (2<<8))
@@ -583,11 +580,6 @@ SQLITE_API int sqlite3_exec(
 ** SQLITE_IOCAP_IMMUTABLE flag indicates that the file is on
 ** read-only media and cannot be changed even by processes with
 ** elevated privileges.
-**
-** The SQLITE_IOCAP_BATCH_ATOMIC property means that the underlying
-** filesystem supports doing multiple write operations atomically when those
-** write operations are bracketed by [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] and
-** [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].
 */
 #define SQLITE_IOCAP_ATOMIC                 0x00000001
 #define SQLITE_IOCAP_ATOMIC512              0x00000002
@@ -603,7 +595,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN  0x00000800
 #define SQLITE_IOCAP_POWERSAFE_OVERWRITE    0x00001000
 #define SQLITE_IOCAP_IMMUTABLE              0x00002000
-#define SQLITE_IOCAP_BATCH_ATOMIC           0x00004000
 
 /*
 ** CAPI3REF: File Locking Levels
@@ -738,7 +729,6 @@ struct sqlite3_file {
 ** <li> [SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN]
 ** <li> [SQLITE_IOCAP_POWERSAFE_OVERWRITE]
 ** <li> [SQLITE_IOCAP_IMMUTABLE]
-** <li> [SQLITE_IOCAP_BATCH_ATOMIC]
 ** </ul>
 **
 ** The SQLITE_IOCAP_ATOMIC property means that all writes of
@@ -1022,40 +1012,6 @@ struct sqlite3_io_methods {
 ** The [SQLITE_FCNTL_RBU] opcode is implemented by the special VFS used by
 ** the RBU extension only.  All other VFS should return SQLITE_NOTFOUND for
 ** this opcode.  
-**
-** <li>[[SQLITE_FCNTL_BEGIN_ATOMIC_WRITE]]
-** If the [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] opcode returns SQLITE_OK, then
-** the file descriptor is placed in "batch write mode", which
-** means all subsequent write operations will be deferred and done
-** atomically at the next [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].  Systems
-** that do not support batch atomic writes will return SQLITE_NOTFOUND.
-** ^Following a successful SQLITE_FCNTL_BEGIN_ATOMIC_WRITE and prior to
-** the closing [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] or
-** [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE], SQLite will make
-** no VFS interface calls on the same [sqlite3_file] file descriptor
-** except for calls to the xWrite method and the xFileControl method
-** with [SQLITE_FCNTL_SIZE_HINT].
-**
-** <li>[[SQLITE_FCNTL_COMMIT_ATOMIC_WRITE]]
-** The [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] opcode causes all write
-** operations since the previous successful call to 
-** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be performed atomically.
-** This file control returns [SQLITE_OK] if and only if the writes were
-** all performed successfully and have been committed to persistent storage.
-** ^Regardless of whether or not it is successful, this file control takes
-** the file descriptor out of batch write mode so that all subsequent
-** write operations are independent.
-** ^SQLite will never invoke SQLITE_FCNTL_COMMIT_ATOMIC_WRITE without
-** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
-**
-** <li>[[SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE]]
-** The [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE] opcode causes all write
-** operations since the previous successful call to 
-** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be rolled back.
-** ^This file control takes the file descriptor out of batch write mode
-** so that all subsequent write operations are independent.
-** ^SQLite will never invoke SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE without
-** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
 ** </ul>
 */
 #define SQLITE_FCNTL_LOCKSTATE               1
@@ -1087,9 +1043,6 @@ struct sqlite3_io_methods {
 #define SQLITE_FCNTL_JOURNAL_POINTER        28
 #define SQLITE_FCNTL_WIN32_GET_HANDLE       29
 #define SQLITE_FCNTL_PDB                    30
-#define SQLITE_FCNTL_BEGIN_ATOMIC_WRITE     31
-#define SQLITE_FCNTL_COMMIT_ATOMIC_WRITE    32
-#define SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE  33
 
 /* deprecated names */
 #define SQLITE_GET_LOCKPROXYFILE      SQLITE_FCNTL_GET_LOCKPROXYFILE
@@ -3692,7 +3645,7 @@ SQLITE_API int sqlite3_prepare16_v3(
   sqlite3 *db,            /* Database handle */
   const void *zSql,       /* SQL statement, UTF-16 encoded */
   int nByte,              /* Maximum length of zSql in bytes. */
-  unsigned int prepFlags, /* Zero or more SQLITE_PREPARE_ flags */
+  unsigned int prepFalgs, /* Zero or more SQLITE_PREPARE_ flags */
   sqlite3_stmt **ppStmt,  /* OUT: Statement handle */
   const void **pzTail     /* OUT: Pointer to unused portion of zSql */
 );
@@ -3930,14 +3883,14 @@ typedef struct sqlite3_context sqlite3_context;
 ** [sqlite3_blob_open | incremental BLOB I/O] routines.
 ** ^A negative value for the zeroblob results in a zero-length BLOB.
 **
-** ^The sqlite3_bind_pointer(S,I,P,T,D) routine causes the I-th parameter in
+** ^The sqlite3_bind_pointer(S,I,P,T) routine causes the I-th parameter in
 ** [prepared statement] S to have an SQL value of NULL, but to also be
-** associated with the pointer P of type T.  ^D is either a NULL pointer or
-** a pointer to a destructor function for P. ^SQLite will invoke the
-** destructor D with a single argument of P when it is finished using
-** P.  The T parameter should be a static string, preferably a string
-** literal. The sqlite3_bind_pointer() routine is part of the
-** [pointer passing interface] added for SQLite 3.20.0.
+** associated with the pointer P of type T.
+** ^The sqlite3_bind_pointer() routine can be used to pass
+** host-language pointers into [application-defined SQL functions].
+** ^A parameter that is initialized using [sqlite3_bind_pointer()] appears
+** to be an ordinary SQL NULL value to everything other than
+** [sqlite3_value_pointer()].  The T parameter should be a static string.
 **
 ** ^If any of the sqlite3_bind_*() routines are called with a NULL pointer
 ** for the [prepared statement] or with a prepared statement for which
@@ -3972,7 +3925,7 @@ SQLITE_API int sqlite3_bind_text16(sqlite3_stmt*, int, const void*, int, void(*)
 SQLITE_API int sqlite3_bind_text64(sqlite3_stmt*, int, const char*, sqlite3_uint64,
                          void(*)(void*), unsigned char encoding);
 SQLITE_API int sqlite3_bind_value(sqlite3_stmt*, int, const sqlite3_value*);
-SQLITE_API int sqlite3_bind_pointer(sqlite3_stmt*, int, void*, const char*,void(*)(void*));
+SQLITE_API int sqlite3_bind_pointer(sqlite3_stmt*, int, void*, const char*);
 SQLITE_API int sqlite3_bind_zeroblob(sqlite3_stmt*, int, int n);
 SQLITE_API int sqlite3_bind_zeroblob64(sqlite3_stmt*, int, sqlite3_uint64);
 
@@ -4805,11 +4758,10 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** extract UTF-16 strings as big-endian and little-endian respectively.
 **
 ** ^If [sqlite3_value] object V was initialized 
-** using [sqlite3_bind_pointer(S,I,P,X,D)] or [sqlite3_result_pointer(C,P,X,D)]
+** using [sqlite3_bind_pointer(S,I,P,X)] or [sqlite3_result_pointer(C,P,X)]
 ** and if X and Y are strings that compare equal according to strcmp(X,Y),
 ** then sqlite3_value_pointer(V,Y) will return the pointer P.  ^Otherwise,
-** sqlite3_value_pointer(V,Y) returns a NULL. The sqlite3_bind_pointer() 
-** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
+** sqlite3_value_pointer(V,Y) returns a NULL.
 **
 ** ^(The sqlite3_value_type(V) interface returns the
 ** [SQLITE_INTEGER | datatype code] for the initial datatype of the
@@ -5144,16 +5096,14 @@ typedef void (*sqlite3_destructor_type)(void*);
 ** [unprotected sqlite3_value] object is required, so either
 ** kind of [sqlite3_value] object can be used with this interface.
 **
-** ^The sqlite3_result_pointer(C,P,T,D) interface sets the result to an
+** ^The sqlite3_result_pointer(C,P,T) interface sets the result to an
 ** SQL NULL value, just like [sqlite3_result_null(C)], except that it
 ** also associates the host-language pointer P or type T with that 
 ** NULL value such that the pointer can be retrieved within an
 ** [application-defined SQL function] using [sqlite3_value_pointer()].
-** ^If the D parameter is not NULL, then it is a pointer to a destructor
-** for the P parameter.  ^SQLite invokes D with P as its only argument
-** when SQLite is finished with P.  The T parameter should be a static
-** string and preferably a string literal. The sqlite3_result_pointer()
-** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
+** The T parameter should be a static string.
+** This mechanism can be used to pass non-SQL values between
+** application-defined functions.
 **
 ** If these routines are called from within the different thread
 ** than the one containing the application-defined function that received
@@ -5178,7 +5128,7 @@ SQLITE_API void sqlite3_result_text16(sqlite3_context*, const void*, int, void(*
 SQLITE_API void sqlite3_result_text16le(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_text16be(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_value(sqlite3_context*, sqlite3_value*);
-SQLITE_API void sqlite3_result_pointer(sqlite3_context*, void*,const char*,void(*)(void*));
+SQLITE_API void sqlite3_result_pointer(sqlite3_context*, void*, const char*);
 SQLITE_API void sqlite3_result_zeroblob(sqlite3_context*, int n);
 SQLITE_API int sqlite3_result_zeroblob64(sqlite3_context*, sqlite3_uint64 n);
 
