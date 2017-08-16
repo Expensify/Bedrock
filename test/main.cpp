@@ -30,6 +30,7 @@ void sigclean(int sig) {
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
+    BedrockTester::globalArgs = &args;
 
     // Catch sigint.
     signal(SIGINT, sigclean);
@@ -67,6 +68,15 @@ int main(int argc, char* argv[]) {
     }
     if (args.isSet("-threads")) {
         threads = SToInt(args["-threads"]);
+    }
+
+    // Perf is excluded unless specified explicitly.
+    if (args.isSet("-perf")) {
+        include.insert("Perf");
+        exclude.erase("Perf");
+    } else {
+        include.erase("Perf");
+        exclude.insert("Perf");
     }
 
     // Set the defaults for the servers that each BedrockTester will start.

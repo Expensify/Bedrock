@@ -16,6 +16,8 @@ class BedrockTester {
     static bool startServers;
     static list<string> locations;
 
+    static SData* globalArgs;
+
     uint64_t nextActivity;
     int serverPID = 0;
     SQLite* db = nullptr;

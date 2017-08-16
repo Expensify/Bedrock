@@ -5,8 +5,8 @@ struct PerfTest : tpunit::TestFixture {
         : tpunit::TestFixture("Perf",
                               BEFORE_CLASS(PerfTest::setup),
                               TEST(PerfTest::insertSerialBatches),
-                              TEST(PerfTest::clearTable),
-                              TEST(PerfTest::insertRandomParallel),
+                              //TEST(PerfTest::clearTable),
+                              //TEST(PerfTest::insertRandomParallel),
                               TEST(PerfTest::indexPerf),
                               AFTER_CLASS(PerfTest::tearDown)) { }
 
@@ -14,16 +14,20 @@ struct PerfTest : tpunit::TestFixture {
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 3ll; // Approximately 0.1 gb.
+    int64_t NUM_ROWS = 1000000ll * 30ll; // Approximately 1 gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
 
     void setup() {
+        int threads = 8;
+        if (BedrockTester::globalArgs->isSet("-brthreads")) {
+            threads = SToInt64((*BedrockTester::globalArgs)["-brthreads"]);
+        }
         // Create the database table.
         tester = new BedrockTester("", "", {
             "CREATE TABLE perfTest(indexedColumn INT PRIMARY KEY, nonIndexedColumn INT);"
-        });
+        }, {{"-readThreads", to_string(threads)}});
     }
 
     void tearDown() { delete tester; }
@@ -81,9 +85,9 @@ struct PerfTest : tpunit::TestFixture {
             while (currentRows < NUM_ROWS && commands.size() < 10000) {
                 // Generate some random values to use that we can look up later.
                 int64_t candidate1 = 0;
-                int64_t candidate2 = (int64_t)SRandom::rand64();
+                int64_t candidate2 = (int64_t)(SRandom::rand64() >> 2);
                 while (1) {
-                    candidate1 = (int64_t)SRandom::rand64();
+                    candidate1 = (int64_t)(SRandom::rand64() >> 2);
                     if (randomValues1.find(candidate1) == randomValues1.end()) {
                         break;
                     } else {
@@ -104,10 +108,10 @@ struct PerfTest : tpunit::TestFixture {
             tester->executeWaitMultiple(commands, 500);
 
             int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
-            if (percent >= lastPercent + 5) {
+            //if (percent >= lastPercent + 5) {
                 lastPercent = percent;
                 cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
-            }
+            //}
         }
 
         auto end = STimeNow();
@@ -117,8 +121,8 @@ struct PerfTest : tpunit::TestFixture {
     void indexPerf() {
         try {
         int64_t TOTAL_QUERIES = 1000000;
-        int64_t BATCH_SIZE = 10000;
-        int64_t THREADS = 250;
+        int64_t BATCH_SIZE = 25000;
+        int64_t THREADS = 500;
 
         int64_t totalReadTime = 0;
 

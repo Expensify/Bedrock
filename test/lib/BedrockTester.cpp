@@ -8,6 +8,7 @@ list<string> BedrockTester::locations = {
     "../bedrock",
     "../../bedrock"
 };
+SData* BedrockTester::globalArgs = nullptr;
 
 // Make llvm and gcc get along.
 #ifdef _NOEXCEPT
@@ -362,7 +363,7 @@ vector<pair<string,SData>> BedrockTester::executeWaitMultipleData(vector<SData> 
                         responseData.nameValueMap = headers;
                         responseData.methodLine = methodLine;
                         responseData.content = content;
-                        results[myIndex] = make_pair(methodLine, content);
+                        results[myIndex] = make_pair(methodLine, responseData);
                     }
                 }
             }
