@@ -22,7 +22,7 @@ struct PerfTest : tpunit::TestFixture {
 
     void setup() {
         int threads = 8;
-        if (BedrockTester::globalArgs->isSet("-brthreads")) {
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-brthreads")) {
             threads = SToInt64((*BedrockTester::globalArgs)["-brthreads"]);
         }
         // Create the database table.
