@@ -138,7 +138,7 @@ bool BedrockTester::createFile(string name) {
 
 string BedrockTester::getServerName() {
     for (auto location : locations) {
-        if (true || SFileExists(location)) {
+        if (SFileExists(location)) {
             return location;
         }
     }
@@ -146,10 +146,6 @@ string BedrockTester::getServerName() {
 }
 
 list<string> BedrockTester::getServerArgs(map <string, string> args) {
-
-    char cwd[1024];
-    getcwd(cwd, sizeof(cwd));
-
     map <string, string> defaults = {
         {"-db",               _dbFile.empty() ? DB_FILE : _dbFile},
         {"-serverHost",       _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
