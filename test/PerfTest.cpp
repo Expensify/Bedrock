@@ -8,6 +8,7 @@ struct PerfTest : tpunit::TestFixture {
                               //TEST(PerfTest::clearTable),
                               //TEST(PerfTest::insertRandomParallel),
                               TEST(PerfTest::indexPerf),
+                              TEST(PerfTest::nonIndexPerf),
                               AFTER_CLASS(PerfTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -158,5 +159,47 @@ struct PerfTest : tpunit::TestFixture {
             cout << "WTF" << endl;
         }
     }
+
+    void nonIndexPerf() {
+        try {
+        int64_t TOTAL_QUERIES = 100;
+        int64_t BATCH_SIZE = 25;
+        int64_t THREADS = 500;
+
+        int64_t totalReadTime = 0;
+
+        cout << "Running " << TOTAL_QUERIES << " total queries in batches of size " << BATCH_SIZE << " using "
+             << THREADS << " parallel connections." << endl;
+
+        auto start = STimeNow();
+        for (int64_t i = 0; i < TOTAL_QUERIES; i += BATCH_SIZE) {
+            cout << "Query set starting at " << i << "." << endl;
+            // Make a whole bunch or request objects.
+            vector <SData> requests(BATCH_SIZE);
+            for (int i = 0; i < BATCH_SIZE; i++) {
+                SData q("Query");
+                q["query"] = "SELECT indexedColumn, nonIndexedColumn FROM perfTest WHERE nonIndexedColumn = "
+                             + SQ(SRandom::rand64() % NUM_ROWS) + ";";
+                requests[i] = q;
+            }
+
+            // Send them on 250 threads.
+            auto result = tester->executeWaitMultipleData(requests, THREADS);
+
+            // Parse the results.
+            for (auto i : result) {
+                totalReadTime += SToInt64(i.second["readTimeUS"]);
+            }
+        }
+        auto end = STimeNow();
+        cout << "Ran " << TOTAL_QUERIES << " rows in " << ((end - start) / 1000000) << " seconds." << endl;
+        cout << "Total read time was: " << (totalReadTime / 1000000) << " seconds. Average "
+             << (totalReadTime / TOTAL_QUERIES) << "us per query." << endl;
+        }
+        catch (...) {
+            cout << "WTF" << endl;
+        }
+    }
+
 } __PerfTest;
 
