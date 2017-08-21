@@ -68,7 +68,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Assume it's read/write
-            SINFO("Query '" << query << "' appears to be read/write, queuing for processing.");
+            SINFO("Query appears to be read/write, queuing for processing.");
             return false;
         }
 
