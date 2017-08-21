@@ -564,7 +564,6 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
         case SQLITE_DROP_TRIGGER:
         case SQLITE_DROP_VIEW:
         case SQLITE_INSERT:
-        case SQLITE_PRAGMA:
         case SQLITE_TRANSACTION:
         case SQLITE_UPDATE:
         case SQLITE_ATTACH:
@@ -585,8 +584,21 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
         case SQLITE_FUNCTION:
             return SQLITE_OK;
             break;
-
-        // The following is the only special case where the whitelist actually applies.
+        case SQLITE_PRAGMA:
+        {
+            string normalizedTable = SToLower(table);
+            // We allow this particularly because we call it ourselves in `write`, and so if it's not allowed, all
+            // write queries will always fail. We specifically check that `column` is empty, because if it's set, that
+            // means the caller has tried to specify a schema version, which we disallow, as it can cause DB
+            // corruption. Note that this still allows `PRAGMA schema_version = 1;` to crash the process. This needs to
+            // get caught sooner.
+            if (normalizedTable == "schema_version" && column == 0) {
+                return SQLITE_OK;
+            } else {
+                return SQLITE_DENY;
+            }
+            break;
+        }
         case SQLITE_READ:
         {
             // See if there's an entry in the whitelist for this table.
