@@ -71,6 +71,11 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         recursive_mutex m;
         atomic<int> totalRequestFailures(0);
 
+        BedrockTester* brtester = tester->getBedrockTester(0);
+        SData enable("EnableMultiWrite");
+        enable["Enable"] = "true";
+        brtester->executeWait(enable);
+
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         for (int i : {0, 1, 2}) {

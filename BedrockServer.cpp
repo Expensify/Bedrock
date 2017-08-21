@@ -5,8 +5,8 @@
 #include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
 
-set<string>BedrockServer::_parallelCommands;
-recursive_mutex BedrockServer::_parallelCommandMutex;
+set<string>BedrockServer::_blacklistedParallelCommands;
+recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     _commandQueue.push(BedrockCommand(move(command)));
@@ -550,13 +550,18 @@ void BedrockServer::worker(SData& args,
                     // it, or if we should send it off to the sync node.
                     bool canWriteParallel = false;
                     { 
-                        SAUTOLOCK(_parallelCommandMutex);
-                        canWriteParallel =
-                            (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
+                        // Multi-write needs to be enabled.
+                        canWriteParallel = server._multiWriteEnabled.load();
+                        if (canWriteParallel) {
+                            // If multi-write is enabled, then we need to make sure the command isn't blacklisted.
+                            SAUTOLOCK(_blacklistedParallelCommandMutex);
+                            canWriteParallel =
+                                (_blacklistedParallelCommands.find(command.request.methodLine) == _blacklistedParallelCommands.end());
+                        }
                     }
 
-                    // For now, commands need to be in `_parallelCommands` *and* `multiWriteOK`. When we're
-                    // confident in BedrockConflictMetrics, we can remove `_parallelCommands`.
+                    // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
+                    // needs to not be automatically blacklisted.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
                     if (!canWriteParallel               ||
                         state != SQLiteNode::MASTERING  ||
@@ -682,7 +687,7 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncNode(nullptr), _shutdownState(RUNNING)
+    _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(false)
 {
     _version = SVERSION;
 
@@ -730,13 +735,13 @@ BedrockServer::BedrockServer(const SData& args)
         }
     }
 
-    // Check for commands that can be written by workers.
-    if (args.isSet("-parallelCommands")) {
-        SAUTOLOCK(_parallelCommandMutex);
+    // Check for commands that can't be written by workers.
+    if (args.isSet("-blacklistedParallelCommands")) {
+        SAUTOLOCK(_blacklistedParallelCommandMutex);
         list<string> parallelCommands;
-        SParseList(args["-parallelCommands"], parallelCommands);
+        SParseList(args["-blacklistedParallelCommands"], parallelCommands);
         for (auto& command : parallelCommands) {
-            _parallelCommands.insert(command);
+            _blacklistedParallelCommands.insert(command);
         }
     }
 
@@ -1150,7 +1155,8 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
         SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command.request.methodLine, STATUS_PING)              ||
         SIEquals(command.request.methodLine, STATUS_STATUS)            ||
-        SIEquals(command.request.methodLine, STATUS_WHITELIST)) {
+        SIEquals(command.request.methodLine, STATUS_BLACKLIST)         ||
+        SIEquals(command.request.methodLine, STATUS_MULTIWRITE)) {
         return true;
     }
     return false;
@@ -1208,10 +1214,10 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
-        // On master, return the current multi-write blacklist.
+        // On master, return the current multi-write blacklists.
         if (state == SQLiteNode::MASTERING) {
-            content["multiWriteBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
-            content["multiWriteWhiteList"] = SComposeJSONArray(_parallelCommands);
+            content["multiWriteAutoBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
+            content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
         }
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
@@ -1248,20 +1254,20 @@ void BedrockServer::_status(BedrockCommand& command) {
         response.content = SComposeJSONObject(content);
     }
 
-    else if (SIEquals(request.methodLine, STATUS_WHITELIST)) {
-        SAUTOLOCK(_parallelCommandMutex);
+    else if (SIEquals(request.methodLine, STATUS_BLACKLIST)) {
+        SAUTOLOCK(_blacklistedParallelCommandMutex);
 
         // Return the old list. We can check the list by not passing the "Commands" param.
         STable content;
-        content["oldCommandWhitelist"] = SComposeList(_parallelCommands);
+        content["oldCommandBlacklist"] = SComposeList(_blacklistedParallelCommands);
 
         // If the Comamnds param is set, parse it and update our value.
         if (request.isSet("Commands")) {
-            _parallelCommands.clear();
+            _blacklistedParallelCommands.clear();
             list<string> parallelCommands;
             SParseList(request["Commands"], parallelCommands);
             for (auto& command : parallelCommands) {
-                _parallelCommands.insert(command);
+                _blacklistedParallelCommands.insert(command);
             }
         }
         if (request.isSet("autoBlacklistConflictFraction")) {
@@ -1269,11 +1275,18 @@ void BedrockServer::_status(BedrockCommand& command) {
         }
 
         // Enable extra logging in the commit lock timer.
-        decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_parallelCommands.empty());
+        decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_blacklistedParallelCommands.empty());
 
-        // PRepare the command to respond to the caller.
+        // Prepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
+    } else if (SIEquals(request.methodLine, STATUS_MULTIWRITE)) {
+        if (request.isSet("Enable")) {
+            _multiWriteEnabled.store((request["Enable"] == "true"));
+            response.methodLine = "200 OK";
+        } else {
+            response.methodLine = "500 Must Specify 'Enabled'";
+        }
     }
 }
 
