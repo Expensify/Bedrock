@@ -17,7 +17,8 @@ struct StatusTest : tpunit::TestFixture {
         SData status("Status");
         string response = tester->executeWait(status);
         ASSERT_TRUE(SContains(response, "plugins"));
-        ASSERT_TRUE(SContains(response, "multiWriteWhiteList"));
+        ASSERT_TRUE(SContains(response, "multiWriteManualBlacklist"));
+        ASSERT_TRUE(SContains(response, "multiWriteAutoBlacklist"));
     }
 
 } __StatusTest;
