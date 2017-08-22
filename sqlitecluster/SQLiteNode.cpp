@@ -393,6 +393,7 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         _updateSyncPeer();
         if (_syncPeer) {
+            _synchronizeStart = STimeNow();
             _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
         } else {
             SWARN("Updated to NULL _syncPeer when about to send SYNCHRONIZE. Going to WAITING.");
@@ -1309,6 +1310,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                       << peerCommitCount - _db.getCommitCount() << " to go.");
                 _updateSyncPeer();
                 if (_syncPeer) {
+                    _synchronizeStart = STimeNow();
                     _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
                 } else {
                     SWARN("No usable _syncPeer but syncing not finished. Going to SEARCHING.");
@@ -1936,7 +1938,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = _db.getCommitCount();
         if (!sendAll)
-            toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
+            toIndex = min(toIndex, fromIndex + SYNCHRONIZE_COMMIT_COUNT);
         if (!_db.getCommits(fromIndex, toIndex, result))
             throw "error getting commits";
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)
@@ -2011,6 +2013,8 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
     // Did we get all our commits?
     if (commitsRemaining)
         throw "commits remaining at end";
+
+    SINFO("Synchronized " << message["NumCommits"] << " transactions in " << (STimeNow() - _synchronizeStart) << "us.");
 }
 
 void SQLiteNode::_updateSyncPeer()
