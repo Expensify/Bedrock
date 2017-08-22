@@ -553,24 +553,11 @@ void BedrockServer::worker(SData& args,
                         SAUTOLOCK(_parallelCommandMutex);
                         canWriteParallel =
                             (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
-                        if (!canWriteParallel) {
-                            SINFO("TYLER " << command.request.methodLine << " not parallel");
-                        }
                     }
 
                     // For now, commands need to be in `_parallelCommands` *and* `multiWriteOK`. When we're
                     // confident in BedrockConflictMetrics, we can remove `_parallelCommands`.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
-                    if (!canWriteParallel) {
-                        SINFO("TYLER " << command.request.methodLine << " not parallel after multi-write check");
-                    }
-                    if (command.writeConsistency != SQLiteNode::ASYNC) {
-                        SINFO("TYLER " << command.request.methodLine << " not parallel not async");
-                    }
-                    if (command.onlyProcessOnSyncThread) {
-                        SINFO("TYLER " << command.request.methodLine << " not parallel onlyProcessOnSyncThread");
-                    }
-
                     if (!canWriteParallel               ||
                         state != SQLiteNode::MASTERING  ||
                         command.httpsRequest            ||

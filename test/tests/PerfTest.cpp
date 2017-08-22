@@ -63,9 +63,9 @@ struct PerfTest : tpunit::TestFixture {
 
                 // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
                 // enabled. We don't want to run the whole test on the wal file.
-                if (i == PARALLEL_COMMANDS - 1) {
+                //if (i == PARALLEL_COMMANDS - 1) {
                     command["processOnSyncThread"] = "true";
-                }
+                //}
                 command["query"] = query;
                 //tester->executeWait(command);
                 commands.push_back(command);
