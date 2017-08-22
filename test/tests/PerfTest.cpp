@@ -15,7 +15,7 @@ struct PerfTest : tpunit::TestFixture {
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 30ll * 100ll; // Approximately 1 * 100 gb.
+    int64_t NUM_ROWS = 1000000ll * 30ll * 10ll; // Approximately 1 * 10 gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
@@ -34,21 +34,21 @@ struct PerfTest : tpunit::TestFixture {
     void tearDown() { delete tester; }
 
     void insertSerialBatches() {
-        // Insert rows in batches of 100000.
+        // Insert rows in batches of 10000.
         int64_t currentRows = 0;
         int lastPercent = 0;
         auto start = STimeNow();
         while (currentRows < NUM_ROWS) {
             int64_t startRows = currentRows;
             string query = "INSERT INTO perfTest values";
-            while (currentRows < NUM_ROWS && currentRows < startRows + 100000) {
+            while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
                 query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
                 currentRows++;
             }
             query = query.substr(0, query.size() - 2);
             query += ";";
 
-            // Now we have 100000 value pairs to insert.
+            // Now we have 10000 value pairs to insert.
             SData command("Query");
 
             // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
@@ -58,7 +58,7 @@ struct PerfTest : tpunit::TestFixture {
             tester->executeWait(command);
 
             int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
-            if (percent >= lastPercent + 5) {
+            if (percent >= lastPercent + 1) {
                 lastPercent = percent;
                 cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
             }
