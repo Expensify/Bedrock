@@ -15,7 +15,7 @@ struct PerfTest : tpunit::TestFixture {
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 30ll * 10ll; // Approximately 1 * 10 gb.
+    int64_t NUM_ROWS = 1000000ll * 30ll * 1ll; // Approximately 1 * 1 gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
@@ -48,7 +48,11 @@ struct PerfTest : tpunit::TestFixture {
                 int64_t startRows = currentRows;
                 string query = "INSERT INTO perfTest values";
                 while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
-                    query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
+                    uint64_t value = currentRows;
+                    // Randomize for parallelization.
+                    value = SRandom::rand64() >> 2;
+                    string valString = to_string(value);
+                    query += "(" + valString + "," + valString + "), ";
                     currentRows++;
                 }
                 query = query.substr(0, query.size() - 2);
@@ -59,7 +63,9 @@ struct PerfTest : tpunit::TestFixture {
 
                 // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
                 // enabled. We don't want to run the whole test on the wal file.
-                command["processOnSyncThread"] = "true";
+                if (i == PARALLEL_COMMANDS - 1) {
+                    command["processOnSyncThread"] = "true";
+                }
                 command["query"] = query;
                 //tester->executeWait(command);
                 commands.push_back(command);
