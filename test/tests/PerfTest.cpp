@@ -39,34 +39,35 @@ struct PerfTest : tpunit::TestFixture {
         int lastPercent = 0;
         auto start = STimeNow();
 
+        int PARALLEL_COMMANDS = 100;  
         while (currentRows < NUM_ROWS) {
             vector<SData> commands;
-            for (int i = 0; i < 100; i++) {
-                while (currentRows < NUM_ROWS) {
-                    int64_t startRows = currentRows;
-                    string query = "INSERT INTO perfTest values";
-                    while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
-                        query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
-                        currentRows++;
-                    }
-                    query = query.substr(0, query.size() - 2);
-                    query += ";";
+            int i = 0;
+            while (currentRows < NUM_ROWS && i < PARALLEL_COMMANDS) {
+                i++;
+                int64_t startRows = currentRows;
+                string query = "INSERT INTO perfTest values";
+                while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
+                    query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
+                    currentRows++;
+                }
+                query = query.substr(0, query.size() - 2);
+                query += ";";
 
-                    // Now we have 10000 value pairs to insert.
-                    SData command("Query");
+                // Now we have 10000 value pairs to insert.
+                SData command("Query");
 
-                    // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
-                    // enabled. We don't want to run the whole test on the wal file.
-                    command["processOnSyncThread"] = "true";
-                    command["query"] = query;
-                    //tester->executeWait(command);
-                    commands.push_back(command);
+                // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
+                // enabled. We don't want to run the whole test on the wal file.
+                command["processOnSyncThread"] = "true";
+                command["query"] = query;
+                //tester->executeWait(command);
+                commands.push_back(command);
 
-                    int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
-                    if (percent >= lastPercent + 1) {
-                        lastPercent = percent;
-                        cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
-                    }
+                int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
+                if (percent >= lastPercent + 1) {
+                    lastPercent = percent;
+                    cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
                 }
             }
             tester->executeWaitMultiple(commands, commands.size());
