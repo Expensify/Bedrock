@@ -15,7 +15,7 @@ struct PerfTest : tpunit::TestFixture {
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 30ll; // Approximately 1gb.
+    int64_t NUM_ROWS = 1000000ll * 24ll; // Approximately 1gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
@@ -41,6 +41,7 @@ struct PerfTest : tpunit::TestFixture {
 
             // Create the database table.
             tester = new BedrockTester(dbFile, "", {
+                "PRAGMA legacy_file_format = OFF",
                 "CREATE TABLE perfTest(indexedColumn INT PRIMARY KEY, nonIndexedColumn INT);"
             }, {{"-readThreads", to_string(threads)}});
 
@@ -56,7 +57,13 @@ struct PerfTest : tpunit::TestFixture {
 
             sqlite3* _db;
             sqlite3_initialize();
+            
             sqlite3_open_v2(dbFile.c_str(), &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+            sqlite3_exec(_db, "PRAGMA journal_mode = WAL;", 0, 0, 0);
+            sqlite3_exec(_db, "PRAGMA synchronous = OFF;", 0, 0, 0);
+            sqlite3_exec(_db, "PRAGMA count_changes = OFF;", 0, 0, 0);
+            sqlite3_exec(_db, "PRAGMA cache_size = -1000000;", 0, 0, 0);
+            sqlite3_wal_autocheckpoint(_db, 10000);
 
             int64_t currentRows = 0;
             int lastPercent = 0;
