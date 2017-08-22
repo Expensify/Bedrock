@@ -15,7 +15,7 @@ struct PerfTest : tpunit::TestFixture {
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 30ll; // Approximately 1 gb.
+    int64_t NUM_ROWS = 1000000ll * 30ll * 100ll; // Approximately 1 * 100 gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
