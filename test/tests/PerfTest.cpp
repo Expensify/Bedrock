@@ -4,31 +4,116 @@ struct PerfTest : tpunit::TestFixture {
     PerfTest()
         : tpunit::TestFixture("Perf",
                               BEFORE_CLASS(PerfTest::setup),
-                              TEST(PerfTest::insertSerialBatches),
+                              //TEST(PerfTest::insertSerialBatches),
                               //TEST(PerfTest::clearTable),
                               //TEST(PerfTest::insertRandomParallel),
-                              TEST(PerfTest::indexPerf),
-                              TEST(PerfTest::nonIndexPerf),
+                              //TEST(PerfTest::indexPerf),
+                              //TEST(PerfTest::nonIndexPerf),
                               AFTER_CLASS(PerfTest::tearDown)) { }
 
     BedrockTester* tester;
 
     // How many rows to insert.
     // A million rows is about 33mb.
-    int64_t NUM_ROWS = 1000000ll * 30ll * 1ll; // Approximately 1 * 1 gb.
+    int64_t NUM_ROWS = 1000000ll * 30ll; // Approximately 1gb.
 
     set<int64_t> randomValues1;
     set<int64_t> randomValues2;
 
+    mutex insertMutex;
+    list<string> outstandingQueries;
+
     void setup() {
         int threads = 8;
+        string dbFile = "";
+
+        // If the user specified a number of threads, use that.
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-brthreads")) {
             threads = SToInt64((*BedrockTester::globalArgs)["-brthreads"]);
         }
-        // Create the database table.
-        tester = new BedrockTester("", "", {
-            "CREATE TABLE perfTest(indexedColumn INT PRIMARY KEY, nonIndexedColumn INT);"
-        }, {{"-readThreads", to_string(threads)}});
+
+        // If the user specified a DB file, use that.
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-dbfile")) {
+            dbFile = (*BedrockTester::globalArgs)["-dbfile"];
+        }
+
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-createDB")) {
+
+            // Create the database table.
+            tester = new BedrockTester(dbFile, "", {
+                "CREATE TABLE perfTest(indexedColumn INT PRIMARY KEY, nonIndexedColumn INT);"
+            }, {{"-readThreads", to_string(threads)}});
+
+            tester->deleteOnClose = false;
+            delete tester;
+
+            // Insert shittons of data.
+            // DB size, in GB.
+            int64_t DBSize = SToInt64((*BedrockTester::globalArgs)["-createDB"]);
+            DBSize = max(DBSize, (int64_t)1);
+
+            NUM_ROWS *= DBSize;
+
+            sqlite3* _db;
+            sqlite3_initialize();
+            sqlite3_open_v2(dbFile.c_str(), &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+
+            int64_t currentRows = 0;
+            int lastPercent = 0;
+
+            while (currentRows < NUM_ROWS) {
+
+                // If we've run out of queries, generate some new ones.
+                if (outstandingQueries.empty()) {
+                    list<thread> threads;
+                    for (int i = 0; i < 16; i++) {
+                        threads.emplace_back([this](){
+                            for (int j = 0; j < 100; j++) {
+                                string query = "INSERT INTO perfTest values";
+                                int rowsInQuery = 0;
+                                uint64_t value;
+                                while (rowsInQuery < 10000) {
+                                    {
+                                        SAUTOLOCK(insertMutex);
+                                        value = SRandom::rand64() >> 2;
+                                    }
+                                    string valString = to_string(value);
+                                    query += "(" + valString + "," + valString + "), ";
+                                    rowsInQuery++;
+                                }
+                                query = query.substr(0, query.size() - 2);
+                                query += ";";
+
+                                SAUTOLOCK(insertMutex);
+                                outstandingQueries.push_back(query);
+                            }
+                        });
+                    }
+                    for (auto& thread : threads) {
+                        thread.join();
+                    }
+                }
+
+                string& query = outstandingQueries.front();
+                int error = sqlite3_exec(_db, query.c_str(), 0, 0, 0);
+                if (error != SQLITE_OK) {
+                    cout << "Error running insert query: " << sqlite3_errmsg(_db) << ", query: " << query << endl;
+                }
+                currentRows += 10000;
+                outstandingQueries.pop_front();
+                // Output progress.
+                int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
+                if (percent > lastPercent) {
+                    lastPercent = percent;
+                    cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
+                }
+            }
+            SASSERT(!sqlite3_close(_db));
+        }
+
+        // Re-create the tester with the existing DB file.
+        tester = new BedrockTester(dbFile, "", {}, {{"-readThreads", to_string(threads)}});
+        tester->deleteOnClose = false;
     }
 
     void tearDown() { delete tester; }

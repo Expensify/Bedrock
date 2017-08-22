@@ -88,7 +88,9 @@ BedrockTester::~BedrockTester() {
     }
     if (serverPID) {
         stopServer();
-        deleteFile(_dbFile);
+        if (deleteOnClose) {
+            deleteFile(_dbFile);
+        }
     }
 }
 

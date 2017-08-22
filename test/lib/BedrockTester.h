@@ -23,6 +23,8 @@ class BedrockTester {
     SQLite* db = nullptr;
     SQLite* writableDB = nullptr;
 
+    bool deleteOnClose = true;
+
     string getServerAddr();
 
     // Constructor
