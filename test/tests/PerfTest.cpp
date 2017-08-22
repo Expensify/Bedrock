@@ -34,21 +34,21 @@ struct PerfTest : tpunit::TestFixture {
     void tearDown() { delete tester; }
 
     void insertSerialBatches() {
-        // Insert rows in batches of 10000.
+        // Insert rows in batches of 1000000.
         int64_t currentRows = 0;
         int lastPercent = 0;
         auto start = STimeNow();
         while (currentRows < NUM_ROWS) {
             int64_t startRows = currentRows;
             string query = "INSERT INTO perfTest values";
-            while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
+            while (currentRows < NUM_ROWS && currentRows < startRows + 1000000) {
                 query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
                 currentRows++;
             }
             query = query.substr(0, query.size() - 2);
             query += ";";
 
-            // Now we have 10000 value pairs to insert.
+            // Now we have 1000000 value pairs to insert.
             SData command("Query");
 
             // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
