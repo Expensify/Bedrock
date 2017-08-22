@@ -38,6 +38,40 @@ struct PerfTest : tpunit::TestFixture {
         int64_t currentRows = 0;
         int lastPercent = 0;
         auto start = STimeNow();
+
+        while (currentRows < NUM_ROWS) {
+            vector<SData> commands;
+            for (int i = 0; i < 100; i++) {
+                while (currentRows < NUM_ROWS) {
+                    int64_t startRows = currentRows;
+                    string query = "INSERT INTO perfTest values";
+                    while (currentRows < NUM_ROWS && currentRows < startRows + 10000) {
+                        query += "(" + to_string(currentRows) + "," + to_string(currentRows) + "), ";
+                        currentRows++;
+                    }
+                    query = query.substr(0, query.size() - 2);
+                    query += ";";
+
+                    // Now we have 10000 value pairs to insert.
+                    SData command("Query");
+
+                    // Turn off multi-write for this query, so that this runs on the sync thread where checkpointing is
+                    // enabled. We don't want to run the whole test on the wal file.
+                    command["processOnSyncThread"] = "true";
+                    command["query"] = query;
+                    //tester->executeWait(command);
+                    commands.push_back(command);
+
+                    int percent = (int)(((double)currentRows/(double)NUM_ROWS) * 100.0);
+                    if (percent >= lastPercent + 1) {
+                        lastPercent = percent;
+                        cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
+                    }
+                }
+            }
+            tester->executeWaitMultiple(commands, commands.size());
+        }
+        /*
         while (currentRows < NUM_ROWS) {
             int64_t startRows = currentRows;
             string query = "INSERT INTO perfTest values";
@@ -63,6 +97,7 @@ struct PerfTest : tpunit::TestFixture {
                 cout << "Inserted " << lastPercent << "% of " << NUM_ROWS << " rows." << endl;
             }
         }
+        */
         auto end = STimeNow();
         cout << "Inserted (batch) " << NUM_ROWS << " rows in " << ((end - start) / 1000000) << " seconds." << endl;
     }
