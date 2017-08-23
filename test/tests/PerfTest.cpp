@@ -171,43 +171,30 @@ struct PerfTest : tpunit::TestFixture {
     }
 
     void manySelects() {
+
         int i = 1;
         int MAX = 16; // or 512.
         while (i <= MAX) {
             cout << "Testing " << keys.size() << " SELECTS with " << i << " bedrock threads." << endl;
 
-            int batchSize = i * 100;
-
-            // Do at least 10k.
-            batchSize = max(batchSize, 10000);
-
-            int threadCount = i * 5;
-
-            // Re-create the tester with the existing DB file.
-            cout << "Starting server." << endl;
-            tester = new BedrockTester(dbFile, "", {}, {{"-readThreads", to_string(i)}});
-            tester->deleteOnClose = false;
-            cout << "Bedrock running." << endl;
-
-            // build the queries in parallel threads.
-            auto keysCopy = keys;
-
-            // Start timing.
-            auto start = STimeNow();
-
-            while (keysCopy.size()) {
+            // We have a list of batches of queries. Each batch is 5000 queries.
+            list<vector<SData>> queryList;
+            auto it = keys.begin();
+            while (it != keys.end()) {
                 vector<SData> queries;
                 mutex selectMutex;
                 list<thread> threads;
-                for (int i = 0; i < threadCount; i++) {
-                    threads.emplace_back([&, this](){
-                        for (int j = 0; j < (batchSize / threadCount); j++) {
+                // 25 threads.
+                for (int i = 0; i < 25; i++) {
+                    threads.emplace_back([i, &it, &selectMutex, &queries, this](){
+                        // 200 queries on each thread.
+                        for (int j = 0; j < 200; j++) {
                             uint64_t key = 0;
                             {
                                 SAUTOLOCK(selectMutex);
-                                if (keysCopy.size()) {
-                                    key = keysCopy.front();
-                                    keysCopy.pop_front();
+                                if (it != keys.end()) {
+                                    key = *it;
+                                    it++;
                                 } else {
                                     return;
                                 }
@@ -225,8 +212,25 @@ struct PerfTest : tpunit::TestFixture {
                 for (auto& thread : threads) {
                     thread.join();
                 }
-                auto result = tester->executeWaitMultiple(queries, threadCount);
-                cout << keysCopy.size() << " queries remaining." << endl;
+                queryList.push_back(queries);
+            }
+
+            cout << "Queries all prepared." << endl;
+
+            // Re-create the tester with the existing DB file.
+            cout << "Starting server." << endl;
+            tester = new BedrockTester(dbFile, "", {}, {{"-readThreads", to_string(i)}});
+            tester->deleteOnClose = false;
+            cout << "Bedrock running." << endl;
+
+            // Start timing.
+            auto start = STimeNow();
+
+            auto it2 = queryList.begin();
+            while (it2 != queryList.end()) {
+                auto& qlist = *it2;
+                tester->executeWaitMultipleFast(qlist, i * 2);
+                it2++;
             }
 
             // End Timing.

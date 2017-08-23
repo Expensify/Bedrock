@@ -44,6 +44,9 @@ class BedrockTester {
     // Same as above, but returns entire SData for the response
     vector<pair<string, SData>> executeWaitMultipleData(vector<SData> requests, int connections = 10);
 
+    // Same as above, but returns entire SData for the response
+    void executeWaitMultipleFast(const vector<SData>& requests, int connections = 10);
+
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();

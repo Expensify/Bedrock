@@ -381,6 +381,93 @@ vector<pair<string,SData>> BedrockTester::executeWaitMultipleData(vector<SData> 
     return results;
 }
 
+// Returns no results, does less work.
+void BedrockTester::executeWaitMultipleFast(const vector<SData>& requests, int connections) {
+
+    // Synchronize dequeuing requessts, and saving results.
+    recursive_mutex listLock;
+
+    // This is the next index of `requests` that needs processing.
+    int currentIndex = 0;
+
+    // This is the list of threads that we'll use for each connection.
+    list <thread> threads;
+
+    // Spawn a thread for each connection.
+    for (int i = 0; i < connections; i++) {
+        threads.emplace_back([&, i](){
+            // Create a socket.
+            int socket = S_socket(_serverAddr.empty() ? SERVER_ADDR : _serverAddr, true, false, true);
+            while (true) {
+                size_t myIndex = 0;
+                SData myRequest;
+                {
+                    SAUTOLOCK(listLock);
+                    myIndex = currentIndex;
+                    currentIndex++;
+                    if (myIndex >= requests.size()) {
+                        // No more requests to process.
+                        break;
+                    } else {
+                        myRequest = requests[myIndex];
+                    }
+                }
+
+                // We've released our lock so other threads can dequeue stuff now.
+                // Send some stuff on our socket.
+                string sendBuffer = myRequest.serialize();
+                // Send our data.
+                while (sendBuffer.size()) {
+                    bool result = S_sendconsume(socket, sendBuffer);
+                    if (!result) {
+                        break;
+                    }
+                }
+
+                // Receive some stuff on our socket.
+                string recvBuffer = "";
+                string methodLine, content;
+                STable headers;
+                int timeouts = 0;
+                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+                    // Poll the socket, so we get a timeout.
+                    pollfd readSock;
+                    readSock.fd = socket;
+                    readSock.events = POLLIN;
+                    readSock.revents = 0;
+
+                    // wait for a second...
+                    poll(&readSock, 1, 1000);
+                    if (readSock.revents & POLLIN) {
+                        bool result = S_recvappend(socket, recvBuffer);
+                        if (!result) {
+                            break;
+                        }
+                    } else {
+                        timeouts++;
+                        if (timeouts > 5) {
+                            //SAUTOLOCK(listLock);
+                            //cout << "Timeout (" << timeouts << ") waiting on socket, will try again." << endl;
+                        }
+                        if (timeouts == 300) {
+                            SAUTOLOCK(listLock);
+                            cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest["Query"] << endl;
+                            break;
+                        }
+                    }
+
+                }
+            }
+            close(socket);
+        });
+    }
+
+    // Wait for our threads to finish.
+    for (thread& t : threads) {
+        t.join();
+    }
+}
+
 string BedrockTester::getServerAddr() {
     return _serverAddr.empty() ? SERVER_ADDR : _serverAddr;
 }
