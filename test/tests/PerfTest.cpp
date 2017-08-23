@@ -149,7 +149,7 @@ struct PerfTest : tpunit::TestFixture {
         // Get 10 sets of rows with 100k rows each.
         for (int i = 0; i < 10; i++) {
             // And get a list of possible values.
-            query["query"] = "SELECT indexedColumn FROM perfTest WHERE (indexedColumn % " + SQ(rowCount) + " / 100000) = " + SQ(i) + " LIMIT 100000;";
+            query["query"] = "SELECT indexedColumn FROM perfTest WHERE (indexedColumn % " + SQ(rowCount) + " / 100000) = " + SQ(i) + ";";
             query["nowhere"] = "true";
             result = tester->executeWait(query);
             rows.clear();
@@ -197,7 +197,7 @@ struct PerfTest : tpunit::TestFixture {
                                 SAUTOLOCK(selectMutex);
                                 for (int k = 0; k < 10; k++) {
                                     if (it != keys.end()) {
-                                        key[i] = *it;
+                                        key[k] = *it;
                                         it++;
                                     } else {
                                         break;
