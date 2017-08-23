@@ -4,6 +4,8 @@ struct PerfTest : tpunit::TestFixture {
     PerfTest()
         : tpunit::TestFixture("Perf",
                               BEFORE_CLASS(PerfTest::setup),
+                              TEST(PerfTest::prepare),
+                              TEST(PerfTest::manySelects),
                               //TEST(PerfTest::insertSerialBatches),
                               //TEST(PerfTest::clearTable),
                               //TEST(PerfTest::insertRandomParallel),
@@ -17,15 +19,16 @@ struct PerfTest : tpunit::TestFixture {
     // A million rows is about 33mb.
     int64_t NUM_ROWS = 1000000ll * 24ll; // Approximately 1gb.
 
-    set<int64_t> randomValues1;
-    set<int64_t> randomValues2;
+    string dbFile = "";
 
     mutex insertMutex;
     list<string> outstandingQueries;
 
+    int64_t rowCount;
+    list<int64_t> keys;
+
     void setup() {
         int threads = 8;
-        string dbFile = "";
 
         // If the user specified a number of threads, use that.
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-brthreads")) {
@@ -121,10 +124,128 @@ struct PerfTest : tpunit::TestFixture {
         // Re-create the tester with the existing DB file.
         tester = new BedrockTester(dbFile, "", {}, {{"-readThreads", to_string(threads)}});
         tester->deleteOnClose = false;
+        delete tester;
     }
 
-    void tearDown() { delete tester; }
+    void prepare() {
+        // Re-create the tester with the existing DB file.
+        tester = new BedrockTester(dbFile);
+        tester->deleteOnClose = false;
 
+        // Start timing.
+        auto start = STimeNow();
+
+        SData query("Query");
+        query["query"] = "SELECT COUNT(*) FROM perfTest;";
+        query["nowhere"] = "true";
+        auto result = tester->executeWait(query);
+
+        list<string> rows;
+        SParseList(result, rows, '\n');
+        rows.pop_front();
+        rowCount = SToInt64(rows.front());
+        cout << "Total DB rows: " << rowCount << endl;
+
+
+        // And get a list of possible values.
+        query["query"] = "SELECT indexedColumn FROM perfTest WHERE (indexedColumn % " + SQ(rowCount) + " / 100000) = 0 LIMIT 100000;";
+        query["nowhere"] = "true";
+        result = tester->executeWait(query);
+        rows.clear();
+        SParseList(result, rows, '\n');
+        rows.pop_front();
+        cout << "Selected rows: " << rows.size() << endl;
+       
+        // End Timing.
+        auto end = STimeNow();
+        cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
+
+        auto it = rows.begin();
+        while (it != rows.end()) {
+            keys.emplace_back(SToInt64(*it));
+            it++;
+        }
+        cout << "Have " << keys.size() << " keys to pick from." << endl;
+
+        delete tester;
+    }
+
+    void manySelects() {
+        int i = 1;
+        int MAX = 16; // or 512.
+        while (i <= MAX) {
+            cout << "Testing " << keys.size() << " SELECTS with " << i << " bedrock threads." << endl;
+
+            int batchSize = i * 100;
+
+            // Do at least 10k.
+            batchSize = max(batchSize, 10000);
+
+            int threadCount = i * 5;
+
+            // Re-create the tester with the existing DB file.
+            cout << "Starting server." << endl;
+            tester = new BedrockTester(dbFile, "", {}, {{"-readThreads", to_string(i)}});
+            tester->deleteOnClose = false;
+            cout << "Bedrock running." << endl;
+
+            // build the queries in parallel threads.
+            auto keysCopy = keys;
+
+            // Start timing.
+            auto start = STimeNow();
+
+            while (keysCopy.size()) {
+                vector<SData> queries;
+                mutex selectMutex;
+                list<thread> threads;
+                for (int i = 0; i < threadCount; i++) {
+                    threads.emplace_back([&, this](){
+                        for (int j = 0; j < (batchSize / threadCount); j++) {
+                            uint64_t key = 0;
+                            {
+                                SAUTOLOCK(selectMutex);
+                                if (keysCopy.size()) {
+                                    key = keysCopy.front();
+                                    keysCopy.pop_front();
+                                } else {
+                                    return;
+                                }
+                            }
+                            string query = "SELECT * FROM perfTest WHERE indexedColumn = " + SQ(key) + ";";
+                            {
+                                SData q("Query");
+                                q["query"] = query;
+                                SAUTOLOCK(selectMutex);
+                                queries.push_back(q);
+                            }
+                        }
+                    });
+                }
+                for (auto& thread : threads) {
+                    thread.join();
+                }
+                auto result = tester->executeWaitMultiple(queries, threadCount);
+                cout << keysCopy.size() << " queries remaining." << endl;
+            }
+
+            // End Timing.
+            auto end = STimeNow();
+            cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
+
+            cout << "Shutting down." << endl;
+            delete tester;
+            tester = nullptr;
+            i*= 2;
+        }
+    }
+
+    void tearDown() {
+        if (tester) {
+            delete tester;
+        }
+    }
+#if 0
     void insertSerialBatches() {
         // Insert rows in batches of 10000.
         int64_t currentRows = 0;
@@ -334,6 +455,6 @@ struct PerfTest : tpunit::TestFixture {
             cout << "WTF" << endl;
         }
     }
-
+#endif
 } __PerfTest;
 
