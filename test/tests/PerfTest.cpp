@@ -176,12 +176,13 @@ struct PerfTest : tpunit::TestFixture {
 
         // We're going to perform SELECT_COUNT select statements, that each looks up ROWS_PER_SELECT rows.
         const int SELECT_COUNT = 100000;
-        const int ROWS_PER_SELECT = 10;
+        const int ROWS_PER_SELECT = 1000;
 
         int i = 1;
         int MAX = 16; // or 512.
         while (i <= MAX) {
-            cout << "Testing " << SELECT_COUNT << " SELECTS with " << i << " bedrock threads." << endl;
+            cout << "Testing " << SELECT_COUNT << " SELECTS (" << ROWS_PER_SELECT << " rows per SELECT) with "
+                 << i << " bedrock threads." << endl;
 
             // We have a list of batches of queries. Each batch is 5000 queries.
             list<vector<SData>> queryList;
