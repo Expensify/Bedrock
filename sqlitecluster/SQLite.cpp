@@ -198,7 +198,7 @@ bool SQLite::beginConcurrentTransaction() {
     SASSERT(_uncommittedQuery.empty());
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -349,6 +349,28 @@ bool SQLite::prepare() {
 
     // We're still holding commitLock now, and will until the commit is complete.
     return true;
+}
+
+int SQLite::commitNoJournal() {
+    SASSERT(_insideTransaction);
+    SASSERT(_uncommittedHash.empty()); // Must prepare first
+
+    // Make sure one is ready to commit
+    SDEBUG("Committing empty transaction");
+    int result = SQuery(_db, "committing db transaction", "COMMIT");
+
+    // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
+    if (result == SQLITE_OK) {
+        SDEBUG("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
+        _insideTransaction = false;
+    } else {
+        SINFO("Commit failed, waiting for rollback.");
+    }
+
+    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
+    // calling rollback().
+    return result;
 }
 
 int SQLite::commit() {
