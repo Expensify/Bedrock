@@ -146,25 +146,28 @@ struct PerfTest : tpunit::TestFixture {
         rowCount = SToInt64(rows.front());
         cout << "Total DB rows: " << rowCount << endl;
 
+        // Get 10 sets of rows with 100k rows each.
+        for (int i = 0; i < 10; i++) {
+            // And get a list of possible values.
+            query["query"] = "SELECT indexedColumn FROM perfTest WHERE (indexedColumn % " + SQ(rowCount) + " / 100000) = " + SQ(i) + " LIMIT 100000;";
+            query["nowhere"] = "true";
+            result = tester->executeWait(query);
+            rows.clear();
+            SParseList(result, rows, '\n');
+            rows.pop_front();
+            cout << "Selected rows: " << rows.size() << endl;
+           
 
-        // And get a list of possible values.
-        query["query"] = "SELECT indexedColumn FROM perfTest WHERE (indexedColumn % " + SQ(rowCount) + " / 100000) = 0 LIMIT 100000;";
-        query["nowhere"] = "true";
-        result = tester->executeWait(query);
-        rows.clear();
-        SParseList(result, rows, '\n');
-        rows.pop_front();
-        cout << "Selected rows: " << rows.size() << endl;
-       
+            auto it = rows.begin();
+            while (it != rows.end()) {
+                keys.emplace_back(SToInt64(*it));
+                it++;
+            }
+        }
+
         // End Timing.
         auto end = STimeNow();
         cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
-
-        auto it = rows.begin();
-        while (it != rows.end()) {
-            keys.emplace_back(SToInt64(*it));
-            it++;
-        }
         cout << "Have " << keys.size() << " keys to pick from." << endl;
 
         delete tester;
@@ -189,17 +192,30 @@ struct PerfTest : tpunit::TestFixture {
                     threads.emplace_back([i, &it, &selectMutex, &queries, this](){
                         // 200 queries on each thread.
                         for (int j = 0; j < 200; j++) {
-                            uint64_t key = 0;
+                            uint64_t key[10] = {0};
                             {
                                 SAUTOLOCK(selectMutex);
-                                if (it != keys.end()) {
-                                    key = *it;
-                                    it++;
-                                } else {
-                                    return;
+                                for (int k = 0; k < 10; k++) {
+                                    if (it != keys.end()) {
+                                        key[i] = *it;
+                                        it++;
+                                    } else {
+                                        break;
+                                    }
                                 }
                             }
-                            string query = "SELECT * FROM perfTest WHERE indexedColumn = " + SQ(key) + ";";
+                            // TODO: Only do non-zero keys;
+                            string query = "SELECT * FROM perfTest WHERE indexedColumn IN (" +
+                                                SQ(key[0]) + "," +
+                                                SQ(key[1]) + "," +
+                                                SQ(key[2]) + "," +
+                                                SQ(key[3]) + "," +
+                                                SQ(key[4]) + "," +
+                                                SQ(key[5]) + "," +
+                                                SQ(key[6]) + "," +
+                                                SQ(key[7]) + "," +
+                                                SQ(key[8]) + "," +
+                                                SQ(key[9]) + ");";
                             {
                                 SData q("Query");
                                 q["query"] = query;
