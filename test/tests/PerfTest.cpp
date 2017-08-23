@@ -245,16 +245,29 @@ struct PerfTest : tpunit::TestFixture {
             // Start timing.
             auto start = STimeNow();
 
+            list<vector<pair<string,SData>>> results;
             auto it2 = queryList.begin();
             while (it2 != queryList.end()) {
                 auto& qlist = *it2;
-                tester->executeWaitMultipleFast(qlist, i * 2);
+                results.emplace_back(tester->executeWaitMultipleData(qlist, i * 2));
                 it2++;
             }
 
             // End Timing.
             auto end = STimeNow();
             cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
+
+            // Parse out the results.
+            uint64_t queryTime = 0;
+            for (auto& result: results) {
+                for (auto& pair: result) {
+                    auto& data = pair.second;
+                    if (data.isSet("readTimeUS")) {
+                        queryTime += SToUInt64(data["readTimeUS"]);
+                    }
+                }
+            }
+            cout << "Total time spent in queries: " << (queryTime / 1000000) << " seconds." << endl; 
 
             cout << "Shutting down." << endl;
             delete tester;
