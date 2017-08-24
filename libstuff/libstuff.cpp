@@ -2196,16 +2196,16 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SDEBUG(sql);
         int queries = queryCounter.load();
         if (lastQueryCounter.load() != queries) {
-            cout << lastQueryCounterInstances.load() << ") instances." << endl;
+            //cout << lastQueryCounterInstances.load() << ") instances." << endl;
             lastQueryCounterInstances.store(1);
             lastQueryCounter.store(queries);
-            cout << queryCounter.load() << " concurrent queries (";
+            //cout << queryCounter.load() << " concurrent queries (";
         } else {
             lastQueryCounterInstances++;
         }
 
         // Mock out these queries.
-        if (SStartsWith(sql, "SELECT_")) {
+        if (SStartsWith(sql, "MOCK ")) {
             usleep(1000);
             queryCounter--;
             return SQLITE_OK;
