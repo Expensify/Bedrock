@@ -2210,7 +2210,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             queryCounter--;
             return SQLITE_OK;
         } else {
-            cout << sql.substr(0, 120) << endl;
+            if (sql != "BEGIN TRANSACTION" && sql != "COMMIT") {
+                cout << sql.substr(0, 120) << endl;
+            }
         }
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
