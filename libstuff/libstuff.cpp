@@ -2203,6 +2203,15 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         } else {
             lastQueryCounterInstances++;
         }
+
+        // Mock out these queries.
+        if (SStartsWith(sql, "SELECT_")) {
+            usleep(1000);
+            queryCounter--;
+            return SQLITE_OK;
+        } else {
+            cout << sql.substr(0, 120) << endl;
+        }
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {

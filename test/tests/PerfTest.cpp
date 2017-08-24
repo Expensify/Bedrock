@@ -219,7 +219,7 @@ struct PerfTest : tpunit::TestFixture {
                                 in += SQ(key[k]) + ", ";
                             }
                             in += SQ(key[ROWS_PER_SELECT - 1]) + ")";
-                            string query = "SELECT * FROM perfTest WHERE indexedColumn " + in + ";";
+                            string query = "SELECT_ * FROM perfTest WHERE indexedColumn " + in + ";";
                             {
                                 SData q("Query");
                                 q["query"] = query;
