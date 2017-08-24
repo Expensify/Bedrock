@@ -39,6 +39,8 @@ using namespace std;
 // Custom libraries.
 #include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
+//static atomic<int> queryCounter;
+
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "");
 

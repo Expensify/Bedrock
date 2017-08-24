@@ -174,6 +174,10 @@ struct PerfTest : tpunit::TestFixture {
 
     void manySelects() {
 
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-createDB")) {
+            return;
+        }
+
         // We're going to perform SELECT_COUNT select statements, that each looks up ROWS_PER_SELECT rows.
         const int SELECT_COUNT = 100000;
         const int ROWS_PER_SELECT = 1000;
