@@ -131,7 +131,7 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
             response["error"] = db.getLastError();
             throw "502 Query failed";
         }
-        response["readTimeUS"] = to_string(STimeNow() - start);
+        response["processTimeUS"] = to_string(STimeNow() - start);
 
         // Worked!  Let's save the last inserted row id
         const string& upperQuery = SToUpper(STrim(query));

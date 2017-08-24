@@ -263,15 +263,24 @@ struct PerfTest : tpunit::TestFixture {
 
             // Parse out the results.
             uint64_t queryTime = 0;
+            uint64_t queryCount = 0;
+            uint64_t processTime = 0;
+            uint64_t processCount = 0;
             for (auto& result: results) {
                 for (auto& pair: result) {
                     auto& data = pair.second;
                     if (data.isSet("readTimeUS")) {
                         queryTime += SToUInt64(data["readTimeUS"]);
+                        queryCount++;
+                    }
+                    if (data.isSet("processTimeUS")) {
+                        processTime += SToUInt64(data["processTimeUS"]);
+                        processCount++;
                     }
                 }
             }
-            cout << "Total time spent in queries: " << (queryTime / 1000000) << " seconds." << endl; 
+            cout << "Total time spent in read queries: " << (queryTime / 1000000) << " seconds (count: " << queryCount << ")." << endl; 
+            cout << "Total time spent in process queries: " << (processTime / 1000000) << " seconds (count: " << processCount << ")." << endl; 
 
             cout << "Shutting down." << endl;
             delete tester;
