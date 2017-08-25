@@ -307,7 +307,6 @@ int main(int argc, char* argv[]) {
                 server.postPoll(fdm, nextActivity);
             }
             SINFO("Graceful bedrock shutdown complete");
-
             if (server.backupOnShutdown()) {
                 BackupDB(args["-db"]);
             }

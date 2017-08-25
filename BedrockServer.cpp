@@ -869,14 +869,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (!_suppressCommandPort && state == SQLiteNode::SLAVING && (masterVersion != _version)) {
         SINFO("Node " << _args["-nodeName"] << " slaving on version " << _version << ", master is version: "
               << masterVersion << ", not opening command port.");
-        suppressCommandPort("wrong master version", true);
+        suppressCommandPort("master version mismatch", true);
     } else if (_suppressCommandPort && (state == SQLiteNode::MASTERING || (masterVersion == _version))) {
         // If we become master, or if master's version resumes matching ours, open the command port again.
         if (!_suppressCommandPortManualOverride) {
             // Only generate this logline if we haven't manually blocked this.
             SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
         }
-        suppressCommandPort("master version valid", false);
+        suppressCommandPort("master version match", false);
     }
     if (!_suppressCommandPort && (state == SQLiteNode::MASTERING || state == SQLiteNode::SLAVING) &&
         _shutdownState.load() == RUNNING) {
@@ -886,6 +886,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             _commandPort = openPort(_args["-serverHost"]);
         }
         if (!_controlPort) {
+            SINFO("Opening control port on '" << _args["-controlPort"] << "'");
             _controlPort = openPort(_args["-controlPort"]);
         }
 
@@ -1141,8 +1142,8 @@ void BedrockServer::_reply(BedrockCommand& command) {
 }
 
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
-    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
     // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
+    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
     if (_suppressCommandPortManualOverride && !manualOverride) {
         return;
     }
@@ -1350,21 +1351,21 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
 }
 
 void BedrockServer::_beginShutdown(const string& reason) {
-if (_shutdownState.load() == RUNNING) {
-    // Begin a graceful shutdown; close our port
-    SINFO("Beginning graceful shutdown due to '" << reason
-          << "', closing command port on '" << _args["-serverHost"] << "'");
-    _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
-    _gracefulShutdownTimeout.start();
+    if (_shutdownState.load() == RUNNING) {
+        // Begin a graceful shutdown; close our port
+        SINFO("Beginning graceful shutdown due to '" << reason
+              << "', closing command port on '" << _args["-serverHost"] << "'");
+        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+        _gracefulShutdownTimeout.start();
 
-    // Close our listening ports, we won't accept any new connections on them.
-    closePorts();
-    _portPluginMap.clear();
-    _commandPort = nullptr;
-    _controlPort = nullptr;
-    _shutdownState.store(START_SHUTDOWN);
-    SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
-}
+        // Close our listening ports, we won't accept any new connections on them.
+        closePorts();
+        _portPluginMap.clear();
+        _commandPort = nullptr;
+        _controlPort = nullptr;
+        _shutdownState.store(START_SHUTDOWN);
+        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
+    }
 }
 
 bool BedrockServer::backupOnShutdown() {

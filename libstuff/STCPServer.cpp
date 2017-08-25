@@ -24,9 +24,6 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
 }
 
 void STCPServer::closePorts(list<Port*> except) {
-    for (auto p : except) {
-        SINFO("close ports will skip: " << p->host);
-    }
     // Are there any ports to close?
     if (!portList.empty()) {
         // Loop across and close all ports not excepted.
