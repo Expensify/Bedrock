@@ -1285,7 +1285,11 @@ void BedrockServer::_status(BedrockCommand& command) {
         // If we set a version, override the version string and return both old and new values
         // If we forgot to send a version do nothing
         if (request.isSet("Version")) {
-          _version = request["Version"];
+          // We'll deconstruct the list given, sort it, then reconstruc it so the oeprator doesn't
+          // have to know the list needs to be sorted.
+          list<string> newVersionStrings = SParseList(request["Version"], ':');
+          newVersionStrings.sort();
+          _version = SComposeList(newVersionStrings, ":");
           content["newVersion"] = _version;
           response.methodLine = "200 OK";
           response.content = SComposeJSONObject(content);
