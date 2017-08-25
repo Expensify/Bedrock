@@ -1285,7 +1285,7 @@ void BedrockServer::_status(BedrockCommand& command) {
             _multiWriteEnabled.store((request["Enable"] == "true"));
             response.methodLine = "200 OK";
         } else {
-            response.methodLine = "500 Must Specify 'Enabled'";
+            response.methodLine = "500 Must Specify 'Enable'";
         }
     }
 }
