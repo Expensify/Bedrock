@@ -170,6 +170,8 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
     static constexpr auto STATUS_WHITELIST         = "SetCommandWhitelist";
+    static constexpr auto STATUS_VERSION           = "SetVersion";
+
 
     // This *only* exists so that status commands can pull info from this node.
     SQLiteNode* _syncNode;

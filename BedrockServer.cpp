@@ -549,7 +549,7 @@ void BedrockServer::worker(SData& args,
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
                     bool canWriteParallel = false;
-                    { 
+                    {
                         SAUTOLOCK(_parallelCommandMutex);
                         canWriteParallel =
                             (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
@@ -1150,7 +1150,8 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
         SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command.request.methodLine, STATUS_PING)              ||
         SIEquals(command.request.methodLine, STATUS_STATUS)            ||
-        SIEquals(command.request.methodLine, STATUS_WHITELIST)) {
+        SIEquals(command.request.methodLine, STATUS_WHITELIST)         ||
+        SIEquals(command.request.methodLine, STATUS_VERSION)) {
         return true;
     }
     return false;
@@ -1274,6 +1275,23 @@ void BedrockServer::_status(BedrockCommand& command) {
         // PRepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
+    }
+
+    else if (SIEquals(request.methodLine, STATUS_VERSION)) {
+        // Return the old version so we know what we changed from
+        STable content;
+        content["oldVersion"] = _version;
+
+        // If we set a version, override the version string and return both old and new values
+        // If we forgot to send a version do nothing
+        if (request.isSet("Version")) {
+          _version = request["Version"];
+          content["newVersion"] = _version;
+          response.methodLine = "200 OK";
+          response.content = SComposeJSONObject(content);
+        } else {
+          response.methodLine = "404 Must supply a version";
+        }
     }
 }
 
