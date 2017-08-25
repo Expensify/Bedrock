@@ -721,7 +721,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "FinishJob")) {
+    else if (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
+        // - RetryJob is deprecated, use RequeueJob
         // - RequeueJob( jobID, nextRun, [name], [data] )
         //
         //     Re-queues a RUNNING job to be run at "nextRun"
@@ -818,7 +819,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If we're doing RequeueJob and we want to update the name, let's do that
         const string& name = request["name"];
-        if (!name.empty() && SIEquals(requestVerb, "RequeueJob")) {
+        if (!name.empty() && (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob"))) {
             if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Failed to update job name";
             }
@@ -826,7 +827,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If we're doing RequeueJob and there isn't a repeat, construct one with the delay
         string safeNewNextRun = "";
-        if (repeat.empty() && SIEquals(requestVerb, "RequeueJob")) {
+        if (repeat.empty() && (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob"))) {
             const string& newNextRun = request["nextRun"];
 
             // Keeping delay functionality for backwards compatibility until remove it from Bedrock-PHP
@@ -865,7 +866,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         } else {
             // We are done with this job.  What do we do with it?
-            SASSERT(!SIEquals(requestVerb, "RequeueJob"));
+            SASSERT(!SIEquals(requestVerb, "RequeueJob") || !SIEquals(requestVerb, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
                 if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
