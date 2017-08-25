@@ -1,14 +1,13 @@
 #include "../libstuff/sqlite3.h"
-//#include "../libstuff/sqlite3ext.h"
 #include <string>
 #include <list>
 #include <vector>
 #include <thread>
 #include <iostream>
 #include <atomic>
-#include <mutex>
 #include <random>
 #include <sys/time.h>
+#include <unistd.h>
 using namespace std;
 
 #if 0
@@ -17,6 +16,9 @@ gcc-6  -g -c -O2 -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENA
 g++-6 -g -c -O2 sqlite_standalone_parallel_test.cpp;
 g++-6 -g -O2 -o sqlitetest sqlite_standalone_parallel_test.o sqlite3.o -ldl -lpthread;
 #endif
+
+// If this is set to true, we'll fake select queries.
+bool NOOP = false;
 
 // This will store known-good primary keys in the DB.
 vector<uint64_t> dbKeys;
@@ -186,9 +188,13 @@ void run_queries(sqlite3* db, vector<string>& queries, bool logThread) {
     int count = 0;
     for (auto& query : queries) {
         int error = sqlite3_exec(db, "BEGIN TRANSACTION", 0, 0, 0);
-        error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
-        if (error != SQLITE_OK) {
-            cout << "Error running insert query: " << sqlite3_errmsg(db) << ", query: " << query << endl;
+        if (!NOOP) {
+            error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
+            if (error != SQLITE_OK) {
+                cout << "Error running insert query: " << sqlite3_errmsg(db) << ", query: " << query << endl;
+            }
+        } else {
+            usleep(1000);
         }
         error = sqlite3_exec(db, "COMMIT", 0, 0, 0);
 
@@ -223,7 +229,8 @@ void test (int threadCount) {
         sqlite3_exec(dbs[i], "PRAGMA cache_size = -1000000;", 0, 0, 0);
         sqlite3_wal_autocheckpoint(dbs[i], 10000);
     }
-    cout << "Done, running queries in " << threadCount << " threads, " << queries.front().size() << " queries each." << endl;
+    string fake = NOOP ? " (fake)" : "";
+    cout << "Done, running" << fake << " queries in " << threadCount << " threads, " << queries.front().size() << " queries each." << endl;
 
     // Start timing.
     auto start = STimeNow();
@@ -252,6 +259,9 @@ int main(int argc, char *argv[]) {
         if (argv[i] == string("-createDB")) {
             generate_db();
             exit(0);
+        }
+        if (argv[i] == string("-noop")) {
+            NOOP = true;
         }
     }
     preselect();
