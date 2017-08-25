@@ -722,9 +722,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RequeueJob( jobID, delay, [data] )
+        // - RequeueJob( jobID, nextRun, [name], [data] )
         //
-        //     Re-queues a RUNNING job for "delay" seconds in the future,
+        //     Re-queues a RUNNING job to be run at "nextRun"
         //     unless the job is configured to "repeat" in which it will
         //     just schedule for the next repeat time.
         //     Optionally, the job name can be updated.
@@ -732,8 +732,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - delay  - Number of seconds to wait before retrying
         //     - jobID   - ID of the job to requeue
+        //     - nextRun - timestamp of next scheduled run
         //     - name    - An arbitrary string identifier (case insensitive)
         //     - data    - Data to associate with this job
         //
@@ -825,29 +825,42 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If we're doing RequeueJob and there isn't a repeat, construct one with the delay
+        string safeNewNextRun = "";
         if (repeat.empty() && SIEquals(requestVerb, "RequeueJob")) {
-            // Make sure there is a delay
-            int64_t delay = request.calc64("delay");
-            if (delay < 0) {
-                throw "402 Must specify a non-negative delay when retrying";
-            }
-            repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-        }
+            const string& newNextRun = request["nextRun"];
 
-        // Are we rescheduling?
-        if (!repeat.empty()) {
+            // Keeping delay functionality for backwards compatibility until remove it from Bedrock-PHP
+            if (newNextRun.empty()) {
+                // Make sure there is a delay
+                int64_t delay = request.calc64("delay");
+                if (delay < 0) {
+                    throw "402 Must specify a non-negative delay when retrying";
+                }
+                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+                safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+                if (safeNewNextRun.empty()) {
+                    throw "402 Malformed repeat";
+                }
+            }
+            else {
+                safeNewNextRun = SQ(newNextRun);
+            }
+        } else {
             // Configured to repeat.  The "nextRun" at this point is still
             // storing the last time this job was *scheduled* to be run;
             // lastRun contains when it was *actually* run.
-            const string& lastScheduled = nextRun;
-            const string& newNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
-            if (newNextRun.empty()) {
+            safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+            if (safeNewNextRun.empty()) {
                 throw "402 Malformed repeat";
             }
-            SINFO("Rescheduling job#" << jobID << ": " << newNextRun);
+        }
+
+        // Are we rescheduling?
+        if (!safeNewNextRun.empty()) {
+            SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
-            if (!db.write("UPDATE jobs SET nextRun=" + newNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.write("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Update failed";
             }
         } else {
