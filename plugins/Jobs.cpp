@@ -727,13 +727,15 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     Re-queues a RUNNING job for "delay" seconds in the future,
         //     unless the job is configured to "repeat" in which it will
         //     just schedule for the next repeat time.
+        //     Optionally, the job name can be updated.
         //     Use this when a job was only partially completed but
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - jobID  - ID of the job to requeue
         //     - delay  - Number of seconds to wait before retrying
-        //     - data   - Data to associate with this job
+        //     - jobID   - ID of the job to requeue
+        //     - name    - An arbitrary string identifier (case insensitive)
+        //     - data    - Data to associate with this job
         //
         // - FinishJob( jobID, [data] )
         //
@@ -812,6 +814,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // All done processing this command
             return true;
+        }
+
+        // If we're doing RequeueJob and we want to update the name, let's do that
+        const string& name = request["name"];
+        if (!name.empty() && SIEquals(requestVerb, "RequeueJob")) {
+            if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
+                throw "502 Failed to update job name";
+            }
         }
 
         // If we're doing RequeueJob and there isn't a repeat, construct one with the delay

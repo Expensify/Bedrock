@@ -29,6 +29,7 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
  * **RequeueJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to retry
    * *delay* - Number of seconds to wait before retrying
+   * *name* - (optional) Any arbitrary string name for this job.
    * *data* - (optional) Data to associate with this job
 
 ## Sample Session
