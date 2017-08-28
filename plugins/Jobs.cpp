@@ -300,7 +300,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Verify the job exists
-        if (result.empty()) {
+        if (result[0][0].empty()) {
             throw "404 No job with this jobID";
         }
 
@@ -1135,7 +1135,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     if (!db.read("SELECT 1 "
                  "FROM jobs "
                  "WHERE parentJobID = " + SQ(jobID) + " " +
-                 "  AND state IN ('QUEUED', 'RUNQUEUED', RUNNING', 'PAUSED') "
+                 " AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
         throw "502 Select failed";
