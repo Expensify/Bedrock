@@ -76,7 +76,8 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     command.complete = true;
 
     // Back out of the current transaction, it doesn't need to do anything.
-    _db.commitNoJournal();
+    //_db.commitNoJournal();
+    _db.rollback();
 
     // Done.
     return true;
