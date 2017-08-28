@@ -3,7 +3,7 @@
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
-                              BEFORE_CLASS(CreateJobTest::setup),
+                              BEFORE_CLASS(CreateJobTest::setupClass),
                               TEST(CreateJobTest::create),
                               TEST(CreateJobTest::createWithPriority),
                               TEST(CreateJobTest::createWithData),
@@ -17,13 +17,23 @@ struct CreateJobTest : tpunit::TestFixture {
                               //TEST(CreateJobTest::retryLifecycle), // seg faults
                               TEST(CreateJobTest::retryWithChildren),
                               //TEST(CreateJobTest::retryJobComesFirst), //fails, i think the code is buggy
-                              AFTER_CLASS(CreateJobTest::tearDown)) { }
+                              TEST(CreateJobTest::createChildWithQueuedParent),
+                              TEST(CreateJobTest::createChildWithRunningGrandparent),
+                              AFTER(CreateJobTest::tearDown),
+                              AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setup() { tester = new BedrockTester(); }
+    void setupClass() { tester = new BedrockTester(); }
 
-    void tearDown() { delete tester; }
+    // Reset the jobs table
+    void tearDown() {
+        SData command("Query");
+        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
+        tester->executeWait(command);
+    }
+
+    void tearDownClass() { delete tester; }
 
     // TODO: delete this, it's only for debugging purposes
     void gettime() {
@@ -370,6 +380,58 @@ struct CreateJobTest : tpunit::TestFixture {
         cout << "this job " << response["jobID"] << endl;
         gettime();
         ASSERT_EQUAL(response["jobID"], retryableJob1);
+    }
+
+    // Cannot create a child job when parent is QUEUED
+    void createChildWithQueuedParent() {
+        // Create a parent job
+        SData command("CreateJob");
+        command["name"] = "parent";
+
+        STable response = getJsonResult(command);
+        string parentID = response["jobID"];
+
+        // Try to create the child
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child";
+        command["parentJobID"] = parentID;
+        tester->executeWait(command, "405 Can only create child job when parent is RUNNING or PAUSED");
+    }
+
+    // Cannot create a job with a running grandparent
+    void createChildWithRunningGrandparent() {
+        // Create a parent job
+        SData command("CreateJob");
+        command["name"] = "parent";
+        STable response = getJsonResult(command);
+        string parentID = response["jobID"];
+
+        // Get the parent
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "parent";
+        tester->executeWait(command);
+
+        // Create the child
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child";
+        command["parentJobID"] = parentID;
+        response = getJsonResult(command);
+        string childID = response["jobID"];
+
+        // Assert parent is still running
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
+
+        // Try to create grandchild
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "grandchild";
+        command["parentJobID"] = childID;
+        tester->executeWait(command, "405 Cannot create grandchildren");
     }
 
     // TODO: put this in a util file
