@@ -2181,7 +2181,6 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 // Executes a SQLite query
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
 #define MAX_TRIES 3
-
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
     int error = 0;
