@@ -61,8 +61,6 @@ class SQLite {
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     int commit();
 
-    int commitNoJournal();
-
     // Cancels the current transaction and rolls it back
     void rollback();
 
