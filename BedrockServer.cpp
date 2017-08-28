@@ -549,7 +549,7 @@ void BedrockServer::worker(SData& args,
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
                     bool canWriteParallel = false;
-                    { 
+                    {
                         SAUTOLOCK(_parallelCommandMutex);
                         canWriteParallel =
                             (_parallelCommands.find(command.request.methodLine) != _parallelCommands.end());
@@ -717,8 +717,12 @@ BedrockServer::BedrockServer(const SData& args)
     _version = SComposeList(versions, ":");
 
     // If `versionOverride` is set, we throw away what we just did and use the overridden value.
+    // We'll destruct, sort, and then reconstruct the version string passed in so we aren't relying
+    // on the operator to know that they must be sorted.
     if (args.isSet("-versionOverride")) {
-        _version = args["-versionOverride"];
+        list<string> versionStrings = SParseList(args["-versionOverride"], ':');
+        versionStrings.sort();
+        _version = SComposeList(versionStrings, ":");
     }
 
     // Check for commands that will be forced to use QUORUM write consistency.
