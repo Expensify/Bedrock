@@ -17,7 +17,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryUnique),
                               //TEST(CreateJobTest::retryLifecycle), // seg faults
                               TEST(CreateJobTest::retryWithChildren),
-                              //TEST(CreateJobTest::retryJobComesFirst), //fails, i think the code is buggy
+                              TEST(CreateJobTest::retryJobComesFirst),
                               TEST(CreateJobTest::createChildWithQueuedParent),
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
                               AFTER(CreateJobTest::tearDown),
@@ -336,27 +336,28 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWait(command, "402 Auto-retrying parents cannot have children");
     }
 
-    // This should actually go in a GetJob test
+    // TODO This should actually go in a GetJob test
     // Retryable job (after retry period has passed) comes before QUEUED job
     void retryJobComesFirst() {
-        // Create two retryable jobs
+        // Create retryable job
         SData command("CreateJob");
         string jobName = "testRetryable";
-        string retryValue = "+2 SECONDS";
+        string retryValue = "+1 SECOND";
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
         STable response = getJsonResult(tester, command);
-        string retryableJob1 = response["jobID"];
+        string retryableJob = response["jobID"];
 
-        response = getJsonResult(tester, command);
-        string retryableJob2 = response["jobID"];
 
         // Get a job and confirm it's the first job we created
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*Retryable";
         response = getJsonResult(tester, command);
-        ASSERT_EQUAL(response["jobID"], retryableJob1);
+        ASSERT_EQUAL(response["jobID"], retryableJob);
+
+        // Sleep for a second so we're past the retryAfter time
+        sleep(1);
 
         // Create a non-retryable job
         command.clear();
@@ -366,21 +367,12 @@ struct CreateJobTest : tpunit::TestFixture {
         response = getJsonResult(tester, command);
         string nonRetryableJob = response["jobID"];
 
-        // Sleep 9 seconds
-        sleep(9);
-
-        dumptable();
-
         // Get a job, should be the first job we created (because it's been in REQUEUED for more than the retryAfter time)
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*Retryable";
         response = getJsonResult(tester, command);
-        cout << "job 1 " << retryableJob1 << endl;
-        cout << "job 2 " << retryableJob2 << endl;
-        cout << "this job " << response["jobID"] << endl;
-        gettime();
-        ASSERT_EQUAL(response["jobID"], retryableJob1);
+        ASSERT_EQUAL(response["jobID"], retryableJob);
     }
 
     // Cannot create a child job when parent is QUEUED
