@@ -410,6 +410,29 @@ int SQLite::commit() {
     return result;
 }
 
+
+int SQLite::commitNoJournal() {
+    SASSERT(_insideTransaction);
+    SASSERT(_uncommittedHash.empty());
+
+    // Make sure one is ready to commit
+    SDEBUG("Committing empty transaction");
+    int result = SQuery(_db, "committing db transaction", "COMMIT");
+
+    // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
+    if (result == SQLITE_OK) {
+        SDEBUG("Commit successful (" << _commitCount.load() << "), releasing commitLock.");
+        _insideTransaction = false;
+    } else {
+        SINFO("Commit failed, waiting for rollback.");
+    }
+
+    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
+    // calling rollback().
+    return result;
+}
+
 map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
