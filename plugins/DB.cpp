@@ -61,7 +61,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
             throw "502 Query aborted";
         }
 
-        if (SStartsWith(upperQuery, "SELECT ") || SStartsWith(upperQuery, "MOCK ")) {
+        if (SStartsWith(upperQuery, "SELECT ")) {
             // Seems to be read-only
             SINFO("Query appears to be read-only, peeking.");
         } else {

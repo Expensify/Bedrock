@@ -59,10 +59,6 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
-atomic<int> queryCounter(0);
-atomic<int> lastQueryCounter(0);
-atomic<int> lastQueryCounterInstances(0);
-
 void SInitialize(string threadName) {
     // Initialize signal handling
     SLogSetThreadName(threadName);
@@ -2186,7 +2182,6 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
 #define MAX_TRIES 3
 
-    queryCounter++;
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
     int error = 0;
@@ -2194,26 +2189,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
-        int queries = queryCounter.load();
-        if (lastQueryCounter.load() != queries) {
-            //cout << lastQueryCounterInstances.load() << ") instances." << endl;
-            lastQueryCounterInstances.store(1);
-            lastQueryCounter.store(queries);
-            //cout << queryCounter.load() << " concurrent queries (";
-        } else {
-            lastQueryCounterInstances++;
-        }
-
-        // Mock out these queries.
-        if (SStartsWith(sql, "MOCK ")) {
-            usleep(1000);
-            queryCounter--;
-            return SQLITE_OK;
-        } else {
-            if (sql != "BEGIN TRANSACTION" && sql != "COMMIT") {
-                cout << sql.substr(0, 120) << endl;
-            }
-        }
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
@@ -2252,10 +2227,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
         SHMMM("[concurrent] commit conflict.");
-        queryCounter--;
         return extErr;
     }
-    queryCounter--;
     return error;
 }
 
