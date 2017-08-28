@@ -19,6 +19,9 @@ struct PerfTest : tpunit::TestFixture {
     // A million rows is about 33mb.
     int64_t NUM_ROWS = 1000000ll * 24ll; // Approximately 1gb.
 
+    int maxThreads = 4;
+    int queriesPerTest = 100000;
+
     string dbFile = "";
 
     mutex insertMutex;
@@ -29,6 +32,14 @@ struct PerfTest : tpunit::TestFixture {
 
     void setup() {
         int threads = 8;
+
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-maxThreads")) {
+            maxThreads = SToInt64((*BedrockTester::globalArgs)["-maxThreads"]);
+        }
+
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-queriesPerTest")) {
+            queriesPerTest = SToInt64((*BedrockTester::globalArgs)["-queriesPerTest"]);
+        }
 
         // If the user specified a number of threads, use that.
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-brthreads")) {
@@ -178,21 +189,18 @@ struct PerfTest : tpunit::TestFixture {
             return;
         }
 
-        // We're going to perform SELECT_COUNT select statements, that each looks up ROWS_PER_SELECT rows.
-        const int SELECT_COUNT = 100000;
         const int ROWS_PER_SELECT = 1000;
 
         int i = 1;
-        int MAX = 16; // or 512.
-        while (i <= MAX) {
-            cout << "Testing " << SELECT_COUNT << " SELECTS (" << ROWS_PER_SELECT << " rows per SELECT) with "
+        while (i <= maxThreads) {
+            cout << "Testing " << queriesPerTest << " SELECTS (" << ROWS_PER_SELECT << " rows per SELECT) with "
                  << i << " bedrock threads." << endl;
 
             // We have a list of batches of queries. Each batch is 5000 queries.
             list<vector<SData>> queryList;
             auto it = keys.begin();
             int selectStatmentCount = 0;
-            while (selectStatmentCount < SELECT_COUNT) {
+            while (selectStatmentCount < queriesPerTest) {
                 vector<SData> queries;
                 mutex selectMutex;
                 list<thread> threads;
