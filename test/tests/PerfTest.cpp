@@ -199,17 +199,25 @@ struct PerfTest : tpunit::TestFixture {
         // Ok, we've selected about a million rows. Let's make some queries out of them.
         // 10k queries, 10k rows per query.
         atomic <uint64_t> queriesIndex(0);
+        atomic <uint64_t> keysIndex(0);
         list<thread> threads;
         for (int i = 0; i < 50; i++) {
-            threads.emplace_back([i, &queriesIndex, this](){
+            threads.emplace_back([i, &queriesIndex, &keysIndex, this](){
                 // 200 queries on each thread.
                 for (int j = 0; j < 200; j++) {
                     uint64_t queryId = queriesIndex.fetch_add(1);
                     uint64_t key[ROWS_PER_SELECT] = {0};
 
-                    // Select a bunch of keys.
+                    // Select a bunch of random keys.
+                    /*
                     for (int j = 0; j < ROWS_PER_SELECT; j++) {
                         key[j] = keys[SRandom::rand64() % keys.size()];
+                    }
+                    */
+
+                    // Select a bunch of in-order keys.
+                    for (int j = 0; j < ROWS_PER_SELECT; j++) {
+                        key[j] = keys[keysIndex.fetch_add(1) % keys.size()];
                     }
 
                     // Build the list of "in" values to select from.
