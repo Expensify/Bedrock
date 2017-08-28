@@ -45,7 +45,7 @@ struct PerfTest : tpunit::TestFixture {
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-queriesPerTest")) {
             queriesPerTest = SToInt64((*BedrockTester::globalArgs)["-queriesPerTest"]);
             queriesPerTest = 10000 * (queriesPerTest/10000);
-            queriesPerTest = min(queriesPerTest, (uint64_t)10000);
+            queriesPerTest = max(queriesPerTest, (uint64_t)10000);
         }
 
         // Max number of threads to try (nearest power of 2 to this)
