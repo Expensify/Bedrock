@@ -558,9 +558,10 @@ void BedrockServer::worker(SData& args,
                     // For now, commands need to be in `_parallelCommands` *and* `multiWriteOK`. When we're
                     // confident in BedrockConflictMetrics, we can remove `_parallelCommands`.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
-                    if (!canWriteParallel              ||
-                        state != SQLiteNode::MASTERING ||
-                        command.httpsRequest           ||
+                    if (!canWriteParallel               ||
+                        state != SQLiteNode::MASTERING  ||
+                        command.httpsRequest            ||
+                        command.onlyProcessOnSyncThread ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
                         // Roll back the transaction, it'll get re-run in the sync thread.
@@ -812,6 +813,34 @@ bool BedrockServer::shutdownComplete() {
     if (!_commandQueue.empty()) {
         logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
     }
+
+    // Also log the shutdown state.
+    SHUTDOWN_STATE state = _shutdownState.load();
+    string stateString;
+    switch (state) {
+        case RUNNING:
+            stateString = "RUNNING";
+            break;
+        case START_SHUTDOWN:
+            stateString = "START_SHUTDOWN";
+            break;
+        case PORTS_CLOSED:
+            stateString = "PORTS_CLOSED";
+            break;
+        case QUEUE_PROCESSED:
+            stateString = "QUEUE_PROCESSED";
+            break;
+        case SYNC_SHUTDOWN:
+            stateString = "SYNC_SHUTDOWN";
+            break;
+        case DONE:
+            stateString = "DONE";
+            break;
+        default:
+            stateString = "UNKNOWN";
+            break;
+    }
+    logLine += " Shutdown State: " + stateString + ".";
     SWARN(logLine);
 
     return false;
@@ -1061,6 +1090,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // The last thing we do is total up our timing info and add it to the response.
         command.finalizeTimingInfo();
+        command.response["nodeName"] = _args["-nodeName"];
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];
@@ -1181,6 +1211,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         // On master, return the current multi-write blacklist.
         if (state == SQLiteNode::MASTERING) {
             content["multiWriteBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
+            content["multiWriteWhiteList"] = SComposeJSONArray(_parallelCommands);
         }
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync

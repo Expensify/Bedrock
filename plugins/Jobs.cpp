@@ -251,20 +251,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            // Verify unique
-            SQResult result;
-            SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
-            if (!db.read("SELECT jobID, data "
-                         "FROM jobs "
-                         "WHERE name=" + SQ(job["name"]) + ";",
-                         result)) {
-                throw "502 Select failed";
-            }
+            // Verify unique, but only do so when creating a single job using CreateJob
+            if (SIEquals(request.methodLine, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+                SQResult result;
+                SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+                if (!db.read("SELECT jobID, data "
+                             "FROM jobs "
+                             "WHERE name=" + SQ(job["name"]) + ";",
+                             result)) {
+                    throw "502 Select failed";
+                }
 
-            // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
-            if (!result.empty() && result[0][1] == job["data"]){
-                // If we are calling CreateJob, return early, there are no more jobs to create.
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
+                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                    // Return early, no need to pass to master, there are no more jobs to create.
                     SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
                     content["jobID"] = result[0][0];
                     return true;
@@ -412,7 +412,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && result[0][1] == job["data"]) {
+                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
                           << result[0][0]);
 
@@ -473,7 +473,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, parentJobID, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     throw "502 Select failed";
                 }
                 if (result.empty()) {
@@ -483,7 +483,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     throw "405 Can only create child job when parent is RUNNING or PAUSED";
                 }
-                if (result[0][1] != "") {
+
+                // Prevent jobs from creating grandchildren
+                if (!SIEquals(result[0][1], "0")) {
+                    SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
+                    throw "405 Cannot create grandchildren";
+                }
+
+                if (result[0][2] != "") {
                     SALERT("Auto-retrying parents shouldn't have children, parentJobID: " << parentJobID );
                 }
             }
@@ -556,7 +563,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(lastInsertRowID));            
+                jobIDs.push_back(SToStr(lastInsertRowID));
             }
         }
 
@@ -650,14 +657,15 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 retriableJobs.push_back(job);
             }
 
-            // See if this job has any FINISHED child jobs, indicating it is being resumed
-            SQResult finishedChildJobs;
-            if (!db.read("SELECT jobID, data FROM jobs WHERE parentJobID=" + result[c][0] + " AND state='FINISHED';", finishedChildJobs)) {
+            // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
+            SQResult childJobs;
+            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
                 throw "502 Failed to select finished child jobs";
             }
 
             // Add this object to our output
             STable job;
+            SINFO("Returning jobID " << result[c][0] << " from " << requestVerb);
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];
@@ -667,16 +675,23 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 job["parentJobID"] = SToStr(parentJobID);;
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
-            if (!finishedChildJobs.empty()) {
-                // Add an associative array of all children
+            if (!childJobs.empty()) {
+                // Add associative arrays of all children depending on their states
                 list<string> finishedChildJobArray;
-                for (auto row : finishedChildJobs.rows) {
-                    STable finishedChildJob;
-                    finishedChildJob["jobID"] = row[0];
-                    finishedChildJob["data"] = row[1];
-                    finishedChildJobArray.push_back(SComposeJSONObject(finishedChildJob));
+                list<string> cancelledChildJobArray;
+                for (auto row : childJobs.rows) {
+                    STable childJob;
+                    childJob["jobID"] = row[0];
+                    childJob["data"] = row[1];
+
+                    if (row[2] ==  "FINISHED") {
+                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                    } else {
+                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
+                    }
                 }
                 job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
             jobList.push_back(SComposeJSONObject(job));
         }
