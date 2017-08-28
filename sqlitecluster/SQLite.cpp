@@ -48,7 +48,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
-        // setting, all reads are essentially single-threaded.
+        // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
         sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
         sqlite3_initialize();
         SASSERT(sqlite3_threadsafe());
