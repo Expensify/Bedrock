@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <iomanip>
 
 struct PerfTest : tpunit::TestFixture {
     PerfTest()
@@ -19,16 +20,41 @@ struct PerfTest : tpunit::TestFixture {
     // A million rows is about 33mb.
     int64_t NUM_ROWS = 1000000ll * 24ll; // Approximately 1gb.
 
+    const int ROWS_PER_SELECT = 1000;
+
+    int maxThreads = 4;
+
     string dbFile = "";
 
     mutex insertMutex;
     list<string> outstandingQueries;
 
+    // 10k queries we can cycle through.
+    vector<SData> queries;
+
+    // Number of queries to run in each test.
+    uint64_t queriesPerTest = 10000;
+
     int64_t rowCount;
-    list<int64_t> keys;
+    vector<int64_t> keys;
 
     void setup() {
         int threads = 8;
+
+        // Number of selects to do in each test (floored to the nearest 10k).
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-queriesPerTest")) {
+            queriesPerTest = SToInt64((*BedrockTester::globalArgs)["-queriesPerTest"]);
+            queriesPerTest = 10000 * (queriesPerTest/10000);
+            queriesPerTest = min(queriesPerTest, (uint64_t)10000);
+        }
+
+        // Max number of threads to try (nearest power of 2 to this)
+        if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-maxThreads")) {
+            maxThreads = SToInt64((*BedrockTester::globalArgs)["-maxThreads"]);
+            if (maxThreads < 1) {
+                maxThreads = 4;
+            }
+        }
 
         // If the user specified a number of threads, use that.
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-brthreads")) {
@@ -159,86 +185,65 @@ struct PerfTest : tpunit::TestFixture {
         cout << "Selected rows: " << rows.size() << endl;
 
         auto it = rows.begin();
+        keys.resize(rows.size());
+        uint64_t keysIndex = 0;
         while (it != rows.end()) {
-            keys.emplace_back(SToInt64(*it));
+            keys[keysIndex] = SToInt64(*it);
+            keysIndex++;
             it++;
+        }
+
+        cout << "Have " << keys.size() << " keys to pick from." << endl;
+        cout << "Generating queries." << endl;
+        queries.resize(10000);
+        // Ok, we've selected about a million rows. Let's make some queries out of them.
+        // 10k queries, 10k rows per query.
+        atomic <uint64_t> queriesIndex(0);
+        list<thread> threads;
+        for (int i = 0; i < 50; i++) {
+            threads.emplace_back([i, &queriesIndex, this](){
+                // 200 queries on each thread.
+                for (int j = 0; j < 200; j++) {
+                    uint64_t queryId = queriesIndex.fetch_add(1);
+                    uint64_t key[ROWS_PER_SELECT] = {0};
+
+                    // Select a bunch of keys.
+                    for (int j = 0; j < ROWS_PER_SELECT; j++) {
+                        key[j] = keys[SRandom::rand64() % keys.size()];
+                    }
+
+                    // Build the list of "in" values to select from.
+                    string in = "IN (";
+                    for (int k = 0; k < ROWS_PER_SELECT - 1; k++) {
+                        in += SQ(key[k]) + ", ";
+                    }
+                    in += SQ(key[ROWS_PER_SELECT - 1]) + ")";
+                    string query = "SELECT * FROM perfTest WHERE indexedColumn " + in + ";";
+                    SData q("Query");
+                    q["query"] = query;
+                    queries[queryId] = q;
+                }
+            });
+        }
+        for (auto& thread : threads) {
+            thread.join();
         }
 
         // End Timing.
         auto end = STimeNow();
-        cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
-        cout << "Have " << keys.size() << " keys to pick from." << endl;
-
+        cout << "Elapsed " << setprecision(5) << ((double)(end - start) / 1000000.0) << " seconds." << endl;
         delete tester;
     }
 
     void manySelects() {
-
         if (BedrockTester::globalArgs && BedrockTester::globalArgs->isSet("-createDB")) {
             return;
         }
 
-        // We're going to perform SELECT_COUNT select statements, that each looks up ROWS_PER_SELECT rows.
-        const int SELECT_COUNT = 100000;
-        const int ROWS_PER_SELECT = 1000;
-
         int i = 1;
-        int MAX = 16; // or 512.
-        while (i <= MAX) {
-            cout << "Testing " << SELECT_COUNT << " SELECTS (" << ROWS_PER_SELECT << " rows per SELECT) with "
+        while (i <= maxThreads) {
+            cout << "Testing " << queriesPerTest << " SELECTS (" << ROWS_PER_SELECT << " rows per SELECT) with "
                  << i << " bedrock threads." << endl;
-
-            // We have a list of batches of queries. Each batch is 5000 queries.
-            list<vector<SData>> queryList;
-            auto it = keys.begin();
-            int selectStatmentCount = 0;
-            while (selectStatmentCount < SELECT_COUNT) {
-                vector<SData> queries;
-                mutex selectMutex;
-                list<thread> threads;
-                // 25 threads.
-                for (int i = 0; i < 25; i++) {
-                    threads.emplace_back([i, &it, &selectMutex, &queries, this](){
-                        // 200 queries on each thread.
-                        for (int j = 0; j < 200; j++) {
-                            uint64_t key[ROWS_PER_SELECT] = {0};
-                            {
-                                SAUTOLOCK(selectMutex);
-                                for (int k = 0; k < ROWS_PER_SELECT; k++) {
-                                    if (it != keys.end()) {
-                                        it = keys.begin();
-                                    }
-                                    key[k] = *it;
-                                    it++;
-                                }
-                            }
-
-                            // Build the list of "in" values to select from.
-                            string in = "IN (";
-                            for (int k = 0; k < ROWS_PER_SELECT - 1; k++) {
-                                in += SQ(key[k]) + ", ";
-                            }
-                            in += SQ(key[ROWS_PER_SELECT - 1]) + ")";
-                            string query = "SELECT * FROM perfTest WHERE indexedColumn " + in + ";";
-                            {
-                                SData q("Query");
-                                q["query"] = query;
-                                SAUTOLOCK(selectMutex);
-                                queries.push_back(q);
-                            }
-                        }
-                    });
-                }
-                for (auto& thread : threads) {
-                    thread.join();
-                }
-                queryList.push_back(queries);
-
-                // We've added another queries.
-                selectStatmentCount += 5000;
-            }
-
-            cout << selectStatmentCount << " queries prepared." << endl;
 
             // Re-create the tester with the existing DB file.
             cout << "Starting server." << endl;
@@ -250,16 +255,15 @@ struct PerfTest : tpunit::TestFixture {
             auto start = STimeNow();
 
             list<vector<pair<string,SData>>> results;
-            auto it2 = queryList.begin();
-            while (it2 != queryList.end()) {
-                auto& qlist = *it2;
-                results.emplace_back(tester->executeWaitMultipleData(qlist, i * 2));
-                it2++;
+            uint64_t queriesRun = 0;
+            while (queriesRun < queriesPerTest) {
+                results.emplace_back(tester->executeWaitMultipleData(queries, i * 2));
+                queriesRun += queries.size();
             }
 
             // End Timing.
             auto end = STimeNow();
-            cout << "Elapsed " << ((end - start) / 1000000) << " seconds." << endl;
+            cout << "Elapsed " << setprecision(5) << ((double)(end - start) / 1000000.0) << " seconds." << endl;
 
             // Parse out the results.
             uint64_t queryTime = 0;
@@ -279,8 +283,8 @@ struct PerfTest : tpunit::TestFixture {
                     }
                 }
             }
-            cout << "Total time spent in read queries: " << (queryTime / 1000000) << " seconds (count: " << queryCount << ")." << endl; 
-            cout << "Total time spent in process queries: " << (processTime / 1000000) << " seconds (count: " << processCount << ")." << endl; 
+            cout << "Total time spent in read queries: " << ((double)queryTime / 1000000.0) << " seconds (count: " << queryCount << ")." << endl;
+            cout << "Total time spent in process queries: " << ((double)processTime / 1000000.0) << " seconds (count: " << processCount << ")." << endl;
 
             cout << "Shutting down." << endl;
             delete tester;
