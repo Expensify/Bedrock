@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <test/Utils.h>
 
 struct CancelJobTest : tpunit::TestFixture {
     CancelJobTest()
@@ -27,12 +28,6 @@ struct CancelJobTest : tpunit::TestFixture {
 
     void tearDownClass() { delete tester; }
 
-    // TODO: put this in a util file
-    STable getJsonResult(SData command) {
-        string resultJson = tester->executeWait(command);
-        return SParseJSONObject(resultJson);
-    }
-
     // Cannot cancel a job that doesn't exist
     void cancelNonExistentJob() {
         SData command("CancelJob");
@@ -45,7 +40,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Get the parent
@@ -59,7 +54,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string childID = response["jobID"];
 
         // Finish the parent
@@ -95,7 +90,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string jobID = response["jobID"];
 
         // Get the job
@@ -125,7 +120,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Get the parent
@@ -139,7 +134,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string childID = response["jobID"];
 
         // Finish the parent
@@ -179,7 +174,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Get the parent
@@ -193,7 +188,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string childID = response["jobID"];
 
         // Assert job is in PAUSED state
@@ -217,7 +212,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string jobID = response["jobID"];
 
         // Cancel it
@@ -237,7 +232,7 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Get the parent
@@ -251,7 +246,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string childID = response["jobID"];
 
         // Finish the parent to put the child in the QUEUED state

@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <test/Utils.h>
 
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
@@ -61,7 +62,7 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         string jobName = "testCreate";
         command["name"] = jobName;
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
@@ -86,7 +87,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string priority = "1000";
         command["name"] = jobName;
         command["priority"] = priority;
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
@@ -111,7 +112,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string data = "{\"blabla\":\"blabla\"}";
         command["name"] = jobName;
         command["data"] = data;
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
@@ -136,7 +137,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string repeat = "SCHEDULED, +1 HOUR";
         command["name"] = jobName;
         command["repeat"] = repeat;
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
@@ -164,7 +165,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string jobName = "blabla";
         command["name"] = jobName;
         command["unique"] = "true";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         int jobID = SToInt(response["jobID"]);
         ASSERT_GREATER_THAN(jobID, 0);
 
@@ -178,7 +179,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["unique"] = "true";
         command["data"] = data;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
 
         SQResult updatedJob;
@@ -242,7 +243,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
 
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string jobID = response["jobID"];
 
         // Query the db to confirm it was created correctly
@@ -263,7 +264,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = jobName;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
 
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
@@ -287,7 +288,7 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWait(command, "404 No job found");
         // Wait 5 seconds, get the job, confirm no error
         sleep(5);
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
 
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
@@ -324,7 +325,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
 
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string jobID = response["jobID"];
 
         // Try to create child
@@ -344,17 +345,17 @@ struct CreateJobTest : tpunit::TestFixture {
         string retryValue = "+2 SECONDS";
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string retryableJob1 = response["jobID"];
 
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string retryableJob2 = response["jobID"];
 
         // Get a job and confirm it's the first job we created
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*Retryable";
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         ASSERT_EQUAL(response["jobID"], retryableJob1);
 
         // Create a non-retryable job
@@ -362,7 +363,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "notRetryable";
 
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string nonRetryableJob = response["jobID"];
 
         // Sleep 9 seconds
@@ -374,7 +375,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*Retryable";
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         cout << "job 1 " << retryableJob1 << endl;
         cout << "job 2 " << retryableJob2 << endl;
         cout << "this job " << response["jobID"] << endl;
@@ -388,7 +389,7 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "parent";
 
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Try to create the child
@@ -404,7 +405,7 @@ struct CreateJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(command);
+        STable response = getJsonResult(tester, command);
         string parentID = response["jobID"];
 
         // Get the parent
@@ -418,7 +419,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(command);
+        response = getJsonResult(tester, command);
         string childID = response["jobID"];
 
         // Assert parent is still running
@@ -432,11 +433,5 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "grandchild";
         command["parentJobID"] = childID;
         tester->executeWait(command, "405 Cannot create grandchildren");
-    }
-
-    // TODO: put this in a util file
-    STable getJsonResult(SData command) {
-        string resultJson = tester->executeWait(command);
-        return SParseJSONObject(resultJson);
     }
 } __CreateJobTest;
