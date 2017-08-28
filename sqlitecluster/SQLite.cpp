@@ -62,6 +62,10 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
     sqlite3_busy_timeout(_db, 1000);
 
+    // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
+    // setting, all reads are essentially single-threaded.
+    sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
+
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
