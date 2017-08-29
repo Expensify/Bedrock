@@ -50,7 +50,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
         // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
         sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
-        sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, 2100000000000, 2100000000000);
+        //sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, 2100000000000, 2100000000000);
         sqlite3_initialize();
         SASSERT(sqlite3_threadsafe());
 
@@ -71,7 +71,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
     // mmap
-    SASSERT(!SQuery(_db, "enable mmap mode for giant files", "PRAGMA mmap_size=2100000000000;"));
+    //SASSERT(!SQuery(_db, "enable mmap mode for giant files", "PRAGMA mmap_size=2100000000000;"));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
