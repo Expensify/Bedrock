@@ -294,13 +294,14 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID) "
                      "FROM jobs j "
                      "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
-                     "WHERE j.jobID=" + SQ(jobID) + ";",
+                     "WHERE j.jobID=" + SQ(jobID) + " "
+                     "GROUP BY j.jobID;",
                      result)) {
             throw "502 Select failed";
         }
 
         // Verify the job exists
-        if (result[0][0].empty()) {
+        if (result.empty()) {
             throw "404 No job with this jobID";
         }
 
