@@ -15,7 +15,7 @@ class BedrockTester {
     static bool deleteFile(string name);
     static bool startServers;
     static list<string> locations;
-
+    static set<string> plugins;
     static SData* globalArgs;
 
     uint64_t nextActivity;

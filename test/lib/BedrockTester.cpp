@@ -8,6 +8,10 @@ list<string> BedrockTester::locations = {
     "../bedrock",
     "../../bedrock"
 };
+set<string> BedrockTester::plugins = {
+    "db",
+    "cache"
+};
 SData* BedrockTester::globalArgs = nullptr;
 
 // Make llvm and gcc get along.
@@ -31,8 +35,7 @@ class BedrockTestException : public std::exception {
 
 // Create temporary file. Returns its name or the empty string on failure.
 string BedrockTester::getTempFileName(string prefix) {
-    string templateStr = "/var/lib/authdb/" + prefix + "bedrocktest_XXXXXX.db";
-    //string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
+    string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
     strcpy(buffer, templateStr.c_str());
     int filedes = mkstemps(buffer, 3);
@@ -155,6 +158,7 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
         {"-nodeName",        "bedrock_test"},
         {"-nodeHost",         "localhost:9889"},
         {"-priority",         "200"},
+        {"-plugins",          SComposeList(plugins)},
         {"-readThreads",      "8"},
         {"-maxJournalSize",   "100"},
         {"-v",                ""},
