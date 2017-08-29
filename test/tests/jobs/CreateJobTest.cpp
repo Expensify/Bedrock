@@ -5,21 +5,21 @@ struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
-                              TEST(CreateJobTest::create),
-                              TEST(CreateJobTest::createWithPriority),
-                              TEST(CreateJobTest::createWithData),
-                              TEST(CreateJobTest::createWithRepeat),
-                              TEST(CreateJobTest::uniqueJob),
-                              TEST(CreateJobTest::createWithBadData),
-                              TEST(CreateJobTest::createWithBadRepeat),
-                              TEST(CreateJobTest::retryRecurringJobs),
-                              TEST(CreateJobTest::retryWithMalformedValue),
-                              TEST(CreateJobTest::retryUnique),
-                              //TEST(CreateJobTest::retryLifecycle), // seg faults
-                              TEST(CreateJobTest::retryWithChildren),
-                              TEST(CreateJobTest::retryJobComesFirst),
-                              TEST(CreateJobTest::createChildWithQueuedParent),
-                              TEST(CreateJobTest::createChildWithRunningGrandparent),
+//                              TEST(CreateJobTest::create),
+//                              TEST(CreateJobTest::createWithPriority),
+//                              TEST(CreateJobTest::createWithData),
+//                              TEST(CreateJobTest::createWithRepeat),
+//                              TEST(CreateJobTest::uniqueJob),
+//                              TEST(CreateJobTest::createWithBadData),
+//                              TEST(CreateJobTest::createWithBadRepeat),
+//                              TEST(CreateJobTest::retryRecurringJobs),
+//                              TEST(CreateJobTest::retryWithMalformedValue),
+//                              TEST(CreateJobTest::retryUnique),
+                                TEST(CreateJobTest::retryLifecycle),
+//                              TEST(CreateJobTest::retryWithChildren),
+//                              TEST(CreateJobTest::retryJobComesFirst),
+//                              TEST(CreateJobTest::createChildWithQueuedParent),
+//                              TEST(CreateJobTest::createChildWithRunningGrandparent),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
@@ -239,7 +239,7 @@ struct CreateJobTest : tpunit::TestFixture {
         // Create a retryable job
         SData command("CreateJob");
         string jobName = "testRetryable";
-        string retryValue = "+5 SECONDS";
+        string retryValue = "+1 SECOND";
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
 
@@ -269,25 +269,28 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
+        dumptable();
 
         // Query the db and confirm that state, nextRun and lastRun are correct
         SQResult jobData;
-        tester->readDB("SELECT state, nextRun, lastRun, FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
 
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         string nextRun = jobData[0][1];
         string lastRun = jobData[0][2];
-        struct tm tm;
-        strptime(nextRun.c_str(), "%Y-%m-%d %H:%i:%s", &tm);
-        time_t nextRunTime = mktime(&tm);
-        strptime(lastRun.c_str(), "%Y-%m-%d %H:%i:%s", &tm);
-        time_t lastRunTime = mktime(&tm);
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 5);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(nextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t nextRunTime = mktime(&tm1);
+        strptime(lastRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t lastRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
 
         // Get the job, confirm error
         tester->executeWait(command, "404 No job found");
         // Wait 5 seconds, get the job, confirm no error
-        sleep(5);
+        sleep(1);
+        dumptable();
         response = getJsonResult(tester, command);
 
         ASSERT_EQUAL(response["data"], "{}");
