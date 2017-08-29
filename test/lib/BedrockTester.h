@@ -15,12 +15,15 @@ class BedrockTester {
     static bool deleteFile(string name);
     static bool startServers;
     static list<string> locations;
-    static set<string> plugins;
+
+    static SData* globalArgs;
 
     uint64_t nextActivity;
     int serverPID = 0;
     SQLite* db = nullptr;
     SQLite* writableDB = nullptr;
+
+    bool deleteOnClose = true;
 
     string getServerAddr();
 
@@ -37,6 +40,12 @@ class BedrockTester {
     // like executeWait, except it will execute multiple requests in parallel over several simultaneous connections.
     // returns a pair of strings for each request, with the response code and the response text, in that order.
     vector<pair<string,string>> executeWaitMultiple(vector<SData> requests, int connections = 10);
+
+    // Same as above, but returns entire SData for the response
+    vector<pair<string, SData>> executeWaitMultipleData(vector<SData> requests, int connections = 10);
+
+    // Same as above, but returns entire SData for the response
+    void executeWaitMultipleFast(const vector<SData>& requests, int connections = 10);
 
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
