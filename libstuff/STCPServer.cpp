@@ -23,15 +23,22 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     return &*portIt;
 }
 
-void STCPServer::closePorts() {
+void STCPServer::closePorts(list<Port*> except) {
     // Are there any ports to close?
     if (!portList.empty()) {
-        // Loop across and close all ports
-        for (Port& port : portList) {
-            // Close this port
-            ::close(port.s);
+        // Loop across and close all ports not excepted.
+        auto it = portList.begin();
+        while (it != portList.end()) {
+            if  (find(except.begin(), except.end(), &(*it)) == except.end()) {
+                // Close this port
+                ::close(it->s);
+                SINFO("Close ports closing " << it->host << ".");
+                it = portList.erase(it);
+            } else {
+                SINFO("Close ports skipping " << it->host << ": in except list.");
+                it++;
+            }
         }
-        portList.clear();
     } else {
         SHMMM("Ports already closed.");
     }
