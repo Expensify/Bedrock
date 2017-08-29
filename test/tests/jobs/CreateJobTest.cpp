@@ -5,21 +5,21 @@ struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
-//                              TEST(CreateJobTest::create),
-//                              TEST(CreateJobTest::createWithPriority),
-//                              TEST(CreateJobTest::createWithData),
-//                              TEST(CreateJobTest::createWithRepeat),
-//                              TEST(CreateJobTest::uniqueJob),
-//                              TEST(CreateJobTest::createWithBadData),
-//                              TEST(CreateJobTest::createWithBadRepeat),
-//                              TEST(CreateJobTest::retryRecurringJobs),
-//                              TEST(CreateJobTest::retryWithMalformedValue),
-//                              TEST(CreateJobTest::retryUnique),
+                                TEST(CreateJobTest::create),
+                                TEST(CreateJobTest::createWithPriority),
+                                TEST(CreateJobTest::createWithData),
+                                TEST(CreateJobTest::createWithRepeat),
+                                TEST(CreateJobTest::uniqueJob),
+                                TEST(CreateJobTest::createWithBadData),
+                                TEST(CreateJobTest::createWithBadRepeat),
+                                TEST(CreateJobTest::retryRecurringJobs),
+                                TEST(CreateJobTest::retryWithMalformedValue),
+                                TEST(CreateJobTest::retryUnique),
                                 TEST(CreateJobTest::retryLifecycle),
-//                              TEST(CreateJobTest::retryWithChildren),
-//                              TEST(CreateJobTest::retryJobComesFirst),
-//                              TEST(CreateJobTest::createChildWithQueuedParent),
-//                              TEST(CreateJobTest::createChildWithRunningGrandparent),
+                                TEST(CreateJobTest::retryWithChildren),
+                                TEST(CreateJobTest::retryJobComesFirst),
+                                TEST(CreateJobTest::createChildWithQueuedParent),
+                                TEST(CreateJobTest::createChildWithRunningGrandparent),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
@@ -35,28 +35,6 @@ struct CreateJobTest : tpunit::TestFixture {
     }
 
     void tearDownClass() { delete tester; }
-
-    // TODO: delete this, it's only for debugging purposes
-    void gettime() {
-        time_t rawtime;
-        struct tm * timeinfo;
-        char buffer[80];
-
-        time (&rawtime);
-        timeinfo = localtime(&rawtime);
-
-        strftime(buffer,sizeof(buffer),"%d-%m-%Y %I:%M:%S",timeinfo);
-        string str(buffer);
-
-        cout << "current time " << str<<endl;
-    }
-
-    // TODO: delete this, it's only for debugging purposes
-    void dumptable() {
-        SQResult temp;
-        tester->readDB("SELECT * FROM jobs;", temp);
-        cout << temp.serializeToText() << endl;
-    }
 
     void create() {
         SData command("CreateJob");
@@ -269,7 +247,6 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
-        dumptable();
 
         // Query the db and confirm that state, nextRun and lastRun are correct
         SQResult jobData;
@@ -290,7 +267,6 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWait(command, "404 No job found");
         // Wait 5 seconds, get the job, confirm no error
         sleep(1);
-        dumptable();
         response = getJsonResult(tester, command);
 
         ASSERT_EQUAL(response["data"], "{}");
