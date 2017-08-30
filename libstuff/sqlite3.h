@@ -121,9 +121,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.21.0"
-#define SQLITE_VERSION_NUMBER 3021000
-#define SQLITE_SOURCE_ID      "2017-08-12 14:06:15 4256072399f44f48ed0856aa8112226af6feaf8676923612bde6cea239ebf920"
+#define SQLITE_VERSION        "3.20.0"
+#define SQLITE_VERSION_NUMBER 3020000
+#define SQLITE_SOURCE_ID      "2017-08-28 17:32:54 f545db6c2724ad5ed9727e45e03c55afbab800a8cf28765a34b9a0bee5a0055c"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -494,9 +494,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOERR_CONVPATH          (SQLITE_IOERR | (26<<8))
 #define SQLITE_IOERR_VNODE             (SQLITE_IOERR | (27<<8))
 #define SQLITE_IOERR_AUTH              (SQLITE_IOERR | (28<<8))
-#define SQLITE_IOERR_BEGIN_ATOMIC      (SQLITE_IOERR | (29<<8))
-#define SQLITE_IOERR_COMMIT_ATOMIC     (SQLITE_IOERR | (30<<8))
-#define SQLITE_IOERR_ROLLBACK_ATOMIC   (SQLITE_IOERR | (31<<8))
 #define SQLITE_LOCKED_SHAREDCACHE      (SQLITE_LOCKED |  (1<<8))
 #define SQLITE_BUSY_RECOVERY           (SQLITE_BUSY   |  (1<<8))
 #define SQLITE_BUSY_SNAPSHOT           (SQLITE_BUSY   |  (2<<8))
@@ -583,11 +580,6 @@ SQLITE_API int sqlite3_exec(
 ** SQLITE_IOCAP_IMMUTABLE flag indicates that the file is on
 ** read-only media and cannot be changed even by processes with
 ** elevated privileges.
-**
-** The SQLITE_IOCAP_BATCH_ATOMIC property means that the underlying
-** filesystem supports doing multiple write operations atomically when those
-** write operations are bracketed by [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] and
-** [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].
 */
 #define SQLITE_IOCAP_ATOMIC                 0x00000001
 #define SQLITE_IOCAP_ATOMIC512              0x00000002
@@ -603,7 +595,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN  0x00000800
 #define SQLITE_IOCAP_POWERSAFE_OVERWRITE    0x00001000
 #define SQLITE_IOCAP_IMMUTABLE              0x00002000
-#define SQLITE_IOCAP_BATCH_ATOMIC           0x00004000
 
 /*
 ** CAPI3REF: File Locking Levels
@@ -738,7 +729,6 @@ struct sqlite3_file {
 ** <li> [SQLITE_IOCAP_UNDELETABLE_WHEN_OPEN]
 ** <li> [SQLITE_IOCAP_POWERSAFE_OVERWRITE]
 ** <li> [SQLITE_IOCAP_IMMUTABLE]
-** <li> [SQLITE_IOCAP_BATCH_ATOMIC]
 ** </ul>
 **
 ** The SQLITE_IOCAP_ATOMIC property means that all writes of
@@ -1022,40 +1012,6 @@ struct sqlite3_io_methods {
 ** The [SQLITE_FCNTL_RBU] opcode is implemented by the special VFS used by
 ** the RBU extension only.  All other VFS should return SQLITE_NOTFOUND for
 ** this opcode.  
-**
-** <li>[[SQLITE_FCNTL_BEGIN_ATOMIC_WRITE]]
-** If the [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] opcode returns SQLITE_OK, then
-** the file descriptor is placed in "batch write mode", which
-** means all subsequent write operations will be deferred and done
-** atomically at the next [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].  Systems
-** that do not support batch atomic writes will return SQLITE_NOTFOUND.
-** ^Following a successful SQLITE_FCNTL_BEGIN_ATOMIC_WRITE and prior to
-** the closing [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] or
-** [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE], SQLite will make
-** no VFS interface calls on the same [sqlite3_file] file descriptor
-** except for calls to the xWrite method and the xFileControl method
-** with [SQLITE_FCNTL_SIZE_HINT].
-**
-** <li>[[SQLITE_FCNTL_COMMIT_ATOMIC_WRITE]]
-** The [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE] opcode causes all write
-** operations since the previous successful call to 
-** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be performed atomically.
-** This file control returns [SQLITE_OK] if and only if the writes were
-** all performed successfully and have been committed to persistent storage.
-** ^Regardless of whether or not it is successful, this file control takes
-** the file descriptor out of batch write mode so that all subsequent
-** write operations are independent.
-** ^SQLite will never invoke SQLITE_FCNTL_COMMIT_ATOMIC_WRITE without
-** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
-**
-** <li>[[SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE]]
-** The [SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE] opcode causes all write
-** operations since the previous successful call to 
-** [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] to be rolled back.
-** ^This file control takes the file descriptor out of batch write mode
-** so that all subsequent write operations are independent.
-** ^SQLite will never invoke SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE without
-** a prior successful call to [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE].
 ** </ul>
 */
 #define SQLITE_FCNTL_LOCKSTATE               1
@@ -1087,9 +1043,6 @@ struct sqlite3_io_methods {
 #define SQLITE_FCNTL_JOURNAL_POINTER        28
 #define SQLITE_FCNTL_WIN32_GET_HANDLE       29
 #define SQLITE_FCNTL_PDB                    30
-#define SQLITE_FCNTL_BEGIN_ATOMIC_WRITE     31
-#define SQLITE_FCNTL_COMMIT_ATOMIC_WRITE    32
-#define SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE  33
 
 /* deprecated names */
 #define SQLITE_GET_LOCKPROXYFILE      SQLITE_FCNTL_GET_LOCKPROXYFILE
@@ -1660,6 +1613,16 @@ struct sqlite3_mem_methods {
 ** routines with a wrapper that simulations memory allocation failure or
 ** tracks memory usage, for example. </dd>
 **
+** [[SQLITE_CONFIG_SMALL_MALLOC]] <dt>SQLITE_CONFIG_SMALL_MALLOC</dt>
+** <dd> ^The SQLITE_CONFIG_SMALL_MALLOC option takes single argument of
+** type int, interpreted as a boolean, which if true provides a hint to
+** SQLite that it should avoid large memory allocations if possible.
+** SQLite will run faster if it is free to make large memory allocations,
+** but some application might prefer to run slower in exchange for
+** guarantees about memory fragmentation that are possible if large
+** allocations are avoided.  This hint is normally off.
+** </dd>
+**
 ** [[SQLITE_CONFIG_MEMSTATUS]] <dt>SQLITE_CONFIG_MEMSTATUS</dt>
 ** <dd> ^The SQLITE_CONFIG_MEMSTATUS option takes single argument of type int,
 ** interpreted as a boolean, which enables or disables the collection of
@@ -1677,25 +1640,7 @@ struct sqlite3_mem_methods {
 ** </dd>
 **
 ** [[SQLITE_CONFIG_SCRATCH]] <dt>SQLITE_CONFIG_SCRATCH</dt>
-** <dd> ^The SQLITE_CONFIG_SCRATCH option specifies a static memory buffer
-** that SQLite can use for scratch memory.  ^(There are three arguments
-** to SQLITE_CONFIG_SCRATCH:  A pointer an 8-byte
-** aligned memory buffer from which the scratch allocations will be
-** drawn, the size of each scratch allocation (sz),
-** and the maximum number of scratch allocations (N).)^
-** The first argument must be a pointer to an 8-byte aligned buffer
-** of at least sz*N bytes of memory.
-** ^SQLite will not use more than one scratch buffers per thread.
-** ^SQLite will never request a scratch buffer that is more than 6
-** times the database page size.
-** ^If SQLite needs needs additional
-** scratch memory beyond what is provided by this configuration option, then 
-** [sqlite3_malloc()] will be used to obtain the memory needed.<p>
-** ^When the application provides any amount of scratch memory using
-** SQLITE_CONFIG_SCRATCH, SQLite avoids unnecessary large
-** [sqlite3_malloc|heap allocations].
-** This can help [Robson proof|prevent memory allocation failures] due to heap
-** fragmentation in low-memory embedded systems.
+** <dd> The SQLITE_CONFIG_SCRATCH option is no longer used.
 ** </dd>
 **
 ** [[SQLITE_CONFIG_PAGECACHE]] <dt>SQLITE_CONFIG_PAGECACHE</dt>
@@ -1731,8 +1676,7 @@ struct sqlite3_mem_methods {
 ** [[SQLITE_CONFIG_HEAP]] <dt>SQLITE_CONFIG_HEAP</dt>
 ** <dd> ^The SQLITE_CONFIG_HEAP option specifies a static memory buffer 
 ** that SQLite will use for all of its dynamic memory allocation needs
-** beyond those provided for by [SQLITE_CONFIG_SCRATCH] and
-** [SQLITE_CONFIG_PAGECACHE].
+** beyond those provided for by [SQLITE_CONFIG_PAGECACHE].
 ** ^The SQLITE_CONFIG_HEAP option is only available if SQLite is compiled
 ** with either [SQLITE_ENABLE_MEMSYS3] or [SQLITE_ENABLE_MEMSYS5] and returns
 ** [SQLITE_ERROR] if invoked otherwise.
@@ -1925,7 +1869,7 @@ struct sqlite3_mem_methods {
 #define SQLITE_CONFIG_SERIALIZED    3  /* nil */
 #define SQLITE_CONFIG_MALLOC        4  /* sqlite3_mem_methods* */
 #define SQLITE_CONFIG_GETMALLOC     5  /* sqlite3_mem_methods* */
-#define SQLITE_CONFIG_SCRATCH       6  /* void*, int sz, int N */
+#define SQLITE_CONFIG_SCRATCH       6  /* No longer used */
 #define SQLITE_CONFIG_PAGECACHE     7  /* void*, int sz, int N */
 #define SQLITE_CONFIG_HEAP          8  /* void*, int nByte, int min */
 #define SQLITE_CONFIG_MEMSTATUS     9  /* boolean */
@@ -1946,6 +1890,7 @@ struct sqlite3_mem_methods {
 #define SQLITE_CONFIG_PCACHE_HDRSZ        24  /* int *psz */
 #define SQLITE_CONFIG_PMASZ               25  /* unsigned int szPma */
 #define SQLITE_CONFIG_STMTJRNL_SPILL      26  /* int nByte */
+#define SQLITE_CONFIG_SMALL_MALLOC        27  /* boolean */
 
 /*
 ** CAPI3REF: Database Connection Configuration Options
@@ -3692,7 +3637,7 @@ SQLITE_API int sqlite3_prepare16_v3(
   sqlite3 *db,            /* Database handle */
   const void *zSql,       /* SQL statement, UTF-16 encoded */
   int nByte,              /* Maximum length of zSql in bytes. */
-  unsigned int prepFlags, /* Zero or more SQLITE_PREPARE_ flags */
+  unsigned int prepFalgs, /* Zero or more SQLITE_PREPARE_ flags */
   sqlite3_stmt **ppStmt,  /* OUT: Statement handle */
   const void **pzTail     /* OUT: Pointer to unused portion of zSql */
 );
@@ -3930,14 +3875,14 @@ typedef struct sqlite3_context sqlite3_context;
 ** [sqlite3_blob_open | incremental BLOB I/O] routines.
 ** ^A negative value for the zeroblob results in a zero-length BLOB.
 **
-** ^The sqlite3_bind_pointer(S,I,P,T,D) routine causes the I-th parameter in
+** ^The sqlite3_bind_pointer(S,I,P,T) routine causes the I-th parameter in
 ** [prepared statement] S to have an SQL value of NULL, but to also be
-** associated with the pointer P of type T.  ^D is either a NULL pointer or
-** a pointer to a destructor function for P. ^SQLite will invoke the
-** destructor D with a single argument of P when it is finished using
-** P.  The T parameter should be a static string, preferably a string
-** literal. The sqlite3_bind_pointer() routine is part of the
-** [pointer passing interface] added for SQLite 3.20.0.
+** associated with the pointer P of type T.
+** ^The sqlite3_bind_pointer() routine can be used to pass
+** host-language pointers into [application-defined SQL functions].
+** ^A parameter that is initialized using [sqlite3_bind_pointer()] appears
+** to be an ordinary SQL NULL value to everything other than
+** [sqlite3_value_pointer()].  The T parameter should be a static string.
 **
 ** ^If any of the sqlite3_bind_*() routines are called with a NULL pointer
 ** for the [prepared statement] or with a prepared statement for which
@@ -3972,7 +3917,7 @@ SQLITE_API int sqlite3_bind_text16(sqlite3_stmt*, int, const void*, int, void(*)
 SQLITE_API int sqlite3_bind_text64(sqlite3_stmt*, int, const char*, sqlite3_uint64,
                          void(*)(void*), unsigned char encoding);
 SQLITE_API int sqlite3_bind_value(sqlite3_stmt*, int, const sqlite3_value*);
-SQLITE_API int sqlite3_bind_pointer(sqlite3_stmt*, int, void*, const char*,void(*)(void*));
+SQLITE_API int sqlite3_bind_pointer(sqlite3_stmt*, int, void*, const char*);
 SQLITE_API int sqlite3_bind_zeroblob(sqlite3_stmt*, int, int n);
 SQLITE_API int sqlite3_bind_zeroblob64(sqlite3_stmt*, int, sqlite3_uint64);
 
@@ -4805,11 +4750,10 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** extract UTF-16 strings as big-endian and little-endian respectively.
 **
 ** ^If [sqlite3_value] object V was initialized 
-** using [sqlite3_bind_pointer(S,I,P,X,D)] or [sqlite3_result_pointer(C,P,X,D)]
+** using [sqlite3_bind_pointer(S,I,P,X)] or [sqlite3_result_pointer(C,P,X)]
 ** and if X and Y are strings that compare equal according to strcmp(X,Y),
 ** then sqlite3_value_pointer(V,Y) will return the pointer P.  ^Otherwise,
-** sqlite3_value_pointer(V,Y) returns a NULL. The sqlite3_bind_pointer() 
-** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
+** sqlite3_value_pointer(V,Y) returns a NULL.
 **
 ** ^(The sqlite3_value_type(V) interface returns the
 ** [SQLITE_INTEGER | datatype code] for the initial datatype of the
@@ -5144,16 +5088,14 @@ typedef void (*sqlite3_destructor_type)(void*);
 ** [unprotected sqlite3_value] object is required, so either
 ** kind of [sqlite3_value] object can be used with this interface.
 **
-** ^The sqlite3_result_pointer(C,P,T,D) interface sets the result to an
+** ^The sqlite3_result_pointer(C,P,T) interface sets the result to an
 ** SQL NULL value, just like [sqlite3_result_null(C)], except that it
 ** also associates the host-language pointer P or type T with that 
 ** NULL value such that the pointer can be retrieved within an
 ** [application-defined SQL function] using [sqlite3_value_pointer()].
-** ^If the D parameter is not NULL, then it is a pointer to a destructor
-** for the P parameter.  ^SQLite invokes D with P as its only argument
-** when SQLite is finished with P.  The T parameter should be a static
-** string and preferably a string literal. The sqlite3_result_pointer()
-** routine is part of the [pointer passing interface] added for SQLite 3.20.0.
+** The T parameter should be a static string.
+** This mechanism can be used to pass non-SQL values between
+** application-defined functions.
 **
 ** If these routines are called from within the different thread
 ** than the one containing the application-defined function that received
@@ -5178,7 +5120,7 @@ SQLITE_API void sqlite3_result_text16(sqlite3_context*, const void*, int, void(*
 SQLITE_API void sqlite3_result_text16le(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_text16be(sqlite3_context*, const void*, int,void(*)(void*));
 SQLITE_API void sqlite3_result_value(sqlite3_context*, sqlite3_value*);
-SQLITE_API void sqlite3_result_pointer(sqlite3_context*, void*,const char*,void(*)(void*));
+SQLITE_API void sqlite3_result_pointer(sqlite3_context*, void*, const char*);
 SQLITE_API void sqlite3_result_zeroblob(sqlite3_context*, int n);
 SQLITE_API int sqlite3_result_zeroblob64(sqlite3_context*, sqlite3_uint64 n);
 
@@ -7010,7 +6952,7 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_RESERVE                 14
 #define SQLITE_TESTCTRL_OPTIMIZATIONS           15
 #define SQLITE_TESTCTRL_ISKEYWORD               16
-#define SQLITE_TESTCTRL_SCRATCHMALLOC           17
+#define SQLITE_TESTCTRL_SCRATCHMALLOC           17  /* NOT USED */
 #define SQLITE_TESTCTRL_LOCALTIME_FAULT         18
 #define SQLITE_TESTCTRL_EXPLAIN_STMT            19  /* NOT USED */
 #define SQLITE_TESTCTRL_ONCE_RESET_THRESHOLD    19
@@ -7069,8 +7011,7 @@ SQLITE_API int sqlite3_status64(
 ** <dd>This parameter is the current amount of memory checked out
 ** using [sqlite3_malloc()], either directly or indirectly.  The
 ** figure includes calls made to [sqlite3_malloc()] by the application
-** and internal memory usage by the SQLite library.  Scratch memory
-** controlled by [SQLITE_CONFIG_SCRATCH] and auxiliary page-cache
+** and internal memory usage by the SQLite library.  Auxiliary page-cache
 ** memory controlled by [SQLITE_CONFIG_PAGECACHE] is not included in
 ** this parameter.  The amount returned is the sum of the allocation
 ** sizes as reported by the xSize method in [sqlite3_mem_methods].</dd>)^
@@ -7108,29 +7049,14 @@ SQLITE_API int sqlite3_status64(
 ** *pHighwater parameter to [sqlite3_status()] is of interest.  
 ** The value written into the *pCurrent parameter is undefined.</dd>)^
 **
-** [[SQLITE_STATUS_SCRATCH_USED]] ^(<dt>SQLITE_STATUS_SCRATCH_USED</dt>
-** <dd>This parameter returns the number of allocations used out of the
-** [scratch memory allocator] configured using
-** [SQLITE_CONFIG_SCRATCH].  The value returned is in allocations, not
-** in bytes.  Since a single thread may only have one scratch allocation
-** outstanding at time, this parameter also reports the number of threads
-** using scratch memory at the same time.</dd>)^
+** [[SQLITE_STATUS_SCRATCH_USED]] <dt>SQLITE_STATUS_SCRATCH_USED</dt>
+** <dd>No longer used.</dd>
 **
 ** [[SQLITE_STATUS_SCRATCH_OVERFLOW]] ^(<dt>SQLITE_STATUS_SCRATCH_OVERFLOW</dt>
-** <dd>This parameter returns the number of bytes of scratch memory
-** allocation which could not be satisfied by the [SQLITE_CONFIG_SCRATCH]
-** buffer and where forced to overflow to [sqlite3_malloc()].  The values
-** returned include overflows because the requested allocation was too
-** larger (that is, because the requested allocation was larger than the
-** "sz" parameter to [SQLITE_CONFIG_SCRATCH]) and because no scratch buffer
-** slots were available.
-** </dd>)^
+** <dd>No longer used.</dd>
 **
-** [[SQLITE_STATUS_SCRATCH_SIZE]] ^(<dt>SQLITE_STATUS_SCRATCH_SIZE</dt>
-** <dd>This parameter records the largest memory allocation request
-** handed to [scratch memory allocator].  Only the value returned in the
-** *pHighwater parameter to [sqlite3_status()] is of interest.  
-** The value written into the *pCurrent parameter is undefined.</dd>)^
+** [[SQLITE_STATUS_SCRATCH_SIZE]] <dt>SQLITE_STATUS_SCRATCH_SIZE</dt>
+** <dd>No longer used.</dd>
 **
 ** [[SQLITE_STATUS_PARSER_STACK]] ^(<dt>SQLITE_STATUS_PARSER_STACK</dt>
 ** <dd>The *pHighwater parameter records the deepest parser stack. 
@@ -7143,12 +7069,12 @@ SQLITE_API int sqlite3_status64(
 #define SQLITE_STATUS_MEMORY_USED          0
 #define SQLITE_STATUS_PAGECACHE_USED       1
 #define SQLITE_STATUS_PAGECACHE_OVERFLOW   2
-#define SQLITE_STATUS_SCRATCH_USED         3
-#define SQLITE_STATUS_SCRATCH_OVERFLOW     4
+#define SQLITE_STATUS_SCRATCH_USED         3  /* NOT USED */
+#define SQLITE_STATUS_SCRATCH_OVERFLOW     4  /* NOT USED */
 #define SQLITE_STATUS_MALLOC_SIZE          5
 #define SQLITE_STATUS_PARSER_STACK         6
 #define SQLITE_STATUS_PAGECACHE_SIZE       7
-#define SQLITE_STATUS_SCRATCH_SIZE         8
+#define SQLITE_STATUS_SCRATCH_SIZE         8  /* NOT USED */
 #define SQLITE_STATUS_MALLOC_COUNT         9
 
 /*
