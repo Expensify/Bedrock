@@ -284,6 +284,9 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
+    // The first time we start, we did not start from `SetVersion` command
+    string versionOverrideSet;
+
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
         if (SGetSignals()) {
@@ -295,7 +298,8 @@ int main(int argc, char* argv[]) {
         // Run the server. Scoped to allow us to create a new server after a backup.
         {
             SINFO("Starting bedrock server");
-            BedrockServer server(args);
+            BedrockServer server(args, versionOverrideSet);
+            SDEBUG("Started new bedrock server with version " << versionOverrideSet << ".");
             uint64_t nextActivity = STimeNow();
             while (!server.shutdownComplete()) {
                 // Wait and process
@@ -309,6 +313,13 @@ int main(int argc, char* argv[]) {
             SINFO("Graceful bedrock shutdown complete");
             if (server.backupOnShutdown()) {
                 BackupDB(args["-db"]);
+            }
+
+            if (server.restartFromVersionChange()) {
+                // We don't need to actually take any action here, we just need to gracefully
+                // shut down then come back up.
+                SDEBUG("Changed versions to " << server.newVersionOnStartup << " restarting.");
+                versionOverrideSet = server.newVersionOnStartup;
             }
         }
 
