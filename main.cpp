@@ -262,6 +262,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-db", "bedrock.db");
     SETDEFAULT("-serverHost", "localhost:8888");
     SETDEFAULT("-nodeHost", "localhost:8889");
+    SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
     SETDEFAULT("-plugins", "db,jobs,cache");
@@ -306,6 +307,9 @@ int main(int argc, char* argv[]) {
                 server.postPoll(fdm, nextActivity);
             }
             SINFO("Graceful bedrock shutdown complete");
+            if (server.backupOnShutdown()) {
+                BackupDB(args["-db"]);
+            }
         }
 
         // Backup the main database on HUP signal.
