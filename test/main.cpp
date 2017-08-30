@@ -9,28 +9,16 @@
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
  */
 
-void cleanup() {
-    if (BedrockTester::serverPIDs.size()) {
-        cout << BedrockTester::serverPIDs.size() << " servers to stop." << endl;
-        while (BedrockTester::serverPIDs.size()) {
-            BedrockTester::stopServer(*(BedrockTester::serverPIDs.begin()));
-        }
-    }
-
-    // Delete temp file.
-    BedrockTester::deleteFile(BedrockTester::DB_FILE);
-}
-
 void sigclean(int sig) {
     cout << "Got SIGINT, cleaning up." << endl;
-    cleanup();
+    BedrockTester::stopAll();
     cout << "Done." << endl;
     exit(1);
 }
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
-    BedrockTester::globalArgs = &args;
+    BedrockTester::globalArgs = args;
 
     // Catch sigint.
     signal(SIGINT, sigclean);
@@ -80,17 +68,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
-    BedrockTester::DB_FILE = BedrockTester::getTempFileName();
-    cout << "Temp file for this run: " << BedrockTester::DB_FILE << endl;
-    BedrockTester::SERVER_ADDR = "127.0.0.1:8989";
-
-    if (args.isSet("-dontStartServer")) {
-        BedrockTester::startServers = false;
-        cout << "Not starting server, would have run:" << endl;
-        //cout << BedrockTester::getCommandLine() << endl;
-        cout << "TYLER BROKE THIS. FIX EVENTUALLY." << endl;
-        exit(1);
-    }
+    BedrockTester::dbFile = BedrockTester::getTempFileName();
+    cout << "Temp file for this run: " << BedrockTester::dbFile << endl;
+    BedrockTester::serverAddr = "127.0.0.1:8989";
 
     if (args.isSet("-wait")) {
         cout << "Waiting... (type anything to continue)." << endl;
@@ -105,8 +85,6 @@ int main(int argc, char* argv[]) {
         cout << "Unhandled exception running tests!" << endl;
         retval = 1;
     }
-
-    cleanup();
 
     return retval;
 }
