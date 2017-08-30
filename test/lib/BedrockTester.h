@@ -40,8 +40,8 @@ class BedrockTester {
     ~BedrockTester();
 
     // Start and stop the bedrock server.
-    void stopServer();
     void startServer();
+    void stopServer();
 
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
