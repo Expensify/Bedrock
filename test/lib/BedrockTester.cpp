@@ -105,7 +105,13 @@ list<string> BedrockTester::getServerArgs() {
 
     // For anything in _args, add it to the defaults, replacing any existing value.
     for (auto row : _args) {
-        computedArgs[row.first] = row.second;
+        if (SStartsWith(row.second, "REPLACE_WITH_DB")) {
+            // This is a bit of a hack that lets callers ask for the DB file name, even though it may not have been set
+            // yet at construction, when this list is passed. Would be nice to fix.
+            computedArgs[row.first] = SReplace(row.second, "REPLACE_WITH_DB", _dbName);
+        } else {
+            computedArgs[row.first] = row.second;
+        }
     }
 
     // Convert to a list.
