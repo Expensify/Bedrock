@@ -27,10 +27,7 @@ class BedrockTester {
     // Shuts down all bedrock servers associated with any testers.
     static void stopAll();
 
-    SQLite* db = nullptr;
-    SQLite* writableDB = nullptr;
-
-
+    // Returns the address of this server.
     string getServerAddr() { return _serverAddr; };
 
     // Constructor/destructor
@@ -54,12 +51,7 @@ class BedrockTester {
     // If the response method line doesn't begin with the expected result, throws.
     string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
 
-    string readDB(const string& query);
-    bool readDB(const string& query, SQResult& result);
-    SQLite& getSQLiteDB();
-    SQLite& getWritableSQLiteDB();
-
-  private:
+  protected:
     // returns a list of arguments with which to start the server.
     list<string> getServerArgs();
 

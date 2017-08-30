@@ -74,14 +74,6 @@ BedrockTester::BedrockTester(const string& filename, const string& serverAddress
 }
 
 BedrockTester::~BedrockTester() {
-    if (db) {
-        delete db;
-        db = 0;
-    }
-    if (writableDB) {
-        delete writableDB;
-        writableDB = 0;
-    }
     if (_serverPID) {
         stopServer();
     }
@@ -92,27 +84,6 @@ BedrockTester::~BedrockTester() {
     }
     _testers.erase(this);
 }
-
-SQLite& BedrockTester::getSQLiteDB() {
-    if (!db) {
-        db = new SQLite(_dbName, 1000000, 100, 3000000, -1, -1);
-    }
-    return *db;
-}
-
-SQLite& BedrockTester::getWritableSQLiteDB() {
-    if (!writableDB) {
-        writableDB = new SQLite(_dbName, 1000000, 100, 3000000, -1, -1);
-    }
-    return *writableDB;
-}
-
-// This is sort of convoluted because of the way it was originally built. We can probably just have this always
-// use the member variable db and never open it's own handle. This was added early ob for debugging and should be
-// obsolete.
-string BedrockTester::readDB(const string& query) { return getSQLiteDB().read(query); }
-
-bool BedrockTester::readDB(const string& query, SQResult& result) { return getSQLiteDB().read(query, result); }
 
 list<string> BedrockTester::getServerArgs() {
     // Use these defaults.
