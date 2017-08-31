@@ -34,7 +34,7 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
     vector<string> row;
     row.reserve(columns);
     for (int i = 0; i < columns; i++) {
-        row.push_back(columnText[i]);
+        row.push_back(columnText[i] ? columnText[i] : "NULL");
     }
     results->push_back(move(row));
     return SQLITE_OK;
@@ -117,7 +117,7 @@ void test(int threadCount, const string& testQuery) {
 
 
 int main(int argc, char *argv[]) {
-    // Set some globals
+    // Disable memory status tracking as this has a known concurrency problem
     sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
 
     // Process the command line
@@ -142,6 +142,9 @@ int main(int argc, char *argv[]) {
         if (z == string("-mmap")) {
           global_bMmap = 1;
         }else
+        if (z == string("-dbFilename")) {
+          global_dbFilename = argv[++i];
+        } else
         {
             cerr << "unknown option: " << argv[i] << "\n";
             exit(1);
@@ -160,8 +163,7 @@ int main(int argc, char *argv[]) {
         cout << "Error running query: " << sqlite3_errmsg(db) << ", query: " << query << endl;
     }
     global_dbRows = stoll(results.front()[0]);
-    cout << "Done (" << ((end - start) / 1000000) << " seconds)" << endl;
-    cout << "DB has " << global_dbRows << " rows " << endl;
+    cout << "Done (" << ((end - start) / 1000000) << " seconds, " << global_dbRows << " rows)" << endl;
     sqlite3_close(db);
 
     // The test dataset is simply two columns filled with RANDOM(), one indexed, one not.
