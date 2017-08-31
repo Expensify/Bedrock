@@ -15,11 +15,10 @@ static int global_numQueries = 10000;
 static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
+static int global_querySize = 10;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
-static uint64_t global_minIndexedColumnValue = 0;
-static uint64_t global_maxIndexedColumnValue = 0;
 
 // Returns the current time down to the microsecond
 uint64_t STimeNow() {
@@ -49,12 +48,6 @@ void runTestQueries(sqlite3* db, int numQueries, const string& testQuery, bool s
         int error = sqlite3_exec(db, testQuery.c_str(), queryCallback, &results, 0);
         if (error != SQLITE_OK) {
             cout << "Error running test query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
-        }
-
-        // Make sure we actually got some results from this query else it's not an
-        // effective test
-        if (results.empty() || results.front()[0] == "0") {
-            cout << "Test query got no results" << endl;
         }
 
         // Optionally show progress
@@ -136,6 +129,9 @@ int main(int argc, char *argv[]) {
         if (z == string("-numThreads")) {
             numThreads = atoi(argv[++i]);
         }else
+        if (z == string("-querySize")) {
+            global_querySize = atoi(argv[++i]);
+        }else
         if (z == string("-maxNumThreads")) {
             maxNumThreads = atoi(argv[++i]);
         }else
@@ -169,7 +165,7 @@ int main(int argc, char *argv[]) {
     // The test dataset is simply two columns filled with RANDOM(), one indexed, one not.
     // Let's pick a random location from inside the database, and then pick the next 10 rows.
     string testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
-        "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT 10);";
+        "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_querySize) + ");";
     cout << "Testing: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
