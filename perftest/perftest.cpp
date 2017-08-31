@@ -174,10 +174,17 @@ int main(int argc, char *argv[]) {
 
     // Run the test for however many configurations were requested
     if( numThreads<0 ){
+      // Ramp up to the test desired test size
       int threads = 1;
       while (threads <= maxNumThreads) {
         test(threads, testQuery);
         threads *= 2;
+      }
+
+      // Now ramp back down to the original to make sure it matches the first timings
+      while (threads >= 2) {
+        threads /= 2;
+        test(threads, testQuery);
       }
     }else{
       test(numThreads, testQuery);
