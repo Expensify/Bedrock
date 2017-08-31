@@ -15,7 +15,6 @@ static int global_numQueries = 10000;
 static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
-static bool global_noop = false;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -45,28 +44,25 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
 void runTestQueries(sqlite3* db, int numQueries, const string& testQuery, bool showProgress) {
     // Run however many queries are requested
     for (int q=0; q<numQueries; q++) {
-        // To test the harness, optionally replace the SQLite call with a "no-op" command
-        if (!global_noop) {
-            int error = sqlite3_exec(db, testQuery.c_str(), 0, 0, 0);
-            if (error != SQLITE_OK) {
-                cout << "Error running insert query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
-            }
-        } else {
-            string x = "";
-            for(int ii=0; ii<350; ii++){
-                x += testQuery;
-            }
+        // Run the query
+        list<vector<string>> results;
+        int error = sqlite3_exec(db, testQuery.c_str(), queryCallback, &results, 0);
+        if (error != SQLITE_OK) {
+            cout << "Error running test query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
         }
 
-        if (showProgress) {
+        // Make sure we actually got some results from this query else it's not an
+        // effective test
+        if (results.empty() || results.front()[0] == "0") {
+            cout << "Test query got no results" << endl;
+        }
+
+        // Optionally show progress
+        if (showProgress && (q % (numQueries/10))==0 ) {
             int percent = (int)(((double)q / (double)numQueries) * 100.0);
             cout << percent << "% " << flush;
-            if (percent % 20 == 0) {
-                cout << endl;
-            }
         }
     }
-
 }
 
 sqlite3* openDatabase() {
@@ -89,7 +85,7 @@ sqlite3* openDatabase() {
 
 void test(int threadCount, const string& testQuery) {
     // Open a separate database handle for each thread
-    cout << "Testing with " << threadCount << " threads." << endl;
+    cout << "Testing with " << threadCount << " threads: ";
     vector<sqlite3*> dbs(threadCount);
     for (int i = 0; i < threadCount; i++) {
         dbs[i] = openDatabase();
@@ -111,13 +107,12 @@ void test(int threadCount, const string& testQuery) {
     }
     threads.clear();
     auto end = STimeNow();
-    cout << "Finished in " << ((end - start) / 1000000.0) << " seconds." << endl;
+    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds)" << endl;
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
         sqlite3_close(dbs[i]);
     }
-    cout << "DBs closed." << endl;
 }
 
 
@@ -132,9 +127,6 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         char *z = argv[i];
         if( z[0]=='-' && z[1]=='-' ) z++;
-        if (z == string("-noop")) {
-            global_noop = true;
-        }else
         if (z == string("-numQueries")) {
             global_numQueries = atoi(argv[++i]);
         }else
@@ -159,7 +151,7 @@ int main(int argc, char *argv[]) {
     // Inspect the existing database with a full table scan, pulling it all into memory
     cout << "Precaching '" << global_dbFilename << "'...";
     sqlite3* db = openDatabase();
-    string query = "SELECT COUNT(*), SUM(unindexedColumn) FROM perfTest;";
+    string query = "SELECT COUNT(*), MIN(nonIndexedColumn) FROM perfTest;";
     list<vector<string>> results;
     auto start = STimeNow();
     int error = sqlite3_exec(db, query.c_str(), queryCallback, &results, 0);
@@ -174,7 +166,7 @@ int main(int argc, char *argv[]) {
 
     // The test dataset is simply two columns filled with RANDOM(), one indexed, one not.
     // Let's pick a random location from inside the database, and then pick the next 10 rows.
-    string testQuery = "SELECT SUM(nonIndexedColumn) FROM "
+    string testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
         "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT 10);";
     cout << "Testing: " << testQuery << endl;
 
