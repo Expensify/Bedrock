@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 #include <iostream>
+#include <fstream>
 #include <atomic>
 #include <random>
 #include <sys/time.h>
@@ -25,6 +26,27 @@ uint64_t STimeNow() {
     timeval time;
     gettimeofday(&time, 0);
     return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
+}
+
+void process_mem_usage(double& vm_usage, double& resident_set)
+{
+    vm_usage     = 0.0;
+    resident_set = 0.0;
+
+    // the two fields we want
+    unsigned long vsize;
+    long rss;
+    {
+        std::string ignore;
+        std::ifstream ifs("/proc/self/stat", std::ios_base::in);
+        ifs >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore
+                >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore
+                >> ignore >> ignore >> vsize >> rss;
+    }
+
+    long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024; // in case x86-64 is configured to use 2MB pages
+    vm_usage = vsize / 1024.0;
+    resident_set = rss * page_size_kb;
 }
 
 // This is called by sqlite for each row of the result
@@ -100,7 +122,11 @@ void test(int threadCount, const string& testQuery) {
     }
     threads.clear();
     auto end = STimeNow();
-    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds)" << endl;
+
+    // Output the results
+    double vm, rss;
+    process_mem_usage(vm, rss);
+    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ")" << endl;
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
