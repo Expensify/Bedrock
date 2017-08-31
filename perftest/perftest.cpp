@@ -117,6 +117,7 @@ int main(int argc, char *argv[]) {
     int numThreads = -1;
     int maxNumThreads = 16;
     int showStats = 0;
+    const char* customQuery = 0;
     for (int i = 1; i < argc; i++) {
         char *z = argv[i];
         if( z[0]=='-' && z[1]=='-' ) z++;
@@ -141,6 +142,9 @@ int main(int argc, char *argv[]) {
         if (z == string("-dbFilename")) {
           global_dbFilename = argv[++i];
         } else
+        if (z == string("-customQuery")) {
+          customQuery = argv[++i];
+        } else
         {
             cerr << "unknown option: " << argv[i] << "\n";
             exit(1);
@@ -162,10 +166,18 @@ int main(int argc, char *argv[]) {
     cout << "Done (" << ((end - start) / 1000000) << " seconds, " << global_dbRows << " rows)" << endl;
     sqlite3_close(db);
 
-    // The test dataset is simply two columns filled with RANDOM(), one indexed, one not.
-    // Let's pick a random location from inside the database, and then pick the next 10 rows.
-    string testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
-        "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_querySize) + ");";
+    // Figure out what query to use
+    string testQuery;
+    if (customQuery) {
+        // Use the query supplied on the command line
+        testQuery = customQuery;
+    } else {
+        // The test dataset is simply two columns filled with RANDOM(), one
+        // indexed, one not.  Let's pick a random location from inside the
+        // database, and then pick the next 10 rows.
+        testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
+            "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_querySize) + ");";
+    }
     cout << "Testing: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
