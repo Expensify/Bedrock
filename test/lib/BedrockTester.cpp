@@ -2,8 +2,8 @@
 #include <sys/wait.h>
 
 // Define static vars.
-string BedrockTester::dbFile;
-string BedrockTester::serverAddr;
+string BedrockTester::defaultDBFile;
+string BedrockTester::defaultServerAddr;
 SData BedrockTester::globalArgs;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
@@ -42,13 +42,49 @@ void BedrockTester::stopAll() {
     }
 }
 
-BedrockTester::BedrockTester(const string& filename, const string& serverAddress, const list<string>& queries, const map<string, string>& args, bool start, bool keepFilesWhenFinished)
-  : _args(args),
-    _serverAddr(serverAddress.empty() ? serverAddr : serverAddress),
-    _dbName(filename.empty() ? dbFile : filename),
-    _keepFilesWhenFinished(keepFilesWhenFinished)
+BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
+  : _keepFilesWhenFinished(keepFilesWhenFinished)
 {
     _testers.insert(this);
+
+    // Set these values from the arguments if provided, or the defaults if not.
+    try {
+        _dbName = args.at("-db");
+    } catch (...) {
+        _dbName = defaultDBFile;
+    }
+    try {
+        _serverAddr = args.at("-serverHost");
+    } catch (...) {
+        _serverAddr = defaultServerAddr;
+    }
+
+    map <string, string> defaultArgs = {
+        {"-db",               _dbName},
+        {"-serverHost",       _serverAddr},
+        {"-nodeName",         "bedrock_test"},
+        {"-nodeHost",         "localhost:9889"},
+        {"-controlPort",      "localhost:19999"},
+        {"-priority",         "200"},
+        {"-plugins",          "db"},
+        {"-readThreads",      "8"},
+        {"-maxJournalSize",   "100"},
+        {"-v",                ""},
+        {"-quorumCheckpoint", "50"},
+        {"-parallelCommands", "Query,idcollision"},
+        {"-cacheSize",        "1000"},
+    };
+
+    // Set defaults.
+    for (auto& row : defaultArgs) {
+        _args[row.first] = row.second;
+    }
+
+    // And replace with anything specified.
+    for (auto& row : args) {
+        _args[row.first] = row.second;
+    }
+
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
         SFileSave(_dbName, "");
@@ -68,7 +104,7 @@ BedrockTester::BedrockTester(const string& filename, const string& serverAddress
         }
         SASSERT(!sqlite3_close(_db));
     }
-    if (start) {
+    if (startImmediately) {
         startServer();
     }
 }
@@ -85,54 +121,20 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-list<string> BedrockTester::getServerArgs() {
-    // Use these defaults.
-    map <string, string> computedArgs = {
-        {"-db",               _dbName},
-        {"-serverHost",       _serverAddr},
-        {"-nodeName",         "bedrock_test"},
-        {"-nodeHost",         "localhost:9889"},
-        {"-controlPort",      "localhost:19999"},
-        {"-priority",         "200"},
-        {"-plugins",          "db"},
-        {"-readThreads",      "8"},
-        {"-maxJournalSize",   "100"},
-        {"-v",                ""},
-        {"-quorumCheckpoint", "50"},
-        {"-parallelCommands", "Query,idcollision"},
-        {"-cacheSize",        "1000"},
-    };
-
-    // For anything in _args, add it to the defaults, replacing any existing value.
-    for (auto row : _args) {
-        if (SStartsWith(row.second, "REPLACE_WITH_DB")) {
-            // This is a bit of a hack that lets callers ask for the DB file name, even though it may not have been set
-            // yet at construction, when this list is passed. Would be nice to fix.
-            computedArgs[row.first] = SReplace(row.second, "REPLACE_WITH_DB", _dbName);
-        } else {
-            computedArgs[row.first] = row.second;
-        }
-    }
-
-    // Convert to a list.
-    list<string> arglist;
-    for (auto& arg : computedArgs) {
-        arglist.push_back(arg.first);
-        arglist.push_back(arg.second);
-    }
-
-    // And we're done.
-    return arglist;
-}
-
 void BedrockTester::startServer() {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
         // We are the child!
-        list<string> args = getServerArgs();
+        list<string> args;
         // First arg is path to file.
         args.push_front(getServerName());
+        for (auto& row : _args) {
+            args.push_back(row.first);
+            if (!row.second.empty()) {
+                args.push_back(row.second);
+            }
+        }
 
         // Convert our c++ strings to old-school C strings for exec.
         char* cargs[args.size() + 1];
@@ -165,7 +167,7 @@ void BedrockTester::startServer() {
             }
             if (needSocket) {
                 int socket = 0;
-                socket = S_socket(_serverAddr.empty() ? serverAddr : _serverAddr, true, false, true);
+                socket = S_socket(_serverAddr, true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
@@ -225,7 +227,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
         threads.emplace_back([&, i](){
 
             // Create a socket.
-            int socket = S_socket(_serverAddr.empty() ? serverAddr : _serverAddr, true, false, true);
+            int socket = S_socket(_serverAddr, true, false, true);
             while (true) {
                 size_t myIndex = 0;
                 SData myRequest;

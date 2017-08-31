@@ -60,8 +60,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-peerList",    peerString},
             {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
-
-        _cluster.emplace_back(db, serverHost, queries, args, false);
+        _cluster.emplace_back(args, queries, false);
     }
     list<thread> threads;
     for (size_t i = 0; i < _cluster.size(); i++) {

@@ -68,9 +68,9 @@ int main(int argc, char* argv[]) {
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
-    BedrockTester::dbFile = BedrockTester::getTempFileName();
-    cout << "Temp file for this run: " << BedrockTester::dbFile << endl;
-    BedrockTester::serverAddr = "127.0.0.1:8989";
+    BedrockTester::defaultDBFile = BedrockTester::getTempFileName();
+    cout << "Temp file for this run: " << BedrockTester::defaultDBFile << endl;
+    BedrockTester::defaultServerAddr = "127.0.0.1:8989";
 
     if (args.isSet("-wait")) {
         cout << "Waiting... (type anything to continue)." << endl;

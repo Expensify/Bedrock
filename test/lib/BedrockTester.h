@@ -18,8 +18,8 @@ class BedrockTester {
     // Default values for the location of the DB file and the server to talk to.
     // These can be over-ridden when instantiating a tester.
     // Typically, these values will be set in main().
-    static string dbFile;
-    static string serverAddr;
+    static string defaultDBFile;
+    static string defaultServerAddr;
 
     // This is expected to be set by main, built from argv, to expose command-line options to tests.
     static SData globalArgs;
@@ -31,11 +31,9 @@ class BedrockTester {
     string getServerAddr() { return _serverAddr; };
 
     // Constructor/destructor
-    BedrockTester(const string& filename = "",
-                  const string& serverAddress = "",
-                  const list<string>& queries = {},
-                  const map<string, string>& args = {},
-                  bool start = true,
+    BedrockTester(const map<string, string>& args = {},
+                  const list<string>& queries = {}, 
+                  bool startImmediately = true,
                   bool keepFilesWhenFinished = false);
     ~BedrockTester();
 
@@ -52,12 +50,9 @@ class BedrockTester {
     string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
 
   protected:
-    // returns a list of arguments with which to start the server.
-    list<string> getServerArgs();
-
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.
-    const map<string, string> _args;
+    map<string, string> _args;
 
     // If these are set, they'll be used instead of the global defaults.
     string _serverAddr;

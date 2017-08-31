@@ -20,14 +20,11 @@ struct WriteTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-
-    list<string> queries = {
-        "CREATE TABLE foo (bar INTEGER);",
-        "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER);",
-    };
-
     void setup() {
-        tester = new BedrockTester("", "", queries);
+        tester = new BedrockTester({}, {
+            "CREATE TABLE foo (bar INTEGER);",
+            "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER);",
+        });
     }
 
     void tearDown() {
