@@ -28,12 +28,13 @@ uint64_t STimeNow() {
     return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
 }
 
-void process_mem_usage(double& vm_usage, double& resident_set)
+// Gets the current virtual memory usage and resident set
+// From: https://stackoverflow.com/a/19770392
+void getMemUsage(double& vm_usage, double& resident_set)
 {
+    // the two fields we want
     vm_usage     = 0.0;
     resident_set = 0.0;
-
-    // the two fields we want
     unsigned long vsize;
     long rss;
     {
@@ -43,7 +44,6 @@ void process_mem_usage(double& vm_usage, double& resident_set)
                 >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore >> ignore
                 >> ignore >> ignore >> vsize >> rss;
     }
-
     long page_size_kb = sysconf(_SC_PAGE_SIZE) / 1024; // in case x86-64 is configured to use 2MB pages
     vm_usage = vsize / 1024.0;
     resident_set = rss * page_size_kb;
@@ -125,7 +125,7 @@ void test(int threadCount, const string& testQuery) {
 
     // Output the results
     double vm, rss;
-    process_mem_usage(vm, rss);
+    getMemUsage(vm, rss);
     cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ")" << endl;
 
     // Close all the database handles
