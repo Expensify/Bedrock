@@ -78,7 +78,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += (string) "bedrock"; // server version
+    handshake.payload += (string) "4.0.0"; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -241,6 +241,13 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // We translate our query to one we can pass to `DB`, for which this is mandatory.
                 query += ";";
             }
+            // JDBC Does this.
+            if (SStartsWith(query, "/*")) {
+                auto index = query.find("*/");
+                if (index != query.npos) {
+                    query = query.substr(index + 2);
+                }
+            }
             SINFO("Processing query '" << query << "'");
 
             // See if it's asking for a global variable
@@ -263,7 +270,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     SHMMM("Couldn't find variable '" << varName << "', returning empty.");
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW VARIABLES")) {
+            } else if (SIEquals(query, "SHOW VARIABLES;")) {
                 // Return the variable list
                 SINFO("Responding with fake variable list");
                 SQResult result;
@@ -276,7 +283,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES")) {
+            } else if (SIEquals(query, "SHOW DATABASES;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
                 SQResult result;
@@ -284,7 +291,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 result.rows.resize(1);
                 result.rows.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES")) {
+            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")) {
                 // Return an empty list of tables
                 SINFO("Responding with fake table list");
                 SQResult result;
