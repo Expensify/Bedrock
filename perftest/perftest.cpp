@@ -94,6 +94,8 @@ sqlite3* openDatabase() {
     sqlite3_wal_autocheckpoint(db, 10000);
     if( global_bMmap ){
       sqlite3_exec(db, "PRAGMA mmap_size = 1024*1024*1024*1024;", 0, 0, 0); // 1TB
+    } else {
+      sqlite3_exec(db, "PRAGMA mmap_size = 0;", 0, 0, 0); // Disable
     }
     return db;
 }
