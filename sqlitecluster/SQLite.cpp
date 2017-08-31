@@ -46,6 +46,10 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // We need to initialize sqlite. Only the first thread to get here will do this.
     if (initializer) {
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
+
+        // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
+        // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
+        sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
         sqlite3_initialize();
         SASSERT(sqlite3_threadsafe());
 

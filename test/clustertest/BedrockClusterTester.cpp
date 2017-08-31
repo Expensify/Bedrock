@@ -28,13 +28,15 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         // on the same machine, they can't share a port.
         int serverPort = 9000 + i;
         int nodePort = nodePortBase + i;
+        int controlPort = 19999 + i;
 
         // Construct all the arguments for each server.
-        string serverHost = "127.0.0.1:" + to_string(serverPort);
-        string nodeHost   = "127.0.0.1:" + to_string(nodePort);
-        string db         = BedrockTester::getTempFileName("cluster_node_" + to_string(i) + "_");
-        string priority   = to_string(100 - (i * 10));
-        string nodeName   = nodeNamePrefix + to_string(i);
+        string serverHost  = "127.0.0.1:" + to_string(serverPort);
+        string nodeHost    = "127.0.0.1:" + to_string(nodePort);
+        string controlHost = "127.0.0.1:" + to_string(controlPort);
+        string db          = BedrockTester::getTempFileName("cluster_node_" + to_string(i) + "_");
+        string priority    = to_string(100 - (i * 10));
+        string nodeName    = nodeNamePrefix + to_string(i);
 
         // Construct our list of peers.
         list<string> peerList;
@@ -50,13 +52,14 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
 
         // Ok, build a legit map out of these.
         map <string, string> args = {
-            {"-serverHost", serverHost},
-            {"-nodeHost",   nodeHost},
-            {"-db",         db},
-            {"-priority",   priority},
-            {"-nodeName",   nodeName},
-            {"-peerList",   peerString},
-            {"-plugins",    "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-serverHost",  serverHost},
+            {"-nodeHost",    nodeHost},
+            {"-controlPort", controlHost},
+            {"-db",          db},
+            {"-priority",    priority},
+            {"-nodeName",    nodeName},
+            {"-peerList",    peerString},
+            {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
 
         // save this map for later.

@@ -19,8 +19,8 @@ struct STCPServer : public STCPManager {
     // Begins listening on a new port
     Port* openPort(const string& host);
 
-    // Closes all open ports
-    void closePorts();
+    // Closes all open ports, allowing for exceptions.
+    void closePorts(list<Port*> except = {});
 
     // Tries to accept a new incoming socket
     Socket* acceptSocket(Port*& port);

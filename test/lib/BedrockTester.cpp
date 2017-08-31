@@ -153,8 +153,9 @@ list<string> BedrockTester::getServerArgs(map <string, string> args) {
     map <string, string> defaults = {
         {"-db",               _dbFile.empty() ? DB_FILE : _dbFile},
         {"-serverHost",       _serverAddr.empty() ? SERVER_ADDR : _serverAddr},
-        {"-nodeName",        "bedrock_test"},
+        {"-nodeName",         "bedrock_test"},
         {"-nodeHost",         "localhost:9889"},
+        {"-controlPort",      "localhost:19999"},
         {"-priority",         "200"},
         {"-plugins",          SComposeList(plugins)},
         {"-readThreads",      "8"},
