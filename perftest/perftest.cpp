@@ -83,8 +83,11 @@ void runTestQueries(sqlite3* db, int numQueries, const string& testQuery, bool s
 sqlite3* openDatabase() {
     // Open it per the global settings
     sqlite3* db = 0;
-    sqlite3_open_v2(global_dbFilename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, 0);
-    sqlite3_exec(db, "PRAGMA main.locking_mode=EXCLUSIVE;", 0, 0, 0);
+    if (SQLITE_OK != sqlite3_open_v2(global_dbFilename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, "unix-none")) {
+        cout << "Error: Can't open '" << global_dbFilename << "'." << endl;
+        exit(1);
+    }
+    sqlite3_exec(db, "PRAGMA locking_mode=EXCLUSIVE;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA legacy_file_format = OFF;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA journal_mode = WAL;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA synchronous = OFF;", 0, 0, 0);
