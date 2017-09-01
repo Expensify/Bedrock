@@ -819,7 +819,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If we're doing RequeueJob and we want to update the name, let's do that
         const string& name = request["name"];
-        if (!name.empty() && (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob"))) {
+        if (!name.empty() && SIEquals(requestVerb, "RequeueJob")) {
             if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Failed to update job name";
             }
