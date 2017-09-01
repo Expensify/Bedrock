@@ -29,8 +29,6 @@ class BedrockTestException : public std::exception {
     }
 };
 
-
-
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
