@@ -842,10 +842,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         } else if (SIEquals(requestVerb, "RequeueJob")) {
             const string& newNextRun = request["nextRun"];
-            safeNewNextRun = SQ(newNextRun);
-            if (safeNewNextRun.empty()) {
+            if (newNextRun.empty()) {
                 throw "402 Cannot requeue job, no nextRun is set";
             }
+            safeNewNextRun = SQ(newNextRun);
         }
 
         if (!safeNewNextRun.empty()) {

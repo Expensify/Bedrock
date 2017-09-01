@@ -4,11 +4,18 @@ struct RequeueJobTest : tpunit::TestFixture {
     RequeueJobTest()
         : tpunit::TestFixture("RequeueJob",
                               BEFORE_CLASS(RequeueJobTest::setupClass),
-                              //TEST(RequeueJobTest::nonExistentJob),
-                              //TEST(RequeueJobTest::notInRunningState),
-                              //TEST(RequeueJobTest::parentIsNotPaused),
+                              TEST(RequeueJobTest::nonExistentJob),
+                              TEST(RequeueJobTest::notInRunningState),
+                              TEST(RequeueJobTest::parentIsNotPaused),
                               TEST(RequeueJobTest::removeFinishedAndCancelledChildren),
-                              //AFTER(RequeueJobTest::tearDown),
+                              TEST(RequeueJobTest::nonExistentJob),
+                              TEST(RequeueJobTest::updateData),
+                              TEST(RequeueJobTest::withDelay),
+                              TEST(RequeueJobTest::hasRepeat),
+                              TEST(RequeueJobTest::noNextRun),
+                              TEST(RequeueJobTest::simplyRequeue),
+                              TEST(RequeueJobTest::changeName),
+                              AFTER(RequeueJobTest::tearDown),
                               AFTER_CLASS(RequeueJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
@@ -39,7 +46,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         STable response = getJsonResult(tester, command);
         string jobID = response["jobID"];
 
-        // Requeue it
+        // Retry it
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
@@ -77,7 +84,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + childID + ";";
         tester->executeWait(command);
 
-        // Requeue the child
+        // Retry the child
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = childID;
@@ -112,11 +119,6 @@ struct RequeueJobTest : tpunit::TestFixture {
         response = getJsonResult(tester, command);
         string cancelledChildID = response["jobID"];
         command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child_queued";
-        command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
-        string queuedChild = response["jobID"];
 
         // Finish the parent
         command.clear();
@@ -124,78 +126,227 @@ struct RequeueJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWait(command);
 
-        // Finish a child
-        cout << "getting a child" << endl;
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "child_finished";
-        tester->executeWait(command);
-        cout << "finishing a child" << endl;
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = finishedChildID;
-        tester->executeWait(command);
-
         // Cancel a child
-        cout << "cancel a child" << endl;
+        // if this goes 2nd this doesn't requeue the parent job
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = cancelledChildID;
         tester->executeWait(command);
 
-        // Requeue the parent
-        command.clear();
-        command.methodLine = "RequeueJob";
-        command["jobID"] = parentID;
-        tester->executeWait(command);
-
-        // check that only the queued child exists
-    }
-    // pass new data and make sure it updates the data
-    // update the name and make sure that updates correctly
-    // create with a negative delay
-                    //throw "402 Must specify a non-negative delay when retrying";
-    // create with a positive delay and confirm nextrun is updated appropriately
-    // create with a nextrun string and confirm nextrun is updated appropriately
-
-    void createchildflow() {
-        // Create the parent
-        SData command("CreateJob");
-        command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
-        string parentID = response["jobID"];
-
-        // Get the parent
+        // Finish a child
         command.clear();
         command.methodLine = "GetJob";
-        command["name"] = "parent";
+        command["name"] = "child_finished";
         tester->executeWait(command);
-
-        // Create the child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child";
-        command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
-        string childID = response["jobID"];
-
-        // Finish the parent to put the child in the QUEUED state
         command.clear();
         command.methodLine = "FinishJob";
-        command["jobID"] = parentID;
+        command["jobID"] = finishedChildID;
         tester->executeWait(command);
 
-        // Get the child
+        /* I don't know how to get a child in the PAUSED state, so ignoring this for now
+        // Create a grandchild and finish a child so the child in state PAUSED
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child_paused";
+        command["parentJobID"] = parentID;
+        response = getJsonResult(tester, command);
+        string pausedChild = response["jobID"];
+        command.methodLine = "GetJob";
+        command["name"] = "child_paused";
+        tester->executeWait(command);
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "grandchild";
+        command["parentJobID"] = pausedChild;
+        response = getJsonResult(tester, command);
+        string grandchild = response["jobID"];
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = pausedChild;
+        tester->executeWait(command);
+        */
+
+        // Retry the parent
         command.clear();
         command.methodLine = "GetJob";
-        command["name"] = "child";
+        command["name"] = "parent";
         tester->executeWait(command);
-
-        // Requeue the child
         command.clear();
         command.methodLine = "RequeueJob";
-        command["jobID"] = childID;
-        tester->executeWait(command, "405 Can only requeue/finish child job when parent is PAUSED");
+        command["jobID"] = parentID;
+        // TODO: construct this dynamically
+        command["nextRun"] = "2018-08-30 21:31:57";
+        tester->executeWait(command);
+
+        // Confirm that the FINISHED and CANCELLED children are deleted
+        SQResult result;
+        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + ";", result);
+        ASSERT_EQUAL(SToInt(result[0][0]), 0);
+    }
+
+    // Update the job data if new data is passed
+    void updateData() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        STable data;
+        data["foo"] = "bar";
+        data["bar"] = "foo";
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        command["data"] = SComposeJSONObject(data);
+        // TODO: construct this dynamically
+        command["nextRun"] = "2018-08-30 21:31:57";
+        tester->executeWait(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+    }
+
+    // Cannot requeue with a delay
+    void withDelay() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        command["delay"] = "5";
+        tester->executeWait(command, "402 Cannot requeue job, no nextRun is set");
+    }
+
+    // Retry a job with a repeat
+    void hasRepeat() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        tester->executeWait(command);
+
+        // Confirm nextRun is in 1 hour
+        SQResult result;
+        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    void noNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        tester->executeWait(command, "402 Cannot requeue job, no nextRun is set");
+    }
+
+    // Confirm nextrun is updated appropriately
+    void simplyRequeue() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        // TODO: construct this dynamically
+        const string nextRun = "2018-08-30 21:31:57";
+        command["nextRun"] = nextRun;
+        tester->executeWait(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], nextRun);
+    }
+
+    // Update the name
+    void changeName() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RequeueJob";
+        command["jobID"] = jobID;
+        command["name"] = "newName";
+        // TODO: construct this dynamically
+        command["nextRun"] = "2018-08-30 21:31:57";
+        tester->executeWait(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "newName");
     }
     STable getJsonResult(BedrockTester* tester, SData command) {
         string resultJson = tester->executeWait(command);
