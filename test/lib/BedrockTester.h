@@ -9,10 +9,8 @@ class BedrockTestException : public std::exception {
     const string message;
 
   public:
-    BedrockTestException(string message_) : message(message_) {}
-    virtual const char* what() noexcept {
-        return message.c_str();
-    }
+    BedrockTestException(string message_) : message(message_) {};
+    const char* what() const noexcept { return message.c_str(); };
 };
 
 class BedrockTester {
