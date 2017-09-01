@@ -600,7 +600,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // There should only be at most one result if GetJob
         SASSERT(!SIEquals(requestVerb, "GetJob") || result.size()<=1);
 
-        // Prepare to update the rows, while also creating all the expense objects
+        // Prepare to update the rows
         string updateQuery = "UPDATE jobs SET state='RUNNING', lastRun=" + SCURRENT_TIMESTAMP() + " WHERE jobID IN (";
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
@@ -877,7 +877,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!_hasPendingChildJobs(db, parentJobID)) {
                     SINFO("Job has parentJobID: " + SToStr(parentJobID) +
                           " and no other pending children, resuming parent job");
-                    if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
+                    if (!db.write("UPDATE jobs SET state='QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                         throw "502 Update failed";
                     }
                 }
