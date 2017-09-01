@@ -49,6 +49,11 @@ class BedrockTester {
     // If the response method line doesn't begin with the expected result, throws.
     string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
 
+    // Read from the DB file. Interface is the same as SQLiteNode's 'read' for backwards compatibility.
+    string readDB(const string& query); 
+    bool readDB(const string& query, SQResult& result);
+    SQLite& getSQLiteDB();
+
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.
@@ -66,4 +71,7 @@ class BedrockTester {
 
     // Flag indicating whether the DB should be kept when the tester is destroyed.
     bool _keepFilesWhenFinished;
+
+    // A version of the DB that can be queries without going through bedrock.
+    SQLite* _db = 0;
 };

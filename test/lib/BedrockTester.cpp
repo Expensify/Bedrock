@@ -110,6 +110,9 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
 }
 
 BedrockTester::~BedrockTester() {
+    if (_db) {
+        delete _db;
+    }
     if (_serverPID) {
         stopServer();
     }
@@ -313,4 +316,22 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
     // All done!
     return results;
+}
+
+SQLite& BedrockTester::getSQLiteDB()
+{
+    if (!_db) {
+        _db = new SQLite(_dbName, 1000000, 0, 3000000, -1, 0);
+    }
+    return *_db;
+}
+
+string BedrockTester::readDB(const string& query)
+{
+    return getSQLiteDB().read(query);
+}
+
+bool BedrockTester::readDB(const string& query, SQResult& result)
+{
+    return getSQLiteDB().read(query, result);
 }
