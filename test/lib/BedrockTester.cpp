@@ -1,9 +1,6 @@
 #include "BedrockTester.h"
 #include <sys/wait.h>
 
-BedrockTestException::BedrockTestException(string message_) : message(message_) {}
-const char* BedrockTestException::what() const noexcept { return message.c_str(); }
-
 // Define static vars.
 string BedrockTester::defaultDBFile;
 string BedrockTester::defaultServerAddr;
