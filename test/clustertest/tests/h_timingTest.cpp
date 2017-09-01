@@ -18,7 +18,8 @@ struct h_timingTest : tpunit::TestFixture {
             SData query("idcollision");
             query["writeConsistency"] = "ASYNC";
             query["value"] = "default";
-            SData result = brtester->executeWaitData(query);
+            auto results = brtester->executeWaitMultipleData({query});
+            auto result = results[0];
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {
                 cout << row.first << ":" << row.second << endl;
@@ -66,7 +67,8 @@ struct h_timingTest : tpunit::TestFixture {
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("Query");
             query["query"] = "SELECT * FROM test;";
-            SData result = brtester->executeWaitData(query);
+            auto results = brtester->executeWaitMultipleData({query});
+            auto result = results[0];
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {
                 cout << row.first << ":" << row.second << endl;
