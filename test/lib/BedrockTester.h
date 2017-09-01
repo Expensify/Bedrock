@@ -49,8 +49,12 @@ class BedrockTester {
     // If the response method line doesn't begin with the expected result, throws.
     string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
 
+    // Sends a single request, returning the response content as a STable.
+    // If the response method line doesn't begin with the expected result, throws.
+    STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200");
+
     // Read from the DB file. Interface is the same as SQLiteNode's 'read' for backwards compatibility.
-    string readDB(const string& query); 
+    string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
 

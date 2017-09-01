@@ -211,6 +211,11 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     return results[0].content;
 }
 
+STable BedrockTester::executeWaitVerifyContentTable(SData request, const string& expectedResult) {
+    string result = executeWaitVerifyContent(request, expectedResult);
+    return SParseJSONObject(result);
+}
+
 vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
