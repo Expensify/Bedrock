@@ -825,39 +825,33 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // If we're doing RequeueJob and there isn't a repeat, construct one with the delay
         string safeNewNextRun = "";
-        if (repeat.empty() && (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob"))) {
-            const string& newNextRun = request["nextRun"];
-
-            // Keeping delay functionality for backwards compatibility until remove it from Bedrock-PHP
-            if (newNextRun.empty()) {
-                // Make sure there is a delay
-                int64_t delay = request.calc64("delay");
-                if (delay < 0) {
-                    throw "402 Must specify a non-negative delay when retrying";
-                }
-                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-                safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
-                if (safeNewNextRun.empty()) {
-                    throw "402 Malformed repeat";
-                }
+        // If this is set to repeat, get the nextRun value
+        if (!repeat.empty()) {
+            safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+        } else if (SIEquals(requestVerb, "RetryJob")) {
+            // If we're doing RetryJob and there isn't a repeat, construct one with the delay
+            int64_t delay = request.calc64("delay");
+            if (delay < 0) {
+                throw "402 Must specify a non-negative delay when retrying";
             }
-            else {
-                safeNewNextRun = SQ(newNextRun);
-            }
-        } else {
-            // Configured to repeat.  The "nextRun" at this point is still
-            // storing the last time this job was *scheduled* to be run;
-            // lastRun contains when it was *actually* run.
+            repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
             safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
             if (safeNewNextRun.empty()) {
                 throw "402 Malformed repeat";
             }
+        } else if (SIEquals(requestVerb, "RequeueJob")) {
+            const string& newNextRun = request["nextRun"];
+            safeNewNextRun = SQ(newNextRun);
+            if (safeNewNextRun.empty()) {
+                throw "402 Cannot requeue job, no nextRun is set";
+            }
         }
 
-        // Are we rescheduling?
         if (!safeNewNextRun.empty()) {
+            // Configured to repeat.  The "nextRun" at this point is still
+            // storing the last time this job was *scheduled* to be run;
+            // lastRun contains when it was *actually* run.
             SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
