@@ -10,7 +10,7 @@ class BedrockTestException : public std::exception {
 
   public:
     BedrockTestException(string message_) : message(message_) {}
-    virtual const char* what() const __NOEXCEPT {
+    virtual const char* what() noexcept {
         return message.c_str();
     }
 };

@@ -11,13 +11,6 @@ list<string> BedrockTester::locations = {
     "../../bedrock"
 };
 
-// Make llvm and gcc get along.
-#ifdef _NOEXCEPT
-#define __NOEXCEPT _NOEXCEPT
-#else
-#define __NOEXCEPT _GLIBCXX_USE_NOEXCEPT
-#endif
-
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
