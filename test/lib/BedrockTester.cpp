@@ -18,17 +18,6 @@ list<string> BedrockTester::locations = {
 #define __NOEXCEPT _GLIBCXX_USE_NOEXCEPT
 #endif
 
-class BedrockTestException : public std::exception {
-  private:
-    const string message;
-
-  public:
-    BedrockTestException(string message_) : message(message_) {}
-    virtual const char* what() const __NOEXCEPT {
-        return message.c_str();
-    }
-};
-
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];

@@ -4,6 +4,17 @@
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
 
+class BedrockTestException : public std::exception {
+  private:
+    const string message;
+
+  public:
+    BedrockTestException(string message_) : message(message_) {}
+    virtual const char* what() const __NOEXCEPT {
+        return message.c_str();
+    }
+};
+
 class BedrockTester {
   public:
     // Generate a temporary filename for a test DB, with an optional prefix.
