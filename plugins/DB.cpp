@@ -36,6 +36,11 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
         verifyAttributeBool(request, "nowhere",  false);
 
+        // This can be used to force a checkpoint, as commands always running on worker threads won't trigger one.
+        if (request.isSet("processOnSyncThread")) {
+            command.onlyProcessOnSyncThread = true;
+        }
+
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
         //
@@ -75,12 +80,14 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
         // Attempt the read-only query
         SQResult result;
         int preChangeCount = db.getChangeCount();
+        uint64_t start = STimeNow();
         if (!db.read(query, result)) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();
             throw "502 Query failed";
         }
+        response["readTimeUS"] = to_string(STimeNow() - start);
 
         // Verify it didn't change anything -- assert because if we did, we did so
         // outside of a replicated transaction and that's REALLY bad.
@@ -117,12 +124,14 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Attempt the query
         const string& query = request["query"] + ";";
+        uint64_t start = STimeNow();
         if (!db.write(query)) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();
             throw "502 Query failed";
         }
+        response["processTimeUS"] = to_string(STimeNow() - start);
 
         // Worked!  Let's save the last inserted row id
         const string& upperQuery = SToUpper(STrim(query));

@@ -25,7 +25,7 @@ ifeq ($(PRODUCTION),true)
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
 CFLAGS +=-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security
 else
-CFLAGS +=-O0
+CFLAGS +=-O2
 endif
 
 # We'll stick object and dependency files in here so we don't need to look at them.
