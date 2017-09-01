@@ -11,13 +11,6 @@ list<string> BedrockTester::locations = {
     "../../bedrock"
 };
 
-// Make llvm and gcc get along.
-#ifdef _NOEXCEPT
-#define __NOEXCEPT _NOEXCEPT
-#else
-#define __NOEXCEPT _GLIBCXX_USE_NOEXCEPT
-#endif
-
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
@@ -203,10 +196,10 @@ void BedrockTester::stopServer() {
 string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult) {
     auto results = executeWaitMultipleData({request}, 1);
     if (results.size() == 0) {
-        throw "No result.";
+        throw BedrockTestException("No result.");
     }
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
-        throw "Expected " + expectedResult + ", but got: " + results[0].methodLine;
+        throw BedrockTestException("Expected " + expectedResult + ", but got: " + results[0].methodLine);
     }
     return results[0].content;
 }
