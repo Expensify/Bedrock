@@ -158,7 +158,7 @@ void BedrockServer::sync(SData& args,
         server._postPollPlugins(fdm, nextActivity);
 
         // Process any network traffic that happened.
-        syncNode.postPoll(fdm, nextActivity); // This might change the server state to SLAVING.
+        syncNode.postPoll(fdm, nextActivity);
         syncNodeQueuedCommands.postPoll(fdm);
         completedCommands.postPoll(fdm);
 
