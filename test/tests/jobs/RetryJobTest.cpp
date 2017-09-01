@@ -11,6 +11,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::updateData),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
+                              TEST(RetryJobTest::hasRepeat),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -266,6 +267,39 @@ struct RetryJobTest : tpunit::TestFixture {
         strptime(currentNextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
         time_t currentNextRunTime = mktime(&tm2);
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
+    }
+
+    // Retry a job with a repeat
+    void hasRepeat() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = getJsonResult(tester, command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWait(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWait(command);
+
+        // Confirm nextRun is in 1 hour
+        SQResult result;
+        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
     }
 
     STable getJsonResult(BedrockTester* tester, SData command) {
