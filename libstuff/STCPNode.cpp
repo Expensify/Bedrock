@@ -1,5 +1,5 @@
 #include "libstuff.h"
-
+#include <cxxabi.h>
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -173,7 +173,13 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
-                            _onMESSAGE(peer, message);
+                            try {
+                                _onMESSAGE(peer, message);
+                            } catch (...) {
+                                string exName(abi::__cxa_current_exception_type()->name());
+                                SWARN("Unknown exception: " << exName);
+                                throw;
+                            }
                         }
                     }
                 } catch (const char* e) {

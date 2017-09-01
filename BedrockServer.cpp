@@ -4,6 +4,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
+#include <cxxabi.h>
 
 set<string>BedrockServer::_parallelCommands;
 recursive_mutex BedrockServer::_parallelCommandMutex;
@@ -27,6 +28,8 @@ void BedrockServer::sync(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
+    // Not indented on purpose to keep diff small. Should be removed as soon as we figure out what's happening.
+    try {
     // Initialize the thread.
     SInitialize(_syncThreadName);
 
@@ -155,7 +158,7 @@ void BedrockServer::sync(SData& args,
         server._postPollPlugins(fdm, nextActivity);
 
         // Process any network traffic that happened.
-        syncNode.postPoll(fdm, nextActivity);
+        syncNode.postPoll(fdm, nextActivity); // This might change the server state to SLAVING.
         syncNodeQueuedCommands.postPoll(fdm);
         completedCommands.postPoll(fdm);
 
@@ -418,6 +421,12 @@ void BedrockServer::sync(SData& args,
         SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
+    }
+    // Remove when we figure out where this came from.
+    } catch(...) {
+        string exName(abi::__cxa_current_exception_type()->name());
+        SWARN("Unknown exception: " << exName);
+        throw;
     }
 }
 
