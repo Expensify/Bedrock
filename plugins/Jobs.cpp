@@ -452,7 +452,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     throw "405 Can only create child job when parent is RUNNING or PAUSED";
                 }
-              
+
                 // Prevent jobs from creating grandchildren
                 if (!SIEquals(result[0][1], "0")) {
                     SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
@@ -463,7 +463,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
                 // Update the existing job.
-                if(!db.write("UPDATE JOBS SET "
+                if(!db.write("UPDATE jobs SET "
                                "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
                                "data     = JSON_PATCH(data, " + safeData + "), " +
                                "priority = " + SQ(priority) + " " +
@@ -548,7 +548,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // works!
         SQResult result;
         const string& name = request["name"];
-        string safeNumResults = SQ(max(request.calc("numResults"),1)); 
+        string safeNumResults = SQ(max(request.calc("numResults"),1));
         string selectQuery =
             "SELECT jobID, name, data, parentJobID FROM ( "
                 "SELECT * FROM ("
