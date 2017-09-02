@@ -8,7 +8,6 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
     cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
-    _args.reserve(size);
 
     int nodePortBase = 9500;
     // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
@@ -61,11 +60,16 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-peerList",    peerString},
             {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
-
-        // save this map for later.
-        _args.push_back(args);
-
-        _cluster.emplace_back(db, serverHost, queries, args, false);
+        _cluster.emplace_back(args, queries, false);
+    }
+    list<thread> threads;
+    for (size_t i = 0; i < _cluster.size(); i++) {
+        threads.emplace_back([i, this](){
+            _cluster[i].startServer();
+        });
+    }
+    for (auto& i : threads) {
+        i.join();
     }
 
     // Ok, now we should be able to wait for the cluster to come up. Let's wait until each server responds to 'status',
@@ -81,7 +85,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             }
             try {
                 SData status("Status");
-                string response = _cluster[i].executeWait(status, "200");
+                string response = _cluster[i].executeWaitVerifyContent(status);
                 STable json = SParseJSONObject(response);
                 states[i] = json["state"];
                 break;
@@ -121,5 +125,5 @@ void BedrockClusterTester::stopNode(size_t nodeIndex)
 
 void BedrockClusterTester::startNode(size_t nodeIndex)
 {
-    _cluster[nodeIndex].startServer(_args[nodeIndex], true);
+    _cluster[nodeIndex].startServer();
 }

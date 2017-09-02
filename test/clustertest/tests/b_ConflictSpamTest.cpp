@@ -35,7 +35,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 query["value"] = "sent-" + to_string(cmdNum);
 
                 // Ok, send.
-                string result = brtester->executeWait(query);
+                string result = brtester->executeWaitVerifyContent(query);
             }
         }
 
@@ -49,7 +49,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 SData query("Query");
                 query["writeConsistency"] = "ASYNC";
                 query["query"] = "SELECT id, value FROM test ORDER BY id;";
-                string result = brtester->executeWait(query);
+                string result = brtester->executeWaitVerifyContent(query);
                 results[i] = result;
             }
 
@@ -89,13 +89,13 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 }
 
                 // Ok, send them all!
-                auto results = brtester->executeWaitMultiple(requests);
+                auto results = brtester->executeWaitMultipleData(requests);
 
                 int failures = 0;
                 for (auto row : results) {
-                    if (SToInt(row.first) != 200) {
-                        cout << "Node " << i << " Expected 200, got: " << SToInt(row.first) << endl;
-                        cout << row.second << endl;
+                    if (SToInt(row.methodLine) != 200) {
+                        cout << "Node " << i << " Expected 200, got: " << SToInt(row.methodLine) << endl;
+                        cout << row.content << endl;
                         failures++;
                     }
                 }
@@ -119,7 +119,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 query["query"] = "SELECT name FROM sqlite_master WHERE type='table';";
 
                 // Ok, send them all!
-                auto result = brtester->executeWait(query);
+                auto result = brtester->executeWaitVerifyContent(query);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;
@@ -172,7 +172,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                     SData cmd("Query");
                     cmd["query"] = query;
                     // Ok, send them all!
-                    auto result = brtester->executeWait(cmd);
+                    auto result = brtester->executeWaitVerifyContent(cmd);
 
                     SAUTOLOCK(m);
                     allResults[i] = result;
@@ -213,12 +213,12 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
 
             // Ok, send them all!
-            auto results = brtester->executeWaitMultiple(commands);
+            auto results = brtester->executeWaitMultipleData(commands);
 
             for (size_t i = 0; i < results.size(); i++) {
                 // Make sure they all succeeded.
-                ASSERT_TRUE(SToInt(results[i].first) == 200);
-                list<string> lines = SParseList(results[i].second, '\n');
+                ASSERT_TRUE(SToInt(results[i].methodLine) == 200);
+                list<string> lines = SParseList(results[i].content, '\n');
                 lines.pop_front();
             }
             // We can't verify the size of the journal, because we can insert any number of 'upgrade database' rows as
@@ -237,7 +237,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 cmd["query"] = "SELECT * FROM test;";
 
                 // Ok, send them all!
-                auto result = brtester->executeWait(cmd);
+                auto result = brtester->executeWaitVerifyContent(cmd);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;
@@ -268,7 +268,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
                 cmd["query"] = "SELECT COUNT(id) FROM test;";
 
                 // Ok, send them all!
-                auto result = brtester->executeWait(cmd);
+                auto result = brtester->executeWaitVerifyContent(cmd);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;
