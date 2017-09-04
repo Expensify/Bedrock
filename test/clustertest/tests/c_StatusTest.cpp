@@ -24,7 +24,7 @@ struct c_StatusTest : tpunit::TestFixture {
                 status["writeConsistency"] = "ASYNC";
 
                 // Ok, send them all!
-                auto result = brtester->executeWait(status);
+                auto result = brtester->executeWaitVerifyContent(status);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = result;
             });

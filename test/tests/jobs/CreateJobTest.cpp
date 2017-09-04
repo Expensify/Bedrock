@@ -1,37 +1,30 @@
 #include <test/lib/BedrockTester.h>
-#include <test/Utils.h>
 
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
-                                TEST(CreateJobTest::create),
-                                TEST(CreateJobTest::createWithPriority),
-                                TEST(CreateJobTest::createWithData),
-                                TEST(CreateJobTest::createWithRepeat),
-                                TEST(CreateJobTest::uniqueJob),
-                                TEST(CreateJobTest::createWithBadData),
-                                TEST(CreateJobTest::createWithBadRepeat),
-                                TEST(CreateJobTest::retryRecurringJobs),
-                                TEST(CreateJobTest::retryWithMalformedValue),
-                                TEST(CreateJobTest::retryUnique),
-                                TEST(CreateJobTest::retryLifecycle),
-                                TEST(CreateJobTest::retryWithChildren),
-                                TEST(CreateJobTest::retryJobComesFirst),
-                                TEST(CreateJobTest::createChildWithQueuedParent),
-                                TEST(CreateJobTest::createChildWithRunningGrandparent),
+                              TEST(CreateJobTest::create),
+                              TEST(CreateJobTest::createWithPriority),
+                              TEST(CreateJobTest::createWithData),
+                              TEST(CreateJobTest::createWithRepeat),
+                              TEST(CreateJobTest::uniqueJob),
+                              TEST(CreateJobTest::createWithBadData),
+                              TEST(CreateJobTest::createWithBadRepeat),
+                              TEST(CreateJobTest::createChildWithQueuedParent),
+                              TEST(CreateJobTest::createChildWithRunningGrandparent),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(); }
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
     }
 
     void tearDownClass() { delete tester; }
@@ -40,11 +33,11 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         string jobName = "testCreate";
         command["name"] = jobName;
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -65,11 +58,11 @@ struct CreateJobTest : tpunit::TestFixture {
         string priority = "1000";
         command["name"] = jobName;
         command["priority"] = priority;
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -90,11 +83,11 @@ struct CreateJobTest : tpunit::TestFixture {
         string data = "{\"blabla\":\"blabla\"}";
         command["name"] = jobName;
         command["data"] = data;
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -115,11 +108,11 @@ struct CreateJobTest : tpunit::TestFixture {
         string repeat = "SCHEDULED, +1 HOUR";
         command["name"] = jobName;
         command["repeat"] = repeat;
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -143,12 +136,12 @@ struct CreateJobTest : tpunit::TestFixture {
         string jobName = "blabla";
         command["name"] = jobName;
         command["unique"] = "true";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         int jobID = SToInt(response["jobID"]);
         ASSERT_GREATER_THAN(jobID, 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
 
         // Try to recreate the job with new data
         string data = "{\"blabla\":\"test\"}";
@@ -157,11 +150,11 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["unique"] = "true";
         command["data"] = data;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
 
         SQResult updatedJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + response["jobID"] + ";", updatedJob);
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", updatedJob);
         ASSERT_EQUAL(updatedJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(updatedJob[0][0], originalJob[0][0]);
@@ -180,178 +173,14 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "blabla";
         command["data"] = "blabla";
-        tester->executeWait(command, "402 Data is not a valid JSON Object");
+        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
     }
 
     void createWithBadRepeat() {
         SData command("CreateJob");
         command["name"] = "blabla";
         command["repeat"] = "blabla";
-        tester->executeWait(command, "402 Malformed repeat");
-    }
-
-    void retryRecurringJobs() {
-        SData command("CreateJob");
-        command["name"] = "test";
-        command["repeat"] = "SCHEDULED, +1 HOUR";
-        command["retryAfter"] = "10";
-        tester->executeWait(command, "402 Recurring auto-retrying jobs are not supported");
-    }
-
-    void retryWithMalformedValue() {
-        SData command("CreateJob");
-        command["name"] = "test";
-        command["retryAfter"] = "10";
-        tester->executeWait(command, "402 Malformed retryAfter");
-    }
-
-    void retryUnique() {
-        SData command("CreateJob");
-        command["name"] = "test";
-        command["retryAfter"] = "+10 HOUR";
-        command["unique"] = "true";
-        tester->executeWait(command, "405 Unique jobs can't be retried");
-    }
-
-    void retryLifecycle() {
-        // Create a retryable job
-        SData command("CreateJob");
-        string jobName = "testRetryable";
-        string retryValue = "+1 SECOND";
-        command["name"] = jobName;
-        command["retryAfter"] = retryValue;
-
-        STable response = getJsonResult(tester, command);
-        string jobID = response["jobID"];
-
-        // Query the db to confirm it was created correctly
-        SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
-        ASSERT_EQUAL(originalJob[0][1], jobID);
-        ASSERT_EQUAL(originalJob[0][2], "QUEUED");
-        ASSERT_EQUAL(originalJob[0][3], jobName);
-        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
-        ASSERT_EQUAL(originalJob[0][5], "");
-        ASSERT_EQUAL(originalJob[0][6], "");
-        ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
-        ASSERT_EQUAL(originalJob[0][10], retryValue);
-
-        // Get the job
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = jobName;
-        response = getJsonResult(tester, command);
-
-        ASSERT_EQUAL(response["data"], "{}");
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
-
-        // Query the db and confirm that state, nextRun and lastRun are correct
-        SQResult jobData;
-        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
-
-        ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
-        string nextRun = jobData[0][1];
-        string lastRun = jobData[0][2];
-        struct tm tm1;
-        struct tm tm2;
-        strptime(nextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t nextRunTime = mktime(&tm1);
-        strptime(lastRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t lastRunTime = mktime(&tm2);
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
-
-        // Get the job, confirm error
-        tester->executeWait(command, "404 No job found");
-        // Wait 5 seconds, get the job, confirm no error
-        sleep(1);
-        response = getJsonResult(tester, command);
-
-        ASSERT_EQUAL(response["data"], "{}");
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
-
-        // Get the job, confirm error
-        tester->executeWait(command, "404 No job found");
-
-        // Try to update job, get error because of no data
-        command.clear();
-        command.methodLine = "UpdateJob";
-        command["jobID"] = jobID;
-        tester->executeWait(command, "402 Missing data");
-
-        // Try to update job, get error because it's running
-        command["data"] = "{}";
-        tester->executeWait(command, "402 Auto-retrying jobs cannot be updated once running");
-
-        // Finish the job
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = jobID;
-        tester->executeWait(command);
-
-        // Query db and confirm job doesn't exist
-        tester->readDB("SELECT state, nextRun, lastRun, FROM jobs WHERE jobID = " + jobID + ";", jobData);
-        ASSERT_TRUE(jobData.empty());
-    }
-
-    void retryWithChildren() {
-        SData command("CreateJob");
-        string jobName = "testRetryable";
-        string retryValue = "+5 SECONDS";
-        command["name"] = jobName;
-        command["retryAfter"] = retryValue;
-
-        STable response = getJsonResult(tester, command);
-        string jobID = response["jobID"];
-
-        // Try to create child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "testRetryableChild";
-        command["parentJobID"] = jobID;
-        tester->executeWait(command, "402 Auto-retrying parents cannot have children");
-    }
-
-    // TODO This should actually go in a GetJob test
-    // Retryable job (after retry period has passed) comes before QUEUED job
-    void retryJobComesFirst() {
-        // Create retryable job
-        SData command("CreateJob");
-        string jobName = "testRetryable";
-        string retryValue = "+1 SECOND";
-        command["name"] = jobName;
-        command["retryAfter"] = retryValue;
-        STable response = getJsonResult(tester, command);
-        string retryableJob = response["jobID"];
-
-
-        // Get a job and confirm it's the first job we created
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "*Retryable";
-        response = getJsonResult(tester, command);
-        ASSERT_EQUAL(response["jobID"], retryableJob);
-
-        // Sleep for a second so we're past the retryAfter time
-        sleep(1);
-
-        // Create a non-retryable job
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "notRetryable";
-
-        response = getJsonResult(tester, command);
-        string nonRetryableJob = response["jobID"];
-
-        // Get a job, should be the first job we created (because it's been in REQUEUED for more than the retryAfter time)
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "*Retryable";
-        response = getJsonResult(tester, command);
-        ASSERT_EQUAL(response["jobID"], retryableJob);
+        tester->executeWaitVerifyContent(command, "402 Malformed repeat");
     }
 
     // Cannot create a child job when parent is QUEUED
@@ -360,7 +189,7 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "parent";
 
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Try to create the child
@@ -368,7 +197,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        tester->executeWait(command, "405 Can only create child job when parent is RUNNING or PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING or PAUSED");
     }
 
     // Cannot create a job with a running grandparent
@@ -376,21 +205,21 @@ struct CreateJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // Assert parent is still running
@@ -403,6 +232,6 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "grandchild";
         command["parentJobID"] = childID;
-        tester->executeWait(command, "405 Cannot create grandchildren");
+        tester->executeWaitVerifyContent(command, "405 Cannot create grandchildren");
     }
 } __CreateJobTest;

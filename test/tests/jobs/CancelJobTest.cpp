@@ -1,5 +1,4 @@
 #include <test/lib/BedrockTester.h>
-#include <test/Utils.h>
 
 struct CancelJobTest : tpunit::TestFixture {
     CancelJobTest()
@@ -17,13 +16,13 @@ struct CancelJobTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(); }
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
     }
 
     void tearDownClass() { delete tester; }
@@ -32,7 +31,7 @@ struct CancelJobTest : tpunit::TestFixture {
     void cancelNonExistentJob() {
         SData command("CancelJob");
         command["jobID"] = "1";
-        tester->executeWait(command, "404 No job with this jobID");
+        tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Cannot cancel a job with children
@@ -40,38 +39,38 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // Finish the parent
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Get the child and finish it to put the parent in the QUEUED state
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = childID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert parent is in QUEUED state
         SQResult result;
@@ -82,7 +81,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = parentID;
-        tester->executeWait(command, "404 Invalid jobID - Cannot cancel a job with children");
+        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job with children");
     }
 
     // Ignore canceljob for RUNNING jobs
@@ -90,14 +89,14 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job is in RUNNING state
         SQResult result;
@@ -108,7 +107,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = jobID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
@@ -120,38 +119,38 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // Finish the parent
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Get the child and finish it to put the child in the FINISHED state
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = childID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job is in FINISHED state
         SQResult result;
@@ -162,7 +161,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
@@ -174,21 +173,21 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // Assert job is in PAUSED state
@@ -200,7 +199,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
@@ -212,14 +211,14 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Cancel it
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = jobID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job state is cancelled
         SQResult result;
@@ -232,34 +231,34 @@ struct CancelJobTest : tpunit::TestFixture {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // Finish the parent to put the child in the QUEUED state
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Cancel the child
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Assert job state is cancelled
         SQResult result;

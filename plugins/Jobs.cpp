@@ -501,7 +501,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
                 // Update the existing job.
-                if(!db.write("UPDATE JOBS SET "
+                if(!db.write("UPDATE jobs SET "
                                "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
                                "data     = JSON_PATCH(data, " + safeData + "), " +
                                "priority = " + SQ(priority) + " " +
