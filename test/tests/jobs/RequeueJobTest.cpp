@@ -143,29 +143,6 @@ struct RequeueJobTest : tpunit::TestFixture {
         command["jobID"] = finishedChildID;
         tester->executeWaitVerifyContent(command);
 
-        /* I don't know how to get a child in the PAUSED state, so ignoring this for now
-        // Create a grandchild and finish a child so the child in state PAUSED
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child_paused";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string pausedChild = response["jobID"];
-        command.methodLine = "GetJob";
-        command["name"] = "child_paused";
-        tester->executeWaitVerifyContent(command);
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "grandchild";
-        command["parentJobID"] = pausedChild;
-        response = tester->executeWaitVerifyContentTable(command);
-        string grandchild = response["jobID"];
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = pausedChild;
-        tester->executeWaitVerifyContent(command);
-        */
-
         // Retry the parent
         command.clear();
         command.methodLine = "GetJob";
@@ -174,8 +151,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = parentID;
-        // TODO: construct this dynamically
-        command["nextRun"] = "2018-08-30 21:31:57";
+        command["nextRun"] = getTimeInFuture(10);
         tester->executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
@@ -206,8 +182,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
         command["data"] = SComposeJSONObject(data);
-        // TODO: construct this dynamically
-        command["nextRun"] = "2018-08-30 21:31:57";
+        command["nextRun"] = getTimeInFuture(10);
         tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
@@ -309,8 +284,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
-        // TODO: construct this dynamically
-        const string nextRun = "2018-08-30 21:31:57";
+        const string nextRun = getTimeInFuture(10);
         command["nextRun"] = nextRun;
         tester->executeWaitVerifyContent(command);
 
@@ -339,13 +313,22 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
         command["name"] = "newName";
-        // TODO: construct this dynamically
-        command["nextRun"] = "2018-08-30 21:31:57";
+        command["nextRun"] = getTimeInFuture(10);
         tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
         SQResult result;
         tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "newName");
+    }
+
+    string getTimeInFuture(int numSeconds) {
+        time_t t = time(0);
+        char buffer[26];
+        t = t + numSeconds;
+        struct tm* tm = localtime(&t);
+
+        strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm);
+        return buffer;
     }
 } __RequeueJobTest;
