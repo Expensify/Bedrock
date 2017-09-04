@@ -12,6 +12,7 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::finishingParentUnPausesChildren),
                               TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
                               TEST(FinishJobTest::hasRepeat),
+                              TEST(FinishJobTest::inRunqueuedState),
                               AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
@@ -47,7 +48,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING and RUNQUEUED jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -352,5 +353,27 @@ struct FinishJobTest : tpunit::TestFixture {
         strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
         time_t nextRunTime = mktime(&tm2);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // Finish job in RUNQUEUED state
+    void inRunqueuedState() {
+        // Create a job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["retryAfter"] = "+1 SECOND";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
     }
 } __FinishJobTest;
