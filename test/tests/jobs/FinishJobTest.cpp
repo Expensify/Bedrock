@@ -1,19 +1,19 @@
 #include <test/lib/BedrockTester.h>
 
-struct RetryJobTest : tpunit::TestFixture {
-    RetryJobTest()
-        : tpunit::TestFixture("RetryJob",
-                              BEFORE_CLASS(RetryJobTest::setupClass),
-                              TEST(RetryJobTest::nonExistentJob),
-                              TEST(RetryJobTest::notInRunningState),
-                              TEST(RetryJobTest::parentIsNotPaused),
-                              TEST(RetryJobTest::removeFinishedAndCancelledChildren),
-                              TEST(RetryJobTest::updateData),
-                              TEST(RetryJobTest::negativeDelay),
-                              TEST(RetryJobTest::positiveDelay),
-                              TEST(RetryJobTest::hasRepeat),
-                              AFTER(RetryJobTest::tearDown),
-                              AFTER_CLASS(RetryJobTest::tearDownClass)) { }
+struct FinishJobTest : tpunit::TestFixture {
+    FinishJobTest()
+        : tpunit::TestFixture("FinishJob",
+                              BEFORE_CLASS(FinishJobTest::setupClass),
+                              TEST(FinishJobTest::nonExistentJob),
+                              TEST(FinishJobTest::notInRunningState),
+                              TEST(FinishJobTest::parentIsNotPaused),
+                              TEST(FinishJobTest::removeFinishedAndCancelledChildren),
+                              TEST(FinishJobTest::updateData),
+                              TEST(FinishJobTest::finishingParentUnPausesChildren),
+                              TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
+                              TEST(FinishJobTest::hasRepeat),
+                              AFTER(FinishJobTest::tearDown),
+                              AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
@@ -30,7 +30,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
     // Throw an error if the job doesn't exist
     void nonExistentJob() {
-        SData command("RetryJob");
+        SData command("FinishJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
@@ -43,9 +43,9 @@ struct RetryJobTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Retry it
+        // Finish it
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
     }
@@ -81,9 +81,9 @@ struct RetryJobTest : tpunit::TestFixture {
         command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + childID + ";";
         tester->executeWaitVerifyContent(command);
 
-        // Retry the child
+        // Finish the child
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = childID;
         tester->executeWaitVerifyContent(command, "405 Can only retry/finish child job when parent is PAUSED");
     }
@@ -140,24 +140,103 @@ struct RetryJobTest : tpunit::TestFixture {
         command["jobID"] = finishedChildID;
         tester->executeWaitVerifyContent(command);
 
-        // Retry the parent
+        // Confirm the parent is set to QUEUED
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+
+        // Finish the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
         tester->executeWaitVerifyContent(command);
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
-        SQResult result;
         tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + ";", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
     // Update the job data if new data is passed
     void updateData() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        STable data;
+        data["foo"] = "bar";
+        data["bar"] = "foo";
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["data"] = SComposeJSONObject(data);
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+    }
+
+    void finishingParentUnPausesChildren() {
+        // Create the parent
+        SData command("CreateJob");
+        command["name"] = "parent";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string parentID = response["jobID"];
+
+        // Get the parent
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "parent";
+        tester->executeWaitVerifyContent(command);
+
+        // Create the children
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child_finished";
+        command["parentJobID"] = parentID;
+        response = tester->executeWaitVerifyContentTable(command);
+        string finishedChildID = response["jobID"];
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child_cancelled";
+        command["parentJobID"] = parentID;
+        response = tester->executeWaitVerifyContentTable(command);
+        string cancelledChildID = response["jobID"];
+        command.clear();
+
+        // Finish the parent
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm that the parent is in the PAUSED state and the chilrden are in the QUEUED state
+        SQResult result;
+        tester->readDB("SELECT jobID, state FROM jobs;", result);
+        ASSERT_EQUAL(result[0][0], parentID);
+        ASSERT_EQUAL(result[0][1], "PAUSED");
+        ASSERT_EQUAL(result[1][0], finishedChildID);
+        ASSERT_EQUAL(result[1][1], "QUEUED");
+        ASSERT_EQUAL(result[2][0], cancelledChildID);
+        ASSERT_EQUAL(result[2][1], "QUEUED");
+    }
+
+    void deleteFinishedJobWithNoChildren() {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -170,20 +249,16 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
-        // Retry it
-        STable data;
-        data["foo"] = "bar";
-        data["bar"] = "foo";
+        // Finish it
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = jobID;
-        command["data"] = SComposeJSONObject(data);
         tester->executeWaitVerifyContent(command);
 
-        // Confirm the data updated
+        // Confirm the job was deleted
         SQResult result;
-        tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
-        ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_TRUE(result.empty());
     }
 
     // Cannot retry with a negative delay
@@ -200,15 +275,15 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
-        // Retry it
+        // Finish it
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = jobID;
         command["delay"] = "-5";
         tester->executeWaitVerifyContent(command, "402 Must specify a non-negative delay when retrying");
     }
 
-    // Retry with a positive delay and confirm nextRun is updated appropriately
+    // Finish with a positive delay and confirm nextRun is updated appropriately
     void positiveDelay() {
         // Create the job
         SData command("CreateJob");
@@ -227,9 +302,9 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
-        // Retry it
+        // Finish it
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = jobID;
         command["delay"] = "5";
         tester->executeWaitVerifyContent(command);
@@ -246,7 +321,7 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
     }
 
-    // Retry a job with a repeat
+    // Finish a job with a repeat
     void hasRepeat() {
         // Create the job
         SData command("CreateJob");
@@ -261,9 +336,9 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
-        // Retry it
+        // Finish it
         command.clear();
-        command.methodLine = "RetryJob";
+        command.methodLine = "FinishJob";
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command);
 
@@ -278,4 +353,4 @@ struct RetryJobTest : tpunit::TestFixture {
         time_t nextRunTime = mktime(&tm2);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
     }
-} __RetryJobTest;
+} __FinishJobTest;
