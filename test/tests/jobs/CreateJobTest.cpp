@@ -13,6 +13,12 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
+                              TEST(CreateJobTest::retryRecurringJobs),
+                              TEST(CreateJobTest::retryWithMalformedValue),
+                              TEST(CreateJobTest::retryUnique),
+                              TEST(CreateJobTest::retryLifecycle),
+                              TEST(CreateJobTest::retryWithChildren),
+                              TEST(CreateJobTest::retryJobComesFirst),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
@@ -233,5 +239,169 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "grandchild";
         command["parentJobID"] = childID;
         tester->executeWaitVerifyContent(command, "405 Cannot create grandchildren");
+    }
+
+    void retryRecurringJobs() {
+        SData command("CreateJob");
+        command["name"] = "test";
+        command["repeat"] = "SCHEDULED, +1 HOUR";
+        command["retryAfter"] = "10";
+        tester->executeWaitVerifyContent(command, "402 Recurring auto-retrying jobs are not supported");
+    }
+
+    void retryWithMalformedValue() {
+        SData command("CreateJob");
+        command["name"] = "test";
+        command["retryAfter"] = "10";
+        tester->executeWaitVerifyContent(command, "402 Malformed retryAfter");
+    }
+
+    void retryUnique() {
+        SData command("CreateJob");
+        command["name"] = "test";
+        command["retryAfter"] = "+10 HOUR";
+        command["unique"] = "true";
+        tester->executeWaitVerifyContent(command, "405 Unique jobs can't be retried");
+    }
+
+    void retryLifecycle() {
+        // Create a retryable job
+        SData command("CreateJob");
+        string jobName = "testRetryable";
+        string retryValue = "+1 SECOND";
+        command["name"] = jobName;
+        command["retryAfter"] = retryValue;
+
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Query the db to confirm it was created correctly
+        SQResult originalJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
+        ASSERT_EQUAL(originalJob[0][1], jobID);
+        ASSERT_EQUAL(originalJob[0][2], "QUEUED");
+        ASSERT_EQUAL(originalJob[0][3], jobName);
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
+        ASSERT_EQUAL(originalJob[0][5], "");
+        ASSERT_EQUAL(originalJob[0][6], "");
+        ASSERT_EQUAL(originalJob[0][7], "{}");
+        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
+        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(originalJob[0][10], retryValue);
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = jobName;
+        response = tester->executeWaitVerifyContentTable(command);
+
+        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+
+        // Query the db and confirm that state, nextRun and lastRun are correct
+        SQResult jobData;
+        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+
+        ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
+        string nextRun = jobData[0][1];
+        string lastRun = jobData[0][2];
+        struct tm tm1;
+        struct tm tm2;
+        strptime(nextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t nextRunTime = mktime(&tm1);
+        strptime(lastRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t lastRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
+
+        // Get the job, confirm error
+        tester->executeWaitVerifyContent(command, "404 No job found");
+        // Wait 5 seconds, get the job, confirm no error
+        sleep(1);
+        response = tester->executeWaitVerifyContentTable(command);
+
+        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+
+        // Get the job, confirm error
+        tester->executeWaitVerifyContent(command, "404 No job found");
+
+        // Try to update job, get error because of no data
+        command.clear();
+        command.methodLine = "UpdateJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command, "402 Missing data");
+
+        // Try to update job, get error because it's running
+        command["data"] = "{}";
+        tester->executeWaitVerifyContent(command, "402 Auto-retrying jobs cannot be updated once running");
+
+        // Finish the job
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Query db and confirm job doesn't exist
+        tester->readDB("SELECT state, nextRun, lastRun, FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        ASSERT_TRUE(jobData.empty());
+    }
+
+    void retryWithChildren() {
+        SData command("CreateJob");
+        string jobName = "testRetryable";
+        string retryValue = "+5 SECONDS";
+        command["name"] = jobName;
+        command["retryAfter"] = retryValue;
+
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Try to create child
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "testRetryableChild";
+        command["parentJobID"] = jobID;
+        tester->executeWaitVerifyContent(command, "402 Auto-retrying parents cannot have children");
+    }
+
+    // TODO This should actually go in a GetJob test
+    // Retryable job (after retry period has passed) comes before QUEUED job
+    void retryJobComesFirst() {
+        // Create retryable job
+        SData command("CreateJob");
+        string jobName = "testRetryable";
+        string retryValue = "+1 SECOND";
+        command["name"] = jobName;
+        command["retryAfter"] = retryValue;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string retryableJob = response["jobID"];
+
+
+        // Get a job and confirm it's the first job we created
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "*Retryable";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], retryableJob);
+
+        // Sleep for a second so we're past the retryAfter time
+        sleep(1);
+
+        // Create a non-retryable job
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "notRetryable";
+
+        response = tester->executeWaitVerifyContentTable(command);
+        string nonRetryableJob = response["jobID"];
+
+        // Get a job, should be the first job we created (because it's been in REQUEUED for more than the retryAfter time)
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "*Retryable";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], retryableJob);
     }
 } __CreateJobTest;
