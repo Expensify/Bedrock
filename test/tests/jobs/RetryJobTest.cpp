@@ -47,7 +47,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish RUNNING jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -85,7 +85,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish child job when parent is PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish child job when parent is PAUSED");
     }
 
     // Child jobs that are in the FINISHED or CANCELLED state should be deleted when the parent is finished

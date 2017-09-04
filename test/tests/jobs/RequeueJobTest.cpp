@@ -20,13 +20,13 @@ struct RequeueJobTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(); }
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
     }
 
     void tearDownClass() { delete tester; }
@@ -35,7 +35,7 @@ struct RequeueJobTest : tpunit::TestFixture {
     void nonExistentJob() {
         SData command("RequeueJob");
         command["jobID"] = "1";
-        tester->executeWait(command, "404 No job with this jobID");
+        tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Throw an error if the job is not in RUNNING state
@@ -43,14 +43,14 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Retry it
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
-        tester->executeWait(command, "405 Can only requeue/finish RUNNING jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish RUNNING jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -58,21 +58,21 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
         // It's not possible to put the child in the QUEUED state without the parent being paused
@@ -82,13 +82,13 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "Query";
         command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + childID + ";";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry the child
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = childID;
-        tester->executeWait(command, "405 Can only requeue/finish child job when parent is PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish child job when parent is PAUSED");
     }
 
     // Child jobs that are in the FINISHED or CANCELLED state should be deleted when the parent is finished
@@ -96,27 +96,27 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Create the children
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child_finished";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string finishedChildID = response["jobID"];
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child_cancelled";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string cancelledChildID = response["jobID"];
         command.clear();
 
@@ -124,24 +124,24 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Cancel a child
         // if this goes 2nd this doesn't requeue the parent job
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = cancelledChildID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Finish a child
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishedChildID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         /* I don't know how to get a child in the PAUSED state, so ignoring this for now
         // Create a grandchild and finish a child so the child in state PAUSED
@@ -149,34 +149,34 @@ struct RequeueJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child_paused";
         command["parentJobID"] = parentID;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string pausedChild = response["jobID"];
         command.methodLine = "GetJob";
         command["name"] = "child_paused";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "grandchild";
         command["parentJobID"] = pausedChild;
-        response = getJsonResult(tester, command);
+        response = tester->executeWaitVerifyContentTable(command);
         string grandchild = response["jobID"];
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = pausedChild;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         */
 
         // Retry the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = parentID;
         // TODO: construct this dynamically
         command["nextRun"] = "2018-08-30 21:31:57";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         SQResult result;
@@ -189,14 +189,14 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         STable data;
@@ -208,7 +208,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         command["data"] = SComposeJSONObject(data);
         // TODO: construct this dynamically
         command["nextRun"] = "2018-08-30 21:31:57";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
         SQResult result;
@@ -221,21 +221,21 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
         command["delay"] = "5";
-        tester->executeWait(command, "402 Cannot requeue job, no nextRun is set");
+        tester->executeWaitVerifyContent(command, "402 Cannot requeue job, no nextRun is set");
     }
 
     // Retry a job with a repeat
@@ -244,20 +244,20 @@ struct RequeueJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "STARTED, +1 HOUR";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Confirm nextRun is in 1 hour
         SQResult result;
@@ -275,20 +275,20 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         command.clear();
         command.methodLine = "RequeueJob";
         command["jobID"] = jobID;
-        tester->executeWait(command, "402 Cannot requeue job, no nextRun is set");
+        tester->executeWaitVerifyContent(command, "402 Cannot requeue job, no nextRun is set");
     }
 
     // Confirm nextrun is updated appropriately
@@ -296,14 +296,14 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         command.clear();
@@ -312,7 +312,7 @@ struct RequeueJobTest : tpunit::TestFixture {
         // TODO: construct this dynamically
         const string nextRun = "2018-08-30 21:31:57";
         command["nextRun"] = nextRun;
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
         SQResult result;
@@ -325,14 +325,14 @@ struct RequeueJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = getJsonResult(tester, command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
         // Get the job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Retry it
         command.clear();
@@ -341,16 +341,11 @@ struct RequeueJobTest : tpunit::TestFixture {
         command["name"] = "newName";
         // TODO: construct this dynamically
         command["nextRun"] = "2018-08-30 21:31:57";
-        tester->executeWait(command);
+        tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
         SQResult result;
         tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "newName");
     }
-    STable getJsonResult(BedrockTester* tester, SData command) {
-        string resultJson = tester->executeWait(command);
-        return SParseJSONObject(resultJson);
-    }
 } __RequeueJobTest;
-/// copy all of these tests to a retry job as well
