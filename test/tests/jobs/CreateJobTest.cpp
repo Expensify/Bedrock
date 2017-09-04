@@ -366,7 +366,6 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "402 Auto-retrying parents cannot have children");
     }
 
-    // TODO This should actually go in a GetJob test
     // Retryable job (after retry period has passed) comes before QUEUED job
     void retryJobComesFirst() {
         // Create retryable job
