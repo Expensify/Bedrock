@@ -434,7 +434,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // Alert if job is unique and retryAfter is set
-                // This shouldn't happen since we validate this peekCommand
+                // This shouldn't happen since we validate this in peekCommand
                 if (SContains(job, "retryAfter") && job["retryAfter"] != "") {
                     SALERT("Unique jobs shouldn't be retried");
                 }
@@ -492,7 +492,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // Alert if job has children and retryAfter is set
-                // This shouldn't happen since we validate this peekCommand
+                // This shouldn't happen since we validate this in peekCommand
                 if (result[0][2] != "") {
                     SALERT("Auto-retrying parents shouldn't have children, parentJobID: " << parentJobID );
                 }
