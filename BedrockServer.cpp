@@ -692,7 +692,8 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(true), _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
+    _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")),
+    _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;
 
