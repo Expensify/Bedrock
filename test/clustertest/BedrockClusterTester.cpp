@@ -8,7 +8,6 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
     cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
-    _args.reserve(size);
 
     int nodePortBase = 9500;
     // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
@@ -28,13 +27,15 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         // on the same machine, they can't share a port.
         int serverPort = 9000 + i;
         int nodePort = nodePortBase + i;
+        int controlPort = 19999 + i;
 
         // Construct all the arguments for each server.
-        string serverHost = "127.0.0.1:" + to_string(serverPort);
-        string nodeHost   = "127.0.0.1:" + to_string(nodePort);
-        string db         = BedrockTester::getTempFileName("cluster_node_" + to_string(i) + "_");
-        string priority   = to_string(100 - (i * 10));
-        string nodeName   = nodeNamePrefix + to_string(i);
+        string serverHost  = "127.0.0.1:" + to_string(serverPort);
+        string nodeHost    = "127.0.0.1:" + to_string(nodePort);
+        string controlHost = "127.0.0.1:" + to_string(controlPort);
+        string db          = BedrockTester::getTempFileName("cluster_node_" + to_string(i) + "_");
+        string priority    = to_string(100 - (i * 10));
+        string nodeName    = nodeNamePrefix + to_string(i);
 
         // Construct our list of peers.
         list<string> peerList;
@@ -50,19 +51,25 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
 
         // Ok, build a legit map out of these.
         map <string, string> args = {
-            {"-serverHost", serverHost},
-            {"-nodeHost",   nodeHost},
-            {"-db",         db},
-            {"-priority",   priority},
-            {"-nodeName",   nodeName},
-            {"-peerList",   peerString},
-            {"-plugins",    "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-serverHost",  serverHost},
+            {"-nodeHost",    nodeHost},
+            {"-controlPort", controlHost},
+            {"-db",          db},
+            {"-priority",    priority},
+            {"-nodeName",    nodeName},
+            {"-peerList",    peerString},
+            {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
         };
-
-        // save this map for later.
-        _args.push_back(args);
-
-        _cluster.emplace_back(db, serverHost, queries, args, false);
+        _cluster.emplace_back(args, queries, false);
+    }
+    list<thread> threads;
+    for (size_t i = 0; i < _cluster.size(); i++) {
+        threads.emplace_back([i, this](){
+            _cluster[i].startServer();
+        });
+    }
+    for (auto& i : threads) {
+        i.join();
     }
 
     // Ok, now we should be able to wait for the cluster to come up. Let's wait until each server responds to 'status',
@@ -78,7 +85,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             }
             try {
                 SData status("Status");
-                string response = _cluster[i].executeWait(status, "200");
+                string response = _cluster[i].executeWaitVerifyContent(status);
                 STable json = SParseJSONObject(response);
                 states[i] = json["state"];
                 break;
@@ -118,5 +125,5 @@ void BedrockClusterTester::stopNode(size_t nodeIndex)
 
 void BedrockClusterTester::startNode(size_t nodeIndex)
 {
-    _cluster[nodeIndex].startServer(_args[nodeIndex], true);
+    _cluster[nodeIndex].startServer();
 }

@@ -18,7 +18,7 @@ struct ReadTest : tpunit::TestFixture {
     void simpleRead() {
         SData status("Query");
         status["query"] = "SELECT 1;";
-        string response = tester->executeWait(status);
+        string response = tester->executeWaitVerifyContent(status);
         int val = SToInt(response);
         ASSERT_EQUAL(val, 1);
     }
@@ -26,7 +26,7 @@ struct ReadTest : tpunit::TestFixture {
     void simpleReadWithHttp() {
         SData status("Query / HTTP/1.1");
         status["query"] = "SELECT 1;";
-        string response = tester->executeWait(status);
+        string response = tester->executeWaitVerifyContent(status);
         int val = SToInt(response);
         ASSERT_EQUAL(val, 1);
     }
@@ -34,7 +34,7 @@ struct ReadTest : tpunit::TestFixture {
     void readNoSemicolon() {
         SData status("Query");
         status["query"] = "SELECT 1";
-        tester->executeWait(status, "502 Query aborted");
+        tester->executeWaitVerifyContent(status, "502");
     }
 
 } __ReadTest;

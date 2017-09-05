@@ -14,7 +14,7 @@ class BedrockServer : public SQLiteServer {
         // This is the state until we begin shutting down.
         RUNNING,
 
-        // In postPoll, this will be set if we received a SIGTERM or SIGINT since gthe last poll iteration. This will
+        // In postPoll, this will be set if we received a SIGTERM or SIGINT since the last poll iteration. This will
         // happen as soon as we've begun the shutdown process.
         START_SHUTDOWN,
 
@@ -73,11 +73,14 @@ class BedrockServer : public SQLiteServer {
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
     // in which case the `suppress` setting will be forced.
-    void suppressCommandPort(bool suppress, bool manualOverride = false);
+    void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
 
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
     virtual bool canStandDown();
+
+    // Returns whether or not this server was configured to backup when it completed shutdown.
+    bool backupOnShutdown();
 
   private:
     // The name of the sync thread.
@@ -178,9 +181,14 @@ class BedrockServer : public SQLiteServer {
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
     mutex _syncMutex;
 
-    // Functions for checking for and responding to status commands.
+    // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(BedrockCommand& command);
     void _status(BedrockCommand& command);
+    bool _isControlCommand(BedrockCommand& command);
+    void _control(BedrockCommand& command);
+
+    // This stars the server shutting down.
+    void _beginShutdown(const string& reason);
 
     // This counts the number of commands that are being processed that might be able to write to the database. We
     // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
@@ -216,4 +224,11 @@ class BedrockServer : public SQLiteServer {
 
     // Flag indicating whether multi-write is enabled.
     atomic<bool> _multiWriteEnabled;
+
+    // Set this to cause a backup to run when the server shuts down.
+    bool _backupOnShutdown;
+
+    // Pointer to the control port, so we know which port not to shut down when we close the command ports.
+    Port* _controlPort;
+    Port* _commandPort;
 };

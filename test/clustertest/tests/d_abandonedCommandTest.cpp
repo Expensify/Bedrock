@@ -59,7 +59,7 @@ struct d_abandonedCommandTest : tpunit::TestFixture {
                 SData query("Query");
                 query["Query"] = "SELECT value FROM test WHERE id >= 600;";
 
-                string result = brtester->executeWait(query);
+                string result = brtester->executeWaitVerifyContent(query);
                 SAUTOLOCK(m);
                 results[i] = result;
             });
