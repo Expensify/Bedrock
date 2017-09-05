@@ -172,7 +172,7 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
-    static constexpr auto STATUS_BLACKLIST         = "SetCommandBlacklist";
+    static constexpr auto STATUS_BLACKLIST         = "SetParallelCommandBlacklist";
     static constexpr auto STATUS_MULTIWRITE        = "EnableMultiWrite";
 
     // This *only* exists so that status commands can pull info from this node.

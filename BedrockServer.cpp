@@ -557,9 +557,7 @@ void BedrockServer::worker(SData& args,
                     }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
-                    bool canWriteParallel = false;
-                    // Multi-write needs to be enabled.
-                    canWriteParallel = server._multiWriteEnabled.load();
+                    bool canWriteParallel = server._multiWriteEnabled.load();
                     if (canWriteParallel) {
                         // If multi-write is enabled, then we need to make sure the command isn't blacklisted.
                         SAUTOLOCK(_blacklistedParallelCommandMutex);
@@ -1308,15 +1306,12 @@ void BedrockServer::_status(BedrockCommand& command) {
             BedrockConflictMetrics::setFraction(SToFloat(request["autoBlacklistConflictFraction"]));
         }
 
-        // Enable extra logging in the commit lock timer.
-        decltype(SQLite::g_commitLock)::enableExtraLogging.store(!_blacklistedParallelCommands.empty());
-
         // Prepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
     } else if (SIEquals(request.methodLine, STATUS_MULTIWRITE)) {
         if (request.isSet("Enable")) {
-            _multiWriteEnabled.store((request["Enable"] == "true"));
+            _multiWriteEnabled.store(request.test("Enable"));
             response.methodLine = "200 OK";
         } else {
             response.methodLine = "500 Must Specify 'Enable'";
