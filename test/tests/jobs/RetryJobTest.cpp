@@ -12,6 +12,8 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::hasRepeat),
+                              TEST(RetryJobTest::simplyRetryWithNextRun),
+                              TEST(RetryJobTest::changeName),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -47,7 +49,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish RUNNING jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -85,7 +87,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command, "405 Can only requeue/finish child job when parent is PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish child job when parent is PAUSED");
     }
 
     // Child jobs that are in the FINISHED or CANCELLED state should be deleted when the parent is finished
@@ -124,7 +126,7 @@ struct RetryJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Cancel a child
-        // if this goes 2nd this doesn't requeue the parent job
+        // if this goes 2nd this doesn't retry the parent job
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = cancelledChildID;
@@ -277,5 +279,71 @@ struct RetryJobTest : tpunit::TestFixture {
         strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
         time_t nextRunTime = mktime(&tm2);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // Confirm nextrun is updated appropriately
+    void simplyRetryWithNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        const string nextRun = getTimeInFuture(10);
+        command["nextRun"] = nextRun;
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], nextRun);
+    }
+
+    // Update the name
+    void changeName() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["name"] = "newName";
+        command["nextRun"] = getTimeInFuture(10);
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the data updated
+        SQResult result;
+        tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "newName");
+    }
+
+    string getTimeInFuture(int numSeconds) {
+        time_t t = time(0);
+        char buffer[26];
+        t = t + numSeconds;
+        struct tm* tm = localtime(&t);
+
+        strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", tm);
+        return buffer;
     }
 } __RetryJobTest;

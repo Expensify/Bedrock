@@ -722,11 +722,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "RequeueJob") || SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob is deprecated, use RequeueJob
-        // - RequeueJob( jobID, nextRun, [name], [data] )
+    else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
         //
-        //     Re-queues a RUNNING job to be run at "nextRun"
+        //     Re-queues a RUNNING job to be run at "nextRun" or "delay"
         //     unless the job is configured to "repeat" in which it will
         //     just schedule for the next repeat time.
         //     Optionally, the job name can be updated.
@@ -735,7 +734,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - jobID   - ID of the job to requeue
-        //     - nextRun - timestamp of next scheduled run
+        //     - delay   - Number of seconds to wait before retrying
+        //     - nextRun - datetime of next scheduled run
         //     - name    - An arbitrary string identifier (case insensitive)
         //     - data    - Data to associate with this job
         //
@@ -770,8 +770,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING") {
-            SWARN("Trying to finish/requeue job#" << jobID << ", but isn't RUNNING (" << state << ")");
-            throw "405 Can only requeue/finish RUNNING jobs";
+            SWARN("Trying to finish/retry job#" << jobID << ", but isn't RUNNING (" << state << ")");
+            throw "405 Can only retry/finish RUNNING jobs";
         }
 
         // If we have a parent, make sure it is PAUSED.  This is to just
@@ -780,8 +780,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (parentJobID) {
             auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
-                SWARN("Trying to finish/requeue job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
-                throw "405 Can only requeue/finish child job when parent is PAUSED";
+                SWARN("Trying to finish/retry job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
+                throw "405 Can only retry/finish child job when parent is PAUSED";
             }
         }
 
@@ -818,9 +818,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             return true;
         }
 
-        // If we're doing RequeueJob and we want to update the name, let's do that
+        // If this is RetryJob and we want to update the name, let's do that
         const string& name = request["name"];
-        if (!name.empty() && SIEquals(requestVerb, "RequeueJob")) {
+        if (!name.empty() && SIEquals(requestVerb, "RetryJob")) {
             if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 throw "502 Failed to update job name";
             }
@@ -831,22 +831,22 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (!repeat.empty()) {
             safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
         } else if (SIEquals(requestVerb, "RetryJob")) {
-            // If we're doing RetryJob and there isn't a repeat, construct one with the delay
-            int64_t delay = request.calc64("delay");
-            if (delay < 0) {
-                throw "402 Must specify a non-negative delay when retrying";
-            }
-            repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-            safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
-            if (safeNewNextRun.empty()) {
-                throw "402 Malformed repeat";
-            }
-        } else if (SIEquals(requestVerb, "RequeueJob")) {
             const string& newNextRun = request["nextRun"];
+
             if (newNextRun.empty()) {
-                throw "402 Cannot requeue job, no nextRun is set";
+                SINFO("nextRun isn't set, using delay");
+                int64_t delay = request.calc64("delay");
+                if (delay < 0) {
+                    throw "402 Must specify a non-negative delay when retrying";
+                }
+                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+                safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+                if (safeNewNextRun.empty()) {
+                    throw "402 Malformed repeat";
+                }
+            } else {
+                safeNewNextRun = SQ(newNextRun);
             }
-            safeNewNextRun = SQ(newNextRun);
         }
 
         if (!safeNewNextRun.empty()) {
@@ -861,7 +861,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         } else {
             // We are done with this job.  What do we do with it?
-            SASSERT(!SIEquals(requestVerb, "RequeueJob") || !SIEquals(requestVerb, "RetryJob"));
+            SASSERT(!SIEquals(requestVerb, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
                 if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
