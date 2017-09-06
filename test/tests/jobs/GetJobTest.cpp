@@ -10,6 +10,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testPriorities),
                               TEST(GetJobTest::testPrioritiesWithDifferentNextRunTimes),
                               TEST(GetJobTest::testWithFinishedAndCancelledChildren),
+                              TEST(GetJobTest::testPrioritiesWithRunQueued),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
@@ -87,7 +88,7 @@ struct GetJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "404 No job found");
     }
 
-    // try creating a bunch of jobs at the same nextRun time but different priorities
+    // Create jobs with the same nextRun time but different priorities
     void testPriorities() {
         // Create jobs of different priorities
         // Low
@@ -127,7 +128,7 @@ struct GetJobTest : tpunit::TestFixture {
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
         ASSERT_EQUAL(result.size(), 1);
 
-        // GetJob and confrim that the jobs are returned in high, medium, low order
+        // GetJob and confirm that the jobs are returned in high, medium, low order
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
@@ -196,7 +197,7 @@ struct GetJobTest : tpunit::TestFixture {
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
         ASSERT_EQUAL(result.size(), 6);
 
-        // GetJob and confrim that the first 3 jobs are returned in order of low, medium, high
+        // GetJob and confirm that the first 3 jobs are returned in order of low, medium, high
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
@@ -317,6 +318,91 @@ struct GetJobTest : tpunit::TestFixture {
         childJob = SParseJSONObject(cancelledChildJobs.front());
         ASSERT_EQUAL(childJob["jobID"], cancelledChildID);
         ASSERT_EQUAL(childJob["data"], cancelledChildData);
+    }
+
+    // This is the same as testPriorities but some of the states are set to RUNQUEUED
+    // So we set the the firstRun for all the jobs that don't have a retryAfter to 1 second in the future
+    // This way, after the two jobs with retryAfter are run, the nextRun will be the same for all jobs
+    void testPrioritiesWithRunQueued() {
+        // Create jobs of different priorities
+        // Low
+        SData command("CreateJob");
+        command["name"] = "low_5";
+        command["priority"] = "0";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        list<string> jobList;
+        jobList.push_back(response["jobID"]);
+
+        // High
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "high_1";
+        command["priority"] = "1000";
+        command["retryAfter"] = "+1 SECONDS";
+        response = tester->executeWaitVerifyContentTable(command);
+        jobList.push_back(response["jobID"]);
+
+        // Medium
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "medium_3";
+        command["priority"] = "500";
+        command["retryAfter"] = "+1 SECONDS";
+        response = tester->executeWaitVerifyContentTable(command);
+        jobList.push_back(response["jobID"]);
+
+        // High
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "high_2";
+        command["priority"] = "1000";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
+        response = tester->executeWaitVerifyContentTable(command);
+        jobList.push_back(response["jobID"]);
+
+        // Medium
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "medium_4";
+        command["priority"] = "500";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
+        response = tester->executeWaitVerifyContentTable(command);
+        jobList.push_back(response["jobID"]);
+
+        // Get the two jobs with retryAfter set to put them in a RUNQUEUED state
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "high_1";
+        tester->executeWaitVerifyContent(command);
+        command["name"] = "medium_3";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm they are in the RUNQUEUED state
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE name IN ('high_1', 'medium_3') GROUP BY state;", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+
+        // Sleep for a second and then confirm these jobs all have the same nextRun time
+        sleep(1);
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
+        ASSERT_EQUAL(result.size(), 1);
+
+        // GetJob and confirm that the jobs are returned in high, medium, low order
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "*";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["name"], "high_1");
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["name"], "high_2");
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["name"], "medium_3");
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["name"], "medium_4");
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["name"], "low_5");
     }
 } __GetJobTest;
 
