@@ -242,7 +242,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 if (result.empty()) {
                     throw "404 parentJobID does not exist";
                 }
-                if (!result.empty() && result[0][1] != "") {
+                if (result[0][1] != "") {
                     throw "402 Auto-retrying parents cannot have children";
                 }
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
@@ -533,7 +533,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If no data was provided, use an empty object
-                const string& safeRetryAfter = job["retryAfter"].empty() ? "\"\"" : SQ(job["retryAfter"]);
+                const string& safeRetryAfter = job["retryAfter"].empty() ? SQ("") : SQ(job["retryAfter"]);
 
                 // Create this new job
                 if (!db.write("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
@@ -648,23 +648,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         list<STable> retriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
-            SASSERT(result[c].size() == 5);
-
-            // Add jobID to the respective list
-            if (result[c][4] == "") {
-                nonRetriableJobs.push_back(result[c][0]);
-            } else {
-                STable job;
-                job["jobID"] = result[c][0];
-                job["retryAfter"] = result[c][4];
-                retriableJobs.push_back(job);
-            }
-
-            // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
-            SQResult childJobs;
-            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
-                throw "502 Failed to select finished child jobs";
-            }
+            SASSERT(result[c].size() == 5); // jobID, name, data, parentJobID, retryAfter
 
             // Add this object to our output
             STable job;
@@ -673,40 +657,59 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             job["name"] = result[c][1];
             job["data"] = result[c][2];
             int64_t parentJobID = SToInt64(result[c][3]);
+
             if (parentJobID) {
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
-            if (!childJobs.empty()) {
-                // Add associative arrays of all children depending on their states
-                list<string> finishedChildJobArray;
-                list<string> cancelledChildJobArray;
-                for (auto row : childJobs.rows) {
-                    STable childJob;
-                    childJob["jobID"] = row[0];
-                    childJob["data"] = row[1];
 
-                    if (row[2] ==  "FINISHED") {
-                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
-                    } else {
-                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
-                    }
+            // Add jobID to the respective list depending on if retryAfter is set
+            if (result[c][4] != "") {
+                STable job;
+                job["jobID"] = result[c][0];
+                job["retryAfter"] = result[c][4];
+                retriableJobs.push_back(job);
+            } else {
+                nonRetriableJobs.push_back(result[c][0]);
+
+                // Only non-retryable jobs can have children so see if this job has any
+                // FINISHED/CANCELLED child jobs, indicating it is being resumed
+                SQResult childJobs;
+                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                    throw "502 Failed to select finished child jobs";
                 }
-                job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
-                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
+
+                if (!childJobs.empty()) {
+                    // Add associative arrays of all children depending on their states
+                    list<string> finishedChildJobArray;
+                    list<string> cancelledChildJobArray;
+                    for (auto row : childJobs.rows) {
+                        STable childJob;
+                        childJob["jobID"] = row[0];
+                        childJob["data"] = row[1];
+
+                        if (row[2] ==  "FINISHED") {
+                            finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                        } else {
+                            cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
+                        }
+                    }
+                    job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                    job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
+                }
             }
+
             jobList.push_back(SComposeJSONObject(job));
         }
 
         // Update jobs without retryAfter
         if (!nonRetriableJobs.empty()) {
-            string jobIDs = SComposeList(nonRetriableJobs);
-            SINFO("Updating jobs without retryAfter " << jobIDs);
+            SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
             string updateQuery = "UPDATE jobs "
                                  "SET state='RUNNING', "
-                                 "lastRun=" + SCURRENT_TIMESTAMP() + " "
-                                 "WHERE jobID IN (" + jobIDs + ");";
+                                     "lastRun=" + SCURRENT_TIMESTAMP() + " "
+                                 "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
             if (!db.write(updateQuery)) {
                 throw "502 Update failed";
             }
@@ -716,13 +719,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (!retriableJobs.empty()) {
             SINFO("Updating jobs with retryAfter");
             for (auto job : retriableJobs) {
-                string jobID = job["jobID"];
-                string retryAfter = job["retryAfter"];
                 string updateQuery = "UPDATE jobs "
                                      "SET state='RUNQUEUED', "
-                                     "  lastRun=" + SCURRENT_TIMESTAMP() + ", "
-                                     "  nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(retryAfter) + ") "
-                                     "WHERE jobID = " + jobID + ";";
+                                         "lastRun=" + SCURRENT_TIMESTAMP() + ", "
+                                         "nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(job["retryAfter"]) + ") "
+                                     "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.write(updateQuery)) {
                     throw "502 Update failed";
                 }
@@ -1108,21 +1109,14 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
         return "";
     }
 
-    // Validate the sqlite date modifiers
-    if (!_isValidSQLiteDateModifier(SComposeList(parts))){
-        SWARN("Syntax error, failed parsing repeat");
-        return "";
-    }
-
     for (const string& part : parts) {
-        // Simple regexp validation
-        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
-            safeParts.push_back(SQ(part));
-        } else if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
-            safeParts.push_back(SQ(part));
-        } else if (SREMatch("^WEEKDAY [0-6]$", part)) {
-            safeParts.push_back(SQ(part));
+        // Validate the sqlite date modifiers
+        if (!_isValidSQLiteDateModifier(part)){
+            SWARN("Syntax error, failed parsing repeat "+part);
+            return "";
         }
+
+        safeParts.push_back(SQ(part));
     }
 
     // Combine the parts together and return the full DATETIME statement
