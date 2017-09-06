@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <test/tests/jobs/Utils.h>
 
 struct FinishJobTest : tpunit::TestFixture {
     FinishJobTest()
@@ -310,15 +311,10 @@ struct FinishJobTest : tpunit::TestFixture {
         command["delay"] = "5";
         tester->executeWaitVerifyContent(command);
 
-        // Assert the new nextRun value is correct
+        // Assert the new nextRun time is 5 seconds after the original nextRun time
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        string currentNextRun = result[0][0];
-        struct tm tm1;
-        struct tm tm2;
-        strptime(originalNextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t originalNextRunTime = mktime(&tm1);
-        strptime(currentNextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t currentNextRunTime = mktime(&tm2);
+        time_t currentNextRunTime = getTimestampForDateTimeString(result[0][0]);
+        time_t originalNextRunTime = getTimestampForDateTimeString(originalNextRun);
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
     }
 
@@ -343,15 +339,11 @@ struct FinishJobTest : tpunit::TestFixture {
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command);
 
-        // Confirm nextRun is in 1 hour
+        // Confirm nextRun is in 1 hour from the created time
         SQResult result;
         tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        struct tm tm1;
-        struct tm tm2;
-        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t createdTime = mktime(&tm1);
-        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t nextRunTime = mktime(&tm2);
+        time_t createdTime = getTimestampForDateTimeString(result[0][0]);
+        time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
     }
 
@@ -370,10 +362,19 @@ struct FinishJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
+        // Confirm the job is in RUNQUEUED
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+
         // Finish it
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command);
+
+        // Finishing the job should remove it from the table
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_TRUE(result.empty());
     }
 } __FinishJobTest;

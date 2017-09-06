@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <test/tests/jobs/Utils.h>
 
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
@@ -299,27 +300,20 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
 
-        // Query the db and confirm that state, nextRun and lastRun are correct
+        // Query the db and confirm that state, nextRun and lastRun are 1 second apart
         SQResult jobData;
         tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
-
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
-        string nextRun = jobData[0][1];
-        string lastRun = jobData[0][2];
-        struct tm tm1;
-        struct tm tm2;
-        strptime(nextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t nextRunTime = mktime(&tm1);
-        strptime(lastRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t lastRunTime = mktime(&tm2);
+        time_t nextRunTime = getTimestampForDateTimeString(jobData[0][1]);
+        time_t lastRunTime = getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
 
         // Get the job, confirm error
         tester->executeWaitVerifyContent(command, "404 No job found");
-        // Wait 5 seconds, get the job, confirm no error
+
+        // Wait 1 second, get the job, confirm no error
         sleep(1);
         response = tester->executeWaitVerifyContentTable(command);
-
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
