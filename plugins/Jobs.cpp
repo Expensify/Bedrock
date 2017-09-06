@@ -223,7 +223,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Throw if retryAfter was passed for unique job
-            if (SContains(job, "retryAfter") && SContains(job, "unique") && job["unique"] == "true") {
+            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && SContains(job, "unique") && job["unique"] == "true") {
                 throw "405 Unique jobs can't be retried";
             }
 
@@ -233,10 +233,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter "
-                            "FROM jobs "
-                            "WHERE jobID=" + SQ(parentJobID) + ";",
-                            result)) {
+                if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     throw "502 Select failed";
                 }
                 if (result.empty()) {
@@ -432,12 +429,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!result.empty()) {
                     updateJobID = SToInt64(result[0][0]);
                 }
-
-                // Alert if job is unique and retryAfter is set
-                // This shouldn't happen since we validate this in peekCommand
-                if (SContains(job, "retryAfter") && job["retryAfter"] != "") {
-                    SALERT("Unique jobs shouldn't be retried");
-                }
             }
 
             // If no "firstRun" was provided, use right now
@@ -489,12 +480,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][1], "0")) {
                     SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
                     throw "405 Cannot create grandchildren";
-                }
-
-                // Alert if job has children and retryAfter is set
-                // This shouldn't happen since we validate this in peekCommand
-                if (result[0][2] != "") {
-                    SALERT("Auto-retrying parents shouldn't have children, parentJobID: " << parentJobID );
                 }
             }
 
@@ -831,6 +816,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
+        // Verify there is a job like this and it's running
         SQResult result;
         if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID "
                      "FROM jobs "
@@ -838,11 +824,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             throw "502 Select failed";
         }
-
-        // Verify there is a job like this and it's running
         if (result.empty()) {
             throw "404 No job with this jobID";
         }
+
         const string& state = result[0][0];
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
