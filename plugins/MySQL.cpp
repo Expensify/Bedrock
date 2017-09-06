@@ -10,7 +10,7 @@ MySQLPacket::MySQLPacket() {
 
 string MySQLPacket::serialize() {
     // Wrap in a 3-byte header
-    uint32_t payloadLength = payload.size();
+    payloadLength = payload.size();
     string header;
     header.resize(4);
     memcpy(&header[0], &payloadLength, 3);
@@ -24,9 +24,18 @@ int MySQLPacket::deserialize(const string& packet) {
         return 0;
     }
 
+    uint8_t lb0 = packet[0];
+    uint8_t lb1 = packet[1];
+    uint8_t lb2 = packet[2];
+
     // Has a header, parse it out
-    uint32_t payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
+    payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
     sequenceID = (uint8_t)packet[3];
+
+    SINFO("TYLER: " << "Length byte 0:" << (unsigned int)lb0);
+    SINFO("TYLER: " << "Length byte 1:" << (unsigned int)lb1);
+    SINFO("TYLER: " << "Length byte 2:" << (unsigned int)lb2);
+    SINFO("TYLER: " << "sequenceID:" << (unsigned int)sequenceID);
 
     // Do we have enough data for the full payload?
     if (packet.size() < (4 + payloadLength)) {
@@ -34,8 +43,7 @@ int MySQLPacket::deserialize(const string& packet) {
     }
 
     // Have the full payload, parse it out
-    payload.resize(payloadLength);
-    memcpy(&payload[0], &packet[4], payloadLength);
+    payload = packet.substr(4, payloadLength);
 
     // Indicate that we've consumed this full packet
     return 4 + payloadLength;
@@ -78,7 +86,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += (string) "4.0.0"; // server version
+    handshake.payload += (string) "5.0.0"; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -170,6 +178,8 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     MySQLPacket eofPacket;
     eofPacket.sequenceID = ++sequenceID;
     SAppend(eofPacket.payload, "\xFE", 1); // EOF
+    uint32_t zero = 0;
+    SAppend(eofPacket.payload, &zero, 4); // EOF
     sendBuffer += eofPacket.serialize();
 
     // Add all the rows
@@ -231,7 +241,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << (int)packet.payload[0] << ": '" << SToHex(packet.serialize()) << "'");
+        SDEBUG("Received command #" << (int)packet.sequenceID << " (length: " << packet.payloadLength << "): '" << SToHex(packet.serialize()) << ", RAW: " << packet.payload << "'");
         SConsumeFront(s->recvBuffer, packetSize);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
@@ -283,6 +293,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                SINFO("Fake response sent.");
             } else if (SIEquals(query, "SHOW DATABASES;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
@@ -304,6 +315,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")) {
                 // Ignore
+                SINFO("Responding OK to SET or USE query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
