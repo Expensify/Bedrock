@@ -10,17 +10,9 @@
  * bits of functionality.
  */
 
-void cleanup() {
-    if (BedrockTester::serverPIDs.size()) {
-        while (BedrockTester::serverPIDs.size()) {
-            BedrockTester::stopServer(*(BedrockTester::serverPIDs.begin()));
-        }
-    }
-}
-
 void sigclean(int sig) {
     cout << "Got SIGINT, cleaning up." << endl;
-    cleanup();
+    BedrockTester::stopAll();
     cout << "Done." << endl;
     exit(1);
 }

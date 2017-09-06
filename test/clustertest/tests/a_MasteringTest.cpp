@@ -25,7 +25,7 @@ struct a_MasteringTest : tpunit::TestFixture {
                 BedrockTester* brtester = tester->getBedrockTester(i);
 
                 SData cmd("Status");
-                string response = brtester->executeWait(cmd);
+                string response = brtester->executeWaitVerifyContent(cmd);
                 STable json = SParseJSONObject(response);
                 results[i] = json["state"];
             }
@@ -51,7 +51,7 @@ struct a_MasteringTest : tpunit::TestFixture {
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = newMaster->executeWait(cmd);
+            string response = newMaster->executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
                 success = true;
@@ -81,7 +81,7 @@ struct a_MasteringTest : tpunit::TestFixture {
                     SData status("Status");
                     status["writeConsistency"] = "ASYNC";
 
-                    auto result = brtester->executeWait(status);
+                    auto result = brtester->executeWaitVerifyContent(status);
                     lock_guard<decltype(m)> lock(m);
                     responses[i] = result;
                 });

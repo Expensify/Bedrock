@@ -47,8 +47,4 @@ class BedrockClusterTester {
 
     // A list of all our testers that make up our cluster.
     vector<BedrockTester> _cluster;
-
-    // The arguments we start each server with. We store them so we can bring them down and back up with the same
-    // settings.
-    vector<map<string, string>> _args;
 };

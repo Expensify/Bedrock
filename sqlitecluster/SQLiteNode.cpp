@@ -2,6 +2,7 @@
 #include "SQLiteNode.h"
 #include "SQLiteServer.h"
 #include "SQLiteCommand.h"
+#include <cxxabi.h>
 
 // Introduction
 // ------------
@@ -1372,11 +1373,17 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Done synchronizing
             _recvSynchronize(peer, message);
             if (_db.getCommitCount() != _masterPeer->calcU64("CommitCount")) {
-                throw "Incomplete synchronizationg";
+                throw "Incomplete synchronization";
             }
             SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
                   << "), SLAVING");
-            _changeState(SLAVING);
+            try {
+                _changeState(SLAVING);
+            } catch (...) {
+                string exName(abi::__cxa_current_exception_type()->name());
+                SWARN("Unknown exception in _changeState: " << exName);
+                throw;
+            }
         } catch (const char* e) {
             // Transaction failed
             SWARN("Subscription failed '" << e << "', reconnecting to master and re-SEARCHING.");
@@ -1899,7 +1906,13 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         SData state("STATE");
         state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
-        _sendToAllPeers(state);
+        try {
+            _sendToAllPeers(state);
+        } catch (...) {
+            string exName(abi::__cxa_current_exception_type()->name());
+            SWARN("Unknown exception in _sendToAllPeers: " << exName);
+            throw;
+        }
     }
 }
 
