@@ -1,5 +1,6 @@
 #include "libstuff.h"
 #include <cxxabi.h>
+#include <execinfo.h> // for backtrace
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -175,9 +176,24 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // Not a PING or PONG; pass to the child class
                             try {
                                 _onMESSAGE(peer, message);
+                            } catch (const string& e) {
+                                SWARN("Caught string in _onMESSAGE: " << e);
+                                throw;
+                            } catch (const char* e) {
+                                SWARN("Caught char* in _onMESSAGE: " << e);
+                                throw;
                             } catch (...) {
                                 string exName(abi::__cxa_current_exception_type()->name());
-                                SWARN("Unknown exception: " << exName);
+                                int status;
+                                char* demangled = abi::__cxa_demangle(exName.c_str(), 0, 0, &status);
+                                SWARN("Unknown exception in _onMESSAGE: " << exName << "("
+                                      << demangled << "). Generating a stack track before the stack unwinds...");
+                                void* callstack[100];
+                                int depth = backtrace(callstack, 100);
+                                char** symbols = backtrace_symbols(callstack, depth);
+                                for (int c = 0; c < depth; ++c) {
+                                    SWARN(symbols[c]);
+                                }
                                 throw;
                             }
                         }
