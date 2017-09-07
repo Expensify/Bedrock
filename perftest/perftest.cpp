@@ -18,6 +18,7 @@ static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
 static int global_querySize = 10;
+static int global_numa = 0;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -64,8 +65,12 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
 
 // This runs a test query some number of times, optionally showing progress
 void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& testQuery, bool showProgress) {
-    // Test NUMA characteristics
-    cout << "Thread #" << threadNum << " prefers node " << numa_preferred() << endl;
+    // If we're numa aware, spread the memory across all nodes
+    if (global_numa) {
+        numa_run_on_node(threadNum%numa_num_task_nodes());
+        numa_set_preferred(threadNum%numa_num_task_nodes());
+        cout << "Thread #" << threadNum << " prefers node " << numa_preferred() << endl;
+    }
 
     // Run however many queries are requested
     for (int q=0; q<numQueries; q++) {
@@ -84,7 +89,12 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
     }
 }
 
-sqlite3* openDatabase() {
+sqlite3* openDatabase(int threadNum) {
+    // If we're numa aware, spread the memory across all nodes
+    if (global_numa) {
+        numa_set_preferred(threadNum%numa_num_task_nodes());
+    }
+
     // Open it per the global settings
     sqlite3* db = 0;
     if (SQLITE_OK != sqlite3_open_v2(global_dbFilename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, "unix-none")) {
@@ -113,7 +123,7 @@ void test(int threadCount, const string& testQuery) {
     cout << "Testing with " << threadCount << " threads: ";
     vector<sqlite3*> dbs(threadCount);
     for (int i = 0; i < threadCount; i++) {
-        dbs[i] = openDatabase();
+        dbs[i] = openDatabase(i);
     }
 
     // We want to do the same number of total queries each test, but split between however
@@ -183,6 +193,8 @@ int main(int argc, char *argv[]) {
         } else
         if (z == string("-numa")) {
             // Output numa information about this system
+            global_numa = 1;
+            cout << "Enabling NUMA awareness:" << endl;
             cout << "numa_available=" << numa_available() << endl;
             cout << "numa_max_node=" << numa_max_node() << endl;
             cout << "numa_pagesize=" << numa_pagesize() << endl;
@@ -198,7 +210,7 @@ int main(int argc, char *argv[]) {
 
     // Inspect the existing database with a full table scan, pulling it all into memory
     cout << "Precaching '" << global_dbFilename << "'...";
-    sqlite3* db = openDatabase();
+    sqlite3* db = openDatabase(0);
     string query = "SELECT COUNT(*), MIN(nonIndexedColumn) FROM perfTest;";
     list<vector<string>> results;
     auto start = STimeNow();
