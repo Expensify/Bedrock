@@ -69,7 +69,6 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
     if (global_numa) {
         numa_run_on_node(threadNum%numa_num_task_nodes());
         numa_set_preferred(threadNum%numa_num_task_nodes());
-        cout << "Thread #" << threadNum << " prefers node " << numa_preferred() << endl;
     }
 
     // Run however many queries are requested
