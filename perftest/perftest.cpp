@@ -19,6 +19,7 @@ static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
 static int global_querySize = 10;
 static int global_numa = 0;
+static int64_t global_noopResult = 0;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -73,15 +74,25 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
 
     // Run however many queries are requested
     for (int q=0; q<numQueries; q++) {
-        // Run the query
-        list<vector<string>> results;
-        int error = sqlite3_exec(db, testQuery.c_str(), queryCallback, &results, 0);
-        if (error != SQLITE_OK) {
-            cout << "Error running test query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
+        // See if it's a special query
+        if (testQuery=="SLEEP") {
+            // Waits 10ms
+            usleep(10*1000);
+        } else if (testQuery=="NOOP") {
+            // Does a simple calculation
+            int c=1000000;
+            while(c--) { global_noopResult+=c; }
+        } else {
+            // Run the query
+            list<vector<string>> results;
+            int error = sqlite3_exec(db, testQuery.c_str(), queryCallback, &results, 0);
+            if (error != SQLITE_OK) {
+                cout << "Error running test query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
+            }
         }
 
         // Optionally show progress
-        if (showProgress && (q % (numQueries/10))==0 ) {
+        if (showProgress && numQueries>10 && (q % (numQueries/10))==0 ) {
             int percent = (int)(((double)q / (double)numQueries) * 100.0);
             cout << percent << "% " << flush;
         }
@@ -252,5 +263,10 @@ int main(int argc, char *argv[]) {
       }
     }else{
       test(numThreads, testQuery);
+    }
+
+    // Output the NOOP number, if availble, so compiler doesn't throw it out
+    if (global_noopResult) {
+        cout << "NOOP=" << global_noopResult << endl;
     }
 }
