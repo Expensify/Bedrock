@@ -159,7 +159,8 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
         uint32_t colLength = 1024;
         SAppend(column.payload, &colLength, 4); // column_length (4) -- maximum length of the field
 
-        uint8_t colType = 0;
+        //uint8_t colType = 0; // Decimal;
+        uint8_t colType = 254; // string.
         SAppend(column.payload, &colType, 1); // column_type (1) -- type of the column as defined in Column Type
 
         uint16_t flags = 0;
