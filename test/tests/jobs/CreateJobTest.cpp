@@ -321,16 +321,6 @@ struct CreateJobTest : tpunit::TestFixture {
         // Get the job, confirm error
         tester->executeWaitVerifyContent(command, "404 No job found");
 
-        // Try to update job, get error because of no data
-        command.clear();
-        command.methodLine = "UpdateJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "402 Missing data");
-
-        // Try to update job, get error because it's running
-        command["data"] = "{}";
-        tester->executeWaitVerifyContent(command, "402 Auto-retrying jobs cannot be updated once running");
-
         // Finish the job
         command.clear();
         command.methodLine = "FinishJob";
