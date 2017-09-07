@@ -317,6 +317,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // Ignore
                 SINFO("Responding OK to SET or USE query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
+            } else if (SStartsWith(SToUpper(query), "ROLLBACK ") || SStartsWith(SToUpper(query), "ROLLBACK;")) {
+                // Ignore
+                SINFO("Responding OK to ROLLBACK query.");
+                s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
