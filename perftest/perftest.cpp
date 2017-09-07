@@ -9,6 +9,7 @@
 #include <random>
 #include <sys/time.h>
 #include <unistd.h>
+#include <numa.h>
 using namespace std;
 
 // Overall test settings
@@ -62,7 +63,10 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
 }
 
 // This runs a test query some number of times, optionally showing progress
-void runTestQueries(sqlite3* db, int numQueries, const string& testQuery, bool showProgress) {
+void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& testQuery, bool showProgress) {
+    // Test NUMA characteristics
+    cout << "Thread #" << threadNum << " prefers node " << numa_preferred() << endl;
+
     // Run however many queries are requested
     for (int q=0; q<numQueries; q++) {
         // Run the query
@@ -121,7 +125,7 @@ void test(int threadCount, const string& testQuery) {
     list <thread> threads;
     for (int i = 0; i < threadCount; i++) {
         bool showProgress = (i == (threadCount - 1)); // Only show progress on the last thread
-        threads.emplace_back(runTestQueries, dbs[i], numQueries, testQuery, showProgress);
+        threads.emplace_back(runTestQueries, dbs[i], i, numQueries, testQuery, showProgress);
     }
     for (auto& t : threads) {
         t.join();
@@ -176,6 +180,15 @@ int main(int argc, char *argv[]) {
         } else
         if (z == string("-customQuery")) {
           customQuery = argv[++i];
+        } else
+        if (z == string("-numa")) {
+            // Output numa information about this system
+            cout << "numa_available=" << numa_available() << endl;
+            cout << "numa_max_node=" << numa_max_node() << endl;
+            cout << "numa_pagesize=" << numa_pagesize() << endl;
+            cout << "numa_num_configured_cpus=" << numa_num_configured_cpus() << endl;
+            cout << "numa_num_task_cpus=" << numa_num_task_cpus() << endl;
+            cout << "numa_num_task_nodes=" << numa_num_task_nodes() << endl;
         } else
         {
             cerr << "unknown option: " << argv[i] << "\n";
