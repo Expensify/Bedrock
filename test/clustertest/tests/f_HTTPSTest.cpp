@@ -30,7 +30,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         SData request("sendrequest");
-        auto result = brtester->executeWait(request);
+        auto result = brtester->executeWaitVerifyContent(request);
         ASSERT_TRUE(result.size() > 10);
 
         // Now we spam a bunch of commands at the cluster, with one of them being an HTTPS reqeust command, and attempt
@@ -44,7 +44,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
-        vector<vector<pair<string,string>>> responses(3);
+        vector<vector<SData>> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, nthHasRequest, &cmdID, &responses, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
@@ -65,7 +65,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
                         requests.push_back(request);
                     }
                 }
-                auto results = brtester->executeWaitMultiple(requests);
+                auto results = brtester->executeWaitMultipleData(requests);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = results;
             });
@@ -83,7 +83,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         cmd["Query"] = "SELECT COUNT(*) FROM test WHERE id >= 699 AND id <= " + SQ(cmdID.load())+ ";";
 
         // We should have received 600 new rows.
-        string response = brtester->executeWait(cmd); 
+        string response = brtester->executeWaitVerifyContent(cmd); 
 
         // Discard the header and parse the first line.
         list<string> lines;
@@ -94,8 +94,8 @@ struct f_HTTPSTest : tpunit::TestFixture {
         // And look at all the responses from master, to make sure they're all 200s, and either had a body or did not,
         // according with what sort of command they were.
         for (size_t i = 0; i < responses[0].size(); i++) {
-            string code = responses[0][i].first;
-            string body = responses[0][i].second;
+            string code = responses[0][i].methodLine;
+            string body = responses[0][i].content;
             if (i % nthHasRequest == 0) {
                 ASSERT_TRUE(body.size() > 10);
             } else {

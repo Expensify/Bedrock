@@ -172,7 +172,8 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
-    static constexpr auto STATUS_WHITELIST         = "SetCommandWhitelist";
+    static constexpr auto STATUS_BLACKLIST         = "SetParallelCommandBlacklist";
+    static constexpr auto STATUS_MULTIWRITE        = "EnableMultiWrite";
 
     // This *only* exists so that status commands can pull info from this node.
     SQLiteNode* _syncNode;
@@ -212,14 +213,17 @@ class BedrockServer : public SQLiteServer {
     set<string> _syncCommands;
 
     // This is a list of command names than can be processed and committed in worker threads.
-    static set<string> _parallelCommands;
-    static recursive_mutex  _parallelCommandMutex;
+    static set<string> _blacklistedParallelCommands;
+    static recursive_mutex  _blacklistedParallelCommandMutex;
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
 
     // The current state of shutdown. Starts as RUNNING.
     atomic<SHUTDOWN_STATE> _shutdownState;
+
+    // Flag indicating whether multi-write is enabled.
+    atomic<bool> _multiWriteEnabled;
 
     // Set this to cause a backup to run when the server shuts down.
     bool _backupOnShutdown;

@@ -1,5 +1,5 @@
 #include "libstuff.h"
-
+#include <execinfo.h> // for backtrace
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -177,6 +177,15 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 } catch (const char* e) {
+                    // Error -- reconnect
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e
+                                                       << "), reconnecting:" << message.serialize());
+                    SData reconnect("RECONNECT");
+                    reconnect["Reason"] = e;
+                    peer->s->send(reconnect.serialize());
+                    shutdownSocket(peer->s);
+                    break;
+                } catch (const string& e) {
                     // Error -- reconnect
                     PWARN("Error processing message '" << message.methodLine << "' (" << e
                                                        << "), reconnecting:" << message.serialize());

@@ -4,61 +4,87 @@
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
 
+class BedrockTestException : public std::exception {
+  private:
+    const string message;
+
+  public:
+    BedrockTestException(string message_) : message(message_) {};
+    const char* what() const noexcept { return message.c_str(); };
+};
+
 class BedrockTester {
   public:
-    // The location of the database. This is static so we can re-use it for the life of the test app.
-    static string DB_FILE;
-    static string SERVER;
-    static string SERVER_ADDR;
-    static set<int> serverPIDs;
-    static void stopServer(int pid);
-    static bool deleteFile(string name);
-    static bool startServers;
+    // Generate a temporary filename for a test DB, with an optional prefix.
+    static string getTempFileName(string prefix = "");
+
+    // Returns the name of the server binary, by finding the first path that exists in `locations`.
+    static string getServerName();
+
+    // Search paths for `getServerName()`. Allowed to be modified before startup by implementer.
     static list<string> locations;
-    static set<string> plugins;
 
-    uint64_t nextActivity;
-    int serverPID = 0;
-    SQLite* db = nullptr;
-    SQLite* writableDB = nullptr;
+    // Default values for the location of the DB file and the server to talk to.
+    // These can be over-ridden when instantiating a tester.
+    // Typically, these values will be set in main().
+    static string defaultDBFile;
+    static string defaultServerAddr;
 
-    string getServerAddr();
+    // This is expected to be set by main, built from argv, to expose command-line options to tests.
+    static SData globalArgs;
 
-    // Constructor
-    BedrockTester(const string& filename = "", const string& serverAddress = "", const list<string>& queries = {}, const map<string, string>& args = {}, bool wait = true);
+    // Shuts down all bedrock servers associated with any testers.
+    static void stopAll();
+
+    // Returns the address of this server.
+    string getServerAddr() { return _serverAddr; };
+
+    // Constructor/destructor
+    BedrockTester(const map<string, string>& args = {},
+                  const list<string>& queries = {}, 
+                  bool startImmediately = true,
+                  bool keepFilesWhenFinished = false);
     ~BedrockTester();
 
-    // Executes a command and waits for the response
-    string executeWait(const SData& request, const std::string& correctResponse = "200");
+    // Start and stop the bedrock server.
+    void startServer();
+    void stopServer();
 
-    // Same as above, but returns entire SData for the response
-    SData executeWaitData(const SData& request, const std::string& correctResponse = "200");
+    // Takes a list of requests, and returns a corresponding list of responses.
+    // Uses `connections` parallel connections to the server to send the requests.
+    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10);
 
-    // like executeWait, except it will execute multiple requests in parallel over several simultaneous connections.
-    // returns a pair of strings for each request, with the response code and the response text, in that order.
-    vector<pair<string,string>> executeWaitMultiple(vector<SData> requests, int connections = 10);
+    // Sends a single request, returning the response content.
+    // If the response method line doesn't begin with the expected result, throws.
+    string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
 
+    // Sends a single request, returning the response content as a STable.
+    // If the response method line doesn't begin with the expected result, throws.
+    STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200");
+
+    // Read from the DB file. Interface is the same as SQLiteNode's 'read' for backwards compatibility.
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
-    SQLite& getWritableSQLiteDB();
-    string getCommandLine();
 
-    static string getTempFileName(string prefix = "");
-
-    void stopServer();
-    void startServer(map <string, string> args_ = {},  bool wait = true);
-
-  private:
-    // these exist to allow us to create and delete our database file.
-    bool createFile(string name);
-
-    string getServerName();
-    list<string> getServerArgs(map <string, string> args = {});
-
-    bool _spoofInternalCommands;
+  protected:
+    // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
+    // is called later on with an empty args list.
+    map<string, string> _args;
 
     // If these are set, they'll be used instead of the global defaults.
     string _serverAddr;
-    string _dbFile;
+    string _dbName;
+
+    // The PID of the bedrock server we started.
+    int _serverPID = 0;
+
+    // A set of all bedrock testers.
+    static set<BedrockTester*> _testers;
+
+    // Flag indicating whether the DB should be kept when the tester is destroyed.
+    bool _keepFilesWhenFinished;
+
+    // A version of the DB that can be queries without going through bedrock.
+    SQLite* _db = 0;
 };
