@@ -755,7 +755,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT jobID, nextRun, lastRun, state "
+        if (!db.read("SELECT jobID, nextRun, lastRun "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -767,11 +767,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
-        const string& state = result[0][3];
-
-        if (state == "RUNQUEUED") {
-            throw "402 Auto-retrying jobs cannot be updated once running";
-        }
 
         // Are we rescheduling?
         const string& newNextRun = request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
