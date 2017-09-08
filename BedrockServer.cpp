@@ -30,12 +30,20 @@ void BedrockServer::syncWrapper(SData& args,
     try {
         sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
     } catch (const SException& e) {
-        SALERT("Caught exception '" << e.what() << "' at top of sync thread. Logging info and exiting.");
+        SALERT("Caught SException '" << e.what() << "' at top of sync thread. Logging info and exiting.");
         auto rows = e.details();
         for (auto& i : rows) {
             SALERT(i);
         }
-        exit(1); // Die.
+        exit(1);
+    } catch (const exception& e) {
+        SALERT("Caught exception '" << e.what() << "' at top of sync thread. Exiting.");
+        exit(1);
+    } catch (...) {
+        SALERT("Caught unknown exception at top of sync thread (this should never happen).");
+        // Do our best to deduce the type here, regardless.
+        SALERT("exception typename (probably mangled): " << abi::__cxa_current_exception_type()->name());
+        exit(1);
     }
 }
 
