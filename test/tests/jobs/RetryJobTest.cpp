@@ -14,6 +14,9 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::hasRepeat),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeName),
+                              TEST(RetryJobTest::hasRepeatWithNextRun),
+                              TEST(RetryJobTest::hasRepeatWithDelay),
+                              TEST(RetryJobTest::hasDelayAndNextRun),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -303,7 +306,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command["nextRun"] = nextRun;
         tester->executeWaitVerifyContent(command);
 
-        // Confirm the data updated
+        // Confirm nextRun updated correctly
         SQResult result;
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], nextRun);
@@ -335,6 +338,103 @@ struct RetryJobTest : tpunit::TestFixture {
         SQResult result;
         tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "newName");
+    }
+
+    // Repeat should take precedence over nextRun
+    void hasRepeatWithNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["nextRun"] = "2017-09-07 23:11:11";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is in 1 hour, not in the given nextRun time
+        SQResult result;
+        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // Repeat should take precedence over delay
+    void hasRepeatWithDelay() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["delay"] = "";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is in 1 hour, not in the 5 second delay
+        SQResult result;
+        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // nextRun should take precedence over delay
+    void hasDelayAndNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        const string nextRun = getTimeInFuture(10);
+        command["nextRun"] = nextRun;
+        command["delay"] = "900";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun updated correctly
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], nextRun);
     }
 
     string getTimeInFuture(int numSeconds) {
