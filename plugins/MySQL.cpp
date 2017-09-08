@@ -10,7 +10,7 @@ MySQLPacket::MySQLPacket() {
 
 string MySQLPacket::serialize() {
     // Wrap in a 3-byte header
-    payloadLength = payload.size();
+    uint32_t payloadLength = payload.size();
     string header;
     header.resize(4);
     memcpy(&header[0], &payloadLength, 3);
@@ -24,18 +24,9 @@ int MySQLPacket::deserialize(const string& packet) {
         return 0;
     }
 
-    uint8_t lb0 = packet[0];
-    uint8_t lb1 = packet[1];
-    uint8_t lb2 = packet[2];
-
     // Has a header, parse it out
-    payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
+    uint32_t payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
     sequenceID = (uint8_t)packet[3];
-
-    SINFO("TYLER: " << "Length byte 0:" << (unsigned int)lb0);
-    SINFO("TYLER: " << "Length byte 1:" << (unsigned int)lb1);
-    SINFO("TYLER: " << "Length byte 2:" << (unsigned int)lb2);
-    SINFO("TYLER: " << "sequenceID:" << (unsigned int)sequenceID);
 
     // Do we have enough data for the full payload?
     if (packet.size() < (4 + payloadLength)) {
@@ -242,7 +233,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << (int)packet.sequenceID << " (length: " << packet.payloadLength << "): '" << SToHex(packet.serialize()) << ", RAW: " << packet.payload << "'");
+        SDEBUG("Received command #" << (int)packet.sequenceID << ": '" << SToHex(packet.serialize()) << "'");
         SConsumeFront(s->recvBuffer, packetSize);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
@@ -294,7 +285,6 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-                SINFO("Fake response sent.");
             } else if (SIEquals(query, "SHOW DATABASES;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");

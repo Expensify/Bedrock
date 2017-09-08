@@ -8,11 +8,8 @@ extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
   * Simple convenience structure to construct MySQL packets
   */
 struct MySQLPacket {
-    static string getName() { return "MySQL"; }
-
     // Attributes
     uint8_t sequenceID;
-    uint32_t payloadLength = 0;
     string payload;
 
     /**
