@@ -52,7 +52,7 @@ struct STCPNode : public STCPServer {
     // Called when we lose connection with a peer
     virtual void _onDisconnect(Peer* peer) = 0;
 
-    // Called when the peer sends us a message; throw a (const char*) to reconnect.
+    // Called when the peer sends us a message; throw an SException to reconnect.
     virtual void _onMESSAGE(Peer* peer, const SData& message) = 0;
 
   private:
