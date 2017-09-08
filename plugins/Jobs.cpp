@@ -725,10 +725,16 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
         // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
         //
-        //     Re-queues a RUNNING job to be run at "nextRun" or "delay"
-        //     unless the job is configured to "repeat" in which it will
-        //     just schedule for the next repeat time.
-        //     Optionally, the job name can be updated.
+        //     Re-queues a RUNNING job.
+        //     The nextRun logic for the job is decided in the following way
+        //      - If the job is configured to "repeat" it will schedule
+        //     the job for the next repeat time.
+        //     - Else, if "nextRun" is set, it will schedule the job to run at that time
+        //     - Else, if "delay" is set, it will schedule the job to run in "delay" seconds
+        //
+        //     Optionally, the job name can be updated, meaning that you can move the job to
+        //     a different queue.  I.e, you can change the name from "foo" to "bar"
+        //
         //     Use this when a job was only partially completed but
         //     interrupted in a non-fatal way.
         //
@@ -849,8 +855,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
+        // The job is set to be rescheduled.
         if (!safeNewNextRun.empty()) {
-            // Configured to repeat.  The "nextRun" at this point is still
+            // The "nextRun" at this point is still
             // storing the last time this job was *scheduled* to be run;
             // lastRun contains when it was *actually* run.
             SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);

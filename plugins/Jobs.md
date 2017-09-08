@@ -26,10 +26,10 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
  * **DeleteJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to delete
 
- * **Retry( jobID )** - Removes all trace of a job.
+ * **RetryJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to retry
-   * *delay* - (optional) Number of seconds to wait before retrying
-   * *nextRun* - (optional) The time/date on which the job should be set to run again, in "YYYY-MM-DD [HH:MM:SS]" format
+   * *nextRun* - (optional) The time/date on which the job should be set to run again, in "YYYY-MM-DD [HH:MM:SS]" format. This is ignored if the job is set to repeat.
+   * *delay* - (optional) Number of seconds to wait before retrying. This is ignored if the job is set to repeat or if "nextRun" is set.
    * *name* - (optional) Any arbitrary string name for this job.
    * *data* - (optional) Data to associate with this job
 
