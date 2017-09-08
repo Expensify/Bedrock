@@ -16,13 +16,17 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SDEBUG("Peeking at '" << request.methodLine << "'");
     command.peekCount++;
 
+    if (SStartsWith(command.request.methodLine, "DIE")) {
+        STHROW_STACK("Dying.");
+    }
+
     // We catch any exception and handle in `_handleCommandException`.
     try {
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
         if (!_db.beginConcurrentTransaction()) {
-            throw "501 Failed to begin concurrent transaction";
+            STHROW("501 Failed to begin concurrent transaction");
         }
 
         // Try each plugin, and go with the first one that says it succeeded.
@@ -64,12 +68,8 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 response.content = newContent;
             }
         }
-    } catch (const char* e) {
-        _handleCommandException(command, e, false);
-    } catch (const string e) {
-        _handleCommandException(command, e, false);
-    } catch (...) {
-        _handleCommandException(command, "", false);
+    } catch (const SException& e) {
+        _handleCommandException(command, e.what(), false);
     }
 
     // If we get here, it means the command is fully completed.
@@ -99,7 +99,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
         if (!_db.insideTransaction() && !_db.beginConcurrentTransaction()) {
-            throw "501 Failed to begin concurrent transaction";
+            STHROW("501 Failed to begin concurrent transaction");
         }
 
         // Loop across the plugins to see which wants to take this.
@@ -116,7 +116,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         // If no plugin processed it, respond accordingly.
         if (!pluginProcessed) {
             SWARN("Command '" << request.methodLine << "' does not exist.");
-            throw "430 Unrecognized command";
+            STHROW("430 Unrecognized command");
         }
 
         // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.
@@ -148,12 +148,8 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
                 response.content = newContent;
             }
         }
-    } catch (const char* e) {
-        _handleCommandException(command, e, true);
-    } catch (const string e) {
-        _handleCommandException(command, e, true);
-    } catch (...) {
-        _handleCommandException(command, "", true);
+    } catch (const SException& e) {
+        _handleCommandException(command, e.what(), true);
     }
 
     // Done, return whether or not we need the parent to commit our transaction.

@@ -21,18 +21,18 @@ SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt) {
     try {
         // Load and initialize this key
         if (mbedtls_pk_parse_key(&x509->pk, (unsigned char*)pemPtr, (int)strlen(pemPtr) + 1, NULL, 0)) {
-            throw "parsing key";
+            STHROW("parsing key");
         }
         if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char*)srvCrtPtr, (int)strlen(srvCrtPtr) + 1)) {
-            throw "parsing server certificate";
+            STHROW("parsing server certificate");
         }
         if (mbedtls_x509_crt_parse(&x509->srvcert, (unsigned char*)caCrtPtr, (int)strlen(caCrtPtr) + 1)) {
-            throw "parsing CA certificate";
+            STHROW("parsing CA certificate");
         }
         return x509;
-    } catch (const char* e) {
+    } catch (const SException& e) {
         // Failed
-        SWARN("X509 creation failed while '" << e << "', cancelling.");
+        SWARN("X509 creation failed while '" << e.what() << "', cancelling.");
         SX509Close(x509);
         return 0;
     }

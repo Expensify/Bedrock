@@ -166,13 +166,13 @@ bool BedrockPlugin_Cache::peekCommand(SQLite& db, BedrockCommand& command) {
                          SQ(name) + " "
                                     "LIMIT 1;",
                      result)) {
-            throw "502 Query failed";
+            STHROW("502 Query failed");
         }
 
         // If we didn't get any results, respond failure
         if (result.empty()) {
             // No results
-            throw "404 No match found";
+            STHROW("404 No match found");
         } else {
             // Return that item
             SASSERT(result[0].size() == 2);
@@ -216,23 +216,23 @@ bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
         if (!valueHeader.empty()) {
             // Value is provided via the header -- make sure it's not too long
             if (valueHeader.size() > MAX_SIZE_BLOB) {
-                throw "402 Value too large, 1MB max -- use content body";
+                STHROW("402 Value too large, 1MB max -- use content body");
             }
         } else if (!request.content.empty()) {
             // Value is provided via the body -- make sure it's not too long
             if (request.content.size() > 64 * 1024 * 1024) {
-                throw "402 Content too large, 64MB max";
+                STHROW("402 Content too large, 64MB max");
             }
         } else {
             // No value provided
-            throw "402 Missing value header or content body";
+            STHROW("402 Missing value header or content body");
         }
 
         // Make sure we're not trying to cache something larger than the cache itself
         int64_t contentSize = valueHeader.empty() ? request.content.size() : valueHeader.size();
         if (contentSize > _maxCacheSize) {
             // Just refuse
-            throw "402 Content larger than the cache itself";
+            STHROW("402 Content larger than the cache itself");
         }
 
         // Optionally invalidate other entries in the cache at the same time.
@@ -240,7 +240,7 @@ bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
         // that's non-harmful.
         if (!request["invalidateName"].empty()) {
             if (!db.write("DELETE FROM cache WHERE name GLOB " + SQ(request["invalidateName"]) + ";"))
-                throw "502 Query failed (invalidating)";
+                STHROW("502 Query failed (invalidating)");
         }
 
         // Clear out room for the new object
@@ -252,7 +252,7 @@ bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Delete it
             if (!db.write("DELETE FROM cache WHERE name=" + SQ(name) + ";"))
-                throw "502 Query failed (deleting)";
+                STHROW("502 Query failed (deleting)");
         }
 
         // Insert the new entry
@@ -261,7 +261,7 @@ bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
         if (!db.write("INSERT OR REPLACE INTO cache ( name, value ) "
                       "VALUES( " +
                       SQ(name) + ", " + safeValue + " );"))
-            throw "502 Query failed (inserting)";
+            STHROW("502 Query failed (inserting)");
 
         // Writing is a form of "use", so this is the new MRU.  Note that we're
         // adding it to the MRU, even before we commit.  So if this transaction

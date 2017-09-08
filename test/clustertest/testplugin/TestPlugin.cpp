@@ -47,14 +47,14 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             // return the number of times we made an HTTPS request on this command.
             int tries = SToInt(command.request["httpsRequests"]);
             if (tries != 1) {
-                throw "500 Retried HTTPS request!";
+                STHROW("500 Retried HTTPS request!");
             }
             command.response.content = " " + command.httpsRequest->fullResponse.content;
 
             // Update the DB so we can test conflicts.
             if (!command.request["Query"].empty()) {
                 if (!db.write(command.request["Query"])) {
-                    throw "502 Query failed.";
+                    STHROW("502 Query failed.");
                 }
             }
         } else {

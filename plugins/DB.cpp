@@ -53,7 +53,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
 
         if (!SEndsWith(upperQuery, ";")) {
             SALERT("Query aborted, query must end in ';'");
-            throw "502 Query aborted";
+            STHROW("502 Query aborted");
         }
 
         if (SStartsWith(upperQuery, "SELECT ")) {
@@ -64,7 +64,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
                (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
                !SContains(upperQuery, " WHERE ")) {
                 SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
-                throw "502 Query aborted";
+                STHROW("502 Query aborted");
             }
 
             // Assume it's read/write
@@ -79,7 +79,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();
-            throw "502 Query failed";
+            STHROW("502 Query failed");
         }
 
         // Verify it didn't change anything -- assert because if we did, we did so
@@ -121,7 +121,7 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();
-            throw "502 Query failed";
+            STHROW("502 Query failed");
         }
 
         // Worked!  Let's save the last inserted row id

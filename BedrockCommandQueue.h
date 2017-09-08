@@ -1,6 +1,13 @@
 #pragma once
 class BedrockCommand;
 
+class timeout_error : exception {
+  public:
+    const char* what() const noexcept {
+        return "timeout";
+    }
+};
+
 class BedrockCommandQueue {
   public:
     // Remove all items from the queue.

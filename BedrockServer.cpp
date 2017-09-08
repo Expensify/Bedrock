@@ -20,6 +20,25 @@ bool BedrockServer::canStandDown() {
     return _writableCommandsInProgress.load() == 0;
 }
 
+void BedrockServer::syncWrapper(SData& args,
+                         atomic<SQLiteNode::State>& replicationState,
+                         atomic<bool>& upgradeInProgress,
+                         atomic<string>& masterVersion,
+                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockServer& server)
+{
+    try {
+        sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
+    } catch (const SException& e) {
+        SALERT("Caught exception '" << e.what() << "' at top of sync thread. Logging info and exiting.");
+        auto rows = e.details();
+        for (auto& i : rows) {
+            SALERT(i);
+        }
+        exit(1); // Die.
+    }
+}
+
 void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
@@ -73,7 +92,7 @@ void BedrockServer::sync(SData& args,
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(worker,
+        workerThreadList.emplace_back(workerWrapper,
                                       ref(args),
                                       ref(replicationState),
                                       ref(upgradeInProgress),
@@ -263,7 +282,7 @@ void BedrockServer::sync(SData& args,
                     completedCommand.finalizeTimingInfo();
                     syncNode.sendResponse(completedCommand);
                 }
-            } catch (out_of_range e) {
+            } catch (const out_of_range& e) {
                 // when completedCommands.pop() throws for running out of commands, we fall out of the loop.
             }
 
@@ -379,7 +398,7 @@ void BedrockServer::sync(SData& args,
                 // bother peeking it again.
                 syncNode.escalateCommand(move(command));
             }
-        } catch (out_of_range e) {
+        } catch (const out_of_range& e) {
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
@@ -418,6 +437,37 @@ void BedrockServer::sync(SData& args,
         SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
+    }
+}
+
+void BedrockServer::workerWrapper(SData& args,
+                           atomic<SQLiteNode::State>& replicationState,
+                           atomic<bool>& upgradeInProgress,
+                           atomic<string>& masterVersion,
+                           CommandQueue& syncNodeQueuedCommands,
+                           CommandQueue& syncNodeCompletedCommands,
+                           BedrockServer& server,
+                           int threadId,
+                           int threadCount)
+{
+    try {
+        worker(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands,
+               syncNodeCompletedCommands, server, threadId, threadCount);
+    } catch (const SException& e) {
+        SALERT("Caught SException '" << e.what() << "' at top of worker thread. Logging info and exiting.");
+        auto rows = e.details();
+        for (auto& i : rows) {
+            SALERT(i);
+        }
+        exit(1);
+    } catch (const exception& e) {
+        SALERT("Caught exception '" << e.what() << "' at top of worker thread. Exiting.");
+        exit(1);
+    } catch (...) {
+        SALERT("Caught unknown exception at top of worker thread (this should never happen).");
+        // Do our best to deduce the type here, regardless.
+        SALERT("exception typename (probably mangled): " << abi::__cxa_current_exception_type()->name());
+        exit(1);
     }
 }
 
@@ -654,7 +704,7 @@ void BedrockServer::worker(SData& args,
                       << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
-        } catch(...) {
+        } catch(const timeout_error& e) {
             // No commands to process after 1 second.
         }
 
@@ -748,7 +798,7 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = thread(sync,
+    _syncThread = thread(syncWrapper,
                          ref(_args),
                          ref(_replicationState),
                          ref(_upgradeInProgress),

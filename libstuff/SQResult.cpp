@@ -40,10 +40,10 @@ bool SQResult::deserialize(const string& json) {
         // Verify we have the basic components
         STable content = SParseJSONObject(json);
         if (!SContains(content, "headers")) {
-            throw "Missing 'headers'";
+            STHROW("Missing 'headers'");
         }
         if (!SContains(content, "rows")) {
-            throw "Missing 'rows'";
+            STHROW("Missing 'rows'");
         }
 
         // Add the headers
@@ -58,7 +58,7 @@ bool SQResult::deserialize(const string& json) {
             // Get the row and make sure it has the right number of columns
             list<string> jsonRow = SParseJSONArray(jsonRowStr);
             if (jsonRow.size() != headers.size()) {
-                throw "Incorrect number of columns in row";
+                STHROW("Incorrect number of columns in row");
             }
 
             // Insert the values
@@ -68,8 +68,8 @@ bool SQResult::deserialize(const string& json) {
 
         // Success!
         return true;
-    } catch (const char* e) {
-        SDEBUG("Failed to deserialize JSON-encoded SQResult (" << e << "): " << json);
+    } catch (const SException& e) {
+        SDEBUG("Failed to deserialize JSON-encoded SQResult (" << e.what() << "): " << json);
     }
 
     // Failed, reset and report failure
