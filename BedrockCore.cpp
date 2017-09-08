@@ -16,10 +16,6 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SDEBUG("Peeking at '" << request.methodLine << "'");
     command.peekCount++;
 
-    if (SStartsWith(command.request.methodLine, "DIE")) {
-        STHROW_STACK("Dying.");
-    }
-
     // We catch any exception and handle in `_handleCommandException`.
     try {
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
