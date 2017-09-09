@@ -13,14 +13,13 @@
 using namespace std;
 
 // Overall test settings
-static uint64_t global_numQueries = 10000;
 static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
 static int global_querySize = 10;
 static int global_numa = 0;
 static int64_t global_noopResult = 0;
-static int global_timerCounter = 0;
+static int global_secondsRemaining = 10;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -69,17 +68,17 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
 // record another QPS measure.  This is to avoid having every thread poll the system
 // clock at high frequency, as that is an expensive kernel call that triggers a context
 // switch and thus will distort the results if done at high frequency.
-void incrementEverySecond(int* done)
+void countDownTimer()
 {
     // Keep incrementing once per second until done
-    while (!*done) {
+    do {
         sleep(1);
-        global_timerCounter++;
     }
+    while (--global_secondsRemaining);
 }
 
 // This runs a test query some number of times, optionally showing progress
-void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSecond, uint64_t numQueries, const string& testQuery, bool showProgress) {
+void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSecond, const string& testQuery, bool showProgress) {
     // If we're numa aware, spread the memory across all nodes
     if (global_numa) {
         numa_run_on_node(threadNum%numa_num_task_nodes());
@@ -88,11 +87,11 @@ void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSeco
 
     // Initialize our query counters
     uint64_t numQueriesLastSecond = 0;
-    int lastTimerCounter = global_timerCounter;
+    int lastSampleSecond = global_secondsRemaining;
 
     // Run however many queries are requested
     uint64_t noopResult = 0;
-    for (uint64_t q=0; q<numQueries; q++) {
+    while (global_secondsRemaining) {
         // See if it's a special query
         if (testQuery=="SLEEP") {
             // Waits 10ms
@@ -112,17 +111,16 @@ void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSeco
 
         // Update timers
         numQueriesLastSecond++;
-        if (lastTimerCounter < global_timerCounter) {
+        if (lastSampleSecond != global_secondsRemaining) {
             // Record QPS
+            lastSampleSecond = global_secondsRemaining;
             queriesPerSecond->push_back(numQueriesLastSecond);
             numQueriesLastSecond = 0;
-            lastTimerCounter++;
-        }
 
-        // Optionally show progress
-        if (showProgress && numQueries>10 && (q % (numQueries/10))==0 ) {
-            int percent = (int)(((double)q / (double)numQueries) * 100.0);
-            cout << percent << "% " << flush;
+            // Optionally show progress
+            if (showProgress) {
+                cout << "." << flush;
+            }
         }
     }
 
@@ -167,13 +165,9 @@ void test(int threadCount, const string& testQuery) {
         dbs[i] = openDatabase(i);
     }
 
-    // We want to do the same number of total queries each test, but split between however
-    // many threads we have
-    uint64_t numQueries = global_numQueries / threadCount; 
-
     // Start a thread that just harvests QPS every second
-    int done = 0;
-    thread timerCounter(incrementEverySecond, &done);
+    global_secondsRemaining = 10;
+    thread timerCounter(countDownTimer);
     vector<vector<uint64_t>> queriesPerSecondPerThread;
     queriesPerSecondPerThread.resize(threadCount);
 
@@ -182,7 +176,7 @@ void test(int threadCount, const string& testQuery) {
     auto start = STimeNow();
     for (int i = 0; i < threadCount; i++) {
         bool showProgress = (i == (threadCount - 1)); // Only show progress on the last thread
-        threads.emplace_back(runTestQueries, dbs[i], i, &queriesPerSecondPerThread[i], numQueries, testQuery, showProgress);
+        threads.emplace_back(runTestQueries, dbs[i], i, &queriesPerSecondPerThread[i], testQuery, showProgress);
     }
     for (auto& t : threads) {
         t.join();
@@ -191,7 +185,6 @@ void test(int threadCount, const string& testQuery) {
     auto end = STimeNow();
 
     // Stop the timer and calculate max QPS
-    done = 1;
     timerCounter.join();
     uint64_t maxQPS = 0;
     for(int sec=1; sec<queriesPerSecondPerThread[0].size(); sec++) { // skip the first second
@@ -208,7 +201,6 @@ void test(int threadCount, const string& testQuery) {
     double vm, rss;
     getMemUsage(vm, rss);
     cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ")" << endl;
-
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
@@ -229,9 +221,6 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         char *z = argv[i];
         if( z[0]=='-' && z[1]=='-' ) z++;
-        if (z == string("-numQueries")) {
-            global_numQueries = atoll(argv[++i]);
-        }else
         if (z == string("-cacheSize")) {
             global_cacheSize = atoi(argv[++i]);
         }else
