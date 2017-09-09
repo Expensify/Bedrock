@@ -200,7 +200,7 @@ void test(int threadCount, const string& testQuery) {
     // Output the results
     double vm, rss;
     getMemUsage(vm, rss);
-    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << << ", maxQPS/t=" << (double)maxQPS/(double)threadCount << ")" << endl;
+    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ", maxQPS/t=" << (double)maxQPS/(double)threadCount << ")" << endl;
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
