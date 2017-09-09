@@ -13,7 +13,7 @@
 using namespace std;
 
 // Overall test settings
-static int global_numQueries = 10000;
+static uint64_t global_numQueries = 10000;
 static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
@@ -65,7 +65,7 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
 }
 
 // This runs a test query some number of times, optionally showing progress
-void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& testQuery, bool showProgress) {
+void runTestQueries(sqlite3* db, int threadNum, uint64_t numQueries, const string& testQuery, bool showProgress) {
     // If we're numa aware, spread the memory across all nodes
     if (global_numa) {
         numa_run_on_node(threadNum%numa_num_task_nodes());
@@ -73,7 +73,8 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
     }
 
     // Run however many queries are requested
-    for (int q=0; q<numQueries; q++) {
+    uint64_t noopResult = 0;
+    for (uint64_t q=0; q<numQueries; q++) {
         // See if it's a special query
         if (testQuery=="SLEEP") {
             // Waits 10ms
@@ -81,7 +82,7 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
         } else if (testQuery=="NOOP") {
             // Does a simple calculation
             int c=1000000;
-            while(c--) { global_noopResult+=c; }
+            while(c--) { noopResult+=c; }
         } else {
             // Run the query
             list<vector<string>> results;
@@ -97,6 +98,9 @@ void runTestQueries(sqlite3* db, int threadNum, int numQueries, const string& te
             cout << percent << "% " << flush;
         }
     }
+
+    // Do this at the end to avoid any kind of contention while the thread is running
+    global_noopResult += noopResult;
 }
 
 sqlite3* openDatabase(int threadNum) {
@@ -138,7 +142,7 @@ void test(int threadCount, const string& testQuery) {
 
     // We want to do the same number of total queries each test, but split between however
     // many threads we have
-    int numQueries = global_numQueries / threadCount; 
+    uint64_t numQueries = global_numQueries / threadCount; 
 
     // Run the actual test
     auto start = STimeNow();
@@ -178,7 +182,7 @@ int main(int argc, char *argv[]) {
         char *z = argv[i];
         if( z[0]=='-' && z[1]=='-' ) z++;
         if (z == string("-numQueries")) {
-            global_numQueries = atoi(argv[++i]);
+            global_numQueries = atoll(argv[++i]);
         }else
         if (z == string("-cacheSize")) {
             global_cacheSize = atoi(argv[++i]);
