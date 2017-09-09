@@ -20,6 +20,7 @@ static int global_cacheSize = -1000000;
 static int global_querySize = 10;
 static int global_numa = 0;
 static int64_t global_noopResult = 0;
+static int global_timerCounter = 0;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -64,13 +65,30 @@ int queryCallback(void* data, int columns, char** columnText, char** columnName)
     return SQLITE_OK;
 }
 
+// This just increments a value every second to signal to threads that they should
+// record another QPS measure.  This is to avoid having every thread poll the system
+// clock at high frequency, as that is an expensive kernel call that triggers a context
+// switch and thus will distort the results if done at high frequency.
+void incrementEverySecond(int* done)
+{
+    // Keep incrementing once per second until done
+    while (!*done) {
+        sleep(1);
+        global_timerCounter++;
+    }
+}
+
 // This runs a test query some number of times, optionally showing progress
-void runTestQueries(sqlite3* db, int threadNum, uint64_t numQueries, const string& testQuery, bool showProgress) {
+void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSecond, uint64_t numQueries, const string& testQuery, bool showProgress) {
     // If we're numa aware, spread the memory across all nodes
     if (global_numa) {
         numa_run_on_node(threadNum%numa_num_task_nodes());
         numa_set_preferred(threadNum%numa_num_task_nodes());
     }
+
+    // Initialize our query counters
+    uint64_t numQueriesLastSecond = 0;
+    int lastTimerCounter = global_timerCounter;
 
     // Run however many queries are requested
     uint64_t noopResult = 0;
@@ -90,6 +108,15 @@ void runTestQueries(sqlite3* db, int threadNum, uint64_t numQueries, const strin
             if (error != SQLITE_OK) {
                 cout << "Error running test query: " << sqlite3_errmsg(db) << ", query: " << testQuery << endl;
             }
+        }
+
+        // Update timers
+        numQueriesLastSecond++;
+        if (lastTimerCounter < global_timerCounter) {
+            // Record QPS
+            queriesPerSecond->push_back(numQueriesLastSecond);
+            numQueriesLastSecond = 0;
+            lastTimerCounter++;
         }
 
         // Optionally show progress
@@ -144,12 +171,18 @@ void test(int threadCount, const string& testQuery) {
     // many threads we have
     uint64_t numQueries = global_numQueries / threadCount; 
 
+    // Start a thread that just harvests QPS every second
+    int done = 0;
+    thread timerCounter(incrementEverySecond, &done);
+    vector<vector<uint64_t>> queriesPerSecondPerThread;
+    queriesPerSecondPerThread.resize(threadCount);
+
     // Run the actual test
-    auto start = STimeNow();
     list <thread> threads;
+    auto start = STimeNow();
     for (int i = 0; i < threadCount; i++) {
         bool showProgress = (i == (threadCount - 1)); // Only show progress on the last thread
-        threads.emplace_back(runTestQueries, dbs[i], i, numQueries, testQuery, showProgress);
+        threads.emplace_back(runTestQueries, dbs[i], i, &queriesPerSecondPerThread[i], numQueries, testQuery, showProgress);
     }
     for (auto& t : threads) {
         t.join();
@@ -157,10 +190,25 @@ void test(int threadCount, const string& testQuery) {
     threads.clear();
     auto end = STimeNow();
 
+    // Stop the timer and calculate max QPS
+    done = 1;
+    timerCounter.join();
+    double maxQPS = 0;
+    for(int sec=1; sec<queriesPerSecondPerThread[0].size(); sec++) { // skip the first second
+       double qps = 0;
+       for(int t=0; t<threadCount; t++) {
+           qps += queriesPerSecondPerThread[t][sec];
+       }
+       if (qps>maxQPS) {
+           maxQPS = qps;
+       }
+    }
+
     // Output the results
     double vm, rss;
     getMemUsage(vm, rss);
-    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ")" << endl;
+    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ")" << endl;
+
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
