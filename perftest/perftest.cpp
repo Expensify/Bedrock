@@ -193,9 +193,9 @@ void test(int threadCount, const string& testQuery) {
     // Stop the timer and calculate max QPS
     done = 1;
     timerCounter.join();
-    double maxQPS = 0;
+    uint64_t maxQPS = 0;
     for(int sec=1; sec<queriesPerSecondPerThread[0].size(); sec++) { // skip the first second
-       double qps = 0;
+       uint64_t qps = 0;
        for(int t=0; t<threadCount; t++) {
            qps += queriesPerSecondPerThread[t][sec];
        }
