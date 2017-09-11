@@ -125,7 +125,7 @@ struct GetJobTest : tpunit::TestFixture {
 
         // Confirm these jobs all have the same nextRun time
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
+        tester->readDB("SELECT DISTINCT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ");", result);
         ASSERT_EQUAL(result.size(), 1);
 
         // GetJob and confirm that the jobs are returned in high, medium, low order
@@ -145,7 +145,7 @@ struct GetJobTest : tpunit::TestFixture {
     }
     // Create jobs in order of low, medium, high, high, medium, low
     // with nextRun times in order of now, now+1, now+2, now+5, now+4, now+3
-    // Expect the jobs to be returned in order of low, medium, high, low, medium, high
+    // Expect the jobs to be returned in order of low, medium, high, high, medium, low
     void testPrioritiesWithDifferentNextRunTimes() {
         // Create jobs of different priorities
         // Low
@@ -160,41 +160,41 @@ struct GetJobTest : tpunit::TestFixture {
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 1000000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 2000000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+5000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 5000000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+4000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 4000000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Low
         command["name"] = "low";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+3000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 3000000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Confirm these jobs all have different nextRun times
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
+        tester->readDB("SELECT DISTINCT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ");", result);
         ASSERT_EQUAL(result.size(), 6);
 
         // GetJob and confirm that the first 3 jobs are returned in order of low, medium, high
@@ -210,10 +210,8 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high");
 
-        // Sleep 3 seconds so that the nextRun time for the last 'high' job is now
-        sleep(3);
-
         // GetJob and confirm that the last 3 jobs are returned in priority order since now is past nextRun for all of them
+        sleep(3);
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high");
         response = tester->executeWaitVerifyContentTable(command);
@@ -222,7 +220,7 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["name"], "low");
     }
 
-    // get a parent job that has finished and cancelled jobs
+    // Get a parent job that has finished and cancelled jobs
     void testWithFinishedAndCancelledChildren() {
         // Create the parent
         SData command("CreateJob");
@@ -321,7 +319,7 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // This is the same as testPriorities but some of the states are set to RUNQUEUED
-    // So we set the the firstRun for all the jobs that don't have a retryAfter to 1 second in the future
+    // So we set the firstRun for all the jobs that don't have a retryAfter to 1 second in the future
     // This way, after the two jobs with retryAfter are run, the nextRun will be the same for all jobs
     void testPrioritiesWithRunQueued() {
         // Create jobs of different priorities
@@ -380,13 +378,13 @@ struct GetJobTest : tpunit::TestFixture {
 
         // Confirm they are in the RUNQUEUED state
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE name IN ('high_1', 'medium_3') GROUP BY state;", result);
+        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_3');", result);
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Sleep for a second and then confirm these jobs all have the same nextRun time
         sleep(1);
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ") GROUP BY nextRun;", result);
+        tester->readDB("SELECT DISTINCT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ");", result);
         ASSERT_EQUAL(result.size(), 1);
 
         // GetJob and confirm that the jobs are returned in high, medium, low order
