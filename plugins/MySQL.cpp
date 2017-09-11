@@ -649,7 +649,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"unique_checks", "ON"},
     {"updatable_views_with_limit", "YES"},
     {"version", "5.1.73-log"},
-    {"version_comment", SVERSION},//SVERSION},
+    {"version_comment", SVERSION},
     {"version_compile_machine", "x86_64"},
     {"version_compile_os", "unknown-linux-gnu"},
     {"wait_timeout", "28800"},
