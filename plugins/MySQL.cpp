@@ -238,7 +238,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query
-            string query = packet.payload.substr(1, packet.payload.size() - 1);
+            string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
             if (!SEndsWith(query, ";")) {
                 // We translate our query to one we can pass to `DB`, for which this is mandatory.
                 query += ";";
@@ -304,13 +304,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SINFO("Responding with empty routine list");
                 SQResult result;
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")) {
+            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")
+                       || SIEquals(query, "ROLLBACK;")) {
                 // Ignore
-                SINFO("Responding OK to SET or USE query.");
-                s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SStartsWith(SToUpper(query), "ROLLBACK ") || SStartsWith(SToUpper(query), "ROLLBACK;")) {
-                // Ignore
-                SINFO("Responding OK to ROLLBACK query.");
+                SINFO("Responding OK to SET/USE/ROLLBACK query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
@@ -652,7 +649,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"unique_checks", "ON"},
     {"updatable_views_with_limit", "YES"},
     {"version", "5.1.73-log"},
-    {"version_comment", "(Ubuntu)"},//SVERSION},
+    {"version_comment", SVERSION},//SVERSION},
     {"version_compile_machine", "x86_64"},
     {"version_compile_os", "unknown-linux-gnu"},
     {"wait_timeout", "28800"},
