@@ -257,18 +257,18 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-
-        // Cancel a child
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = cancelledChildID;
-        tester->executeWaitVerifyContent(command);
-
+        
         // Get a child
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
         response = tester->executeWaitVerifyContentTable(command);
+        
+        // Cancel a child
+        command.clear();
+        command.methodLine = "CancelJob";
+        command["jobID"] = cancelledChildID;
+        tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
         ASSERT_EQUAL(response.size(), 5);

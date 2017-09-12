@@ -125,6 +125,12 @@ struct FinishJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
+        // Get the child job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "child_finished";
+        tester->executeWaitVerifyContent(command);
+
         // Cancel a child
         // if this goes 2nd this doesn't requeue the parent job
         command.clear();
@@ -133,10 +139,6 @@ struct FinishJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Finish a child
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "child_finished";
-        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishedChildID;
