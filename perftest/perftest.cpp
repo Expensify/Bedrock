@@ -20,6 +20,7 @@ static int global_querySize = 10;
 static int global_numa = 0;
 static int64_t global_noopResult = 0;
 static int global_secondsRemaining = 10;
+static int global_linear = 0;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -236,6 +237,9 @@ int main(int argc, char *argv[]) {
         if (z == string("-mmap")) {
           global_bMmap = 1;
         }else
+        if (z == string("-linear")) {
+          global_linear = 1;
+        }else
         if (z == string("-dbFilename")) {
           global_dbFilename = argv[++i];
         } else
@@ -294,7 +298,11 @@ int main(int argc, char *argv[]) {
       int threads = 1;
       while (threads <= maxNumThreads) {
         test(threads, testQuery);
-        threads *= 2;
+        if (global_liner) {
+            threads++;
+        } else {
+            threads *= 2;
+        }
       }
 
       // Now ramp back down to the original to make sure it matches the first timings
