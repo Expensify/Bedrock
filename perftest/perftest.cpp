@@ -208,7 +208,7 @@ void test(int threadCount, const string& testQuery) {
     double vm, rss;
     getMemUsage(vm, rss);
     if (global_csv) {
-        cout << "," << maxQPS << "," << (double)maxQPS/(double)threadCount << endl;
+        cout << ", " << maxQPS << ", " << (double)maxQPS/(double)threadCount << endl;
     } else {
         cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ", maxQPS/t=" << (double)maxQPS/(double)threadCount << ")" << endl;
     }
@@ -297,7 +297,7 @@ int main(int argc, char *argv[]) {
 
     // Run the test for however many configurations were requested
     if (global_csv) {
-        cout << "numThreads,maxQPS,maxQPSpT" << endl;
+        cout << "numThreads, maxQPS, maxQPSpT" << endl;
     }
     if( numThreads<0 ){
       // Ramp up to the test desired test size
