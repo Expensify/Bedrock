@@ -5,7 +5,6 @@
 template<typename LOCKTYPE>
 class SLockTimer : public SPerformanceTimer {
   public:
-    static atomic<bool> enableExtraLogging;
     SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds = 10);
     ~SLockTimer();
 
@@ -23,9 +22,6 @@ class SLockTimer : public SPerformanceTimer {
     // Each thread keeps it's own counter of wait and lock time.
     map<string, pair<int,int>> _perThreadTiming;
 };
-
-template<typename LOCKTYPE>
-atomic<bool> SLockTimer<LOCKTYPE>::enableExtraLogging(false);
 
 template<typename LOCKTYPE>
 SLockTimer<LOCKTYPE>::SLockTimer(string description, LOCKTYPE& lock, uint64_t logIntervalSeconds)
@@ -60,10 +56,6 @@ void SLockTimer<LOCKTYPE>::lock()
             // We already have an entry, add to the wait time.
             it->second.first += (waitElapsed);
         }
-        if (enableExtraLogging.load() && waitElapsed > 1000000) {
-            SWARN("[performance] Over 1s spent waiting for lock " << _description << ": " << waitElapsed << "us.");
-            SLogStackTrace();
-        }
         start();
     }
 }
@@ -86,9 +78,6 @@ void SLockTimer<LOCKTYPE>::unlock()
             it->second.second += lockElapsed;
         } else {
             SWARN("Unlocking without ever locking.");
-        }
-        if (enableExtraLogging.load() && lockElapsed > 1000000) {
-            SWARN("[performance] Over 1s spent waiting in lock " << _description << ": " << lockElapsed << "us.");
         }
     }
     _lock.unlock();

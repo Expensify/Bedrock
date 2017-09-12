@@ -1,5 +1,5 @@
 #include "libstuff.h"
-#include <cxxabi.h>
+#include <execinfo.h> // for backtrace
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -173,16 +173,19 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
-                            try {
-                                _onMESSAGE(peer, message);
-                            } catch (...) {
-                                string exName(abi::__cxa_current_exception_type()->name());
-                                SWARN("Unknown exception: " << exName);
-                                throw;
-                            }
+                            _onMESSAGE(peer, message);
                         }
                     }
                 } catch (const char* e) {
+                    // Error -- reconnect
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e
+                                                       << "), reconnecting:" << message.serialize());
+                    SData reconnect("RECONNECT");
+                    reconnect["Reason"] = e;
+                    peer->s->send(reconnect.serialize());
+                    shutdownSocket(peer->s);
+                    break;
+                } catch (const string& e) {
                     // Error -- reconnect
                     PWARN("Error processing message '" << message.methodLine << "' (" << e
                                                        << "), reconnecting:" << message.serialize());

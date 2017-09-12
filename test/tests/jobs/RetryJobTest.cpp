@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <test/tests/jobs/Utils.h>
 
 struct RetryJobTest : tpunit::TestFixture {
     RetryJobTest()
@@ -12,6 +13,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::hasRepeat),
+                              TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeName),
                               TEST(RetryJobTest::hasRepeatWithNextRun),
@@ -52,7 +54,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING and RUNQUEUED jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -241,13 +243,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Assert the new nextRun value is correct
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        string currentNextRun = result[0][0];
-        struct tm tm1;
-        struct tm tm2;
-        strptime(originalNextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t originalNextRunTime = mktime(&tm1);
-        strptime(currentNextRun.c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t currentNextRunTime = mktime(&tm2);
+        time_t currentNextRunTime = getTimestampForDateTimeString(result[0][0]);
+        time_t originalNextRunTime = getTimestampForDateTimeString(originalNextRun);
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
     }
 
@@ -275,13 +272,40 @@ struct RetryJobTest : tpunit::TestFixture {
         // Confirm nextRun is in 1 hour
         SQResult result;
         tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        struct tm tm1;
-        struct tm tm2;
-        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t createdTime = mktime(&tm1);
-        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t nextRunTime = mktime(&tm2);
+        time_t createdTime = getTimestampForDateTimeString(result[0][0]);
+        time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // Retry job in RUNQUEUED state
+    void inRunqueuedState() {
+        // Create a job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["retryAfter"] = "+1 SECOND";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the job is in RUNQUEUED
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Confrim the job is back in the QUEUED state
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
     // Confirm nextrun is updated appropriately
@@ -289,8 +313,6 @@ struct RetryJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
 
         // Get the job
         command.clear();
@@ -388,11 +410,6 @@ struct RetryJobTest : tpunit::TestFixture {
         command.methodLine = "GetJob";
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
-
-        // Retry it
-        command.clear();
-        command.methodLine = "RetryJob";
-        command["jobID"] = jobID;
         command["delay"] = "";
         tester->executeWaitVerifyContent(command);
 
