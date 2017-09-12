@@ -19,7 +19,8 @@ static int global_cacheSize = -1000000;
 static int global_querySize = 10;
 static int global_numa = 0;
 static int64_t global_noopResult = 0;
-static int global_secondsRemaining = 10;
+static int global_testSeconds = 10;
+static int global_secondsRemaining = 0;
 static int global_linear = 0;
 static int global_csv = 0;
 
@@ -172,7 +173,7 @@ void test(int threadCount, const string& testQuery) {
     }
 
     // Start a thread that just harvests QPS every second
-    global_secondsRemaining = 10;
+    global_secondsRemaining = global_testSeconds;
     thread timerCounter(countDownTimer);
     vector<vector<uint64_t>> queriesPerSecondPerThread;
     queriesPerSecondPerThread.resize(threadCount);
@@ -242,6 +243,9 @@ int main(int argc, char *argv[]) {
         }else
         if (z == string("-maxNumThreads")) {
             maxNumThreads = atoi(argv[++i]);
+        }else
+        if (z == string("-testSeconds")) {
+            global_testSeconds = atoi(argv[++i]);
         }else
         if (z == string("-mmap")) {
           global_bMmap = 1;
