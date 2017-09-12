@@ -261,6 +261,8 @@ int main(int argc, char *argv[]) {
         if (z == string("-numa")) {
             // Output numa information about this system
             global_numa = 1;
+        } else
+        if (z == string("-numastats")) {
             cout << "Enabling NUMA awareness:" << endl;
             cout << "numa_available=" << numa_available() << endl;
             cout << "numa_max_node=" << numa_max_node() << endl;
