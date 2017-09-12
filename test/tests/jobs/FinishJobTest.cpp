@@ -5,6 +5,7 @@ struct FinishJobTest : tpunit::TestFixture {
     FinishJobTest()
         : tpunit::TestFixture("FinishJob",
                               BEFORE_CLASS(FinishJobTest::setupClass),
+                              /*
                               TEST(FinishJobTest::nonExistentJob),
                               TEST(FinishJobTest::notInRunningState),
                               TEST(FinishJobTest::parentIsNotPaused),
@@ -17,13 +18,14 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::hasRepeatWithDelay),
                               TEST(FinishJobTest::hasDelay),
                               TEST(FinishJobTest::hasRepeatWithNextRun),
-                              TEST(FinishJobTest::hasNexRun),
-                              AFTER(FinishJobTest::tearDown),
+                              */
+                              TEST(FinishJobTest::hasNextRun),
+                              //AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {}, true,true);}
 
     // Reset the jobs table
     void tearDown() {
@@ -388,6 +390,8 @@ struct FinishJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
 
         // Get the job
         command.clear();
@@ -476,7 +480,7 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // FinishJob should ignore the 'nextRun' parameter
-    void hasNexRun() {
+    void hasNextRun() {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -487,8 +491,6 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
-        tester->executeWaitVerifyContent(command);
-        command["nextRun"] = "2017-09-07 23:11:11";
         tester->executeWaitVerifyContent(command);
 
         // Finish it
