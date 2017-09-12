@@ -275,21 +275,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Inspect the existing database with a full table scan, pulling it all into memory
-    cout << "Precaching '" << global_dbFilename << "'...";
-    sqlite3* db = openDatabase(0);
-    string query = "SELECT COUNT(*), MIN(nonIndexedColumn) FROM perfTest;";
-    list<vector<string>> results;
-    auto start = STimeNow();
-    int error = sqlite3_exec(db, query.c_str(), queryCallback, &results, 0);
-    auto end = STimeNow();
-    if (error != SQLITE_OK) {
-        cout << "Error running query: " << sqlite3_errmsg(db) << ", query: " << query << endl;
-    }
-    global_dbRows = stoll(results.front()[0]);
-    cout << "Done (" << ((end - start) / 1000000) << " seconds, " << global_dbRows << " rows)" << endl;
-    sqlite3_close(db);
-
     // Figure out what query to use
     string testQuery;
     if (customQuery) {
