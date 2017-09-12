@@ -26,7 +26,7 @@ struct CreateJobsTest : tpunit::TestFixture {
     void create() {
         SData command("CreateJobs");
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
-        STable response = getJsonResult(command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
         ASSERT_EQUAL(jobIDList.size(), 2);
         string jobID1 = jobIDList.front();
@@ -44,17 +44,12 @@ struct CreateJobsTest : tpunit::TestFixture {
         // First create parent job
         SData command("CreateJob");
         command["name"] = "blabla";
-        STable response = getJsonResult(command);
+        STable response = tester->executeWaitVerifyContentTable(command);
 
         // Now try to create two new jobs
         command.clear();
         command.methodLine = "CreateJobs";
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"parentJobID\":\"" + response["jobID"] +"\", \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
         tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING or PAUSED");
-    }
-
-    STable getJsonResult(SData command) {
-        string resultJson = tester->executeWaitVerifyContent(command);
-        return SParseJSONObject(resultJson);
     }
 } __CreateJobsTest;
