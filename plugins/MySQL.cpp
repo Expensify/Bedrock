@@ -34,8 +34,7 @@ int MySQLPacket::deserialize(const string& packet) {
     }
 
     // Have the full payload, parse it out
-    payload.resize(payloadLength);
-    memcpy(&payload[0], &packet[4], payloadLength);
+    payload = packet.substr(4, payloadLength);
 
     // Indicate that we've consumed this full packet
     return 4 + payloadLength;
@@ -78,7 +77,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += (string) "bedrock"; // server version
+    handshake.payload += (string) "5.0.0"; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -151,7 +150,8 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
         uint32_t colLength = 1024;
         SAppend(column.payload, &colLength, 4); // column_length (4) -- maximum length of the field
 
-        uint8_t colType = 0;
+        //uint8_t colType = 0; // Decimal;
+        uint8_t colType = 254; // string.
         SAppend(column.payload, &colType, 1); // column_type (1) -- type of the column as defined in Column Type
 
         uint16_t flags = 0;
@@ -170,6 +170,8 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     MySQLPacket eofPacket;
     eofPacket.sequenceID = ++sequenceID;
     SAppend(eofPacket.payload, "\xFE", 1); // EOF
+    uint32_t zero = 0;
+    SAppend(eofPacket.payload, &zero, 4); // EOF
     sendBuffer += eofPacket.serialize();
 
     // Add all the rows
@@ -231,15 +233,22 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << (int)packet.payload[0] << ": '" << SToHex(packet.serialize()) << "'");
+        SDEBUG("Received command #" << (int)packet.sequenceID << ": '" << SToHex(packet.serialize()) << "'");
         SConsumeFront(s->recvBuffer, packetSize);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query
-            string query = packet.payload.substr(1, packet.payload.size() - 1);
+            string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
             if (!SEndsWith(query, ";")) {
                 // We translate our query to one we can pass to `DB`, for which this is mandatory.
                 query += ";";
+            }
+            // JDBC Does this.
+            if (SStartsWith(query, "/*")) {
+                auto index = query.find("*/");
+                if (index != query.npos) {
+                    query = query.substr(index + 2);
+                }
             }
             SINFO("Processing query '" << query << "'");
 
@@ -263,7 +272,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     SHMMM("Couldn't find variable '" << varName << "', returning empty.");
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW VARIABLES")) {
+            } else if (SIEquals(query, "SHOW VARIABLES;")) {
                 // Return the variable list
                 SINFO("Responding with fake variable list");
                 SQResult result;
@@ -276,7 +285,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES")) {
+            } else if (SIEquals(query, "SHOW DATABASES;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
                 SQResult result;
@@ -284,7 +293,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 result.rows.resize(1);
                 result.rows.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES")) {
+            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")) {
                 // Return an empty list of tables
                 SINFO("Responding with fake table list");
                 SQResult result;
@@ -295,8 +304,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SINFO("Responding with empty routine list");
                 SQResult result;
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")) {
+            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")
+                       || SIEquals(query, "ROLLBACK;")) {
                 // Ignore
+                SINFO("Responding OK to SET/USE/ROLLBACK query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
