@@ -21,6 +21,7 @@ static int global_numa = 0;
 static int64_t global_noopResult = 0;
 static int global_secondsRemaining = 10;
 static int global_linear = 0;
+static int global_csv = 0;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -119,7 +120,7 @@ void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSeco
             numQueriesLastSecond = 0;
 
             // Optionally show progress
-            if (showProgress) {
+            if (showProgress && !global_csv) {
                 cout << "." << flush;
             }
         }
@@ -160,7 +161,11 @@ sqlite3* openDatabase(int threadNum) {
 
 void test(int threadCount, const string& testQuery) {
     // Open a separate database handle for each thread
-    cout << "Testing with " << threadCount << " threads: ";
+    if (global_csv) {
+        cout << threadCount;
+    } else {
+        cout << "Testing with " << threadCount << " threads: ";
+    }
     vector<sqlite3*> dbs(threadCount);
     for (int i = 0; i < threadCount; i++) {
         dbs[i] = openDatabase(i);
@@ -201,7 +206,11 @@ void test(int threadCount, const string& testQuery) {
     // Output the results
     double vm, rss;
     getMemUsage(vm, rss);
-    cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ", maxQPS/t=" << (double)maxQPS/(double)threadCount << ")" << endl;
+    if (global_csv) {
+        cout << "," << maxQPS << "," << (double)maxQPS/(double)threadCount << endl;
+    } else {
+        cout << "Done! (" << ((end - start) / 1000000.0) << " seconds, vm=" << vm << ", rss=" << rss << ", maxQPS=" << maxQPS << ", maxQPS/t=" << (double)maxQPS/(double)threadCount << ")" << endl;
+    }
 
     // Close all the database handles
     for (int i = 0; i < threadCount; i++) {
@@ -239,6 +248,9 @@ int main(int argc, char *argv[]) {
         }else
         if (z == string("-linear")) {
           global_linear = 1;
+        }else
+        if (z == string("-csv")) {
+          global_csv = 1;
         }else
         if (z == string("-dbFilename")) {
           global_dbFilename = argv[++i];
@@ -293,12 +305,15 @@ int main(int argc, char *argv[]) {
     cout << "Testing: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
+    if (global_csv) {
+        cout << "numThreads,maxQPS,maxQPSpT" << endl;
+    }
     if( numThreads<0 ){
       // Ramp up to the test desired test size
       int threads = 1;
       while (threads <= maxNumThreads) {
         test(threads, testQuery);
-        if (global_liner) {
+        if (global_linear) {
             threads++;
         } else {
             threads *= 2;
