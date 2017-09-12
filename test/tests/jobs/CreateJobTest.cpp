@@ -1,5 +1,5 @@
 #include <test/lib/BedrockTester.h>
-#include <test/tests/jobs/Utils.h>
+#include <test/tests/jobs/JobTestHelper.h>
 
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
@@ -304,8 +304,8 @@ struct CreateJobTest : tpunit::TestFixture {
         SQResult jobData;
         tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
-        time_t nextRunTime = getTimestampForDateTimeString(jobData[0][1]);
-        time_t lastRunTime = getTimestampForDateTimeString(jobData[0][2]);
+        time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
+        time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
 
         // Get the job, confirm error
