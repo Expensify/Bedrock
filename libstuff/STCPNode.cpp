@@ -65,7 +65,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         try {
             // Verify it's still alive
             if (socket->state != Socket::CONNECTED)
-                throw "premature disconnect";
+                STHROW("premature disconnect");
 
             // Still alive; try to login
             SData message;
@@ -96,7 +96,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                 _onConnect(peer);
                                 break;
                             } else
-                                throw "already connected";
+                                STHROW("already connected");
                         }
                     }
 
@@ -104,17 +104,17 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     if (!foundIt) {
                         // This node wasn't expected
                         SWARN("Unauthenticated node '" << message["Name"] << "' attempted to connected, rejecting.");
-                        throw "unauthenticated node";
+                        STHROW("unauthenticated node");
                     }
                 } else
-                    throw "expecting NODE_LOGIN";
+                    STHROW("expecting NODE_LOGIN");
             }
-        } catch (const char* e) {
+        } catch (const SException& e) {
             // Died prematurely
             if (socket->recvBuffer.empty() && socket->sendBuffer.empty()) {
-                SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e << "), empty buffers");
+                SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
             } else {
-                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e << "), recv='"
+                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), recv='"
                       << socket->recvBuffer << "', send='" << socket->sendBuffer << "'");
             }
             closeSocket(socket);
@@ -138,7 +138,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
                         SWARN("Connection with peer '" << peer->name << "' timed out.");
-                        throw "Timed Out!";
+                        STHROW("Timed Out!");
                     }
 
                     // Send PINGs 5s before the socket times out
@@ -176,21 +176,12 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             _onMESSAGE(peer, message);
                         }
                     }
-                } catch (const char* e) {
+                } catch (const SException& e) {
                     // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e
+                    PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
                                                        << "), reconnecting:" << message.serialize());
                     SData reconnect("RECONNECT");
-                    reconnect["Reason"] = e;
-                    peer->s->send(reconnect.serialize());
-                    shutdownSocket(peer->s);
-                    break;
-                } catch (const string& e) {
-                    // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e
-                                                       << "), reconnecting:" << message.serialize());
-                    SData reconnect("RECONNECT");
-                    reconnect["Reason"] = e;
+                    reconnect["Reason"] = e.what();
                     peer->s->send(reconnect.serialize());
                     shutdownSocket(peer->s);
                     break;

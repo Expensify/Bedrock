@@ -3,6 +3,8 @@
 
 // C library
 #include <arpa/inet.h>
+#include <cxxabi.h>
+#include <execinfo.h> // for backtrace
 #include <fcntl.h>
 #include <libgen.h>   // for basename()
 #include <netinet/in.h>
@@ -95,6 +97,23 @@ class STableComp : binary_function<string, string, bool> {
       public:
         bool operator()(const unsigned char& c1, const unsigned char& c2) const { return tolower(c1) < tolower(c2); }
     };
+};
+
+#define STHROW(_MSG_) throw SException(_MSG_, __FILE__, __LINE__)
+#define STHROW_STACK(_MSG_) throw SException(_MSG_, __FILE__, __LINE__, true)
+class SException : public exception {
+  private:
+    static const int CALLSTACK_LIMIT = 100;
+    const string _message;
+    const string _file;
+    const int _line;
+    void* _callstack[CALLSTACK_LIMIT];
+    int _depth = 0;
+
+  public:
+    SException(string message, string file = "unknown", int line = 0, bool generateCallstack = false);
+    const char* what() const noexcept;
+    vector<string> details() const noexcept;
 };
 
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
