@@ -299,7 +299,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         time_t createdTime = getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
@@ -336,7 +336,7 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
-    // Confirm nextrun is updated appropriately
+    // Confirm nextRun is updated appropriately
     void simplyRetryWithNextRun() {
         // Create the job
         SData command("CreateJob");
@@ -416,7 +416,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour, not in the given nextRun time
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
@@ -445,12 +445,12 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        command["delay"] = "";
+        command["delay"] = "5";
         tester->executeWaitVerifyContent(command);
 
         // Confirm nextRun is in 1 hour, not in the 5 second delay
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);

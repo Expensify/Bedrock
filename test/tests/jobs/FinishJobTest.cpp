@@ -345,7 +345,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour from the created time
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         time_t createdTime = getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
@@ -406,7 +406,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour, not in the 5 second delay
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
@@ -467,7 +467,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour, not in the given nextRun time
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
