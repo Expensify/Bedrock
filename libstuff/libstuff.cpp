@@ -75,6 +75,44 @@ void SLogSetThreadName(const string& logName) {
     SThreadLogName = logName;
 }
 
+SException::SException(string message, string file, int line, bool generateCallstack)
+  : _message(message), _file(file), _line(line) {
+    // Build a callstack. We don't convert it to symbols unless someone asks for it later.
+    if (generateCallstack) {
+        _depth = backtrace(_callstack, CALLSTACK_LIMIT);
+    }
+}
+
+const char* SException::what() const noexcept {
+    return _message.c_str();
+}
+
+vector<string> SException::details() const noexcept {
+    // Symbols for each stack frame.
+    char** symbols = nullptr;
+    if (_depth) {
+        symbols = backtrace_symbols(_callstack, _depth);
+    }
+    vector<string> details(_depth + 1);
+    details[0] = string("Initially thrown from: ") + basename((char*)_file.c_str()) + ":" + to_string(_line);
+    int status = 0;
+    for (int i = 0; i < _depth; i++) {
+        // Demangle them if possible.
+        string temp = symbols[i];
+        size_t start = temp.find_first_of('(');
+        size_t end = temp.find_first_of('+', start);
+        temp = temp.substr(start + 1, end - start - 1);
+        char* demangled = abi::__cxa_demangle(temp.c_str(), 0, 0, &status);
+        if (status == 0) {
+            details[i + 1] = demangled;
+        } else {
+            details[i + 1] = symbols[i];
+        }
+        free(demangled);
+    }
+    return details;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
 /////////////////////////////////////////////////////////////////////////////
@@ -1451,7 +1489,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         string domain;
         uint16_t port = 0;
         if (!SParseHost(host, domain, port))
-            throw "invalid host";
+            STHROW("invalid host");
 
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
@@ -1465,7 +1503,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
                 SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
             }
             if (!hostent || hostent->h_length != 4 || !hostent->h_addr_list || !hostent->h_addr_list[0]) {
-                throw "can't resolve host";
+                STHROW("can't resolve host");
             }
             in_addr* addr = (in_addr*)hostent->h_addr_list[0];
             ip = addr->s_addr;
@@ -1477,14 +1515,14 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         else
             s = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (!s || s == -1)
-            throw "couldn't open";
+            STHROW("couldn't open");
 
         // Enable non-blocking, if requested
         if (!isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
             if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
-                throw "couldn't set non-blocking";
+                STHROW("couldn't set non-blocking");
         }
 
         // If this is a port, bind
@@ -1492,7 +1530,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
-                throw "couldn't set REUSEADDR";
+                STHROW("couldn't set REUSEADDR");
 
             // Bind to the configured port
             sockaddr_in addr;
@@ -1501,12 +1539,12 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             addr.sin_port = htons(port);
             addr.sin_addr.s_addr = ip;
             if (::bind(s, (sockaddr*)&addr, sizeof(addr))) {
-                throw "couldn't bind";
+                STHROW("couldn't bind");
             }
 
             // Start listening, if TCP
             if (isTCP && listen(s, SOMAXCONN))
-                throw "couldn't listen";
+                STHROW("couldn't listen");
         } else {
             // If TCP, connect
             sockaddr_in addr;
@@ -1525,16 +1563,16 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
                     break;
 
                 default:
-                    throw "couldn't connect";
+                    STHROW("couldn't connect");
                 }
         }
 
         // Success, ready to go.
         return s;
-    } catch (const char* message) {
+    } catch (const SException& e) {
         // Failed to open
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
-                                << "': " << message << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
+                                << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s > 0)
             close(s);
         return -1;
@@ -1610,7 +1648,7 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
             if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
-                throw "couldn't set non-blocking";
+                STHROW("couldn't set non-blocking");
         }
 
         // Accepted a valid socket; return
@@ -1976,7 +2014,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
             }
             if (fwrite(buf, 1, numRead, to) != numRead) {
                 SWARN("Failure writing to " << toPath << " Error: " << errno << ", " << strerror(errno) << ".");
-                throw "write error";
+                STHROW("write error");
             } else {
                 if (!writtenAny) {
                     writtenAny = true;
@@ -2003,9 +2041,9 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
 
         // Done
         success = true;
-    } catch (const char* e) {
+    } catch (const SException& e) {
         // Problem
-        SWARN("Failed copying file '" << fromPath << "' to '" << toPath << "' (" << e << ")");
+        SWARN("Failed copying file '" << fromPath << "' to '" << toPath << "' (" << e.what() << ")");
     }
     fclose(from);
     fclose(to);

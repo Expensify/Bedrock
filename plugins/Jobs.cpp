@@ -75,9 +75,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
         if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
             if (SIEquals(requestVerb, "GetJobs")) {
-                throw "402 Missing numResults";
+                STHROW("402 Missing numResults");
             } else {
-                throw "402 Cannot use numResults with GetJob; try GetJobs";
+                STHROW("402 Cannot use numResults with GetJob; try GetJobs");
             }
         }
 
@@ -91,7 +91,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "  AND name GLOB " + SQ(name) + " "
                      "LIMIT 1;",
                      result)) {
-            throw "502 Query failed";
+            STHROW("502 Query failed");
         }
 
         // If we didn't get any results, just return an empty list
@@ -110,7 +110,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 return false;     // Not processed
             } else {
                 // Don't hold, just respond with no results
-                throw "404 No job found";
+                STHROW("404 No job found");
             }
         }
 
@@ -148,10 +148,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
         if (result.empty()) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
         content["created"] = result[0][0];
         content["jobID"] = result[0][1];
@@ -174,18 +174,18 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
             if (multipleJobs.empty()) {
-                throw "401 Invalid JSON";
+                STHROW("401 Invalid JSON");
             }
 
             for (auto& job : multipleJobs) {
                 STable jobObject = SParseJSONObject(job);
                 if (jobObject.empty()) {
-                    throw "401 Invalid JSON";
+                    STHROW("401 Invalid JSON");
                 }
 
                 // Verify that name is present for every job
                 if (!SContains(job, "name")) {
-                    throw "402 Missing name";
+                    STHROW("402 Missing name");
                 }
 
                 jsonJobs.push_back(jobObject);
@@ -203,28 +203,28 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             // than having his job sit unprocessed in the queue forever. Hopefully
             // we can remove this restriction in the future.
             if (priority != 0 && priority != 500 && priority != 1000) {
-                throw "402 Invalid priority value";
+                STHROW("402 Invalid priority value");
             }
 
             // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
             if (SContains(job, "data") && SParseJSONObject(job["data"]).empty()) {
-                throw "402 Data is not a valid JSON Object";
+                STHROW("402 Data is not a valid JSON Object");
             }
 
             // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
             // so we're intentionally not adding support for them them yet
             if (SContains(job, "repeat") && SContains(job, "retryAfter")) {
-                throw "402 Recurring auto-retrying jobs are not supported";
+                STHROW("402 Recurring auto-retrying jobs are not supported");
             }
 
             // Validate retryAfter
             if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
-                throw "402 Malformed retryAfter";
+                STHROW("402 Malformed retryAfter");
             }
 
             // Throw if retryAfter was passed for unique job
             if (SContains(job, "retryAfter") && job["retryAfter"] != "" && SContains(job, "unique") && job["unique"] == "true") {
-                throw "405 Unique jobs can't be retried";
+                STHROW("405 Unique jobs can't be retried");
             }
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
@@ -234,17 +234,17 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
                 if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
-                    throw "502 Select failed";
+                    STHROW("502 Select failed");
                 }
                 if (result.empty()) {
-                    throw "404 parentJobID does not exist";
+                    STHROW("404 parentJobID does not exist");
                 }
                 if (result[0][1] != "") {
-                    throw "402 Auto-retrying parents cannot have children";
+                    STHROW("402 Auto-retrying parents cannot have children");
                 }
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
                 }
             }
 
@@ -256,7 +256,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) + ";",
                              result)) {
-                    throw "502 Select failed";
+                    STHROW("502 Select failed");
                 }
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
@@ -294,17 +294,17 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "WHERE j.jobID=" + SQ(jobID) + " "
                      "GROUP BY j.jobID;",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
 
         // Verify the job exists
         if (result.empty()) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
 
         // If the job has any children, we are using the command in the wrong way
         if (!result[0][1].empty()) {
-            throw "404 Invalid jobID - Cannot cancel a job with children";
+            STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
         // Don't process the command if the job has finished or it's already running.
@@ -381,13 +381,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             list<string> multipleJobs;
             multipleJobs = SParseJSONArray(request["jobs"]);
             if (multipleJobs.empty()) {
-                throw "401 Invalid JSON";
+                STHROW("401 Invalid JSON");
             }
 
             for (auto& job : multipleJobs) {
                 STable jobObject = SParseJSONObject(job);
                 if (jobObject.empty()) {
-                    throw "401 Invalid JSON";
+                    STHROW("401 Invalid JSON");
                 }
 
                 jsonJobs.push_back(jobObject);
@@ -406,7 +406,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) + ";",
                              result)) {
-                    throw "502 Select failed";
+                    STHROW("502 Select failed");
                 }
 
                 // If we got a result, and it's data is the same as passed, we won't change anything.
@@ -444,7 +444,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                           << job["name"] << ", removing attribute.");
                     job.erase("repeat");
                 } else if (!_validateRepeat(job["repeat"])) {
-                    throw "402 Malformed repeat";
+                    STHROW("402 Malformed repeat");
                 }
             }
 
@@ -458,7 +458,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // than having his job sit unprocessed in the queue forever. Hopefully
             // we can remove this restriction in the future.
             if (priority != 0 && priority != 500 && priority != 1000) {
-                throw "402 Invalid priority value";
+                STHROW("402 Invalid priority value");
             }
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
@@ -466,20 +466,20 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SQResult result;
                 if (!db.read("SELECT state, parentJobID FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
-                    throw "502 Select failed";
+                    STHROW("502 Select failed");
                 }
                 if (result.empty()) {
-                    throw "404 parentJobID does not exist";
+                    STHROW("404 parentJobID does not exist");
                 }
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    throw "405 Can only create child job when parent is RUNNING or PAUSED";
+                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
                 }
 
                 // Prevent jobs from creating grandchildren
                 if (!SIEquals(result[0][1], "0")) {
                     SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
-                    throw "405 Cannot create grandchildren";
+                    STHROW("405 Cannot create grandchildren");
                 }
             }
 
@@ -492,7 +492,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                "priority = " + SQ(priority) + " " +
                              "WHERE jobID = " + SQ(updateJobID) + ";"))
                 {
-                    throw "502 update query failed";
+                    STHROW("502 update query failed");
                 }
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
@@ -534,7 +534,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                             safeRetryAfter + " " +
                          " );"))
                 {
-                    throw "502 insert query failed";
+                    STHROW("502 insert query failed");
                 }
 
                 // Return the new jobID
@@ -611,7 +611,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             "ORDER BY priority DESC "
             "LIMIT " + safeNumResults + ";";
         if (!db.read(selectQuery, result)) {
-            throw "502 Query failed";
+            STHROW("502 Query failed");
         }
 
         // Are there any results?
@@ -622,7 +622,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             //          and process -- which could happen during heavy load.  But it'd just return
             //          no results (which is correct) faster than it would otherwise time out.  Either
             //          way the worker will likely just loop, so it doesn't really matter.
-            throw "404 No job found";
+            STHROW("404 No job found");
         }
 
         // There should only be at most one result if GetJob
@@ -662,7 +662,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // FINISHED/CANCELLED child jobs, indicating it is being resumed
                 SQResult childJobs;
                 if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
-                    throw "502 Failed to select finished child jobs";
+                    STHROW("502 Failed to select finished child jobs");
                 }
 
                 if (!childJobs.empty()) {
@@ -696,7 +696,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                      "lastRun=" + SCURRENT_TIMESTAMP() + " "
                                  "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
             if (!db.write(updateQuery)) {
-                throw "502 Update failed";
+                STHROW("502 Update failed");
             }
         }
 
@@ -710,7 +710,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                          "nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(job["retryAfter"]) + ") "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.write(updateQuery)) {
-                    throw "502 Update failed";
+                    STHROW("502 Update failed");
                 }
             }
         }
@@ -749,7 +749,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                       << request["jobID"] << ", removing attribute.");
                 request.erase("repeat");
             } else if (!_validateRepeat(request["repeat"])) {
-                throw "402 Malformed repeat";
+                STHROW("402 Malformed repeat");
             }
         }
 
@@ -759,10 +759,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
         if (result.empty() || !SToInt(result[0][0])) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
 
         const string& nextRun = result[0][1];
@@ -779,7 +779,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                       (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                           "WHERE jobID=" +
                       SQ(request.calc64("jobID")) + ";")) {
-            throw "502 Update failed";
+            STHROW("502 Update failed");
         }
         return true; // Successfully processed
     }
@@ -826,10 +826,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
         if (result.empty()) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
 
         const string& state = result[0][0];
@@ -841,7 +841,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED") {
             SWARN("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
-            throw "405 Can only retry/finish RUNNING and RUNQUEUED jobs";
+            STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
 
         // If we have a parent, make sure it is PAUSED.  This is to just
@@ -851,21 +851,21 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
                 SWARN("Trying to finish/retry job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
-                throw "405 Can only retry/finish child job when parent is PAUSED";
+                STHROW("405 Can only retry/finish child job when parent is PAUSED");
             }
         }
 
         // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
         if (!db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
-            throw "502 Failed deleting finished/cancelled child jobs";
+            STHROW("502 Failed deleting finished/cancelled child jobs");
         }
 
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
             if (!db.write("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
-                throw "502 Failed to update job data";
+                STHROW("502 Failed to update job data");
             }
         }
 
@@ -874,14 +874,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
             if (!db.write("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
-                throw "502 Parent update failed";
+                STHROW("502 Parent update failed");
             }
 
             // Also un-pause any child jobs such that they can run
             if (!db.write("UPDATE jobs SET state='QUEUED' "
                           "WHERE state='PAUSED' "
                             "AND parentJobID=" + SQ(jobID) + ";")) {
-                throw "502 Child update failed";
+                STHROW("502 Child update failed");
             }
 
             // All done processing this command
@@ -892,7 +892,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& name = request["name"];
         if (!name.empty() && SIEquals(requestVerb, "RetryJob")) {
             if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
-                throw "502 Failed to update job name";
+                STHROW("502 Failed to update job name");
             }
         }
 
@@ -907,12 +907,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 SINFO("nextRun isn't set, using delay");
                 int64_t delay = request.calc64("delay");
                 if (delay < 0) {
-                    throw "402 Must specify a non-negative delay when retrying";
+                    STHROW("402 Must specify a non-negative delay when retrying");
                 }
                 repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
                 safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
                 if (safeNewNextRun.empty()) {
-                    throw "402 Malformed delay";
+                    STHROW("402 Malformed delay");
                 }
             } else {
                 safeNewNextRun = SQ(newNextRun);
@@ -928,7 +928,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Update this job
             if (!db.write("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
-                throw "502 Update failed";
+                STHROW("502 Update failed");
             }
         } else {
             // We are done with this job.  What do we do with it?
@@ -936,7 +936,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
                 if (!db.write("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
-                    throw "502 Failed to mark job as FINISHED";
+                    STHROW("502 Failed to mark job as FINISHED");
                 }
 
                 // Resume the parent if this is the last pending child
@@ -944,13 +944,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     SINFO("Job has parentJobID: " + SToStr(parentJobID) +
                           " and no other pending children, resuming parent job");
                     if (!db.write("UPDATE jobs SET state='QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
-                        throw "502 Update failed";
+                        STHROW("502 Update failed");
                     }
                 }
             } else {
                 // This is a standalone (not a child) job; delete it.
                 if (!db.write("DELETE FROM jobs WHERE jobID=" + SQ(jobID) + ";")) {
-                    throw "502 Delete failed";
+                    STHROW("502 Delete failed");
                 }
 
                 // At this point, all child jobs should already be deleted, but
@@ -977,7 +977,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Cancel the job
         if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
-            throw "502 Failed to update job data";
+            STHROW("502 Failed to update job data");
         }
 
         // All done processing this command
@@ -1003,17 +1003,17 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
         if (result.empty()) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
         const string& state = result[0][0];
 
         // Make sure we're failing a job that's actually running
         if (state != "RUNNING") {
             SWARN("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
-            throw "405 Can only fail RUNNING jobs";
+            STHROW("405 Can only fail RUNNING jobs");
         }
 
         // Are we updating the data too?
@@ -1028,7 +1028,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Update this job
         if (!db.write("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
-            throw "502 Fail failed";
+            STHROW("502 Fail failed");
         }
 
         // Successfully processed
@@ -1053,20 +1053,20 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
         if (result.empty()) {
-            throw "404 No job with this jobID";
+            STHROW("404 No job with this jobID");
         }
         if (result[0][0] == "RUNNING") {
-            throw "405 Can't delete a RUNNING job";
+            STHROW("405 Can't delete a RUNNING job");
         }
 
         // Delete the job
         if (!db.write("DELETE FROM jobs "
                       "WHERE jobID=" +
                       SQ(request.calc64("jobID")) + ";")) {
-            throw "502 Delete failed";
+            STHROW("502 Delete failed");
         }
 
         // Successfully processed
@@ -1140,7 +1140,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
                  " AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
-        throw "502 Select failed";
+        STHROW("502 Select failed");
     }
     return !result.empty();
 }

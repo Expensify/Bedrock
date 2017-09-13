@@ -37,7 +37,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     // If there's already work in the queue, just return some.
     try {
         return _dequeue();
-    } catch (...) {
+    } catch (const out_of_range& e) {
         // Nothing available.
     }
 
@@ -51,14 +51,13 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
             // If we got any work, return it.
             try {
                 return _dequeue();
-            } catch (...) {
+            } catch (const out_of_range& e) {
                 // Still nothing available.
             }
 
             // Did we go past our timeout? If so, we give up. Otherwise, we awoke spuriously, and will retry.
             if (chrono::steady_clock::now() > timeout) {
-                // TODO: Better exception type.
-                throw "Timeout";
+                throw timeout_error();
             }
         }
     } else {
@@ -67,7 +66,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
             _queueCondition.wait(queueLock);
             try {
                 return _dequeue();
-            } catch (...) {
+            } catch (const out_of_range& e) {
                 // Nothing yet, loop again.
             }
         }
@@ -143,5 +142,5 @@ BedrockCommand BedrockCommandQueue::_dequeue() {
     }
 
     // No command suitable to process.
-    throw "No command found!";
+    throw out_of_range("No command found.");
 }

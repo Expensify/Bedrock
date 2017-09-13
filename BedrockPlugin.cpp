@@ -18,29 +18,29 @@ BedrockPlugin::BedrockPlugin() {
 
 void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize) {
     if (request[name].size() < minSize) {
-        throw "402 Missing " + name;
+        STHROW("402 Missing " + name);
     }
     if (!request[name].empty() && request[name] != SToStr(SToInt64(request[name]))) {
-        throw "402 Malformed " + name;
+        STHROW("402 Malformed " + name);
     }
 }
 
 void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize) {
     if (request[name].size() < minSize) {
-        throw "402 Missing " + name;
+        STHROW("402 Missing " + name);
     }
     if (request[name].size() > maxSize) {
-        throw "402 Malformed " + name;
+        STHROW("402 Malformed " + name);
     }
 }
 
 void BedrockPlugin::verifyAttributeBool(const SData& request, const string& name, bool require)
 {
     if (require && !request[name].size()) {
-        throw "402 Missing " + name;
+        STHROW("402 Missing " + name);
     }
     if (!request[name].empty() && !SIEquals(request[name], "true") && !SIEquals(request[name], "false")) {
-        throw "402 Malformed " + name;
+        STHROW("402 Malformed " + name);
     }
 }
 

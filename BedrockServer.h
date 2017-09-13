@@ -152,8 +152,27 @@ class BedrockServer : public SQLiteServer {
                      CommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
+    // Wraps the sync thread main function to make it easy to add exception handling.
+    static void syncWrapper(SData& args,
+                     atomic<SQLiteNode::State>& replicationState,
+                     atomic<bool>& upgradeInProgress,
+                     atomic<string>& masterVersion,
+                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockServer& server);
+
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     static void worker(SData& args,
+                       atomic<SQLiteNode::State>& _replicationState,
+                       atomic<bool>& upgradeInProgress,
+                       atomic<string>& masterVersion,
+                       CommandQueue& syncNodeQueuedCommands,
+                       CommandQueue& syncNodeCompletedCommands,
+                       BedrockServer& server,
+                       int threadId,
+                       int threadCount);
+
+    // Wraps the worker thread main function to make it easy to add exception handling.
+    static void workerWrapper(SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& masterVersion,
