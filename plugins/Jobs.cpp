@@ -629,7 +629,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         SASSERT(!SIEquals(requestVerb, "GetJob") || result.size()<=1);
 
         // Prepare to update the rows, while also creating all the child objects
-        string updateQuery = "UPDATE jobs SET state='RUNNING', lastRun=" + SCURRENT_TIMESTAMP() + " WHERE jobID IN (";
         list<string> nonRetriableJobs;
         list<STable> retriableJobs;
         list<string> jobList;

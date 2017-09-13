@@ -5,7 +5,6 @@ struct FinishJobTest : tpunit::TestFixture {
     FinishJobTest()
         : tpunit::TestFixture("FinishJob",
                               BEFORE_CLASS(FinishJobTest::setupClass),
-                              /*
                               TEST(FinishJobTest::nonExistentJob),
                               TEST(FinishJobTest::notInRunningState),
                               TEST(FinishJobTest::parentIsNotPaused),
@@ -18,14 +17,13 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::hasRepeatWithDelay),
                               TEST(FinishJobTest::hasDelay),
                               TEST(FinishJobTest::hasRepeatWithNextRun),
-                              */
                               TEST(FinishJobTest::hasNextRun),
-                              //AFTER(FinishJobTest::tearDown),
+                              AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {}, true,true);}
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
