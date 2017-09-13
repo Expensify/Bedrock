@@ -912,7 +912,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
                 safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
                 if (safeNewNextRun.empty()) {
-                    throw "402 Malformed repeat";
+                    throw "402 Malformed delay";
                 }
             } else {
                 safeNewNextRun = SQ(newNextRun);

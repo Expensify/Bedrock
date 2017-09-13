@@ -12,6 +12,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::updateData),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
+                              TEST(RetryJobTest::delayError),
                               TEST(RetryJobTest::hasRepeat),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
@@ -246,6 +247,33 @@ struct RetryJobTest : tpunit::TestFixture {
         time_t currentNextRunTime = getTimestampForDateTimeString(result[0][0]);
         time_t originalNextRunTime = getTimestampForDateTimeString(originalNextRun);
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
+    }
+
+    // Retry with too large of a delay
+    void delayError() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the nextRun value
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string originalNextRun = result[0][0];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["delay"] = "1000";
+        tester->executeWaitVerifyContent(command, "402 Malformed delay");
     }
 
     // Retry a job with a repeat
