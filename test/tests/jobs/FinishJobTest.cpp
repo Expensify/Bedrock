@@ -13,7 +13,6 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::finishingParentUnPausesChildren),
                               TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
                               TEST(FinishJobTest::hasRepeat),
-                              TEST(FinishJobTest::inRunqueuedState),
                               AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
@@ -49,7 +48,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING and RUNQUEUED jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -347,34 +346,4 @@ struct FinishJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
     }
 
-    // Finish job in RUNQUEUED state
-    void inRunqueuedState() {
-        // Create a job
-        SData command("CreateJob");
-        command["name"] = "job";
-        command["retryAfter"] = "+1 SECOND";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
-
-        // Get the job
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "job";
-        tester->executeWaitVerifyContent(command);
-
-        // Confirm the job is in RUNQUEUED
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
-        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
-
-        // Finish it
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command);
-
-        // Finishing the job should remove it from the table
-        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";",  result);
-        ASSERT_TRUE(result.empty());
-    }
 } __FinishJobTest;
