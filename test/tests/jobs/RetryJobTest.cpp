@@ -13,7 +13,6 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::hasRepeat),
-                              TEST(RetryJobTest::inRunqueuedState),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -49,7 +48,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING and RUNQUEUED jobs");
+        tester->executeWaitVerifyContent(command, "405 Can only retry/finish RUNNING jobs");
     }
 
     // If job has a parentID, the parent should be paused
@@ -270,36 +269,5 @@ struct RetryJobTest : tpunit::TestFixture {
         time_t createdTime = getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
-    }
-
-    // Retry job in RUNQUEUED state
-    void inRunqueuedState() {
-        // Create a job
-        SData command("CreateJob");
-        command["name"] = "job";
-        command["retryAfter"] = "+1 SECOND";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
-
-        // Get the job
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "job";
-        tester->executeWaitVerifyContent(command);
-
-        // Confirm the job is in RUNQUEUED
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
-        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
-
-        // Retry it
-        command.clear();
-        command.methodLine = "RetryJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command);
-
-        // Confrim the job is back in the QUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
-        ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 } __RetryJobTest;
