@@ -640,45 +640,52 @@ void BedrockServer::worker(SData& args,
                         // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
                         if (core.processCommand(command)) {
                             // If processCommand returned true, then we need to do a commit. Otherwise, the command is
-                            // done, and we just need to respond. Note that this is the first place we get really
-                            // particular with the state of the node from a worker thread. We only want to do this
-                            // commit if we're *SURE* we're mastering, and not allow the state of the node to change
-                            // while we're committing. If it turns out we've changed states, we'll roll this command
-                            // back, so we lock the node's state until we complete.
-                            SAUTOLOCK(server._syncNode->stateMutex);
-                            if (replicationState.load() != SQLiteNode::MASTERING &&
-                                replicationState.load() != SQLiteNode::STANDINGDOWN) {
-                                SWARN("Node State changed from MASTERING to "
-                                      << SQLiteNode::stateNames[replicationState.load()]
-                                      << " during worker commit. Rolling back transaction!");
-                                core.rollback();
-                            } else {
-                                // Before we commit, we need to grab the sync thread lock. Because the sync thread grabs
-                                // an exclusive lock on this wrapping any transactions that it performs, we'll get this
-                                // lock while the sync thread isn't in the process of handling a transaction, thus
-                                // guaranteeing that we can't commit and cause a conflict on the sync thread. We can
-                                // still get conflicts here, as the sync thread might have performed a transaction
-                                // after we called `processCommand` and before we call `commit`, or we could conflict
-                                // with another worker thread, but the sync thread will never see a conflict as long
-                                // as we don't commit while it's performing a transaction.
-                                bool commitSuccess;
-                                shared_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex);
-                                {
-                                    // Scoped for auto-timer.
+                            // done, and we just need to respond. Before we commit, we need to grab the sync thread
+                            // lock. Because the sync thread grabs an exclusive lock on this wrapping any transactions
+                            // that it performs, we'll get this lock while the sync thread isn't in the process of
+                            // handling a transaction, thus guaranteeing that we can't commit and cause a conflict on
+                            // the sync thread. We can still get conflicts here, as the sync thread might have
+                            // performed a transaction after we called `processCommand` and before we call `commit`,
+                            // or we could conflict with another worker thread, but the sync thread will never see a
+                            // conflict as long as we don't commit while it's performing a transaction. This is scoped
+                            // to the minimum time required.
+                            bool commitSuccess = false;
+                            {
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
+
+                                // This is the first place we get really particular with the state of the node from a
+                                // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
+                                // not allow the state of the node to change while we're committing. If it turns out
+                                // we've changed states, we'll roll this command back, so we lock the node's state
+                                // until we complete.
+                                //
+                                // IMPORTANT: If we acquire both _syncThreadCommitMutex and stateMutex, they always
+                                // need to be locked in that order. The reason for this is that it's possible for the
+                                // sync thread to to change states mid-commit, meaning that it needs to acquire these
+                                // locks in the same order. Always acquiring the locks in the same order prevents the
+                                // deadlocks.
+                                shared_lock<decltype(server._syncNode->stateMutex)> lock2(server._syncNode->stateMutex);
+                                if (replicationState.load() != SQLiteNode::MASTERING &&
+                                    replicationState.load() != SQLiteNode::STANDINGDOWN) {
+                                    SWARN("Node State changed from MASTERING to "
+                                          << SQLiteNode::stateNames[replicationState.load()]
+                                          << " during worker commit. Rolling back transaction!");
+                                    core.rollback();
+                                } else {
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
                                     commitSuccess = core.commit();
                                 }
-                                if (commitSuccess) {
-                                    BedrockConflictMetrics::recordSuccess(command.request.methodLine);
-                                    SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
-                                    // So we must still be mastering, and at this point our commit has succeeded, let's
-                                    // mark it as complete!
-                                    command.complete = true;
-                                } else {
-                                    BedrockConflictMetrics::recordConflict(command.request.methodLine);
-                                    SINFO("Conflict committing " << command.request.methodLine
-                                          << " on worker thread with " << retry << " retries remaining.");
-                                }
+                            }
+                            if (commitSuccess) {
+                                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
+                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                // So we must still be mastering, and at this point our commit has succeeded, let's
+                                // mark it as complete!
+                                command.complete = true;
+                            } else {
+                                BedrockConflictMetrics::recordConflict(command.request.methodLine);
+                                SINFO("Conflict or state change committing " << command.request.methodLine
+                                      << " on worker thread with " << retry << " retries remaining.");
                             }
                         }
 
