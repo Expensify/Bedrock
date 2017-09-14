@@ -85,7 +85,7 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job with children");
     }
 
-    // Ignore canceljob of RUNNING jobs
+    // Ignore canceljob for RUNNING jobs
     void cancelRunningJob() {
         // Create a parent job
         SData command("CreateJob");
@@ -257,17 +257,11 @@ struct CancelJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string siblingID = response["jobID"];
 
-        // Finish the parent to put the child in the QUEUED state
+        // Finish the parent to put the children in the QUEUED state
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-
-        // Try cancelling one of the children, but none of them are running so it should fail.
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings");
 
         // Get one the children
         command.clear();
@@ -333,7 +327,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
-        // Cancel the child
+        // Try cancelling one of the children, but none of them are running so it should fail.
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;

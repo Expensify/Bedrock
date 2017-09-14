@@ -325,12 +325,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // We can't control where CancelJob is called from, but we can verify that there's at least one RUNNING sibling around
-        if (!db.read("SELECT j.jobID "
-                     "FROM jobs j "
-                     "INNER JOIN jobs jj ON jj.parentJobID = j.parentJobID "
-                     "WHERE j.jobID=" + SQ(jobID) + " "
-                        "AND jj.jobID != j.jobID "
-                        "AND jj.state = 'RUNNING';",
+        if (!db.read("SELECT jobID "
+                     "FROM jobs "
+                     "WHERE parentID = " + result[0][2] + " "
+                        "AND state = 'RUNNING' "
+                     "LIMIT 1;",
                     result)) {
             throw "502 Select failed";
         }
