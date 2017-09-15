@@ -309,7 +309,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         // The command should only be called from a child job, throw if the job doesn't have a parent
         if (SToInt(result[0][2]) == 0) {
-            throw "404 Invalid jobID - Cannot cancel a job without a parent";
+            STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
         }
 
         // Don't process the command if the job has finished or it's already running.
@@ -332,11 +332,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                         "AND state = 'RUNNING' "
                      "LIMIT 1;",
                     result)) {
-            throw "502 Select failed";
+            STHROW("502 Select failed");
         }
 
         if (result.empty()) {
-            throw "404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings";
+            STHROW("404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings");
         }
 
         return false; // Need to process command
