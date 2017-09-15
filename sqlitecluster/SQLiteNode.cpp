@@ -915,10 +915,6 @@ bool SQLiteNode::update() {
             // Do we want to stand down, and can we?
             if (!standDownReason.empty()) {
                 SHMMM(standDownReason);
-
-                // As we fall out of mastering, make sure no lingering transactions are left behind.
-                SAUTOLOCK(stateMutex);
-                _sendOutstandingTransactions();
                 _changeState(STANDINGDOWN);
                 SINFO("Standing down: " << standDownReason);
             }
@@ -937,10 +933,6 @@ bool SQLiteNode::update() {
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
-
-            // As we fall out of mastering, make sure no lingering transactions are left behind.
-            SAUTOLOCK(stateMutex);
-            _sendOutstandingTransactions();
             _changeState(SEARCHING);
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
@@ -1823,7 +1815,13 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
-    SAUTOLOCK(stateMutex);
+    // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
+    unique_lock<decltype(stateMutex)> lock(stateMutex);
+
+    // We send any unsent transactions here before we finish switching states. Normally, this does nothing, unless
+    // we're switching down from MASTERING or STANDINGDOWN, but we need to make sure these are all sent to the new
+    // mater before we complete the transition.
+    _sendOutstandingTransactions();
 
     // Did we actually change _state?
     SQLiteNode::State oldState = _state;

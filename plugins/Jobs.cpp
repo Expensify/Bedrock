@@ -288,7 +288,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
-        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID) "
+        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID), j.parentJobID "
                      "FROM jobs j "
                      "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
                      "WHERE j.jobID=" + SQ(jobID) + " "
@@ -307,6 +307,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
+        // The command should only be called from a child job, throw if the job doesn't have a parent
+        if (SToInt(result[0][2]) == 0) {
+            STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
+        }
+
         // Don't process the command if the job has finished or it's already running.
         if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
             SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
@@ -317,6 +322,21 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         if (result[0][0] == "PAUSED") {
             SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
             return true; // Done
+        }
+
+        // We can't control where CancelJob is called from, but we can verify that there's at least one RUNNING sibling around
+        if (!db.read("SELECT jobID "
+                     "FROM jobs "
+                     "WHERE parentJobID = " + SQ(result[0][2]) + " "
+                        "AND jobID != " + SQ(jobID) + " "
+                        "AND state = 'RUNNING' "
+                     "LIMIT 1;",
+                    result)) {
+            STHROW("502 Select failed");
+        }
+
+        if (result.empty()) {
+            STHROW("404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings");
         }
 
         return false; // Need to process command

@@ -105,7 +105,7 @@ class SQLiteNode : public STCPNode {
     // state of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
     // 1. stateMutex
     // 2. SQLite::g_commitLock
-    recursive_mutex stateMutex;
+    shared_timed_mutex stateMutex;
 
   private:
     // STCPNode API: Peer handling framework functions
