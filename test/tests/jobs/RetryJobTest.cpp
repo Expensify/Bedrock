@@ -1,5 +1,5 @@
 #include <test/lib/BedrockTester.h>
-#include <test/tests/jobs/Utils.h>
+#include <test/tests/jobs/JobTestHelper.h>
 
 struct RetryJobTest : tpunit::TestFixture {
     RetryJobTest()
@@ -125,6 +125,12 @@ struct RetryJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
+        // Get a child job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "child_finished";
+        tester->executeWaitVerifyContent(command);
+
         // Cancel a child
         // if this goes 2nd this doesn't requeue the parent job
         command.clear();
@@ -133,10 +139,6 @@ struct RetryJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Finish a child
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "child_finished";
-        tester->executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishedChildID;
@@ -238,8 +240,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Assert the new nextRun value is correct
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        time_t currentNextRunTime = getTimestampForDateTimeString(result[0][0]);
-        time_t originalNextRunTime = getTimestampForDateTimeString(originalNextRun);
+        time_t currentNextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        time_t originalNextRunTime = JobTestHelper::getTimestampForDateTimeString(originalNextRun);
         ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
     }
 
@@ -267,8 +269,8 @@ struct RetryJobTest : tpunit::TestFixture {
         // Confirm nextRun is in 1 hour
         SQResult result;
         tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        time_t createdTime = getTimestampForDateTimeString(result[0][0]);
-        time_t nextRunTime = getTimestampForDateTimeString(result[0][1]);
+        time_t createdTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
     }
 
