@@ -915,8 +915,6 @@ bool SQLiteNode::update() {
             // Do we want to stand down, and can we?
             if (!standDownReason.empty()) {
                 SHMMM(standDownReason);
-
-                // As we fall out of mastering, make sure no lingering transactions are left behind.
                 _changeState(STANDINGDOWN);
                 SINFO("Standing down: " << standDownReason);
             }
@@ -935,8 +933,6 @@ bool SQLiteNode::update() {
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
-
-            // As we fall out of mastering, make sure no lingering transactions are left behind.
             _changeState(SEARCHING);
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
