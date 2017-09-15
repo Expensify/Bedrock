@@ -19,7 +19,6 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryUnique),
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
-                              TEST(CreateJobTest::retryJobComesFirst),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
@@ -348,43 +347,5 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "testRetryableChild";
         command["parentJobID"] = jobID;
         tester->executeWaitVerifyContent(command, "402 Auto-retrying parents cannot have children");
-    }
-
-    // Retryable job (after retry period has passed) comes before QUEUED job
-    void retryJobComesFirst() {
-        // Create retryable job
-        SData command("CreateJob");
-        string jobName = "testRetryable";
-        string retryValue = "+1 SECOND";
-        command["name"] = jobName;
-        command["retryAfter"] = retryValue;
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string retryableJob = response["jobID"];
-
-
-        // Get a job and confirm it's the first job we created
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "*Retryable";
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["jobID"], retryableJob);
-
-        // Sleep for a second so we're past the retryAfter time
-        sleep(1);
-
-        // Create a non-retryable job
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "notRetryable";
-
-        response = tester->executeWaitVerifyContentTable(command);
-        string nonRetryableJob = response["jobID"];
-
-        // Get a job, should be the first job we created (because it's been in REQUEUED for more than the retryAfter time)
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "*Retryable";
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["jobID"], retryableJob);
     }
 } __CreateJobTest;
