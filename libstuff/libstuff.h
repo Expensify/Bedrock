@@ -75,12 +75,6 @@ void SInitialize(string threadName = "");
                                         << ")");                                                                       \
         }                                                                                                              \
     } while (false)
-#define SASSERTTHROW(condition, uuid)                                                                                  \
-    do {                                                                                                               \
-        if (!(condition)) {                                                                                            \
-            throw AssertionFailedException(#condition, uuid);                                                          \
-        }                                                                                                              \
-    } while (false)
 
 // --------------------------------------------------------------------------
 // A very simple name/value pair table with case-insensitive name matching
