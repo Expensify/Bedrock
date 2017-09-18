@@ -605,7 +605,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC, jobID ASC LIMIT " + safeNumResults +
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
@@ -615,7 +615,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC, jobID ASC LIMIT " + safeNumResults +
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
@@ -625,7 +625,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "ORDER BY nextRun ASC, jobID ASC LIMIT " + safeNumResults +
+                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             ") "
             "ORDER BY priority DESC "

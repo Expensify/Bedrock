@@ -319,18 +319,19 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // This is the same as testPriorities but some of the states are set to RUNQUEUED
-    // So we set the firstRun for all the jobs that don't have a retryAfter to 1 second in the future
-    // This way, after the two jobs with retryAfter are run, the nextRun will be the same for all jobs
+    // We also change one of the high priority jobs to run a second earlier than the others to
+    // test that RUNQUEUED jobs will run before QUEUED jobs when the RUNQUEUED nextRun is earlier
+    // than the QUEUED nextRun
+    // We set the firstRun for all the jobs that don't have a retryAfter to 2 seconds in the future
+    // This way, after the two jobs with retryAfter are run, the nextRun will be the same for all jobs but one
     void testPrioritiesWithRunQueued() {
         // Create jobs of different priorities
         // Low
         SData command("CreateJob");
         command["name"] = "low_5";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
-        STable response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList;
-        jobList.push_back(response["jobID"]);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        tester->executeWaitVerifyContent(command);
 
         // High
         command.clear();
@@ -338,65 +339,64 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = "high_1";
         command["priority"] = "1000";
         command["retryAfter"] = "+1 SECONDS";
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList.push_back(response["jobID"]);
-
-        // Medium
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "medium_3";
-        command["priority"] = "500";
-        command["retryAfter"] = "+1 SECONDS";
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList.push_back(response["jobID"]);
-
-        // High
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "high_2";
-        command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList.push_back(response["jobID"]);
+        tester->executeWaitVerifyContent(command);
 
         // Medium
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "medium_4";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+1000000);
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList.push_back(response["jobID"]);
+        command["retryAfter"] = "+2 SECONDS";
+        tester->executeWaitVerifyContent(command);
+
+        // High
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "high_2";
+        command["priority"] = "1000";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        tester->executeWaitVerifyContent(command);
+
+        // Medium
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "medium_3";
+        command["priority"] = "500";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        tester->executeWaitVerifyContent(command);
 
         // Get the two jobs with retryAfter set to put them in a RUNQUEUED state
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "high_1";
         tester->executeWaitVerifyContent(command);
-        command["name"] = "medium_3";
+        command["name"] = "medium_4";
         tester->executeWaitVerifyContent(command);
 
         // Confirm they are in the RUNQUEUED state
         SQResult result;
-        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_3');", result);
+        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_4');", result);
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
-        // Sleep for a second and then confirm these jobs all have the same nextRun time
-        sleep(1);
-        tester->readDB("SELECT DISTINCT nextRun FROM jobs WHERE jobID IN (" + SComposeList(jobList) + ");", result);
-        ASSERT_EQUAL(result.size(), 1);
+        // Sleep for two seconds and then confirm that all jobs but high_1 have the same nextRun time
+        sleep(2);
+        tester->readDB("SELECT DISTINCT nextRun, GROUP_CONCAT(name) FROM jobs GROUP BY nextRun;", result);
+        ASSERT_EQUAL(result.size(), 2);
+        ASSERT_EQUAL(SParseList(result[0][1]).size(), 1);
+        ASSERT_EQUAL(result[0][1], "high_1");
+        ASSERT_EQUAL(SParseList(result[1][1]).size(), 4);
 
         // GetJob and confirm that the jobs are returned in high, medium, low order
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
-        response = tester->executeWaitVerifyContentTable(command);
+        STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high_1");
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high_2");
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_3");
+        ASSERT_EQUAL(response["name"], "medium_3"); // Because we don't order by jobID, QUEUED jobs will always run before RUNQUEUED when priority and nextRun are the same
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "medium_4");
         response = tester->executeWaitVerifyContentTable(command);
