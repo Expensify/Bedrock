@@ -24,7 +24,14 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *data* - (optional) New data object to associate with the job (especially useful if repeating, to pass state to the next worker).
 
  * **DeleteJob( jobID )** - Removes all trace of a job.
-   * *jobID* - Identifier of the job to delete 
+   * *jobID* - Identifier of the job to delete
+
+ * **RetryJob( jobID )** - Removes all trace of a job.
+   * *jobID* - Identifier of the job to retry
+   * *nextRun* - (optional) The time/date on which the job should be set to run again, in "YYYY-MM-DD [HH:MM:SS]" format. This is ignored if the job is set to repeat.
+   * *delay* - (optional) Number of seconds to wait before retrying. This is ignored if the job is set to repeat or if "nextRun" is set.
+   * *name* - (optional) Any arbitrary string name for this job.
+   * *data* - (optional) Data to associate with this job
 
 ## Sample Session
 This provides comprehensive functionality for scheduled, recurring, atomically-processed jobs by blocking workers.  For example, first create a job and assign it some data to be used by the worker:

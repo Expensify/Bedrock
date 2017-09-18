@@ -14,6 +14,10 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
                               TEST(FinishJobTest::hasRepeat),
                               TEST(FinishJobTest::inRunqueuedState),
+                              TEST(FinishJobTest::hasRepeatWithDelay),
+                              TEST(FinishJobTest::hasDelay),
+                              TEST(FinishJobTest::hasRepeatWithNextRun),
+                              TEST(FinishJobTest::hasNextRun),
                               AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
@@ -343,7 +347,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour from the created time
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         time_t createdTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
@@ -377,6 +381,129 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Finishing the job should remove it from the table
         tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_TRUE(result.empty());
+    }
+
+    // FinishJob with repeat should ignore the 'delay' parameter
+    void hasRepeatWithDelay() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["delay"] = "5";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is in 1 hour, not in the 5 second delay
+        SQResult result;
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // FinishJob should ignore the 'delay' parameter
+    void hasDelay() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["delay"] = "5";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the job was deleted instead of being rescheduled
+        SQResult result;
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_TRUE(result.empty());
+    }
+
+    // FinishJob with repeat should ignore the 'nextRun' parameter
+    void hasRepeatWithNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["nextRun"] = "2017-09-07 23:11:11";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is in 1 hour, not in the given nextRun time
+        SQResult result;
+        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        struct tm tm1;
+        struct tm tm2;
+        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
+        time_t createdTime = mktime(&tm1);
+        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
+        time_t nextRunTime = mktime(&tm2);
+        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // FinishJob should ignore the 'nextRun' parameter
+    void hasNextRun() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["nextRun"] = "2017-09-07 23:11:11";
+        tester->executeWaitVerifyContent(command);
+
+
+        // Confirm the job was deleted instead of being rescheduled
+        SQResult result;
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_TRUE(result.empty());
     }
 } __FinishJobTest;

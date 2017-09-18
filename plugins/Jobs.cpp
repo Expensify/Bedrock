@@ -806,18 +806,27 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob( jobID, delay, [data] )
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
         //
-        //     Re-queues a RUNNING job for "delay" seconds in the future,
-        //     unless the job is configured to "repeat" in which case it will
-        //     just schedule for the next repeat time.
+        //     Re-queues a RUNNING job.
+        //     The nextRun logic for the job is decided in the following way
+        //      - If the job is configured to "repeat" it will schedule
+        //     the job for the next repeat time.
+        //     - Else, if "nextRun" is set, it will schedule the job to run at that time
+        //     - Else, if "delay" is set, it will schedule the job to run in "delay" seconds
+        //
+        //     Optionally, the job name can be updated, meaning that you can move the job to
+        //     a different queue.  I.e, you can change the name from "foo" to "bar"
+        //
         //     Use this when a job was only partially completed but
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - jobID  - ID of the job to retry
-        //     - delay  - Number of seconds to wait before retrying
-        //     - data   - Data to associate with this finsihed job
+        //     - jobID   - ID of the job to requeue
+        //     - delay   - Number of seconds to wait before retrying
+        //     - nextRun - datetime of next scheduled run
+        //     - name    - An arbitrary string identifier (case insensitive)
+        //     - data    - Data to associate with this job
         //
         // - FinishJob( jobID, [data] )
         //
@@ -861,7 +870,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (parentJobID) {
             auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
-                SWARN("Trying to finish job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
+                SWARN("Trying to finish/retry job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
                 STHROW("405 Can only retry/finish child job when parent is PAUSED");
             }
         }
@@ -899,30 +908,46 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             return true;
         }
 
-        // If we're doing RetryJob and there isn't a repeat, construct one with the delay
-        if (repeat.empty() && SIEquals(requestVerb, "RetryJob")) {
-            // Make sure there is a delay
-            int64_t delay = request.calc64("delay");
-            if (delay < 0) {
-                STHROW("402 Must specify a non-negative delay when retrying");
+        // If this is RetryJob and we want to update the name, let's do that
+        const string& name = request["name"];
+        if (!name.empty() && SIEquals(requestVerb, "RetryJob")) {
+            if (!db.write("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to update job name");
             }
-            repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
         }
 
-        // Are we rescheduling?
+        string safeNewNextRun = "";
+        // If this is set to repeat, get the nextRun value
         if (!repeat.empty()) {
-            // Configured to repeat.  The "nextRun" at this point is still
+            safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+        } else if (SIEquals(requestVerb, "RetryJob")) {
+            const string& newNextRun = request["nextRun"];
+
+            if (newNextRun.empty()) {
+                SINFO("nextRun isn't set, using delay");
+                int64_t delay = request.calc64("delay");
+                if (delay < 0) {
+                    STHROW("402 Must specify a non-negative delay when retrying");
+                }
+                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+                safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+                if (safeNewNextRun.empty()) {
+                    STHROW("402 Malformed delay");
+                }
+            } else {
+                safeNewNextRun = SQ(newNextRun);
+            }
+        }
+
+        // The job is set to be rescheduled.
+        if (!safeNewNextRun.empty()) {
+            // The "nextRun" at this point is still
             // storing the last time this job was *scheduled* to be run;
             // lastRun contains when it was *actually* run.
-            const string& lastScheduled = nextRun;
-            const string& newNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
-            if (newNextRun.empty()) {
-                STHROW("402 Malformed repeat");
-            }
-            SINFO("Rescheduling job#" << jobID << ": " << newNextRun);
+            SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
-            if (!db.write("UPDATE jobs SET nextRun=" + newNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.write("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Update failed");
             }
         } else {
@@ -938,7 +963,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!_hasPendingChildJobs(db, parentJobID)) {
                     SINFO("Job has parentJobID: " + SToStr(parentJobID) +
                           " and no other pending children, resuming parent job");
-                    if (!db.write("UPDATE jobs SET state = 'QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
+                    if (!db.write("UPDATE jobs SET state='QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                         STHROW("502 Update failed");
                     }
                 }
