@@ -75,17 +75,22 @@ void SLogSetThreadName(const string& logName) {
     SThreadLogName = logName;
 }
 
-SException::SException(string message, string file, int line, bool generateCallstack)
-  : _message(message), _file(file), _line(line) {
+SException::SException(const string& file,
+                       int line,
+                       bool generateCallstack,
+                       const string& _method,
+                       const STable& _headers,
+                       const string& _body)
+  : _file(file), _line(line), method(_method), headers(_headers), body(_body) {
     // Build a callstack. We don't convert it to symbols unless someone asks for it later.
     if (generateCallstack) {
         _depth = backtrace(_callstack, CALLSTACK_LIMIT);
     }
-    SINFO("Throwing exception with message: '" << message << "' from " << file << ":" << line);
+    SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
 }
 
 const char* SException::what() const noexcept {
-    return _message.c_str();
+    return method.c_str();
 }
 
 vector<string> SException::details() const noexcept {

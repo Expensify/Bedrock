@@ -43,6 +43,6 @@ class BedrockCore : public SQLiteCore {
     bool processCommand(BedrockCommand& command);
 
   private:
-    void _handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing);
+    void _handleCommandException(BedrockCommand& command, const SException& e, bool wasProcessing);
     const BedrockServer& _server;
 };

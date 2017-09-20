@@ -65,7 +65,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e.what(), false);
+        _handleCommandException(command, e, false);
     }
 
     // If we get here, it means the command is fully completed.
@@ -145,7 +145,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e.what(), true);
+        _handleCommandException(command, e, true);
     }
 
     // Done, return whether or not we need the parent to commit our transaction.
@@ -153,29 +153,34 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     return needsCommit;
 }
 
-void BedrockCore::_handleCommandException(BedrockCommand& command, const string& e, bool wasProcessing) {
+void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e, bool wasProcessing) {
     // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
     if (wasProcessing) {
         _db.rollback();
     }
-    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e + "), ignoring: " +
+    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
                         command.request.serialize();
-    if (SContains(e, "_ALERT_")) {
+    if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);
-    } else if (SContains(e, "_WARN_")) {
+    } else if (SContains(e.what(), "_WARN_")) {
         SWARN(msg);
-    } else if (SContains(e, "_HMMM_")) {
+    } else if (SContains(e.what(), "_HMMM_")) {
         SHMMM(msg);
-    } else if (SStartsWith(e, "50")) {
+    } else if (SStartsWith(e.what(), "50")) {
         SALERT(msg); // Alert on 500 level errors.
     } else {
         SINFO(msg);
     }
 
-    // If the command set a response before throwing an exception, we'll keep that as our response to use. Otherwise,
-    // we'll use the text of the error.
-    if (command.response.methodLine.empty()) {
-        command.response.methodLine = e;
+    // Set the response to the values from the exception, if set.
+    if (!e.method.empty()) {
+        command.response.methodLine = e.method;
+    }
+    if (!e.headers.empty()) {
+        command.response.nameValueMap = e.headers;
+    }
+    if (!e.body.empty()) {
+        command.response.content = e.body;
     }
 
     // Add the commitCount header to the response.
