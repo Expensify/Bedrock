@@ -81,6 +81,7 @@ SException::SException(string message, string file, int line, bool generateCalls
     if (generateCallstack) {
         _depth = backtrace(_callstack, CALLSTACK_LIMIT);
     }
+    SINFO("Throwing exception with message: '" << message << "' from " << file << ":" << line);
 }
 
 const char* SException::what() const noexcept {
