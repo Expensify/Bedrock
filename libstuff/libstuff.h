@@ -99,23 +99,6 @@ class STableComp : binary_function<string, string, bool> {
     };
 };
 
-#define STHROW(_MSG_) throw SException(_MSG_, __FILE__, __LINE__)
-#define STHROW_STACK(_MSG_) throw SException(_MSG_, __FILE__, __LINE__, true)
-class SException : public exception {
-  private:
-    static const int CALLSTACK_LIMIT = 100;
-    const string _message;
-    const string _file;
-    const int _line;
-    void* _callstack[CALLSTACK_LIMIT];
-    int _depth = 0;
-
-  public:
-    SException(string message, string file = "unknown", int line = 0, bool generateCallstack = false);
-    const char* what() const noexcept;
-    vector<string> details() const noexcept;
-};
-
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
 // types.
 class SString : public string {
@@ -154,6 +137,35 @@ class SString : public string {
 };
 
 typedef map<string, SString, STableComp> STable;
+
+// An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
+// body. The STHROW and STHROW_STACK macros will create an SException that logs it's file and line of creation, and
+// optionally, a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response
+// as arguments.
+#define STHROW(...) throw SException(__FILE__, __LINE__, false, __VA_ARGS__)
+#define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
+class SException : public exception {
+  private:
+    static const int CALLSTACK_LIMIT = 100;
+    const string _file;
+    const int _line;
+    void* _callstack[CALLSTACK_LIMIT];
+    int _depth = 0;
+
+  public:
+    SException(const string& file = "unknown",
+               int line = 0,
+               bool generateCallstack = false,
+               const string& _method = "",
+               const STable& _headers = {},
+               const string& _body = "");
+    const char* what() const noexcept;
+    vector<string> details() const noexcept;
+
+    const string method;
+    const STable headers;
+    const string body;
+};
 
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
