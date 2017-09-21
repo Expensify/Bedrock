@@ -1775,6 +1775,36 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         _syncPeer = nullptr;
         _changeState(SEARCHING);
     }
+
+    // If we're master, but we've lost quorum, we can't commit anything, nor can worker threads. We need to drop out of
+    // a state that implies we can perform commits, and cancel any outstanding commits.
+    if (_state == MASTERING || _state == STANDINGUP || _state == STANDINGDOWN) {
+        int numFullPeers = 0;
+        int numLoggedInFullPeers = 0;
+        for (auto peer : peerList) {
+            // Make sure we're a full peer
+            if (peer->params["Permaslave"] != "true") {
+                // Verify we're logged in
+                ++numFullPeers;
+                if (SIEquals((*peer)["LoggedIn"], "true")) {
+                    // Verify we're still fresh
+                    ++numLoggedInFullPeers;
+                }
+            }
+        }
+
+        // If we've fallen below the minimum amount of peers required to control the database, we need to stop
+        // committing things.
+        if (numLoggedInFullPeers * 2 < numFullPeers) {
+            // This works for workers, as they block on the state mutex to finish commits, so they've either already
+            // completed, or they won't be able to until after this changes, and then they'll see the wrong state.
+            //
+            // It works for the sync thread as well, as there's handling in _changeState to rollback a commit when
+            // dropping out of mastering or standing down (and there can't be commits in progress in other states).
+            SWARN("We were " << stateNames[_state] << " but lost quorum. Going to SEARCHING.");
+            _changeState(SEARCHING);
+        }
+    }
 }
 
 void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
