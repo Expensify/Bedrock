@@ -23,7 +23,7 @@ class SQLite {
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
     SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID);
+           int maxRequiredJournalTableID, string synchronous = "false");
     ~SQLite();
 
     // Returns the filename for this database
@@ -154,7 +154,7 @@ class SQLite {
     // 3) sendOutstandingTransactions()
     // 4) prepare()
     // 5) commit() <- this is a distributed commit.
-    // 
+    //
     // We need to sendOutstandingTransactions() before calling commit(), because this is a distributed commit and if we
     // don't send any outstanding transactions to peers before sending the current one, then transactions will arrive
     // at peers out of order. We also need to lock our mutex before calling sendOutstandingTransactions() to prevent
