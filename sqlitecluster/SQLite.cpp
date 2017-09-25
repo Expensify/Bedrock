@@ -15,7 +15,7 @@ atomic_flag                         SQLite::_sqliteInitialized = ATOMIC_FLAG_INI
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
-               int maxRequiredJournalTableID, string synchronous) :
+               int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr)
 {
     // Initialize
@@ -73,10 +73,12 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // any tables to be effective.
     SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
+    // Compare to see if "false" wasn't passed meaning the -synchronous flag was set and run the query
+    if (!SIEquals(synchronous, "false")) {
+         SASSERT(!SQuery(_db, "setting synchronous commits", "PRAGMA synchronous = " + synchronous  + ";"));
+    }
+
     // These other pragmas only relate to read/write databases.
-    string synchronousLog = (synchronous == "false" ? "disabling" : "enabling") + " synchronous commits";
-    string synchronousQuery = "PRAGMA synchronous = " + synchronous  + ";";
-    SASSERT(!SQuery(_db, synchronousLog, synchronousQuery));
     SASSERT(!SQuery(_db, "disabling change counting", "PRAGMA count_changes = OFF;"));
     DBINFO("Enabling automatic checkpointing every " << autoCheckpoint << " pages.");
     sqlite3_wal_autocheckpoint(_db, autoCheckpoint);
