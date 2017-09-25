@@ -182,6 +182,7 @@ void BedrockServer::sync(SData& args,
         server._postPollPlugins(fdm, nextActivity);
 
         // Process any network traffic that happened.
+        SQLiteNode::State preUpdateState = syncNode.getState();
         syncNode.postPoll(fdm, nextActivity);
         syncNodeQueuedCommands.postPoll(fdm);
         completedCommands.postPoll(fdm);
@@ -200,7 +201,6 @@ void BedrockServer::sync(SData& args,
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
-        SQLiteNode::State preUpdateState = syncNode.getState();
         while (syncNode.update()) {}
         SQLiteNode::State nodeState = syncNode.getState();
         replicationState.store(nodeState);
@@ -227,6 +227,27 @@ void BedrockServer::sync(SData& args,
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
+            }
+        } else if ((preUpdateState == SQLiteNode::MASTERING || preUpdateState == SQLiteNode::STANDINGDOWN)
+                   && nodeState == SQLiteNode::SEARCHING) {
+            // If we were MASTERING, but now we're searching, then something's gone wrong (perhaps we got disconnected
+            // from the cluster). We should give up an any commands, and let them be re-escalated. If commands were
+            // initiated locally, we can just re-queue them, they will get re-checked once things clear up, and then
+            // they'll get processed here, or escalated to the new master.
+            // Commands initiated on slaves just get dropped, they will need to be re-escalated, potentially to a
+            // different master.
+            int requeued = 0;
+            int dropped = 0;
+            try {
+                while (true) {
+                    command = syncNodeQueuedCommands.pop();
+                    if (command.initiatingClientID) {
+                        // This one came from a local client, so we can save it for later.
+                        server._commandQueue.push(move(command));
+                    }
+                }
+            } catch (const out_of_range& e) {
+                SWARN("Abruptly stopped MASTERING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
             }
         }
 
