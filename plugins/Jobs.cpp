@@ -329,14 +329,14 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs "
                      "WHERE parentJobID = " + SQ(result[0][2]) + " "
                         "AND jobID != " + SQ(jobID) + " "
-                        "AND state = 'RUNNING' "
+                        "AND state IN ('RUNNING', 'RUNQUEUED') "
                      "LIMIT 1;",
                     result)) {
             STHROW("502 Select failed");
         }
 
         if (result.empty()) {
-            STHROW("404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings");
+            STHROW("404 Invalid jobID - Cannot cancel a job that has no RUNNING/RUNQUEUED siblings");
         }
 
         return false; // Need to process command
