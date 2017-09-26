@@ -331,6 +331,6 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job that has no RUNNING siblings");
+        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job that has no RUNNING/RUNQUEUED siblings");
     }
 } __CancelJobTest;
