@@ -16,7 +16,8 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID) :
-    whitelist(nullptr)
+    whitelist(nullptr),
+    _progressStart(0)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -142,7 +143,17 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     }
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
-    sqlite3_set_authorizer(_db, SQLite::_sqliteAuthorizerCallback, this);
+    sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
+
+    // 5,000,000 is pretty arbitrary. This is every half second or so on a dev laptop with a particular query.
+    sqlite3_progress_handler(_db, 5'000'000, _progressHandlerCallback, this);
+}
+
+int SQLite::_progressHandlerCallback(void* arg) {
+    SQLite* sqlite = static_cast<SQLite*>(arg);
+    uint64_t current = STimeNow() - sqlite->_progressStart;
+    SINFO("Progress callback. Elapsed so far: " << current << "us.");
+    return 0;
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
@@ -278,7 +289,9 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
     SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
+    _progressStart = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
+    _progressStart = 0;
     _readElapsed += STimeNow() - before;
     return queryResult;
 }
@@ -297,7 +310,9 @@ bool SQLite::write(const string& query) {
 
     // Try to execute the query
     uint64_t before = STimeNow();
+    _progressStart = STimeNow();
     bool result = !SQuery(_db, "read/write transaction", query);
+    _progressStart = 0;
     _writeElapsed += STimeNow() - before;
     if (!result) {
         return false;

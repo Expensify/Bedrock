@@ -244,6 +244,10 @@ class SQLite {
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
 
+    // Callback function for progress tracking.
+    static int _progressHandlerCallback(void* arg);
+    uint64_t _progressStart;
+
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
 };

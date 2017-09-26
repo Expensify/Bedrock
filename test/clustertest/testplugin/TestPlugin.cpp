@@ -33,6 +33,15 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         command.httpsRequest = httpsManager.send("https://www.expensify.com/", request);
         return false; // Not complete.
+    } else if (command.request.methodLine == "slowquery") {
+        int i = 10000000;
+        if (command.request.isSet("size")) {
+            i = SToInt(command.request["size"]);
+        }
+        string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(i) + ") SELECT MAX(x) FROM cnt;";
+        SQResult result;
+        db.read(query, result);
+        return true;
     }
 
     return false;
