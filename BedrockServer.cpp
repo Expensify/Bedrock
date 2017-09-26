@@ -1362,7 +1362,6 @@ void BedrockServer::_status(BedrockCommand& command) {
         _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item){
             syncNodeQueuedMethods.push_back(item.request.methodLine);
         });
-
         content["peerList"]                    = SComposeJSONArray(peerList);
         content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
