@@ -1355,9 +1355,18 @@ void BedrockServer::_status(BedrockCommand& command) {
         for (const STable& peerTable : peerData) {
             peerList.push_back(SComposeJSONObject(peerTable));
         }
-        content["peerList"]             = SComposeJSONArray(peerList);
-        content["queuedCommandList"]    = SComposeJSONArray(_commandQueue.getRequestMethodLines());
-        content["escalatedCommandList"] = SComposeJSONArray(escalated);
+
+        // We can use the `each` functionality to pass a lambda that will grab each method line in
+        // `_syncNodeQueuedCommands`.
+        list<string> syncNodeQueuedMethods;
+        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item){
+            syncNodeQueuedMethods.push_back(item.request.methodLine);
+        });
+
+        content["peerList"]                    = SComposeJSONArray(peerList);
+        content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
+        content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
+        content["escalatedCommandList"]        = SComposeJSONArray(escalated);
 
         // Done, compose the response.
         response.methodLine = "200 OK";
