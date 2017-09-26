@@ -12,8 +12,16 @@ struct aa_SlowTest : tpunit::TestFixture {
         // Test write commands.
         BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
+
+        // Run one long query.
         SData slow("slowquery");
-        brtester->executeWaitVerifyContent(slow);
+        slow["timeout"] = "5000000"; // 5s
+        brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
+
+        // And a bunch of faster ones.
+        slow["size"] = "10000";
+        slow["count"] = "1000";
+        brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
     }
 } __aa_SlowTest;
 

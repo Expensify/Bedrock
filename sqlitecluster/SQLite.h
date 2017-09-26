@@ -7,6 +7,16 @@
 
 class SQLite {
   public:
+
+    class timeout_error : public exception {
+      public :
+        timeout_error(const string& e) : _what(e) {};
+        virtual ~timeout_error() {};
+        const char* what() const noexcept { return _what.c_str(); }
+      private:
+        string _what;
+    };
+
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
@@ -103,6 +113,12 @@ class SQLite {
 
     // Looks up a range of commits
     bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
+
+    // Start a timing operation, that will time out after the given number of microseconds.
+    void startTiming(int timeLimitUS);
+
+    // Reset timing after finishing a timed operation.
+    void resetTiming();
 
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
@@ -246,7 +262,8 @@ class SQLite {
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
-    uint64_t _progressStart;
+    uint64_t _timeoutLimit;
+    bool _timeoutError;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
