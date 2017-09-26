@@ -10,11 +10,13 @@ class SQLite {
 
     class timeout_error : public exception {
       public :
-        timeout_error(const string& e) : _what(e) {};
+        timeout_error(const string& e, uint64_t time) : _what(e), _time(time) {};
         virtual ~timeout_error() {};
         const char* what() const noexcept { return _what.c_str(); }
+        const uint64_t time() const noexcept { return _time; }
       private:
         string _what;
+        uint64_t _time;
     };
 
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
@@ -115,7 +117,7 @@ class SQLite {
     bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
 
     // Start a timing operation, that will time out after the given number of microseconds.
-    void startTiming(int timeLimitUS);
+    void startTiming(uint64_t timeLimitUS);
 
     // Reset timing after finishing a timed operation.
     void resetTiming();
@@ -263,7 +265,8 @@ class SQLite {
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
     uint64_t _timeoutLimit;
-    bool _timeoutError;
+    uint64_t _timeoutStart;
+    uint64_t _timeoutError;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);

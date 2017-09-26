@@ -20,7 +20,7 @@ struct aa_SlowTest : tpunit::TestFixture {
 
         // And a bunch of faster ones.
         slow["size"] = "10000";
-        slow["count"] = "1000";
+        slow["count"] = "10000";
         brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
     }
 } __aa_SlowTest;

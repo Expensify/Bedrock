@@ -15,11 +15,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
     command.peekCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
         try {
-            _db.startTiming(5'000'000);
+            _db.startTiming(timeout);
             // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
             // through process. This allows for consistency through this two-phase process. I.e., anything checked in
             // peek is guaranteed to still be valid in process, because they're done together as one transaction.
@@ -68,10 +69,11 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 }
             }
         } catch (const SQLite::timeout_error& e) {
+            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
             STHROW("555 Timeout peeking command");
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e, false);
+        _handleCommandException(command, e);
     }
 
     // If we get here, it means the command is fully completed.
@@ -94,13 +96,14 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Processing '" << request.methodLine << "'");
     command.processCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
         try {
             // Time in US.
-            _db.startTiming(5'000'000);
+            _db.startTiming(timeout);
             // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
             // case we need to open a new transaction.
@@ -155,10 +158,11 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
                 }
             }
         } catch (const SQLite::timeout_error& e) {
+            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
             STHROW("555 Timeout processing command");
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e, true);
+        _handleCommandException(command, e);
     }
 
     _db.resetTiming();
@@ -168,11 +172,8 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     return needsCommit;
 }
 
-void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e, bool wasProcessing) {
-    // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
-    //if (wasProcessing) {
-        _db.rollback();
-    //}
+void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
+    _db.rollback();
     _db.resetTiming();
     const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
                         command.request.serialize();

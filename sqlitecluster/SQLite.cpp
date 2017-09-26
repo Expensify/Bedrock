@@ -154,9 +154,10 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
-    if (sqlite->_timeoutLimit && STimeNow() > sqlite->_timeoutLimit) {
+    uint64_t now = STimeNow();
+    if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
         // Timeout!
-        sqlite->_timeoutError = true;
+        sqlite->_timeoutError = now - sqlite->_timeoutStart;
         return 1;
     }
     return 0;
@@ -297,8 +298,9 @@ bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
     if (_timeoutLimit && _timeoutError) {
+        uint64_t time = _timeoutError;
         resetTiming();
-        throw timeout_error("timeout in SQLite::read");
+        throw timeout_error("timeout in SQLite::read", time);
     }
     _readElapsed += STimeNow() - before;
     return queryResult;
@@ -320,8 +322,9 @@ bool SQLite::write(const string& query) {
     uint64_t before = STimeNow();
     bool result = !SQuery(_db, "read/write transaction", query);
     if (_timeoutLimit && _timeoutError) {
+        uint64_t time = _timeoutError;
         resetTiming();
-        throw timeout_error("timeout in SQLite::write");
+        throw timeout_error("timeout in SQLite::write", time);
     }
     _writeElapsed += STimeNow() - before;
     if (!result) {
@@ -649,12 +652,14 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
     return SQLITE_DENY;
 }
 
-void SQLite::startTiming(int timeLimitUS) {
-    _timeoutLimit = STimeNow() + timeLimitUS;
-    _timeoutError = false;
+void SQLite::startTiming(uint64_t timeLimitUS) {
+    _timeoutStart = STimeNow();
+    _timeoutLimit = _timeoutStart + timeLimitUS;
+    _timeoutError = 0;
 }
 
 void SQLite::resetTiming() {
     _timeoutLimit = 0;
-    _timeoutError = false;
+    _timeoutStart = 0;
+    _timeoutError = 0;
 }
