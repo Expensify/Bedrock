@@ -274,7 +274,6 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
-    SETDEFAULT("-synchronous", "false");
 
     args["-plugins"] = SComposeList(loadPlugins(args));
 

@@ -31,7 +31,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
     void testFindSyncPeer() {
 
         // This exposes just enough to test the peer selection logic.
-        SQLite db(":memory:", 1000000, 100, 5000, -1, -1, "false");
+        SQLite db(":memory:", 1000000, 100, 5000, -1, -1);
         TestServer server("");
         SQLiteNode testNode(server, db, "test", "localhost:9999", "", 1, 1000000000, "1.0", 100);
 
