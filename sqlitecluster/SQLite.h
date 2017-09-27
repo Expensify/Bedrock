@@ -23,7 +23,7 @@ class SQLite {
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
     SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID, const string& synchronous="");
+           int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
     // Returns the filename for this database

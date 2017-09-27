@@ -73,9 +73,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     // any tables to be effective.
     SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
-    // Compare to see if "false" wasn't passed meaning the -synchronous flag was set and run the query
+    // Check if synchronous has been set and run query to use a custom synchronous setting
     if (!synchronous.empty()) {
-        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + synchronous  + ";"));
+        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(synchronous)  + ";"));
     } else {
         DBINFO("Using SQLite default PRAGMA synchronous");
     }
