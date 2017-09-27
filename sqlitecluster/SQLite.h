@@ -268,6 +268,9 @@ class SQLite {
     uint64_t _timeoutStart;
     uint64_t _timeoutError;
 
+    // Check the timing of the current query and throw if the limit's exceeded.
+    void _checkTiming(const string& error);
+
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
 };
