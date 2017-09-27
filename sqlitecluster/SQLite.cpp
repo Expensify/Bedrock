@@ -146,10 +146,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
-    // second. This seems adequate, except that means we won't get callbacks for a second, and so if we have a lot of
-    // queries that run in just under s asecond, we'll never accumulate timing info, so this number is set to fire
-    // roughly once per millisecond, which is hopefully adequate.
-    sqlite3_progress_handler(_db, 10000, _progressHandlerCallback, this);
+    // second.
+    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
@@ -297,6 +295,10 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
+    uint64_t now = STimeNow();
+    if (_timeoutLimit && now > _timeoutLimit) {
+        _timeoutError = now;
+    }
     if (_timeoutLimit && _timeoutError) {
         uint64_t time = _timeoutError;
         resetTiming();
@@ -321,6 +323,10 @@ bool SQLite::write(const string& query) {
     // Try to execute the query
     uint64_t before = STimeNow();
     bool result = !SQuery(_db, "read/write transaction", query);
+    uint64_t now = STimeNow();
+    if (_timeoutLimit && now > _timeoutLimit) {
+        _timeoutError = now;
+    }
     if (_timeoutLimit && _timeoutError) {
         uint64_t time = _timeoutError;
         resetTiming();
