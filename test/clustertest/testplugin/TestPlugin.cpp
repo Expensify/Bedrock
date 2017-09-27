@@ -85,6 +85,20 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         int nextID = SToInt(result[0][0]) + 1;
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
         return true;
+    } else if (command.request.methodLine == "slowprocessquery") {
+        int size = 100000000;
+        int count = 1;
+        if (command.request.isSet("size")) {
+            size = SToInt(command.request["size"]);
+        }
+        if (command.request.isSet("count")) {
+            count = SToInt(command.request["count"]);
+        }
+        for (int i = 0; i < count; i++) {
+            string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
+            SQResult result;
+            db.read(query, result);
+        }
     }
     return false;
 }
