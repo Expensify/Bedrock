@@ -1002,7 +1002,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             STHROW("502 Select failed");
         }
         if (SToInt(result[0][0]) == 0) {
-            SINFO("Cancelled last QUEUED child, resuming the parent");
+            SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
             if (!db.write("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
                 STHROW("502 Failed to update job data");
             }
