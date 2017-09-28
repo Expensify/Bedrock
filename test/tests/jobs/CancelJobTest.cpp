@@ -11,7 +11,7 @@ struct CancelJobTest : tpunit::TestFixture {
                               TEST(CancelJobTest::cancelPausedJob),
                               TEST(CancelJobTest::cancelChildJob),
                               TEST(CancelJobTest::cancelJobWithoutParent),
-                              TEST(CancelJobTest::cancelJobWithoutSiblings),                              
+                              TEST(CancelJobTest::cancelJobWithSiblings),
                               AFTER(CancelJobTest::tearDown),
                               AFTER_CLASS(CancelJobTest::tearDownClass)) { }
 
@@ -299,8 +299,8 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job without a parent");
     }
 
-    // Cancel a child job that doesn't have at least one RUNNING sibling around
-    void cancelJobWithoutSiblings() {
+    // Cancel a child job that's the last child job of the parent
+    void cancelJobWithSiblings() {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -313,7 +313,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command["name"] = "parent";
         tester->executeWaitVerifyContent(command);
 
-        // Create the child
+        // Create one child
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child";
@@ -321,16 +321,39 @@ struct CancelJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string childID = response["jobID"];
 
+        // Create another child
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child2";
+        command["parentJobID"] = parentID;
+        response = tester->executeWaitVerifyContentTable(command);
+        string childID2 = response["jobID"];
+
         // Finish the parent to put the child in the QUEUED state
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
-        // Try cancelling one of the children, but none of them are running so it should fail.
+        // Cancel one child
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job that has no RUNNING/RUNQUEUED siblings");
+        tester->executeWaitVerifyContent(command);
+
+        // Parent should still be PAUSED
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
+
+        // Cancel the last child
+        command.clear();
+        command.methodLine = "CancelJob";
+        command["jobID"] = childID2;
+        tester->executeWaitVerifyContent(command);
+
+        // Parent should be queued
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 } __CancelJobTest;

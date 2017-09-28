@@ -275,7 +275,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(request.methodLine, "CancelJob")) {
         // - CancelJob(jobID)
         //
-        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //     Cancel a QUEUED, RUNQUEUED, FAILED child job.
         //
         //     Parameters:
         //     - jobID  - ID of the job to cancel
@@ -322,21 +322,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         if (result[0][0] == "PAUSED") {
             SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
             return true; // Done
-        }
-
-        // We can't control where CancelJob is called from, but we can verify that there's at least one RUNNING sibling around
-        if (!db.read("SELECT jobID "
-                     "FROM jobs "
-                     "WHERE parentJobID = " + SQ(result[0][2]) + " "
-                        "AND jobID != " + SQ(jobID) + " "
-                        "AND state IN ('RUNNING', 'RUNQUEUED') "
-                     "LIMIT 1;",
-                    result)) {
-            STHROW("502 Select failed");
-        }
-
-        if (result.empty()) {
-            STHROW("404 Invalid jobID - Cannot cancel a job that has no RUNNING/RUNQUEUED siblings");
         }
 
         return false; // Need to process command
@@ -988,7 +973,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(request.methodLine, "CancelJob")) {
         // - CancelJob (jobID)
         //
-        //     Cancel a QUEUED, RUNQUEUED, FAILED job from a sibling.
+        //     Cancel a QUEUED, RUNQUEUED, FAILED child job.
         //
         //     Parameters:
         //     - jobID  - ID of the job to cancel
@@ -998,6 +983,29 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Cancel the job
         if (!db.write("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Failed to update job data");
+        }
+
+        // If this was the last queued child, resume the parent
+        SQResult result;
+        if (!db.read("SELECT parentJobID "
+                     "FROM jobs "
+                     "WHERE jobID=" + SQ(jobID) + ";",
+                     result)) {
+            STHROW("502 Select failed");
+        }
+        const string& safeParentJobID = SQ(result[0][0]);
+        if (!db.read("SELECT count(1) "
+                     "FROM jobs "
+                     "WHERE parentJobID=" + safeParentJobID + " AND "
+                       "state IN ('QUEUED', 'RUNQUEUED');",
+                     result)) {
+            STHROW("502 Select failed");
+        }
+        if (SToInt(result[0][0]) == 0) {
+            SINFO("Cancelled last QUEUED child, resuming the parent");
+            if (!db.write("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
+                STHROW("502 Failed to update job data");
+            }
         }
 
         // All done processing this command
