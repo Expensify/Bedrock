@@ -1363,9 +1363,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         try {
             // Done synchronizing
             _recvSynchronize(peer, message);
-            if (_db.getCommitCount() != _masterPeer->calcU64("CommitCount")) {
-                STHROW("Incomplete synchronization");
-            }
             SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
                   << "), SLAVING");
             _changeState(SLAVING);
