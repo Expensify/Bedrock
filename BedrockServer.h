@@ -44,7 +44,7 @@ class BedrockServer : public SQLiteServer {
     typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
 
     // Our only constructor.
-    BedrockServer(const SData& args);
+    BedrockServer(const SData& args, const string& versionOverrideSet);
 
     // Destructor
     virtual ~BedrockServer();
@@ -81,6 +81,12 @@ class BedrockServer : public SQLiteServer {
 
     // Returns whether or not this server was configured to backup when it completed shutdown.
     bool backupOnShutdown();
+
+    // Returns whether or not this server was configured to restart from a version change.
+    bool restartFromVersionChange();
+
+    // The new version we should use on start up if we set it via SetVersion
+    string newVersionOnStartup;
 
   private:
     // The name of the sync thread.
@@ -194,6 +200,7 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_BLACKLIST         = "SetParallelCommandBlacklist";
     static constexpr auto STATUS_MULTIWRITE        = "EnableMultiWrite";
 
+
     // This *only* exists so that status commands can pull info from this node.
     SQLiteNode* _syncNode;
 
@@ -246,6 +253,9 @@ class BedrockServer : public SQLiteServer {
 
     // Set this to cause a backup to run when the server shuts down.
     bool _backupOnShutdown;
+
+    // Set this to cause the server to restart after a version change.
+    bool _restartFromVersionChange;
 
     // Pointer to the control port, so we know which port not to shut down when we close the command ports.
     Port* _controlPort;

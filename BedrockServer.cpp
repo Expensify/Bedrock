@@ -766,13 +766,14 @@ void BedrockServer::worker(SData& args,
     }
 }
 
-BedrockServer::BedrockServer(const SData& args)
+BedrockServer::BedrockServer(const SData& args, const string& versionOverrideSet)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")),
-    _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
+    _backupOnShutdown(false), _restartFromVersionChange(false), _controlPort(nullptr), _commandPort(nullptr)
 {
-    _version = SVERSION;
+
+    _version = !versionOverrideSet.empty() ? versionOverrideSet : SVERSION;
 
     // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;
@@ -802,12 +803,15 @@ BedrockServer::BedrockServer(const SData& args)
         }
     }
     sort(versions.begin(), versions.end());
-    _version = SComposeList(versions, ":");
+    if (versionOverrideSet.empty()) {
+      _version = SComposeList(versions, ":");
+    }
 
-    // If `versionOverride` is set, we throw away what we just did and use the overridden value.
+    // If `versionOverride` is set and we didn't restart from a `SetVersion`,
+    // we throw away what we just did and use the overridden value.
     // We'll destruct, sort, and then reconstruct the version string passed in so we aren't relying
     // on the operator to know that they must be sorted.
-    if (args.isSet("-versionOverride")) {
+    if (args.isSet("-versionOverride") && versionOverrideSet.empty()) {
         list<string> versionStrings = SParseList(args["-versionOverride"], ':');
         versionStrings.sort();
         _version = SComposeList(versionStrings, ":");
@@ -1408,7 +1412,8 @@ void BedrockServer::_status(BedrockCommand& command) {
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "BeginBackup")         ||
         SIEquals(command.request.methodLine, "SuppressCommandPort") ||
-        SIEquals(command.request.methodLine, "ClearCommandPort")) {
+        SIEquals(command.request.methodLine, "ClearCommandPort")    ||
+        SIEquals(command.request.methodLine, "SetVersion")) {
         return true;
     }
     return false;
@@ -1424,6 +1429,32 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
+    } else if (SIEquals(command.request.methodLine, "SetVersion")) {
+        // Return the old version so we know what we changed from
+        STable content;
+        content["oldVersion"] = _version;
+
+        // If we set a version, override the version string and return both old and new values
+        // If we forgot to send a version do nothing
+        if (command.request.isSet("Version")) {
+          // We'll deconstruct the list given, sort it, then reconstruct it so the oeprator doesn't
+          // have to know the list needs to be sorted.
+          list<string> newVersionStrings = SParseList(command.request["Version"], ':');
+          newVersionStrings.sort();
+          _version = SComposeList(newVersionStrings, ":");
+          content["newVersion"] = _version;
+          response.methodLine = "200 OK";
+          response.content = SComposeJSONObject(content);
+
+          // If we're mastering, we need to restart the node so we can send our new version to all of our peers
+          SQLiteNode::State state = _replicationState.load();
+          if (state == SQLiteNode::MASTERING) {
+            newVersionOnStartup = _version;
+            _beginShutdown("SetVersion");
+          }
+        } else {
+          response.methodLine = "404 Must supply a version";
+        }
     }
 }
 
@@ -1475,4 +1506,8 @@ void BedrockServer::_beginShutdown(const string& reason) {
 
 bool BedrockServer::backupOnShutdown() {
     return _backupOnShutdown;
+}
+
+bool BedrockServer::restartFromVersionChange() {
+    return !newVersionOnStartup.empty();
 }
