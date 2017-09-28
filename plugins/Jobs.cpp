@@ -997,7 +997,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (!db.read("SELECT count(1) "
                      "FROM jobs "
                      "WHERE parentJobID=" + safeParentJobID + " AND "
-                       "state IN ('QUEUED', 'RUNQUEUED');",
+                       "state IN ('QUEUED', 'RUNQUEUED', 'RUNNING');",
                      result)) {
             STHROW("502 Select failed");
         }
