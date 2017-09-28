@@ -333,7 +333,7 @@ bool SQLiteNode::update() {
         Peer* freshestPeer = nullptr;
         for (auto peer : peerList) {
             // Wait until all connected (or failed) and logged in
-            bool permaSlave = peer->test("Permaslave");
+            bool permaSlave = peer->params["Permaslave"] == "true";
             bool loggedIn = peer->test("LoggedIn");
 
             // Count how many full peers (non-permaslaves) we have
