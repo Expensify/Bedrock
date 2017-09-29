@@ -28,7 +28,25 @@ void BedrockServer::syncWrapper(SData& args,
                          BedrockServer& server)
 {
     try {
-        sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
+        while(true) {
+            // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
+            if (server._detach) {
+                SINFO("Bedrock server entering detached state.");
+                // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
+                server._shutdownState = RUNNING;
+                while (server._detach) {
+                    // Just wait until we're attached.
+                    sleep(1);
+                }
+                SINFO("Bedrock server entering attached state.");
+            }
+            sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
+
+            // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
+            if (!server._detach) {
+                break;
+            }
+        }
     } catch (const SException& e) {
         SALERT("Caught SException '" << e.what() << "' at top of sync thread. Logging info and exiting.");
         auto rows = e.details();
@@ -770,7 +788,7 @@ BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")),
-    _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
+    _backupOnShutdown(false), _detach(false), _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;
 
@@ -861,6 +879,10 @@ BedrockServer::~BedrockServer() {
 }
 
 bool BedrockServer::shutdownComplete() {
+    if (_detach) {
+        // We don't want main() to stop calling `poll` for us, we are listening on the control port.
+        return false;
+    }
     // If nobody's asked us to shut down, we're not done.
     if (_shutdownState.load() == RUNNING) {
         return false;
@@ -1408,7 +1430,10 @@ void BedrockServer::_status(BedrockCommand& command) {
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "BeginBackup")         ||
         SIEquals(command.request.methodLine, "SuppressCommandPort") ||
-        SIEquals(command.request.methodLine, "ClearCommandPort")) {
+        SIEquals(command.request.methodLine, "ClearCommandPort")    ||
+        SIEquals(command.request.methodLine, "Detach")              ||
+        SIEquals(command.request.methodLine, "Attach")
+        ) {
         return true;
     }
     return false;
@@ -1424,6 +1449,12 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
+    } else if (SIEquals(command.request.methodLine, "Detach")) {
+        response.methodLine = "203 DETACHING";
+        _beginShutdown("Detach", true);
+    } else if (SIEquals(command.request.methodLine, "Attach")) {
+        response.methodLine = "204 ATTACHING";
+        _detach = false;
     }
 }
 
@@ -1455,19 +1486,25 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     }
 }
 
-void BedrockServer::_beginShutdown(const string& reason) {
+void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
+        _detach = detach;
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason
               << "', closing command port on '" << _args["-serverHost"] << "'");
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
         _gracefulShutdownTimeout.start();
 
-        // Close our listening ports, we won't accept any new connections on them.
-        closePorts();
+        // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
+        // detaching. It needs to keep listening.
+        if (_detach) {
+            closePorts({_controlPort});
+        } else {
+            closePorts();
+            _controlPort = nullptr;
+        }
         _portPluginMap.clear();
         _commandPort = nullptr;
-        _controlPort = nullptr;
         _shutdownState.store(START_SHUTDOWN);
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
     }
