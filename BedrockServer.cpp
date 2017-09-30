@@ -645,11 +645,11 @@ void BedrockServer::worker(SData& args,
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
-                    if (!canWriteParallel                  ||
+                    if (!canWriteParallel                 ||
                         server._suppressMultiWrite.load() ||
-                        state != SQLiteNode::MASTERING     ||
-                        command.httpsRequest               ||
-                        command.onlyProcessOnSyncThread    ||
+                        state != SQLiteNode::MASTERING    ||
+                        command.httpsRequest              ||
+                        command.onlyProcessOnSyncThread   ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
                         // Roll back the transaction, it'll get re-run in the sync thread.
