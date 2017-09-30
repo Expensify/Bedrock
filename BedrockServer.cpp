@@ -206,6 +206,12 @@ void BedrockServer::sync(SData& args,
         replicationState.store(nodeState);
         masterVersion.store(syncNode.getMasterVersion());
 
+        // If we're not mastering, we turn off multi-write until we've finished upgrading the DB. This persists until
+        // after we're mastering  again.
+        if (nodeState != SQLiteNode::MASTERING) {
+            server._suppressMultiWrite.store(true);
+        }
+
         // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
         // main loop over. This can let us wait for logins from peers (for example).
         if (nodeState != SQLiteNode::MASTERING &&
@@ -268,6 +274,7 @@ void BedrockServer::sync(SData& args,
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
                     upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
                     continue;
                 }
                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
@@ -638,10 +645,11 @@ void BedrockServer::worker(SData& args,
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
-                    if (!canWriteParallel               ||
-                        state != SQLiteNode::MASTERING  ||
-                        command.httpsRequest            ||
-                        command.onlyProcessOnSyncThread ||
+                    if (!canWriteParallel                 ||
+                        server._suppressMultiWrite.load() ||
+                        state != SQLiteNode::MASTERING    ||
+                        command.httpsRequest              ||
+                        command.onlyProcessOnSyncThread   ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
                         // Roll back the transaction, it'll get re-run in the sync thread.
@@ -769,8 +777,9 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")),
-    _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
+    _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _controlPort(nullptr),
+    _commandPort(nullptr)
 {
     _version = SVERSION;
 
