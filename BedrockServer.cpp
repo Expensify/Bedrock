@@ -530,7 +530,6 @@ void BedrockServer::worker(SData& args,
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
-        // Wait on condition.
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
