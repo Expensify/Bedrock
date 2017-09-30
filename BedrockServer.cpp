@@ -646,7 +646,7 @@ void BedrockServer::worker(SData& args,
                     // needs to not be automatically blacklisted.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
                     if (!canWriteParallel                  ||
-                        !server._suppressMultiWrite.load() ||
+                        server._suppressMultiWrite.load() ||
                         state != SQLiteNode::MASTERING     ||
                         command.httpsRequest               ||
                         command.onlyProcessOnSyncThread    ||
