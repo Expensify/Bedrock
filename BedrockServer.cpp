@@ -866,6 +866,10 @@ BedrockServer::BedrockServer(const SData& args)
         }
     }
 
+    // Allow sending control commands when the server's not MASTERING/SLAVING.
+    SINFO("Opening control port on '" << _args["-controlPort"] << "'");
+    _controlPort = openPort(_args["-controlPort"]);
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(syncWrapper,
