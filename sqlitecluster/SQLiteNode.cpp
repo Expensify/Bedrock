@@ -333,7 +333,7 @@ bool SQLiteNode::update() {
         Peer* freshestPeer = nullptr;
         for (auto peer : peerList) {
             // Wait until all connected (or failed) and logged in
-            bool permaSlave = peer->test("Permaslave");
+            bool permaSlave = peer->params["Permaslave"] == "true";
             bool loggedIn = peer->test("LoggedIn");
 
             // Count how many full peers (non-permaslaves) we have
@@ -1363,9 +1363,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         try {
             // Done synchronizing
             _recvSynchronize(peer, message);
-            if (_db.getCommitCount() != _masterPeer->calcU64("CommitCount")) {
-                STHROW("Incomplete synchronization");
-            }
             SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
                   << "), SLAVING");
             _changeState(SLAVING);
@@ -1954,15 +1951,23 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     } else
         PINFO("Peer has no commits, beginning synchronization.");
 
+    // If we have unsent transactions, we don't want to send them in synchronize, either.
+    uint64_t targetCommit = 0;
+    if (unsentTransactions.load()) {
+        targetCommit = _lastSentTransactionID;
+    } else {
+        targetCommit = _db.getCommitCount();
+    }
+
     // We agree on what we share, do we need to give it more?
-    if (peerCommitCount == _db.getCommitCount()) {
+    if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
         response["NumCommits"] = "0";
     } else {
         // Figure out how much to send it
         uint64_t fromIndex = peerCommitCount + 1;
-        uint64_t toIndex = _db.getCommitCount();
+        uint64_t toIndex = targetCommit;
         if (!sendAll)
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         if (!_db.getCommits(fromIndex, toIndex, result))
@@ -1971,7 +1976,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
             STHROW("mismatched commit count");
 
         // Wrap everything into one huge message
-        PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << _db.getCommitCount());
+        PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << targetCommit);
         response["NumCommits"] = SToStr(result.size());
         for (size_t c = 0; c < result.size(); ++c) {
             // Queue the result

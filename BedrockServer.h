@@ -227,6 +227,9 @@ class BedrockServer : public SQLiteServer {
     // is committing. This mutex is *not* recursive.
     shared_timed_mutex _syncThreadCommitMutex;
 
+    // Set this when we switch mastering.
+    atomic<bool> _suppressMultiWrite;
+
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.
     set<string> _syncCommands;

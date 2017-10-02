@@ -71,7 +71,7 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // Initialize the DB.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1);
+    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -206,6 +206,12 @@ void BedrockServer::sync(SData& args,
         replicationState.store(nodeState);
         masterVersion.store(syncNode.getMasterVersion());
 
+        // If we're not mastering, we turn off multi-write until we've finished upgrading the DB. This persists until
+        // after we're mastering  again.
+        if (nodeState != SQLiteNode::MASTERING) {
+            server._suppressMultiWrite.store(true);
+        }
+
         // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
         // main loop over. This can let us wait for logins from peers (for example).
         if (nodeState != SQLiteNode::MASTERING &&
@@ -268,6 +274,7 @@ void BedrockServer::sync(SData& args,
                 // If we were upgrading, there's no response to send, we're just done.
                 if (upgradeInProgress.load()) {
                     upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
                     continue;
                 }
                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
@@ -514,7 +521,7 @@ void BedrockServer::worker(SData& args,
 
     // We pass `0` as the checkpoint size to disable checkpointing from workers. This can be a slow operation, and we
     // don't want workers to be able to block the sync thread while it happens.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1);
+    SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
@@ -638,10 +645,11 @@ void BedrockServer::worker(SData& args,
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
                     canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
-                    if (!canWriteParallel               ||
-                        state != SQLiteNode::MASTERING  ||
-                        command.httpsRequest            ||
-                        command.onlyProcessOnSyncThread ||
+                    if (!canWriteParallel                 ||
+                        server._suppressMultiWrite.load() ||
+                        state != SQLiteNode::MASTERING    ||
+                        command.httpsRequest              ||
+                        command.onlyProcessOnSyncThread   ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
                         // Roll back the transaction, it'll get re-run in the sync thread.
@@ -769,8 +777,9 @@ void BedrockServer::worker(SData& args,
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncNode(nullptr), _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")),
-    _backupOnShutdown(false), _controlPort(nullptr), _commandPort(nullptr)
+    _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _controlPort(nullptr),
+    _commandPort(nullptr)
 {
     _version = SVERSION;
 
@@ -1355,9 +1364,17 @@ void BedrockServer::_status(BedrockCommand& command) {
         for (const STable& peerTable : peerData) {
             peerList.push_back(SComposeJSONObject(peerTable));
         }
-        content["peerList"]             = SComposeJSONArray(peerList);
-        content["queuedCommandList"]    = SComposeJSONArray(_commandQueue.getRequestMethodLines());
-        content["escalatedCommandList"] = SComposeJSONArray(escalated);
+
+        // We can use the `each` functionality to pass a lambda that will grab each method line in
+        // `_syncNodeQueuedCommands`.
+        list<string> syncNodeQueuedMethods;
+        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item){
+            syncNodeQueuedMethods.push_back(item.request.methodLine);
+        });
+        content["peerList"]                    = SComposeJSONArray(peerList);
+        content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
+        content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
+        content["escalatedCommandList"]        = SComposeJSONArray(escalated);
 
         // Done, compose the response.
         response.methodLine = "200 OK";
