@@ -543,6 +543,13 @@ void BedrockServer::worker(SData& args,
                     replicationState.load() != SQLiteNode::SLAVING &&
                     replicationState.load() != SQLiteNode::STANDINGDOWN)
             ) {
+                // Make sure that the node isn't shutting down, leaving us in an endless loop.
+                if (server._shutdownState == SYNC_SHUTDOWN) {
+                    SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
+                          << command.request.methodLine << "'.");
+                    return;
+                }
+
                 // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
                 // looping sleep call for the general case where we just check some bools and continue, instead of
                 // avoiding the sleep call but having every thread lock a mutex here on every loop.
@@ -1117,10 +1124,19 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         SData response("202 Successfully queued");
                         s->send(response.serialize());
                     } else {
-                        // Queue for later response
-                        SINFO("Waiting for '" << request.methodLine << "' to complete.");
-                        SAUTOLOCK(_socketIDMutex);
-                        _socketIDMap[s->id] = s;
+                        // If we're not shutting down, queue for later response. It's possible that we read a new
+                        // command mid-shutdown, in which case, we just discard it, as there's nobody left to handle
+                        // it. This case seems strange, because we stop listening on our command port when we start
+                        // shutting down, but it's feasible (and actually fairly common) for us to have a buffered
+                        // command when we shut down the command port, that isn't dequeued until the next `poll`
+                        // iteration.
+                        if (_shutdownState >= PORTS_CLOSED) {
+                            SWARN("Discarding command '" << request.methodLine << "' dequeued after shutdown.");
+                        } else {
+                            SINFO("Waiting for '" << request.methodLine << "' to complete.");
+                            SAUTOLOCK(_socketIDMutex);
+                            _socketIDMap[s->id] = s;
+                        }
                     }
 
                     // Create a command.
