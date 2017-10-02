@@ -71,7 +71,7 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // Initialize the DB.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1);
+    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -521,7 +521,7 @@ void BedrockServer::worker(SData& args,
 
     // We pass `0` as the checkpoint size to disable checkpointing from workers. This can be a slow operation, and we
     // don't want workers to be able to block the sync thread while it happens.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1);
+    SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
