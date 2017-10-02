@@ -1201,7 +1201,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             command.response.methodLine = "401 Unauthorized";
                             _reply(command);
                         }
-                    } else {
+                    } else if (_shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
                         _commandQueue.push(move(command));
                     }
