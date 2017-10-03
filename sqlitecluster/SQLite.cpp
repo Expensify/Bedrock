@@ -16,7 +16,8 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous) :
-    whitelist(nullptr)
+    whitelist(nullptr),
+    _timeoutLimit(0)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -148,7 +149,25 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     }
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
-    sqlite3_set_authorizer(_db, SQLite::_sqliteAuthorizerCallback, this);
+    sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
+
+    // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
+    // second. This is set to be a bit more granular than that, which is probably adequate.
+    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+}
+
+int SQLite::_progressHandlerCallback(void* arg) {
+    SQLite* sqlite = static_cast<SQLite*>(arg);
+    uint64_t now = STimeNow();
+    if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
+        // Timeout! We don't throw here, we let `read` and `write` do it so we don't throw out of the middle of a
+        // sqlite3 operation.
+        sqlite->_timeoutError = now - sqlite->_timeoutStart;
+
+        // Return non-zero causes sqlite to interrupt the operation.
+        return 1;
+    }
+    return 0;
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
@@ -285,8 +304,23 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
+    _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
+}
+
+void SQLite::_checkTiming(const string& error) {
+    if (_timeoutLimit) {
+        uint64_t now = STimeNow();
+        if (now > _timeoutLimit) {
+            _timeoutError = now - _timeoutStart;
+        }
+        if (_timeoutError) {
+            uint64_t time = _timeoutError;
+            resetTiming();
+            throw timeout_error(error, time);
+        }
+    }
 }
 
 bool SQLite::write(const string& query) {
@@ -304,6 +338,7 @@ bool SQLite::write(const string& query) {
     // Try to execute the query
     uint64_t before = STimeNow();
     bool result = !SQuery(_db, "read/write transaction", query);
+    _checkTiming("timeout in SQLite::write"s);
     _writeElapsed += STimeNow() - before;
     if (!result) {
         return false;
@@ -628,4 +663,16 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
         }
     }
     return SQLITE_DENY;
+}
+
+void SQLite::startTiming(uint64_t timeLimitUS) {
+    _timeoutStart = STimeNow();
+    _timeoutLimit = _timeoutStart + timeLimitUS;
+    _timeoutError = 0;
+}
+
+void SQLite::resetTiming() {
+    _timeoutLimit = 0;
+    _timeoutStart = 0;
+    _timeoutError = 0;
 }

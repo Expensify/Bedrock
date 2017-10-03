@@ -15,9 +15,11 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "'");
     command.peekCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
+        _db.startTiming(timeout);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
@@ -29,10 +31,15 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         bool pluginPeeked = false;
         for (auto plugin : _server.plugins) {
             // Try to peek the command.
-            if (plugin->peekCommand(_db, command)) {
-                SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                pluginPeeked = true;
-                break;
+            try {
+                if (plugin->peekCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
+                    pluginPeeked = true;
+                    break;
+                }
+            } catch (const SQLite::timeout_error& e) {
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+                STHROW("555 Timeout peeking command");
             }
         }
 
@@ -41,6 +48,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         // between "didn't peek" and "peeked but didn't complete".
         if (!pluginPeeked) {
             SINFO("Command '" << request.methodLine << "' is not peekable, queuing for processing.");
+            _db.resetTiming();
             return false;
         }
 
@@ -65,7 +73,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e, false);
+        _handleCommandException(command, e);
     }
 
     // If we get here, it means the command is fully completed.
@@ -73,6 +81,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
+    _db.resetTiming();
 
     // Done.
     return true;
@@ -87,10 +96,13 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Processing '" << request.methodLine << "'");
     command.processCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
+        // Time in US.
+        _db.startTiming(timeout);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
@@ -102,10 +114,15 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         bool pluginProcessed = false;
         for (auto plugin : _server.plugins) {
             // Try to process the command.
-            if (plugin->processCommand(_db, command)) {
-                SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
-                pluginProcessed = true;
-                break;
+            try {
+                if (plugin->processCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
+                    pluginProcessed = true;
+                    break;
+                }
+            } catch (const SQLite::timeout_error& e) {
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+                STHROW("555 Timeout processing command");
             }
         }
 
@@ -145,19 +162,20 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e, true);
+        _handleCommandException(command, e);
     }
+
+    // We can reset the timing info for the next command.
+    _db.resetTiming();
 
     // Done, return whether or not we need the parent to commit our transaction.
     command.complete = !needsCommit;
     return needsCommit;
 }
 
-void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e, bool wasProcessing) {
-    // If we were peeking, then we weren't in a transaction. But if we were processing, we need to roll it back.
-    if (wasProcessing) {
-        _db.rollback();
-    }
+void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
+    _db.rollback();
+    _db.resetTiming();
     const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
                         command.request.serialize();
     if (SContains(e.what(), "_ALERT_")) {

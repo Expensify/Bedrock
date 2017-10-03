@@ -7,6 +7,18 @@
 
 class SQLite {
   public:
+
+    class timeout_error : public exception {
+      public :
+        timeout_error(const string& e, uint64_t time) : _what(e), _time(time) {};
+        virtual ~timeout_error() {};
+        const char* what() const noexcept { return _what.c_str(); }
+        const uint64_t time() const noexcept { return _time; }
+      private:
+        string _what;
+        uint64_t _time;
+    };
+
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
@@ -103,6 +115,12 @@ class SQLite {
 
     // Looks up a range of commits
     bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
+
+    // Start a timing operation, that will time out after the given number of microseconds.
+    void startTiming(uint64_t timeLimitUS);
+
+    // Reset timing after finishing a timed operation.
+    void resetTiming();
 
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
@@ -243,6 +261,15 @@ class SQLite {
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
+
+    // Callback function for progress tracking.
+    static int _progressHandlerCallback(void* arg);
+    uint64_t _timeoutLimit;
+    uint64_t _timeoutStart;
+    uint64_t _timeoutError;
+
+    // Check the timing of the current query and throw if the limit's exceeded.
+    void _checkTiming(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
