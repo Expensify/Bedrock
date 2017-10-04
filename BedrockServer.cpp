@@ -233,6 +233,9 @@ void BedrockServer::sync(SData& args,
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
+            } else {
+                // If we're not doing an upgrade, we don't need to keep suppressing multi-write.
+                server._suppressMultiWrite.store(false);
             }
         } else if ((preUpdateState == SQLiteNode::MASTERING || preUpdateState == SQLiteNode::STANDINGDOWN)
                    && nodeState == SQLiteNode::SEARCHING) {
