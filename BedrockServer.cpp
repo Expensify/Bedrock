@@ -1357,7 +1357,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             // Both of these need to be in the correct state for multi-write to be enabled.
             bool multiWriteOn =  _multiWriteEnabled.load() && !_suppressMultiWrite;
             content["multiWriteEnabled"] = multiWriteOn ? "true" : "false";
-
             content["multiWriteAutoBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
             content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
         }
