@@ -1352,6 +1352,10 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
+        // Both of these need to be in the correct state for multi-write to be enabled.
+        bool multiWriteOn =  _multiWriteEnabled.load() && !_suppressMultiWrite;
+        content["multiWriteEnabled"] = multiWriteOn ? "true" : "false";
+
         // On master, return the current multi-write blacklists.
         if (state == SQLiteNode::MASTERING) {
             content["multiWriteAutoBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
