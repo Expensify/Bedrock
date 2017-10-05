@@ -163,6 +163,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         }
     } catch (const SException& e) {
         _handleCommandException(command, e);
+        _db.rollback();
     }
 
     // We can reset the timing info for the next command.
@@ -174,8 +175,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
 }
 
 void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
-    _db.rollback();
-    _db.resetTiming();
     const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
                         command.request.serialize();
     if (SContains(e.what(), "_ALERT_")) {
