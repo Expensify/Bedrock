@@ -207,7 +207,7 @@ class BedrockServer : public SQLiteServer {
     void _control(BedrockCommand& command);
 
     // This stars the server shutting down.
-    void _beginShutdown(const string& reason);
+    void _beginShutdown(const string& reason, bool detach = false);
 
     // This counts the number of commands that are being processed that might be able to write to the database. We
     // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
@@ -249,6 +249,7 @@ class BedrockServer : public SQLiteServer {
 
     // Set this to cause a backup to run when the server shuts down.
     bool _backupOnShutdown;
+    bool _detach;
 
     // Pointer to the control port, so we know which port not to shut down when we close the command ports.
     Port* _controlPort;
