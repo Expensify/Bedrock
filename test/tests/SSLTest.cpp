@@ -5,7 +5,7 @@ struct SSLTest : tpunit::TestFixture {
     SSLTest()
         : tpunit::TestFixture("SSL",
                               TEST(SSLTest::testPayPal),
-                              TEST(SSLTest::testExpensify),
+                              TEST(SSLTest::testGoogle),
                               TEST(SSLTest::testFailure)) { }
 
     TestHTTPS https;
@@ -51,12 +51,12 @@ struct SSLTest : tpunit::TestFixture {
         ASSERT_TRUE(verifyFullResponse(t->response, t->fullResponse));
     }
 
-    void testExpensify() {
+    void testGoogle() {
         SData request;
         request.methodLine = "GET / HTTP/1.1";
-        request["Host"] = "www.expensify.com";
+        request["Host"] = "www.google.com";
         request["Connection"] = "Close";
-        SHTTPSManager::Transaction* t = https.sendRequest("https://www.expensify.com/", request);
+        SHTTPSManager::Transaction* t = https.sendRequest("https://www.google.com/", request);
         _wait(t);
         ASSERT_TRUE(verifyFullResponse(t->response, t->fullResponse));
     }
