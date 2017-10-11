@@ -303,7 +303,11 @@ bool SQLite::read(const string& query, SQResult& result) {
     SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
     SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
-    bool queryResult = !SQuery(_db, "read only query", query, result);
+    bool queryResult = false;
+    {
+        lock_guard<decltype(_readMutex)> lock(_readMutex);
+        queryResult = !SQuery(_db, "read only query", query, result);
+    }
     _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
