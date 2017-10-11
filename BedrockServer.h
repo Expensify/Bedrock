@@ -254,4 +254,8 @@ class BedrockServer : public SQLiteServer {
     // Pointer to the control port, so we know which port not to shut down when we close the command ports.
     Port* _controlPort;
     Port* _commandPort;
+
+    // For doing A/B testing, we have a map of commands paired with their beta version names and frequencies.
+    mutex _abLock;
+    map <string, tuple<string, unsigned int>> _abList;
 };

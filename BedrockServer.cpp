@@ -1144,69 +1144,95 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
-                    // Either shut down the socket or store it so we can eventually sync out the response.
-                    if (SIEquals(request["Connection"], "forget") ||
-                        (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
-                        // Respond immediately to make it clear we successfully queued it, but don't add to the socket
-                        // map as we don't care about the answer.
-                        SINFO("Firing and forgetting '" << request.methodLine << "'");
-                        SData response("202 Successfully queued");
-                        s->send(response.serialize());
-                    } else {
-                        // If we're not shutting down, queue for later response. It's possible that we read a new
-                        // command mid-shutdown, in which case, we just discard it, as there's nobody left to handle
-                        // it. This case seems strange, because we stop listening on our command port when we start
-                        // shutting down, but it's feasible (and actually fairly common) for us to have a buffered
-                        // command when we shut down the command port, that isn't dequeued until the next `poll`
-                        // iteration.
-                        if (_shutdownState >= PORTS_CLOSED) {
-                            SWARN("Discarding command '" << request.methodLine << "' dequeued after shutdown.");
-                        } else {
-                            SINFO("Waiting for '" << request.methodLine << "' to complete.");
-                            SAUTOLOCK(_socketIDMutex);
-                            _socketIDMap[s->id] = s;
+
+                    // Generate an A/B test version of the command, if required.
+                    SData betaRequest;
+                    {
+                        lock_guard<decltype(_abLock)> lock(_abLock);
+                        auto it = _abList.find(request.methodLine);
+                        if (it != _abList.end()) {
+                            auto values = it->second;
+                            string name = get<0>(values);
+                            unsigned int frequency = get<1>(values);
+                            if (SRandom::rand64() % 100 < frequency) {
+                                betaRequest = request;
+                                betaRequest.methodLine = name;
+                                betaRequest["Connection"] = "forget";
+                                SINFO("Generating beta command '" << name << "', frequency: " << frequency << "%.");
+                            }
                         }
                     }
 
-                    // Create a command.
-                    BedrockCommand command(request);
-                    if (command.writeConsistency != SQLiteNode::QUORUM
-                        && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
-
-                        command.writeConsistency = SQLiteNode::QUORUM;
-                        SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
-                    }
-
-                    // This is important! All commands passed through the entire cluster must have unique IDs, or they
-                    // won't get routed properly from slave to master and back.
-                    command.id = _args["-nodeName"] + "#" + to_string(_requestCount++);
-
-                    // And we and keep track of the client that initiated this command, so we can respond later.
-                    command.initiatingClientID = s->id;
-
-                    // Status and control requests are handled specially.
-                    if (_isStatusCommand(command)) {
-                        _status(command);
-                        _reply(command);
-                    } else if (_isControlCommand(command)) {
-                        // Verify this came from localhost.
-                        unsigned long ip = ntohl(s->addr.sin_addr.s_addr);
-
-                        // This number is the unsigned long representation of 127.0.0.1.
-                        if (2130706433 == ip) {
-                            _control(command);
-                            _reply(command);
-                        } else {
-                            char str[INET_ADDRSTRLEN];
-                            inet_ntop(AF_INET, &(s->addr.sin_addr), str, INET_ADDRSTRLEN);
-                            SWARN("Got control command " << command.request.methodLine
-                                  << " on non-localhost socket (" << str << "). Ignoring.");
-                            command.response.methodLine = "401 Unauthorized";
-                            _reply(command);
+                    // Queue up both the original and the beta command.
+                    for (auto& r : {request, betaRequest}) {
+                        if (r.empty()) {
+                            // But skip empty beta commands.
+                            continue;
                         }
-                    } else if (_shutdownState < PORTS_CLOSED) {
-                        // Otherwise we queue it for later processing.
-                        _commandQueue.push(move(command));
+                        // Either shut down the socket or store it so we can eventually sync out the response.
+                        if (SIEquals(r["Connection"], "forget") ||
+                            (uint64_t)r.calc64("commandExecuteTime") > STimeNow()) {
+                            // Respond immediately to make it clear we successfully queued it, but don't add to the socket
+                            // map as we don't care about the answer.
+                            SINFO("Firing and forgetting '" << r.methodLine << "'");
+                            SData response("202 Successfully queued");
+                            s->send(response.serialize());
+                        } else {
+                            // If we're not shutting down, queue for later response. It's possible that we read a new
+                            // command mid-shutdown, in which case, we just discard it, as there's nobody left to handle
+                            // it. This case seems strange, because we stop listening on our command port when we start
+                            // shutting down, but it's feasible (and actually fairly common) for us to have a buffered
+                            // command when we shut down the command port, that isn't dequeued until the next `poll`
+                            // iteration.
+                            if (_shutdownState >= PORTS_CLOSED) {
+                                SWARN("Discarding command '" << r.methodLine << "' dequeued after shutdown.");
+                            } else {
+                                SINFO("Waiting for '" << r.methodLine << "' to complete.");
+                                SAUTOLOCK(_socketIDMutex);
+                                _socketIDMap[s->id] = s;
+                            }
+                        }
+
+                        // Create a command.
+                        BedrockCommand command(r);
+                        if (command.writeConsistency != SQLiteNode::QUORUM
+                            && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
+
+                            command.writeConsistency = SQLiteNode::QUORUM;
+                            SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
+                        }
+
+                        // This is important! All commands passed through the entire cluster must have unique IDs, or they
+                        // won't get routed properly from slave to master and back.
+                        command.id = _args["-nodeName"] + "#" + to_string(_requestCount++);
+
+                        // And we and keep track of the client that initiated this command, so we can respond later.
+                        command.initiatingClientID = s->id;
+
+                        // Status and control requests are handled specially.
+                        if (_isStatusCommand(command)) {
+                            _status(command);
+                            _reply(command);
+                        } else if (_isControlCommand(command)) {
+                            // Verify this came from localhost.
+                            unsigned long ip = ntohl(s->addr.sin_addr.s_addr);
+
+                            // This number is the unsigned long representation of 127.0.0.1.
+                            if (2130706433 == ip) {
+                                _control(command);
+                                _reply(command);
+                            } else {
+                                char str[INET_ADDRSTRLEN];
+                                inet_ntop(AF_INET, &(s->addr.sin_addr), str, INET_ADDRSTRLEN);
+                                SWARN("Got control command " << command.request.methodLine
+                                      << " on non-localhost socket (" << str << "). Ignoring.");
+                                command.response.methodLine = "401 Unauthorized";
+                                _reply(command);
+                            }
+                        } else if (_shutdownState < PORTS_CLOSED) {
+                            // Otherwise we queue it for later processing.
+                            _commandQueue.push(move(command));
+                        }
                     }
                 }
             }
@@ -1378,6 +1404,16 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
+        // Add the AB test list.
+        {
+            lock_guard<decltype(_abLock)> lock(_abLock);
+            STable temp;
+            for (auto& entry : _abList) {
+                temp[entry.first] = get<0>(entry.second) + ", " + to_string(get<1>(entry.second));
+            }
+            content["abTestList"] = SComposeJSONObject(temp);
+        }
+
         // On master, return the current multi-write blacklists.
         if (state == SQLiteNode::MASTERING) {
             // Both of these need to be in the correct state for multi-write to be enabled.
@@ -1466,6 +1502,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "BeginBackup")         ||
         SIEquals(command.request.methodLine, "SuppressCommandPort") ||
         SIEquals(command.request.methodLine, "ClearCommandPort")    ||
+        SIEquals(command.request.methodLine, "SetABTestList")       ||
         SIEquals(command.request.methodLine, "Detach")              ||
         SIEquals(command.request.methodLine, "Attach")
         ) {
@@ -1484,6 +1521,23 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
+    } else if (SIEquals(command.request.methodLine, "SetABTestList")) {
+        decltype(_abList) values;
+        for (auto& pair : command.request.nameValueMap) {
+            // Map of command names to beta command names and fractions as a percent.
+            auto& name = pair.first;
+            auto& value = pair.second;
+            auto data = SParseList(value);
+            if (data.size() == 2) {
+                auto it = data.begin();
+                auto betaName = *it;
+                it++;
+                auto betaFrequency = *it;
+                values[name] = make_pair(betaName, min(100ul, SToUInt64(betaFrequency)));
+            }
+        }
+        lock_guard<decltype(_abLock)> lock(_abLock);
+        _abList = values;
     } else if (SIEquals(command.request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
