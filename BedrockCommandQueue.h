@@ -3,7 +3,6 @@ class BedrockCommand;
 
 class BedrockCommandQueue {
   public:
-
     class timeout_error : exception {
       public:
         const char* what() const noexcept {

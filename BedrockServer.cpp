@@ -13,6 +13,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     if(command.request.methodLine == "BLACKLIST_COMMAND") {
         SData request;
         request.deserialize(command.request.content);
+
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
 
@@ -154,17 +155,16 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
-
+        // Check to see if we've received a message to broadcast immediately to all peers (this probably means we're
+        // crashing).
         if (server._hasBroadcastMessage.load()) {
-            // Oh shit, we broken.
-            SALERT("Broadcasting message immediately.");
+            SALERT("Broadcasting message immediately: " << server._broadcastMessage.serialize());
             server._syncNode->broadcastImmediate(server._broadcastMessage);
 
-            // Done.
+            // Done, mark it sent and let the caller continue crashing.
             server._hasBroadcastMessage.store(0);
             server._waitForBroadcast.notify_one();
         }
-
 
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
@@ -381,7 +381,8 @@ void BedrockServer::sync(SData& args,
             // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
 
-            // This try block lasts the lifetime of our command.
+            // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
+            // can notify peers about a command that seems to have caused a failure before we crash.
             try {
                 SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                       << syncNodeQueuedCommands.size() << " queued commands.");
@@ -482,8 +483,9 @@ void BedrockServer::sync(SData& args,
                     syncNode.escalateCommand(move(command));
                 }
             } catch (...) {
-                // Catch absolutely anything.
-                // Since we're the sync node, we don't have to wait here, we can send right away.
+                // This is a catastrophic failure case, we've caught an unknown exception, and we're about to die.
+                // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
+                // we send out a blacklist message on our way down.
                 SData message("BLACKLIST_COMMAND");
                 SData subMessage(command.request.methodLine);
                 for (auto& field : command.blacklistableValues) {
@@ -598,7 +600,8 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
 
-            // This try block encapsulates the entirety of the time this command is in scope.
+            // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
+            // can notify peers about a command that seems to have caused a failure before we crash.
             try {
                 // Check if this is a blacklisted command.
                 if (server._isBlacklisted(command)) {
@@ -840,8 +843,9 @@ void BedrockServer::worker(SData& args,
                     syncNodeQueuedCommands.push(move(command));
                 }
             } catch (...) {
-                // Catch absolutely anything.
-                // If we haven't already set a broadcast message, set one now.
+                // This is a catastrophic failure case, we've caught an unknown exception, and we're about to die.
+                // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
+                // we send out a blacklist message on our way down.
                 if (!server._hasBroadcastMessage.fetch_add(1)) {
                     // Set the message to broadcast.
                     SData message("BLACKLIST_COMMAND");
@@ -854,7 +858,8 @@ void BedrockServer::worker(SData& args,
                     }
                     message.content = subMessage.serialize();
                     SALERT("Caught unexpected exception, setting broadcast message: " << message.serialize());
-                    server._setBroadcastMessage(message);
+                    server._broadcastMessage = message;
+                    server._hasBroadcastMessage.store(true);
 
                     // Lock to wait.
                     unique_lock<decltype(server._waitForBroadcastMutex)> lock(server._waitForBroadcastMutex);
@@ -923,8 +928,8 @@ bool BedrockServer::_isBlacklisted(const BedrockCommand& command) {
             }
         }
 
+        // If we got through the whole list and everything was a match, then this is blacklisted.
         if (isMatch) {
-            // If we got through the whole list and everything was a match, then this is blacklisted.
             return true;
         }
         
@@ -1682,9 +1687,4 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
 bool BedrockServer::backupOnShutdown() {
     return _backupOnShutdown;
-}
-
-void BedrockServer::_setBroadcastMessage(const SData& message) {
-    _broadcastMessage = message;
-    _hasBroadcastMessage.store(true);
 }

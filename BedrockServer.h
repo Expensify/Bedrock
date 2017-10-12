@@ -255,16 +255,29 @@ class BedrockServer : public SQLiteServer {
     Port* _controlPort;
     Port* _commandPort;
 
-    // The blacklist mutex.
+    // The following variables all exist to manage blacklisting commands that have been known to throw unhandled
+    // exceptions so that we don't try and process the same commands on other nodes. Because this can happen from any
+    // worker thread, there are some synchronization objects required to make this work.
+
+    // A shared mutex to control access to the blacklist.
     shared_timed_mutex _blackListCommandMutex;
 
-    // The blacklist is a multimap. Each entry has a command name, and then a map.
-    // For a command to be blacklisted, it must have all of the key/value pairs in the map, and they must match.
+    // The blacklist itself. It's a map of methodLine to name/value pairs required to match a particular command for it
+    // to count as blacklisted.
     multimap<string, STable> _blacklistedCommands;
+
+    // Check if a command is blacklisted.
     bool _isBlacklisted(const BedrockCommand& command);
-    void _setBroadcastMessage(const SData& message);
+
+    // If we need to broadcast a message to peers that they should blacklist a command, we'll store that message here.
     SData _broadcastMessage;
+
+    // Because `_broadcastMessage` is almost never set, we use a lightweight non-locking structure to indicate when we
+    // should broadcast it, and only look at the actual message if this is set.
     atomic<int> _hasBroadcastMessage;
+
+    // We use a condition variable to block a thread that has set `_broadcastMessage` so that it will be notified after
+    // that message has been sent, and continue doing whatever it was doing before (namely, crashing).
     mutex _waitForBroadcastMutex;
     condition_variable _waitForBroadcast;
 };
