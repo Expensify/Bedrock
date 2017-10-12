@@ -52,6 +52,10 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         return true;
     } else if (command.request.methodLine == "dieinpeek") {
         throw 1;
+    } else if (command.request.methodLine == "generatesegfaultpeek") {
+        int* i = 0;
+        int x = *i;
+        command.response["invalid"] = to_string(x);
     }
 
     return false;
@@ -105,7 +109,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         }
     } else if (command.request.methodLine == "dieinprocess") {
         throw 2;
-    } else if (command.request.methodLine == "generatesegfault") {
+    } else if (command.request.methodLine == "generatesegfaultprocess") {
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);

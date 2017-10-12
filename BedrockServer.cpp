@@ -40,41 +40,24 @@ void BedrockServer::syncWrapper(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
-    try {
-        while(true) {
-            // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
-            if (server._detach) {
-                SINFO("Bedrock server entering detached state.");
-                // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
-                server._shutdownState = RUNNING;
-                while (server._detach) {
-                    // Just wait until we're attached.
-                    sleep(1);
-                }
-                SINFO("Bedrock server entering attached state.");
+    while(true) {
+        // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
+        if (server._detach) {
+            SINFO("Bedrock server entering detached state.");
+            // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
+            server._shutdownState = RUNNING;
+            while (server._detach) {
+                // Just wait until we're attached.
+                sleep(1);
             }
-            sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
+            SINFO("Bedrock server entering attached state.");
+        }
+        sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
 
-            // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
-            if (!server._detach) {
-                break;
-            }
+        // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
+        if (!server._detach) {
+            break;
         }
-    } catch (const SException& e) {
-        SALERT("Caught SException '" << e.what() << "' at top of sync thread. Logging info and exiting.");
-        auto rows = e.details();
-        for (auto& i : rows) {
-            SALERT(i);
-        }
-        exit(1);
-    } catch (const exception& e) {
-        SALERT("Caught exception '" << e.what() << "' at top of sync thread. Exiting.");
-        exit(1);
-    } catch (...) {
-        SALERT("Caught unknown exception at top of sync thread (this should never happen).");
-        // Do our best to deduce the type here, regardless.
-        SALERT("exception typename (probably mangled): " << abi::__cxa_current_exception_type()->name());
-        exit(1);
     }
 }
 
@@ -131,7 +114,7 @@ void BedrockServer::sync(SData& args,
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(workerWrapper,
+        workerThreadList.emplace_back(worker,
                                       ref(args),
                                       ref(replicationState),
                                       ref(upgradeInProgress),
@@ -488,13 +471,22 @@ void BedrockServer::sync(SData& args,
                     syncNode.escalateCommand(move(command));
                 }
             } catch (...) {
-                // This is a catastrophic failure case, we've caught an unknown exception, and we're about to die.
-                // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
-                // we send out a blacklist message on our way down.
-                server._syncNode->broadcastImmediate(_generateBlacklistMessage(command));
-
-                // And re-throw the exception, which will cause us to die.
-                rethrow_exception(current_exception());
+                int status = 0;
+                size_t length = 1000;
+                char buffer[length] = {0};
+                abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+                string exceptionName = buffer;
+                if (status) {
+                    exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+                }
+                SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+                command.response.methodLine = "500 Unhandled Exception";
+                if (command.initiatingPeerID) {
+                    command.finalizeTimingInfo();
+                    syncNode.sendResponse(command);
+                } else {
+                    server._reply(command);
+                }
             }
         } catch (const out_of_range& e) {
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
@@ -535,37 +527,6 @@ void BedrockServer::sync(SData& args,
         SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
-    }
-}
-
-void BedrockServer::workerWrapper(SData& args,
-                           atomic<SQLiteNode::State>& replicationState,
-                           atomic<bool>& upgradeInProgress,
-                           atomic<string>& masterVersion,
-                           CommandQueue& syncNodeQueuedCommands,
-                           CommandQueue& syncNodeCompletedCommands,
-                           BedrockServer& server,
-                           int threadId,
-                           int threadCount)
-{
-    try {
-        worker(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands,
-               syncNodeCompletedCommands, server, threadId, threadCount);
-    } catch (const SException& e) {
-        SALERT("Caught SException '" << e.what() << "' at top of worker thread. Logging info and exiting.");
-        auto rows = e.details();
-        for (auto& i : rows) {
-            SALERT(i);
-        }
-        exit(1);
-    } catch (const exception& e) {
-        SALERT("Caught exception '" << e.what() << "' at top of worker thread. Exiting.");
-        exit(1);
-    } catch (...) {
-        SALERT("Caught unknown exception at top of worker thread (this should never happen).");
-        // Do our best to deduce the type here, regardless.
-        SALERT("exception typename (probably mangled): " << abi::__cxa_current_exception_type()->name());
-        exit(1);
     }
 }
 
@@ -847,19 +808,22 @@ void BedrockServer::worker(SData& args,
                     syncNodeQueuedCommands.push(move(command));
                 }
             } catch (...) {
-                // This is a catastrophic failure case, we've caught an unknown exception, and we're about to die.
-                // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
-                // we send out a blacklist message on our way down.
-                if (!server._hasBroadcastMessage.fetch_add(1)) {
-                    SALERT("Caught unexpected exception, setting broadcast message.");
-                    server._broadcastMessage =  _generateBlacklistMessage(command);
-                    server._hasBroadcastMessage.store(true);
-                    unique_lock<decltype(server._waitForBroadcastMutex)> lock(server._waitForBroadcastMutex);
-                    server._waitForBroadcast.wait(lock, [&server]{return !server._hasBroadcastMessage.load();});
-                    SALERT("Message was broadcast. re-throwing.");
+                int status = 0;
+                size_t length = 1000;
+                char buffer[length] = {0};
+                abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+                string exceptionName = buffer;
+                if (status) {
+                    exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
                 }
-                // And re-throw the exception, which will cause us to die.
-                rethrow_exception(current_exception());
+                SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+                command.response.methodLine = "500 Unhandled Exception";
+                if (command.initiatingPeerID) {
+                    // Escalated command. Give it back to the sync thread to respond.
+                    syncNodeCompletedCommands.push(move(command));
+                } else {
+                    server._reply(command);
+                }
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.

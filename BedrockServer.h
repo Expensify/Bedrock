@@ -171,17 +171,6 @@ class BedrockServer : public SQLiteServer {
                        int threadId,
                        int threadCount);
 
-    // Wraps the worker thread main function to make it easy to add exception handling.
-    static void workerWrapper(SData& args,
-                       atomic<SQLiteNode::State>& _replicationState,
-                       atomic<bool>& upgradeInProgress,
-                       atomic<string>& masterVersion,
-                       CommandQueue& syncNodeQueuedCommands,
-                       CommandQueue& syncNodeCompletedCommands,
-                       BedrockServer& server,
-                       int threadId,
-                       int threadCount);
-
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(BedrockCommand&);
