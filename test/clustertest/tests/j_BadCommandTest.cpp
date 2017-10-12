@@ -20,7 +20,6 @@ struct j_BadCommandTest : tpunit::TestFixture {
             cmd["userID"] = "31";
             string response = master->executeWaitVerifyContent(cmd);
         } catch (const SException& e) {
-            cout << "Looks like it died in peek (" << e.what() << ")." << endl;
             diedCorrectly = (e.what() == "Empty response"s);
         }
 
@@ -33,7 +32,8 @@ struct j_BadCommandTest : tpunit::TestFixture {
         SData cmd("dieinpeek");
         cmd["userID"] = "31";
         string response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
-        cout << "Slave blacklisted it ok" << endl;
+
+        // Slave blacklisted it ok
 
         // Try and bring master back up.
         tester->startNode(0);
@@ -54,7 +54,7 @@ struct j_BadCommandTest : tpunit::TestFixture {
 
         ASSERT_TRUE(success);
 
-        cout << "Master is back up." << endl;
+        // Master is back up.
 
         // Kill it in process.
         diedCorrectly = false;
@@ -63,7 +63,6 @@ struct j_BadCommandTest : tpunit::TestFixture {
             cmd["userID"] = "32";
             string response = master->executeWaitVerifyContent(cmd);
         } catch (const SException& e) {
-            cout << "Looks like it died in process(" << e.what() << ")." << endl;
             diedCorrectly = (e.what() == "Empty response"s);
         }
         ASSERT_TRUE(diedCorrectly);
@@ -86,14 +85,14 @@ struct j_BadCommandTest : tpunit::TestFixture {
 
         ASSERT_TRUE(success);
 
-        cout << "Slave promoted to master." << endl;
+        // Slave promoted to master.
 
         // Send the same command to the slave (now master).
         cmd = SData("dieinprocess");
         cmd["userID"] = "32";
         response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
 
-        cout << "Promoted slave successfully blacklisted command." << endl;
+        // Promoted slave successfully blacklisted command.
 
         // Kill it in process again with a different userID, since it won't count as blacklisted with a different user.
         diedCorrectly = false;
@@ -102,7 +101,6 @@ struct j_BadCommandTest : tpunit::TestFixture {
             cmd["userID"] = "33";
             string response = slave->executeWaitVerifyContent(cmd);
         } catch (const SException& e) {
-            cout << "Looks like it died in process(" << e.what() << ")." << endl;
             diedCorrectly = (e.what() == "Empty response"s);
         }
         ASSERT_TRUE(diedCorrectly);
