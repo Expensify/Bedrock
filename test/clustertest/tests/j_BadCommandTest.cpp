@@ -142,8 +142,6 @@ struct j_BadCommandTest : tpunit::TestFixture {
         }
         ASSERT_TRUE(success);
 
-        cout << "Ready to segfault." << endl;
-
         diedCorrectly = false;
         try {
             SData cmd("generatesegfault");
@@ -151,17 +149,12 @@ struct j_BadCommandTest : tpunit::TestFixture {
             string response = master->executeWaitVerifyContent(cmd);
         } catch (const SException& e) {
             diedCorrectly = (e.what() == "Empty response"s);
-            cout << "Died in segfault." << endl;
         }
         ASSERT_TRUE(diedCorrectly);
-
-        cout << "Master died as expected." << endl;
 
         cmd = SData("generatesegfault");
         cmd["userID"] = "34";
         response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
-
-        cout << "Slave blacklisted, all done!" << endl;
     }
 
 } __j_BadCommandTest;
