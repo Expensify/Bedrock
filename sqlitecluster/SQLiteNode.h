@@ -107,6 +107,9 @@ class SQLiteNode : public STCPNode {
     // 2. SQLite::g_commitLock
     shared_timed_mutex stateMutex;
 
+    // Allows the caller to send a message to all peers immediately.
+    void broadcastImmediate(const SData& message);
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);

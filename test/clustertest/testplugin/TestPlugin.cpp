@@ -17,6 +17,8 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
 }
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    // Always blacklist on userID.
+    command.blacklistableValues.insert("userID");
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequest);
     if (command.request.methodLine == "testcommand") {
@@ -48,6 +50,8 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             db.read(query, result);
         }
         return true;
+    } else if (command.request.methodLine == "dieinpeek") {
+        throw 1;
     }
 
     return false;
@@ -99,6 +103,8 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             SQResult result;
             db.read(query, result);
         }
+    } else if (command.request.methodLine == "dieinprocess") {
+        throw 2;
     }
     return false;
 }

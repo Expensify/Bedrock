@@ -254,4 +254,17 @@ class BedrockServer : public SQLiteServer {
     // Pointer to the control port, so we know which port not to shut down when we close the command ports.
     Port* _controlPort;
     Port* _commandPort;
+
+    // The blacklist mutex.
+    shared_timed_mutex _blackListCommandMutex;
+
+    // The blacklist is a multimap. Each entry has a command name, and then a map.
+    // For a command to be blacklisted, it must have all of the key/value pairs in the map, and they must match.
+    multimap<string, STable> _blacklistedCommands;
+    bool _isBlacklisted(const BedrockCommand& command);
+    void _setBroadcastMessage(const SData& message);
+    SData _broadcastMessage;
+    atomic<int> _hasBroadcastMessage;
+    mutex _waitForBroadcastMutex;
+    condition_variable _waitForBroadcast;
 };
