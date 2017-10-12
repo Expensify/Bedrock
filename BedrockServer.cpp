@@ -1508,6 +1508,12 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
 
+        {
+            // Make it known if anything is blacklisted.
+            shared_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
+            content["crashBlacklistedCommands"] = _blacklistedCommands.size();
+        }
+
         // On master, return the current multi-write blacklists.
         if (state == SQLiteNode::MASTERING) {
             // Both of these need to be in the correct state for multi-write to be enabled.
@@ -1596,6 +1602,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "BeginBackup")         ||
         SIEquals(command.request.methodLine, "SuppressCommandPort") ||
         SIEquals(command.request.methodLine, "ClearCommandPort")    ||
+        SIEquals(command.request.methodLine, "ClearCrashBlacklist") ||
         SIEquals(command.request.methodLine, "Detach")              ||
         SIEquals(command.request.methodLine, "Attach")
         ) {
@@ -1614,6 +1621,9 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
+    } else if (SIEquals(command.request.methodLine, "ClearCrashBlacklist")) {
+        unique_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
+        _blacklistedCommands.clear();
     } else if (SIEquals(command.request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
