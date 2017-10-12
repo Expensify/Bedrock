@@ -105,6 +105,10 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         }
     } else if (command.request.methodLine == "dieinprocess") {
         throw 2;
+    } else if (command.request.methodLine == "generatesegfault") {
+        int* i = 0;
+        int x = *i;
+        command.response["invalid"] = to_string(x);
     }
     return false;
 }

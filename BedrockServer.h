@@ -280,4 +280,7 @@ class BedrockServer : public SQLiteServer {
     // that message has been sent, and continue doing whatever it was doing before (namely, crashing).
     mutex _waitForBroadcastMutex;
     condition_variable _waitForBroadcast;
+
+    // Generate a BLACKLIST_COMMAND command for a given bad command.
+    static SData _generateBlacklistMessage(const BedrockCommand& command);
 };

@@ -104,6 +104,64 @@ struct j_BadCommandTest : tpunit::TestFixture {
             diedCorrectly = (e.what() == "Empty response"s);
         }
         ASSERT_TRUE(diedCorrectly);
+
+        // Bring them both back up.
+        tester->startNode(0);
+        tester->startNode(1);
+
+        // Wait for master to master.
+        count = 0;
+        success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = master->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
+        ASSERT_TRUE(success);
+
+        // Wait for slave to slave.
+        count = 0;
+        success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = slave->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "SLAVING") {
+                success = true;
+                break;
+            }
+            // Give it another second...
+            sleep(1);
+        }
+        ASSERT_TRUE(success);
+
+        cout << "Ready to segfault." << endl;
+
+        diedCorrectly = false;
+        try {
+            SData cmd("generatesegfault");
+            cmd["userID"] = "34";
+            string response = master->executeWaitVerifyContent(cmd);
+        } catch (const SException& e) {
+            diedCorrectly = (e.what() == "Empty response"s);
+            cout << "Died in segfault." << endl;
+        }
+        ASSERT_TRUE(diedCorrectly);
+
+        cout << "Master died as expected." << endl;
+
+        cmd = SData("generatesegfault");
+        cmd["userID"] = "34";
+        response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
+
+        cout << "Slave blacklisted, all done!" << endl;
     }
 
 } __j_BadCommandTest;

@@ -381,6 +381,11 @@ void BedrockServer::sync(SData& args,
             // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
 
+            // Set the die function.
+            SSetSignalHandlerDieFunc([&](){
+                server._syncNode->broadcastImmediate(_generateBlacklistMessage(command));
+            });
+
             // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
             // can notify peers about a command that seems to have caused a failure before we crash.
             try {
@@ -486,16 +491,7 @@ void BedrockServer::sync(SData& args,
                 // This is a catastrophic failure case, we've caught an unknown exception, and we're about to die.
                 // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
                 // we send out a blacklist message on our way down.
-                SData message("BLACKLIST_COMMAND");
-                SData subMessage(command.request.methodLine);
-                for (auto& field : command.blacklistableValues) {
-                    auto it = command.request.nameValueMap.find(field);
-                    if (it != command.request.nameValueMap.end()) {
-                        subMessage[field] = it->second;
-                    }
-                }
-                message.content = subMessage.serialize();
-                server._syncNode->broadcastImmediate(message);
+                server._syncNode->broadcastImmediate(_generateBlacklistMessage(command));
 
                 // And re-throw the exception, which will cause us to die.
                 rethrow_exception(current_exception());
@@ -599,6 +595,14 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
+
+            // Set the die function.
+            SSetSignalHandlerDieFunc([&](){
+                server._broadcastMessage = _generateBlacklistMessage(command);
+                server._hasBroadcastMessage.store(true);
+                unique_lock<decltype(server._waitForBroadcastMutex)> lock(server._waitForBroadcastMutex);
+                server._waitForBroadcast.wait(lock, [&server]{return !server._hasBroadcastMessage.load();});
+            });
 
             // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
             // can notify peers about a command that seems to have caused a failure before we crash.
@@ -847,24 +851,10 @@ void BedrockServer::worker(SData& args,
                 // However, we'd like to prevent the same command from killing the rest of the cluster if re-sent, so
                 // we send out a blacklist message on our way down.
                 if (!server._hasBroadcastMessage.fetch_add(1)) {
-                    // Set the message to broadcast.
-                    SData message("BLACKLIST_COMMAND");
-                    SData subMessage(command.request.methodLine);
-                    for (auto& field : command.blacklistableValues) {
-                        auto it = command.request.nameValueMap.find(field);
-                        if (it != command.request.nameValueMap.end()) {
-                            subMessage[field] = it->second;
-                        }
-                    }
-                    message.content = subMessage.serialize();
-                    SALERT("Caught unexpected exception, setting broadcast message: " << message.serialize());
-                    server._broadcastMessage = message;
+                    SALERT("Caught unexpected exception, setting broadcast message.");
+                    server._broadcastMessage =  _generateBlacklistMessage(command);
                     server._hasBroadcastMessage.store(true);
-
-                    // Lock to wait.
                     unique_lock<decltype(server._waitForBroadcastMutex)> lock(server._waitForBroadcastMutex);
-
-                    // Wait for the broadcast to have been sent.
                     server._waitForBroadcast.wait(lock, [&server]{return !server._hasBroadcastMessage.load();});
                     SALERT("Message was broadcast. re-throwing.");
                 }
@@ -1687,4 +1677,17 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
 bool BedrockServer::backupOnShutdown() {
     return _backupOnShutdown;
+}
+
+SData BedrockServer::_generateBlacklistMessage(const BedrockCommand& command) {
+    SData message("BLACKLIST_COMMAND");
+    SData subMessage(command.request.methodLine);
+    for (auto& field : command.blacklistableValues) {
+        auto it = command.request.nameValueMap.find(field);
+        if (it != command.request.nameValueMap.end()) {
+            subMessage[field] = it->second;
+        }
+    }
+    message.content = subMessage.serialize();
+    return message;
 }
