@@ -74,6 +74,17 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         }
     } catch (const SException& e) {
         _handleCommandException(command, e);
+    } catch (...) {
+        int status = 0;
+        size_t length = 1000;
+        char buffer[length] = {0};
+        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+        string exceptionName = buffer;
+        if (status) {
+            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        }
+        SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
     }
 
     // If we get here, it means the command is fully completed.
@@ -164,6 +175,20 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     } catch (const SException& e) {
         _handleCommandException(command, e);
         _db.rollback();
+        needsCommit = false;
+    } catch(...) {
+        int status = 0;
+        size_t length = 1000;
+        char buffer[length] = {0};
+        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+        string exceptionName = buffer;
+        if (status) {
+            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        }
+        SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
+        _db.rollback();
+        needsCommit = false;
     }
 
     // We can reset the timing info for the next command.
