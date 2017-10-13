@@ -369,8 +369,8 @@ void BedrockServer::sync(SData& args,
                 server._syncNode->broadcastImmediate(_generateBlacklistMessage(command));
             });
 
-            // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
-            // can notify peers about a command that seems to have caused a failure before we crash.
+            // We catch *any* exception thrown from handling a command, alert, log the command, and continue.
+            // This try block lasts the lifetime of the command.
             try {
                 SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                       << syncNodeQueuedCommands.size() << " queued commands.");
@@ -565,8 +565,8 @@ void BedrockServer::worker(SData& args,
                 server._waitForBroadcast.wait(lock, [&server]{return !server._hasBroadcastMessage.load();});
             });
 
-            // This try block lasts the lifetime of our command, we use it to catch any unhandled exceptions so that we
-            // can notify peers about a command that seems to have caused a failure before we crash.
+            // We catch *any* exception thrown from handling a command, alert, log the command, and continue.
+            // This try block lasts the lifetime of the command.
             try {
                 // Check if this is a blacklisted command.
                 if (server._isBlacklisted(command)) {
