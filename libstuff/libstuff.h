@@ -714,6 +714,7 @@ uint64_t SFileSize(const string& path);
 // --------------------------------------------------------------------------
 // Various hashing functions
 string SHashSHA1(const string& buffer);
+string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
 string SEncodeBase64(const string& buffer);
@@ -721,6 +722,7 @@ string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
 string SHMACSHA1(const string& key, const string& buffer);
+string SHMACSHA256(const string& key, const string& buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
