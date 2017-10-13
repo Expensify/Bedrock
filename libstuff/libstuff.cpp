@@ -2097,7 +2097,7 @@ string SHashSHA256(const string& buffer) {
     // Just add and return
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
     return result;
 }
 
