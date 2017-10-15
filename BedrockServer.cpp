@@ -842,8 +842,9 @@ BedrockServer::BedrockServer(const SData& args)
         // Find any control commands set in the info of our plugins.
         auto it = info.find("ControlCommands");
         if (it != info.end()) {
-            list<string> controlCommands =  SParseList(iterator->second);
+            list<string> controlCommands =  SParseList(it->second);
             for (auto& command : controlCommands) {
+                SINFO("Setting " << command << " as a control command for plugin " << pluginName << ".");
                 pluginControlCommands.emplace_back(command);
             }
         }
@@ -1508,6 +1509,11 @@ void BedrockServer::_control(BedrockCommand& command) {
     } else if (SIEquals(command.request.methodLine, "Attach")) {
         response.methodLine = "204 ATTACHING";
         _detach = false;
+
+    // If this command is in the control commands from a plugin, we need to pass it
+    // to the queue so that plugin can get it.
+    } else if (SContains(pluginControlCommands, command.request.methodLine)){
+        _commandQueue.push(move(command));
     }
 }
 
