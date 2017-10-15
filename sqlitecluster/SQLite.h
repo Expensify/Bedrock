@@ -273,4 +273,7 @@ class SQLite {
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
+
+    // Avoid sqlite errors if multiple threads want to use the same DB handle.
+    mutex _readMutex;
 };

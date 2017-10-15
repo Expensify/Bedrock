@@ -461,7 +461,7 @@ template <class A> inline bool SContains(const list<A>& valueList, const A& valu
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
 template <class A> inline bool SContains(const set<A>& valueList, const A& value) {
-    return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
+    return valueList.find(value) != valueList.end();
 }
 
 inline bool SContains(const list<string>& valueList, const char* value) { return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end(); }
