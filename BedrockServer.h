@@ -238,6 +238,10 @@ class BedrockServer : public SQLiteServer {
     static set<string> _blacklistedParallelCommands;
     static recursive_mutex  _blacklistedParallelCommandMutex;
 
+    // This is a list of command names that are considered control commands.
+    static list<string> pluginControlCommands;
+
+
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
 

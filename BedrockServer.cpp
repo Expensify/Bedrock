@@ -6,6 +6,7 @@
 #include "BedrockCore.h"
 
 set<string>BedrockServer::_blacklistedParallelCommands;
+list<string>BedrockServer::pluginControlCommands;
 recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
@@ -837,6 +838,15 @@ BedrockServer::BedrockServer(const SData& args)
         if (iterator != info.end()) {
             versions.push_back(plugin->getName() + "_" + iterator->second);
         }
+
+        // Find any control commands set in the info of our plugins.
+        auto it = info.find("ControlCommands");
+        if (it != info.end()) {
+            list<string> controlCommands =  SParseList(iterator->second);
+            for (auto& command : controlCommands) {
+                pluginControlCommands.emplace_back(command);
+            }
+        }
     }
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
@@ -882,6 +892,13 @@ BedrockServer::BedrockServer(const SData& args)
                          ref(_masterVersion),
                          ref(_syncNodeQueuedCommands),
                          ref(*this));
+
+    // If we're bootstraping this node we need to go into detached mode here.
+    if (args.isSet("-bootstrap")) {
+        SWARN("Bootstrap flag detected, going into detach mode.");
+        _beginShutdown("Bootstrap flag", true);
+    }
+
 }
 
 BedrockServer::~BedrockServer() {
@@ -1463,10 +1480,11 @@ void BedrockServer::_status(BedrockCommand& command) {
 }
 
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
-    if (SIEquals(command.request.methodLine, "BeginBackup")         ||
-        SIEquals(command.request.methodLine, "SuppressCommandPort") ||
-        SIEquals(command.request.methodLine, "ClearCommandPort")    ||
-        SIEquals(command.request.methodLine, "Detach")              ||
+    if (SContains(pluginControlCommands, command.request.methodLine) ||
+        SIEquals(command.request.methodLine, "BeginBackup")          ||
+        SIEquals(command.request.methodLine, "SuppressCommandPort")  ||
+        SIEquals(command.request.methodLine, "ClearCommandPort")     ||
+        SIEquals(command.request.methodLine, "Detach")               ||
         SIEquals(command.request.methodLine, "Attach")
         ) {
         return true;
