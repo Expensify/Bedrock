@@ -96,6 +96,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             } else {
                 // Error, failed to authenticate or receive a valid server response.
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
+                SWARN("Server response content: " << active->fullResponse.content);
                 active->response = 500;
             }
         } else if (active->s->state > Socket::CONNECTED || elapsed > TIMEOUT) {
