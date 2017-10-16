@@ -301,7 +301,8 @@ void BedrockServer::sync(SData& args,
                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                 SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
-                // Otherwise, mark this command as complete and reply.
+                // Otherwise, save the commit count, mark this command as complete, and reply.
+                command.response["commitCount"] = to_string(db.getCommitCount());
                 command.complete = true;
                 if (command.initiatingPeerID) {
                     // This is a command that came from a peer. Have the sync node send the response back to the peer.
@@ -737,7 +738,8 @@ void BedrockServer::worker(SData& args,
                                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
-                                // mark it as complete!
+                                // mark it as complete. We add the currentCommit count here as well.
+                                command.response["commitCount"] = to_string(db.getCommitCount());
                                 command.complete = true;
                             } else {
                                 BedrockConflictMetrics::recordConflict(command.request.methodLine);
