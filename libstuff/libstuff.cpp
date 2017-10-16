@@ -1483,6 +1483,51 @@ string SGZip(const string& content) {
     }
 }
 
+string SGunZip(const string& content) {
+    z_stream stream;
+
+    stream.zalloc = Z_NULL;
+    stream.zfree = Z_NULL;
+    stream.opaque = Z_NULL;
+    stream.next_in = Z_NULL;
+    stream.avail_in = 0;
+
+    // read 1MB at a time
+    unsigned int bufferSize = 1024 * 1024 ;
+    unsigned char* outBuffer = new unsigned char[bufferSize];
+
+    stream.avail_out = bufferSize;
+    stream.next_out = outBuffer;
+
+    int status = inflateInit(&stream);
+
+    if (status != Z_OK) {
+        SHMMM("failed to initialize a GZip context");
+        return "";
+    }
+
+    status = inflate(&stream, Z_FINISH);
+    if (status != Z_STREAM_END) {
+        inflateEnd(&stream);
+        if (status == Z_OK) {
+            status = Z_BUF_ERROR;
+        }
+    } else {
+        status = inflateEnd(&stream);
+    }
+
+    string result;
+    result.append((char*)outBuffer, stream.total_out);
+
+    delete[] outBuffer;
+
+    if (status == Z_OK) {
+        return result;
+    } else {
+        SHMMM("GZip operation failed status:" << status);
+        return "";
+    }
+}
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
