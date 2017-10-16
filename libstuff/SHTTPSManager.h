@@ -37,11 +37,12 @@ class SHTTPSManager : public STCPManager {
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction) = 0;
-
-  private: // Internal API
+    SX509* _x509;
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
-    SX509* _x509;
+
+  private: // Internal API
+
 
     // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
     // multiple threads can add/remove from them.
