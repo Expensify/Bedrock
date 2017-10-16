@@ -1461,7 +1461,8 @@ string SGZip(const string& content) {
     }
 
     status = deflate(&stream, Z_FINISH);
-    if (status != Z_STREAM_END) {
+    if (status != Z_STREAM_END && status != Z_OK) {
+        SDEBUG("We deflated but we didn't get Z_STREAM_END or Z_OK, we got " << status);
         deflateEnd(&stream);
         if (status == Z_OK) {
             status = Z_BUF_ERROR;
