@@ -496,6 +496,9 @@ void BedrockServer::sync(SData& args,
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
     }
+
+    // This is getting destroyed, make sure nothing will dereference it.
+    server._syncNode = nullptr;
 }
 
 void BedrockServer::workerWrapper(SData& args,
@@ -1396,17 +1399,23 @@ void BedrockServer::_status(BedrockCommand& command) {
         {
             SAUTOLOCK(_syncMutex);
 
-            // Set some information about this node.
-            content["CommitCount"] = to_string(_syncNode->getCommitCount());
+            // There's no syncNode when the server is detached, so we can't get this data.
+            if (_syncNode) {
+                content["syncNodeAvailable"] = "true";
+                // Set some information about this node.
+                content["CommitCount"] = to_string(_syncNode->getCommitCount());
 
-            // Retrieve information about our peers.
-            for (SQLiteNode::Peer* peer : _syncNode->peerList) {
-                peerData.emplace_back(peer->nameValueMap);
-                peerData.back()["host"] = peer->host;
+                // Retrieve information about our peers.
+                for (SQLiteNode::Peer* peer : _syncNode->peerList) {
+                    peerData.emplace_back(peer->nameValueMap);
+                    peerData.back()["host"] = peer->host;
+                }
+
+                // Get any escalated commands that are waiting to be processed.
+                escalated = _syncNode->getEscalatedCommandRequestMethodLines();
+            } else {
+                content["syncNodeAvailable"] = "false";
             }
-
-            // Get any escalated commands that are waiting to be processed.
-            escalated = _syncNode->getEscalatedCommandRequestMethodLines();
         }
 
         // Coalesce all of the peer data into one value to return.
