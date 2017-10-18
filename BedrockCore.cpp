@@ -155,9 +155,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             response.methodLine = "200 OK";
         }
 
-        // Add the commitCount header to the response.
-        response["commitCount"] = to_string(_db.getCommitCount());
-
         // Success, this command will be committed.
         SINFO("Processed '" << response.methodLine << "' for '" << request.methodLine << "'.");
 
