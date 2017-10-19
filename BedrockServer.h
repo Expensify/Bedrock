@@ -269,6 +269,6 @@ class BedrockServer : public SQLiteServer {
     mutex _emergencyBroadcastMutex;
     condition_variable _emergencyBroadcastCondition;
 
-    // Generate a BLACKLIST_COMMAND command for a given bad command.
+    // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
 };

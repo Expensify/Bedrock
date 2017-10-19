@@ -9,7 +9,7 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
-    // If the server tells us to blacklist a command, we'll do it immediately, bypassing all queuing.
+    // If the sync node tells us that a command causes a crash, we immediately save that.
     if(SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
         SData request;
         request.deserialize(command.request.content);
@@ -558,11 +558,11 @@ void BedrockServer::worker(SData& args,
                 server._emergencyBroadcastCondition.wait(lock, [&server]{return !server._crashCommandPtr.load();});
             });
 
-            // Check if this is a blacklisted command.
+            // Check if this command would be likely to cause a crash
             if (server._wouldCrash(command)) {
                 // If so, make a lot of noise, and respond 500 without processing it.
-                SALERT("BLACKLISTED COMMAND FOUND: " << command.request.methodLine);
-                command.response.methodLine = "500 Blacklisted";
+                SALERT("CRASH-INDUCING COMMAND FOUND: " << command.request.methodLine);
+                command.response.methodLine = "500 Refused";
                 command.complete = true;
                 if (command.initiatingPeerID) {
                     // Escalated command. Give it back to the sync thread to respond.
@@ -833,11 +833,11 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     auto& current = itpair.first;
     auto& end = itpair.second;
 
-    // Look at each blacklisted command that has the same methodLine.
+    // Look at each crash-inducing command that has the same methodLine.
     while (current != end && current != _crashCommands.end()) {
         const STable& values = current->second;
 
-        // These are all of the blacklisted keys that need to match to kill this command.
+        // These are all of the keys that need to match to kill this command.
         bool isMatch = true;
         for (auto& pair : values) {
             // See if our current command even has the blacklisted key.
@@ -855,7 +855,7 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
             }
         }
 
-        // If we got through the whole list and everything was a match, then this is blacklisted.
+        // If we got through the whole list and everything was a match, then this is a match, we think it'll crash.
         if (isMatch) {
             return true;
         }
@@ -864,7 +864,7 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
         current++;
     }
 
-    // If nothing in our range returned true, then not blacklisted.
+    // If nothing in our range returned true, then this command looks fine.
     return false;
 }
 

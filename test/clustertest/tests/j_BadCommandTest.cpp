@@ -37,7 +37,7 @@ struct j_BadCommandTest : tpunit::TestFixture {
         // Send the same command to the slave.
         cmd = SData("generatesegfaultpeek");
         cmd["userID"] = "32";
-        response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
+        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Bring master back up.
         tester->startNode(0);
@@ -84,7 +84,7 @@ struct j_BadCommandTest : tpunit::TestFixture {
         // Send the slave the same command, it should be blacklisted.
         cmd = SData("generatesegfaultprocess");
         cmd["userID"] = "33";
-        response = slave->executeWaitVerifyContent(cmd, "500 Blacklisted");
+        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Try and bring master back up, just because the next test will expect it.
         tester->startNode(0);
