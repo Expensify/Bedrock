@@ -44,6 +44,8 @@ class BedrockCore : public SQLiteCore {
     bool processCommand(BedrockCommand& command);
 
   private:
+    // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
+    string _getExceptionName();
     void _handleCommandException(BedrockCommand& command, const SException& e);
     const BedrockServer& _server;
 };

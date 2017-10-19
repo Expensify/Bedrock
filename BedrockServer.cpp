@@ -10,16 +10,16 @@ recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     // If the server tells us to blacklist a command, we'll do it immediately, bypassing all queuing.
-    if(command.request.methodLine == "BLACKLIST_COMMAND") {
+    if(SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
         SData request;
         request.deserialize(command.request.content);
 
         // Take a unique lock so nobody else can read from this table while we update it.
-        unique_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
+        unique_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
 
         // Add the blacklisted command to the map.
-        _blacklistedCommands.insert(make_pair(request.methodLine, request.nameValueMap));
-        SALERT("Blacklisting command (now have " << _blacklistedCommands.size() << " blacklisted commands): " << request.serialize());
+        _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
+        SALERT("Blacklisting command (now have " << _crashCommands.size() << " blacklisted commands): " << request.serialize());
     } else {
         _commandQueue.push(BedrockCommand(move(command)));
     }
@@ -43,11 +43,12 @@ void BedrockServer::syncWrapper(SData& args,
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
         if (server._detach) {
-            SINFO("Bedrock server entering detached state.");
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
+            SINFO("Bedrock server entering detached state.");
             server._shutdownState = RUNNING;
             while (server._detach) {
                 // Just wait until we're attached.
+                SINFO("Bedrock server sleeping in detached state.");
                 sleep(1);
             }
             SINFO("Bedrock server entering attached state.");
@@ -138,15 +139,18 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
-        // Check to see if we've received a message to broadcast immediately to all peers (this probably means we're
-        // crashing).
-        if (server._hasBroadcastMessage.load()) {
-            SALERT("Broadcasting message immediately: " << server._broadcastMessage.serialize());
-            server._syncNode->broadcastImmediate(server._broadcastMessage);
+        // If another thread set the `_crashCommandPtr` it means it crashed while processing that command, and it's
+        // blocked waiting for us to notify peers of the bad command before its signal handler returns and the whole
+        // application finishes crashing.
+        BedrockCommand* crashCommand = server._crashCommandPtr.load();
+        if (crashCommand) {
+            // Broadcast a message to peers that this command causes crashes.
+            server._syncNode->emergencyBroadcast(_generateCrashMessage(crashCommand));
 
-            // Done, mark it sent and let the caller continue crashing.
-            server._hasBroadcastMessage.store(0);
-            server._waitForBroadcast.notify_one();
+            // Now that we've sent that message, we can unblock the worker that crashed, and it will finish up with
+            // what it was doing (we don't just `exit(1)` here because it breaks things like generating core files).
+            server._crashCommandPtr.store(nullptr);
+            server._emergencyBroadcastCondition.notify_one();
         }
 
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
@@ -367,9 +371,12 @@ void BedrockServer::sync(SData& args,
             SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
-            // Set the function that lets the signal handler know which command caused a problem, in case that happens.
+            // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
+            // like a segfault. This version is simpler than the one in `worker`, as no synchronization needs to be
+            // done, as we *are* the sync thread. Note that it's possible we're in the middle of sending a message to
+            // peers when we call this, which would probably make this message malformed. This is the best we can do.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->broadcastImmediate(_generateBlacklistMessage(command));
+                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
             });
 
             // We got a command to work on! Set our log prefix to the request ID.
@@ -540,15 +547,19 @@ void BedrockServer::worker(SData& args,
             command = server._commandQueue.get(1000000);
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
+            // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
+            // signals, like SIGSEGV, this function will be called. What it does is sets a pointer to the current
+            // command, and then waits for the sync thread to send a message to its peers. When the sync thread
+            // notifies this thread that it's complete, this function returns, the signal handler calls ABORT, and we
+            // crash.
             SSetSignalHandlerDieFunc([&](){
-                server._broadcastMessage = _generateBlacklistMessage(command);
-                server._hasBroadcastMessage.store(true);
-                unique_lock<decltype(server._waitForBroadcastMutex)> lock(server._waitForBroadcastMutex);
-                server._waitForBroadcast.wait(lock, [&server]{return !server._hasBroadcastMessage.load();});
+                server._crashCommandPtr.store(&command);
+                unique_lock<decltype(server._emergencyBroadcastMutex)> lock(server._emergencyBroadcastMutex);
+                server._emergencyBroadcastCondition.wait(lock, [&server]{return !server._crashCommandPtr.load();});
             });
 
             // Check if this is a blacklisted command.
-            if (server._isBlacklisted(command)) {
+            if (server._wouldCrash(command)) {
                 // If so, make a lot of noise, and respond 500 without processing it.
                 SALERT("BLACKLISTED COMMAND FOUND: " << command.request.methodLine);
                 command.response.methodLine = "500 Blacklisted";
@@ -813,17 +824,17 @@ void BedrockServer::worker(SData& args,
     }
 }
 
-bool BedrockServer::_isBlacklisted(const BedrockCommand& command) {
+bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     // Get a shared lock so that all the workers can look at this map simultaneously.
-    shared_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
+    shared_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
 
     // Typically, this map is empty and this returns no results.
-    auto itpair = _blacklistedCommands.equal_range(command.request.methodLine);
+    auto itpair = _crashCommands.equal_range(command.request.methodLine);
     auto& current = itpair.first;
     auto& end = itpair.second;
 
     // Look at each blacklisted command that has the same methodLine.
-    while (current != end && current != _blacklistedCommands.end()) {
+    while (current != end && current != _crashCommands.end()) {
         const STable& values = current->second;
 
         // These are all of the blacklisted keys that need to match to kill this command.
@@ -863,7 +874,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
-    _controlPort(nullptr), _commandPort(nullptr), _hasBroadcastMessage(0)
+    _controlPort(nullptr), _commandPort(nullptr), _crashCommandPtr(nullptr)
 {
     _version = SVERSION;
 
@@ -1435,9 +1446,9 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["host"]     = _args["-nodeHost"];
 
         {
-            // Make it known if anything is blacklisted.
-            shared_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
-            content["crashBlacklistedCommands"] = _blacklistedCommands.size();
+            // Make it known if anything is known to cause crashes.
+            shared_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+            content["crashCommands"] = _crashCommands.size();
         }
 
         // On master, return the current multi-write blacklists.
@@ -1534,7 +1545,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "BeginBackup")         ||
         SIEquals(command.request.methodLine, "SuppressCommandPort") ||
         SIEquals(command.request.methodLine, "ClearCommandPort")    ||
-        SIEquals(command.request.methodLine, "ClearCrashBlacklist") ||
+        SIEquals(command.request.methodLine, "ClearCrashCommands") ||
         SIEquals(command.request.methodLine, "Detach")              ||
         SIEquals(command.request.methodLine, "Attach")
         ) {
@@ -1553,9 +1564,9 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
-    } else if (SIEquals(command.request.methodLine, "ClearCrashBlacklist")) {
-        unique_lock<decltype(_blackListCommandMutex)> lock(_blackListCommandMutex);
-        _blacklistedCommands.clear();
+    } else if (SIEquals(command.request.methodLine, "ClearCrashCommands")) {
+        unique_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+        _crashCommands.clear();
     } else if (SIEquals(command.request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
@@ -1621,12 +1632,12 @@ bool BedrockServer::backupOnShutdown() {
     return _backupOnShutdown;
 }
 
-SData BedrockServer::_generateBlacklistMessage(const BedrockCommand& command) {
-    SData message("BLACKLIST_COMMAND");
-    SData subMessage(command.request.methodLine);
-    for (auto& field : command.blacklistableValues) {
-        auto it = command.request.nameValueMap.find(field);
-        if (it != command.request.nameValueMap.end()) {
+SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
+    SData message("CRASH_COMMAND");
+    SData subMessage(command->request.methodLine);
+    for (auto& field : command->crashIdentifyingValues) {
+        auto it = command->request.nameValueMap.find(field);
+        if (it != command->request.nameValueMap.end()) {
             subMessage[field] = it->second;
         }
     }

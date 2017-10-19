@@ -69,9 +69,12 @@ class BedrockCommand : public SQLiteCommand {
     // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
     bool onlyProcessOnSyncThread;
 
-    // A plugin can set values in here that will cause headers from the `request` object to be broadcast alongside any
-    // messages to blacklist bad commands.
-    set<string> blacklistableValues;
+    // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
+    // for the sake of determining whether they're likely to cause a crash.
+    // i.e., if this command has set this to {userID, reportList}, and the server crashes while processing this
+    // command, then any other command with the same methodLine, userID, and reportList will be flagged as likely to
+    // cause a crash, and not processed.
+    set<string> crashIdentifyingValues;
 
   private:
     // Set certain initial state on construction. Common functionality to several constructors.

@@ -18,7 +18,7 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     // Always blacklist on userID.
-    command.blacklistableValues.insert("userID");
+    command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequest);
     if (command.request.methodLine == "testcommand") {

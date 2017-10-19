@@ -244,32 +244,31 @@ class BedrockServer : public SQLiteServer {
     Port* _controlPort;
     Port* _commandPort;
 
-    // The following variables all exist to manage blacklisting commands that have been known to throw unhandled
-    // exceptions so that we don't try and process the same commands on other nodes. Because this can happen from any
-    // worker thread, there are some synchronization objects required to make this work.
+    // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
+    // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
+    // it gets sent again (i.e., if an end-user clicks 'refresh' after crashing the first node). Because these can
+    // originate in worker threads, much of this is synchronization code to make sure the sync thread can send this
+    // message before the worker exits.
 
-    // A shared mutex to control access to the blacklist.
-    shared_timed_mutex _blackListCommandMutex;
+    // A shared mutex to control access to the list of crash-inducing commands.
+    shared_timed_mutex _crashCommandListMutex;
 
-    // The blacklist itself. It's a map of methodLine to name/value pairs required to match a particular command for it
-    // to count as blacklisted.
-    multimap<string, STable> _blacklistedCommands;
+    // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
+    // particular command for it count as a match likely to cause a crash.
+    multimap<string, STable> _crashCommands;
 
-    // Check if a command is blacklisted.
-    bool _isBlacklisted(const BedrockCommand& command);
+    // Check a command against the list of crash commands, and return whether we think the command would crash.
+    bool _wouldCrash(const BedrockCommand& command);
 
-    // If we need to broadcast a message to peers that they should blacklist a command, we'll store that message here.
-    SData _broadcastMessage;
+    // A worker thread can set this to point to the command that caused a crash that it's currently handling (in a
+    // signal handler), to let the sync thread know it needs to warn other nodes about this command.
+    atomic<BedrockCommand*> _crashCommandPtr;
 
-    // Because `_broadcastMessage` is almost never set, we use a lightweight non-locking structure to indicate when we
-    // should broadcast it, and only look at the actual message if this is set.
-    atomic<int> _hasBroadcastMessage;
-
-    // We use a condition variable to block a thread that has set `_broadcastMessage` so that it will be notified after
-    // that message has been sent, and continue doing whatever it was doing before (namely, crashing).
-    mutex _waitForBroadcastMutex;
-    condition_variable _waitForBroadcast;
+    // We use a condition variable to block a thread that has set `_crashCommandPtr` until a message has been sent to
+    // peers. This keeps the signal handler from returning and causing us to exit before the message is sent.
+    mutex _emergencyBroadcastMutex;
+    condition_variable _emergencyBroadcastCondition;
 
     // Generate a BLACKLIST_COMMAND command for a given bad command.
-    static SData _generateBlacklistMessage(const BedrockCommand& command);
+    static SData _generateCrashMessage(const BedrockCommand* command);
 };

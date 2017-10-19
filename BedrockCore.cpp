@@ -75,15 +75,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (...) {
-        int status = 0;
-        size_t length = 1000;
-        char buffer[length] = {0};
-        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
-        string exceptionName = buffer;
-        if (status) {
-            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
-        }
-        SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
         command.response.methodLine = "500 Unhandled Exception";
     }
 
@@ -174,15 +166,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         _db.rollback();
         needsCommit = false;
     } catch(...) {
-        int status = 0;
-        size_t length = 1000;
-        char buffer[length] = {0};
-        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
-        string exceptionName = buffer;
-        if (status) {
-            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
-        }
-        SALERT("Unhandled exception typename: " << exceptionName << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
         command.response.methodLine = "500 Unhandled Exception";
         _db.rollback();
         needsCommit = false;
@@ -224,4 +208,23 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const SExcept
 
     // Add the commitCount header to the response.
     command.response["commitCount"] = to_string(_db.getCommitCount());
+}
+string BedrockCore::_getExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
 }
