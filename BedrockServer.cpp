@@ -558,6 +558,17 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
+
+            // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
+            // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
+            if (SQLiteNode::isPeerCommand(command)) {
+                cout << "GOT: " << command.request.methodLine << endl;
+                SQLiteNode::peekPeerCommand(server._syncNode, db, command);
+                command.complete = true;
+                syncNodeCompletedCommands.push(move(command));
+                continue;
+            }
+
             SAUTOPREFIX(command.request["requestID"]);
             SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
                   << server._commandQueue.size() << " commands in queue.");

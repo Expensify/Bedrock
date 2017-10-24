@@ -98,10 +98,16 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
 {
     Peer* peer = getPeerByID(command.initiatingPeerID);
     SASSERT(peer);
-    SData escalate("ESCALATE_RESPONSE");
-    escalate["ID"] = command.id;
-    escalate.content = command.response.serialize();
-    _sendToPeer(peer, escalate);
+    // If it was a peer message, we don't need to wrap it in an escalation response.
+    if (isPeerCommand(command)) {
+        cout << "GOT RESPONSE: " << command.request.methodLine << endl;
+        _sendToPeer(peer, command.response.serialize());
+    } else {
+        SData escalate("ESCALATE_RESPONSE");
+        escalate["ID"] = command.id;
+        escalate.content = command.response.serialize();
+        _sendToPeer(peer, escalate);
+    }
 }
 
 void SQLiteNode::beginShutdown() {
@@ -1259,11 +1265,21 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // SYNCHRONIZE: Sent by a node in the SEARCHING state to a peer that has new commits. Respond with a
-        // SYNCHRONIZE_RESPONSE containing all COMMITs the requesting peer lacks.
-        SData response("SYNCHRONIZE_RESPONSE");
-        _queueSynchronize(peer, response, false);
-        _sendToPeer(peer, response);
+        // If we're MASRTERING or SLAVING, we'll let worker threads handle SYNCHRONIOZATION messages.
+        if (_state == MASTERING || _state == SLAVING) {
+            SQLiteCommand command;
+            command.request = message;
+            command.initiatingPeerID = peer->id;
+            command.request["peerCommitCount"] = (*peer)["CommitCount"];
+            command.request["peerHash"] = (*peer)["Hash"];
+            _server.acceptCommand(move(command));
+        } else {
+            // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
+            // stood up.
+            SData response("SYNCHRONIZE_RESPONSE");
+            _queueSynchronize(peer->nameValueMap, _db, response, false);
+            _sendToPeer(peer, response);
+        }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE_RESPONSE")) {
         // SYNCHRONIZE_RESPONSE: Sent in response to a SYNCHRONIZE request. Contains a payload of zero or more COMMIT
         // messages, all of which are immediately committed to the local database.
@@ -1329,7 +1345,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         PINFO("Received SUBSCRIBE, accepting new slave");
         SData response("SUBSCRIPTION_APPROVED");
-        _queueSynchronize(peer, response, true); // Send everything it's missing
+        _queueSynchronize(peer->nameValueMap, _db, response, true); // Send everything it's missing
         _sendToPeer(peer, response);
         SASSERTWARN(!SIEquals((*peer)["Subscribed"], "true"));
         (*peer)["Subscribed"] = "true";
@@ -1928,41 +1944,52 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     }
 }
 
-void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
-    SASSERT(peer);
+void SQLiteNode::_queueSynchronize(const STable& params, SQLite& db, SData& response, bool sendAll) {
+    //SASSERT(peer);
     // Peer is requesting synchronization.  First, does it have any data?
     SQResult result;
-    uint64_t peerCommitCount = peer->calcU64("CommitCount");
-    if (peerCommitCount > _db.getCommitCount())
+
+    uint64_t peerCommitCount = 0;
+    if(params.find("CommitCount") != params.end()) {
+        peerCommitCount = SToUInt64(params.at("CommitCount"));
+    }
+    if (peerCommitCount > db.getCommitCount())
         STHROW("you have more data than me");
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
         string myHash, ignore;
-        if (!_db.getCommit(peerCommitCount, ignore, myHash)) {
-            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << _db.getCommitCount());
+        if (!db.getCommit(peerCommitCount, ignore, myHash)) {
+            //PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
         }
-        if (myHash != (*peer)["Hash"]) {
-            SWARN("[TY5] Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << (*peer)["Hash"]
-                  << ", but we have hash: " << myHash << " for that commit.");
+        string compareHash;
+        if (params.find("Hash") != params.end()) {
+            compareHash = params.at("Hash");
+        }
+        if (myHash != compareHash) {
+            //SWARN("[TY5] Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << params["Hash"]
+            //      << ", but we have hash: " << myHash << " for that commit.");
             STHROW("hash mismatch");
         }
-        PINFO("Latest commit hash matches our records, beginning synchronization.");
-    } else
-        PINFO("Peer has no commits, beginning synchronization.");
+        //PINFO("Latest commit hash matches our records, beginning synchronization.");
+    } else {
+        //PINFO("Peer has no commits, beginning synchronization.");
+    }
 
     // If we have unsent transactions, we don't want to send them in synchronize, either.
     uint64_t targetCommit = 0;
+    /*
     if (unsentTransactions.load()) {
         targetCommit = _lastSentTransactionID;
     } else {
-        targetCommit = _db.getCommitCount();
+        targetCommit = db.getCommitCount();
     }
+    */
 
     // We agree on what we share, do we need to give it more?
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
-        PINFO("Peer is already synchronized");
+        //PINFO("Peer is already synchronized");
         response["NumCommits"] = "0";
     } else {
         // Figure out how much to send it
@@ -1970,24 +1997,24 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t toIndex = targetCommit;
         if (!sendAll)
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
-        if (!_db.getCommits(fromIndex, toIndex, result))
+        if (!db.getCommits(fromIndex, toIndex, result))
             STHROW("error getting commits");
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)
             STHROW("mismatched commit count");
 
         // Wrap everything into one huge message
-        PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << targetCommit);
+        //PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << targetCommit);
         response["NumCommits"] = SToStr(result.size());
         for (size_t c = 0; c < result.size(); ++c) {
             // Queue the result
-            SASSERT(result[c].size() == 2);
+            //SASSERT(result[c].size() == 2);
             SData commit("COMMIT");
             commit["CommitIndex"] = SToStr(peerCommitCount + c + 1);
             commit["Hash"] = result[c][0];
             commit.content = result[c][1];
             response.content += commit.serialize();
         }
-        SASSERTWARN(response.content.size() < 10 * 1024 * 1024); // Let's watch if it gets over 10MB
+        //SASSERTWARN(response.content.size() < 10 * 1024 * 1024); // Let's watch if it gets over 10MB
     }
 }
 
@@ -2147,4 +2174,28 @@ bool SQLiteNode::_majoritySubscribed() {
 
     // Done!
     return (numFullSlaves * 2 >= numFullPeers);
+}
+
+bool SQLiteNode::isPeerCommand(const SQLiteCommand& command)
+{
+    if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
+        return true;
+    }
+    return false;
+}
+
+void SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
+{
+    try {
+        if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
+            command.response.methodLine = "SYNCHRONIZE_RESPONSE";
+            _queueSynchronize(command.request.nameValueMap, db, command.response, false);
+        } else {
+            STHROW("Couldn't look up peer.");
+        }
+    } catch (const SException& e) {
+        // Any failure causes the response to in initiate a reconnect.
+        command.response.methodLine = "RECONNECT";
+        command.response["Reason"] = e.what();
+    }
 }

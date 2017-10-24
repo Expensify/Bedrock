@@ -93,6 +93,14 @@ class SQLiteNode : public STCPNode {
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
     void sendResponse(const SQLiteCommand& command);
 
+    // This returns true if the command is one of our peer message commands that can be handled asynchronously by a
+    // worker. Currently, this is only true for SYNCHRONIZE commands.
+    static bool isPeerCommand(const SQLiteCommand& command);
+
+    // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
+    // Importantly for thread safety, this cannot depend on the current state of the cluster or s specific node.
+    static void peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command);
+
     // This is a static and thus *global* indicator of whether or not we have transactions that need replicating to
     // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
     // threads making commits to the database, and they communicate that to the node via this flag.
@@ -167,7 +175,7 @@ class SQLiteNode : public STCPNode {
     void _sendToPeer(Peer* peer, const SData& message);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _changeState(State newState);
-    void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
+    static void _queueSynchronize(const STable& params, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
