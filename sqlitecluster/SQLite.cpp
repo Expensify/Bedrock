@@ -17,7 +17,8 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
-    _timeoutLimit(0)
+    _timeoutLimit(0),
+    _autoRolledBack(false)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -318,6 +319,17 @@ void SQLite::_checkTiming(const string& error) {
         if (_timeoutError) {
             uint64_t time = _timeoutError;
             resetTiming();
+
+            // Timing out inside a write operation will automatically roll back the current transaction. We need to be
+            // aware as to whether or not this has happened.
+            // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
+            // transaction has been rolled back.
+            // see: http://www.sqlite.org/c3ref/get_autocommit.html
+            if (sqlite3_get_autocommit(_db)) {
+                SHMMM("It appears a write transaction timed out and automatically rolled back. Setting _autoRolledBack = true");
+                _autoRolledBack = true;
+            }
+
             throw timeout_error(error, time);
         }
     }
@@ -479,10 +491,15 @@ void SQLite::rollback() {
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Cancel this transaction
-        SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
-        uint64_t before = STimeNow();
-        SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
-        _rollbackElapsed += STimeNow() - before;
+        if (_autoRolledBack) {
+            SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
+            _autoRolledBack = false;
+        } else {
+            SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
+            uint64_t before = STimeNow();
+            SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
+            _rollbackElapsed += STimeNow() - before;
+        }
 
         // Finally done with this.
         _insideTransaction = false;
