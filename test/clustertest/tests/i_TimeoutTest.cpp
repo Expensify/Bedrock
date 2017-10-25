@@ -33,11 +33,13 @@ struct i_TimeoutTest : tpunit::TestFixture {
 
         // Run one long query.
         SData slow("slowprocessquery");
-        slow["timeout"] = "5000000"; // 5s
+        slow["timeout"] = "500000"; // 0.5s
+        slow["size"] = "1000000";
+        slow["count"] = "1";
         brtester->executeWaitVerifyContent(slow, "555 Timeout processing command");
 
         // And a bunch of faster ones.
-        slow["size"] = "10000";
+        slow["size"] = "100";
         slow["count"] = "10000";
         brtester->executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
