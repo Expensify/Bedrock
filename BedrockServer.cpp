@@ -562,7 +562,6 @@ void BedrockServer::worker(SData& args,
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
             if (SQLiteNode::isPeerCommand(command)) {
-                cout << "GOT: " << command.request.methodLine << endl;
                 SQLiteNode::peekPeerCommand(server._syncNode, db, command);
                 command.complete = true;
                 syncNodeCompletedCommands.push(move(command));
