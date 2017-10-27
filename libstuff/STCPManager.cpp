@@ -163,7 +163,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                 // Not SSL -- only send if we have something to send
                 if (!socket->sendBuffer.empty()) {
                     // Still have something to send -- try to send it.
-                    if (!S_sendconsume(socket->s, socket->sendBuffer)) {
+                    if (!socket->send()) {
                         // Done trying to send
                         SHMMM("Unable to finish sending to '" << socket->addr << "' on shutdown, clearing.");
                         ::shutdown(socket->s, SHUT_RDWR);
@@ -237,6 +237,7 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
 
 // --------------------------------------------------------------------------
 bool STCPManager::Socket::send() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Send data
     bool result = false;
     if (ssl) {
@@ -250,6 +251,7 @@ bool STCPManager::Socket::send() {
 
 // --------------------------------------------------------------------------
 bool STCPManager::Socket::send(const string& buffer) {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Append to the buffer and send
     sendBuffer += buffer;
     return send();
@@ -257,6 +259,7 @@ bool STCPManager::Socket::send(const string& buffer) {
 
 // --------------------------------------------------------------------------
 bool STCPManager::Socket::recv() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Read data
     bool result = false;
     const size_t oldSize = recvBuffer.size();

@@ -139,20 +139,6 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
-        // If another thread set the `_crashCommandPtr` it means it crashed while processing that command, and it's
-        // blocked waiting for us to notify peers of the bad command before its signal handler returns and the whole
-        // application finishes crashing.
-        BedrockCommand* crashCommand = server._crashCommandPtr.load();
-        if (crashCommand) {
-            // Broadcast a message to peers that this command causes crashes.
-            server._syncNode->emergencyBroadcast(_generateCrashMessage(crashCommand));
-
-            // Now that we've sent that message, we can unblock the worker that crashed, and it will finish up with
-            // what it was doing (we don't just `exit(1)` here because it breaks things like generating core files).
-            server._crashCommandPtr.store(nullptr);
-            server._emergencyBroadcastCondition.notify_one();
-        }
-
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
         // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
@@ -548,14 +534,9 @@ void BedrockServer::worker(SData& args,
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
-            // signals, like SIGSEGV, this function will be called. What it does is sets a pointer to the current
-            // command, and then waits for the sync thread to send a message to its peers. When the sync thread
-            // notifies this thread that it's complete, this function returns, the signal handler calls ABORT, and we
-            // crash.
+            // signals, like SIGSEGV, this function will be called.
             SSetSignalHandlerDieFunc([&](){
-                server._crashCommandPtr.store(&command);
-                unique_lock<decltype(server._emergencyBroadcastMutex)> lock(server._emergencyBroadcastMutex);
-                server._emergencyBroadcastCondition.wait(lock, [&server]{return !server._crashCommandPtr.load();});
+                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
             });
 
             // Check if this command would be likely to cause a crash
@@ -874,7 +855,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
-    _controlPort(nullptr), _commandPort(nullptr), _crashCommandPtr(nullptr)
+    _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;
 

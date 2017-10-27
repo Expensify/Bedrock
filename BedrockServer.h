@@ -260,15 +260,6 @@ class BedrockServer : public SQLiteServer {
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
 
-    // A worker thread can set this to point to the command that caused a crash that it's currently handling (in a
-    // signal handler), to let the sync thread know it needs to warn other nodes about this command.
-    atomic<BedrockCommand*> _crashCommandPtr;
-
-    // We use a condition variable to block a thread that has set `_crashCommandPtr` until a message has been sent to
-    // peers. This keeps the signal handler from returning and causing us to exit before the message is sent.
-    mutex _emergencyBroadcastMutex;
-    condition_variable _emergencyBroadcastCondition;
-
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
 };
