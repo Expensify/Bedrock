@@ -198,6 +198,9 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     if (results.size() == 0) {
         STHROW("No result.");
     }
+    if (results[0].methodLine == "") {
+        STHROW("Empty response");
+    }
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STHROW("Expected " + expectedResult + ", but got: " + results[0].methodLine);
     }

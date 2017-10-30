@@ -99,7 +99,7 @@ class SQLiteNode : public STCPNode {
 
     // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
     // Importantly for thread safety, this cannot depend on the current state of the cluster or s specific node.
-    static void peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command);
+    static void peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLiteCommand& command);
 
     // This is a static and thus *global* indicator of whether or not we have transactions that need replicating to
     // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
@@ -114,6 +114,11 @@ class SQLiteNode : public STCPNode {
     // 1. stateMutex
     // 2. SQLite::g_commitLock
     shared_timed_mutex stateMutex;
+
+    // This allows the caller to immediately send a message to all peers that something horrible has happened,
+    // typically, we've segfaulted and are trying to warn other servers of a bad command before we finish crashing.
+    // This is not to be used as a general messaging mechanism.
+    void emergencyBroadcast(const SData& message);
 
   private:
     // STCPNode API: Peer handling framework functions

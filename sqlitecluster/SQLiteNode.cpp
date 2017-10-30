@@ -174,7 +174,7 @@ bool SQLiteNode::shutdownComplete() {
 
     // If we have unsent data, not done
     for (auto peer : peerList) {
-        if (peer->s && !peer->s->sendBuffer.empty()) {
+        if (!peer->socketSendBufferEmpty()) {
             // Still sending data
             SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
@@ -1274,9 +1274,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             command.initiatingPeerID = peer->id;
             command.request["peerCommitCount"] = (*peer)["CommitCount"];
             command.request["peerHash"] = (*peer)["Hash"];
+            command.request["peerID"] = to_string(getIDByPeer(peer));
             command.request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
-            // The following properties areonly used to expand out our log macros.
+            // The following properties are only used to expand out our log macros.
             command.request["state"] = to_string(_state);
             command.request["name"] = name;
             command.request["peerName"] = peer->name;
@@ -1712,6 +1713,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _escalatedCommandMap.erase(commandIt);
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
+    } else if (SIEquals(message.methodLine, "CRASH_COMMAND")) {
+        // Create a new Command and send to the server.
+        PINFO("Received CRASH_COMMAND command, forwarding to server.");
+        SData messageCopy = message;
+        _server.acceptCommand(SQLiteCommand(move(messageCopy)));
     } else {
         STHROW("unrecognized message");
     }
@@ -1746,8 +1752,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   is out of touch with reality: we processed a command and reality doesn't
     ///   know it.  Not cool!
     ///
-    if (peer->s && peer->s->sendBuffer.find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating slave died before receiving response to escalation: " << peer->s->sendBuffer);
+    if (peer->socketSendBuffer().find("ESCALATE_RESPONSE") != string::npos)
+        PWARN("Initiating slave died before receiving response to escalation: " << peer->socketSendBuffer());
 
     /// - Verify we didn't just lose contact with our master.  This should
     ///   only be possible if we're SUBSCRIBING or SLAVING.  If we did lose our
@@ -1833,7 +1839,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SASSERT(!message.empty());
 
     // If a peer is currently disconnected, we can't send it a message.
-    if (!peer->s) {
+    if (!peer->hasSocket()) {
         PWARN("Can't send message to peer, no socket. Message '" << message.methodLine << "' will be discarded.");
         return;
     }
@@ -1841,7 +1847,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
-    peer->s->send(messageCopy.serialize());
+    peer->socketSend(messageCopy.serialize());
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
@@ -1858,11 +1864,16 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Loop across all connected peers and send the message
     for (auto peer : peerList) {
         // Send either to everybody, or just subscribed peers.
-        if (peer->s && (!subscribedOnly || SIEquals((*peer)["Subscribed"], "true"))) {
+        if (peer->hasSocket() && (!subscribedOnly || SIEquals((*peer)["Subscribed"], "true"))) {
             // Send it now, without waiting for the outer event loop
-            peer->s->send(serializedMessage);
+            peer->socketSend(serializedMessage);
         }
     }
+}
+
+void SQLiteNode::emergencyBroadcast(const SData& message) {
+    SALERT("Sending emergency broadcast: " << message.serialize());
+    _sendToAllPeers(message, false);
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
@@ -2148,10 +2159,10 @@ void SQLiteNode::_updateSyncPeer()
 
 void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
-    if (peer->s) {
+    if (peer->hasSocket()) {
         // Reset
         SWARN("Reconnecting to '" << peer->name << "'");
-        shutdownSocket(peer->s);
+        peer->shutdownSocket(*this);
         (*peer)["LoggedIn"] = "false";
     }
 }
@@ -2188,10 +2199,11 @@ bool SQLiteNode::isPeerCommand(const SQLiteCommand& command)
     return false;
 }
 
-void SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
+void SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLiteCommand& command)
 {
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
+            Peer* peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
             command.response.methodLine = "SYNCHRONIZE_RESPONSE";
             _queueSynchronizeStateless(command.request.nameValueMap,
                                        command.request["name"],
@@ -2201,8 +2213,11 @@ void SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
                                        db,
                                        command.response,
                                        false);
-        } else {
-            STHROW("Couldn't look up peer.");
+
+            // The following two lines are copied from `_sendToPeer`.
+            command.response["CommitCount"] = to_string(db.getCommitCount());
+            command.response["Hash"] = db.getCommittedHash();
+            peer->socketSend(command.response.serialize());
         }
     } catch (const SException& e) {
         // Any failure causes the response to in initiate a reconnect.

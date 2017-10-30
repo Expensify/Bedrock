@@ -27,6 +27,7 @@ struct STCPManager {
 
       private:
         static atomic<uint64_t> socketCount;
+        recursive_mutex sendRecvMutex;
     };
 
     // Cleans up outstanding sockets
