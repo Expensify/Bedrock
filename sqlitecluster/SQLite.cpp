@@ -18,7 +18,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
     _timeoutLimit(0),
-    _autoRolledBack(false)
+    _autoRolledBack(false),
+    _noopUpdateMode(false)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -336,6 +337,45 @@ void SQLite::_checkTiming(const string& error) {
 }
 
 bool SQLite::write(const string& query) {
+    if (_noopUpdateMode) {
+        SALERT("Called non-idempotent `write` from _noopUpdateMode, doing nothing.");
+        return true;
+    }
+    SASSERT(_insideTransaction);
+    SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
+    SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
+
+    // First, check our current state
+    SQResult results;
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!results.empty() && !results[0].empty());
+    uint64_t schemaBefore = SToUInt64(results[0][0]);
+    uint64_t changesBefore = sqlite3_total_changes(_db);
+
+    // Try to execute the query
+    uint64_t before = STimeNow();
+    bool result = !SQuery(_db, "read/write transaction", query);
+    _checkTiming("timeout in SQLite::write"s);
+    _writeElapsed += STimeNow() - before;
+    if (!result) {
+        return false;
+    }
+
+    // See if the query changed anything
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!results.empty() && !results[0].empty());
+    uint64_t schemaAfter = SToUInt64(results[0][0]);
+    uint64_t changesAfter = sqlite3_total_changes(_db);
+
+    // Did something change.
+    if (schemaAfter > schemaBefore || changesAfter > changesBefore) {
+        // Changed, add to the uncommitted query
+        _uncommittedQuery += query;
+    }
+    return true;
+}
+
+bool SQLite::writeIdempotent(const string& query) {
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
@@ -692,4 +732,20 @@ void SQLite::resetTiming() {
     _timeoutLimit = 0;
     _timeoutStart = 0;
     _timeoutError = 0;
+}
+
+void SQLite::setUpdateNoopMode(bool enabled) {
+    if (_noopUpdateMode == enabled) {
+        return;
+    }
+    if (enabled) {
+        SQuery(_db, "enabling noop-update mode", "PRAGMA noop_update=ON;");
+    } else {
+        SQuery(_db, "disabling noop-update mode", "PRAGMA noop_update=OFF;");
+    }
+    _noopUpdateMode = enabled;
+}
+
+bool SQLite::getUpdateNoopMode() {
+    return _noopUpdateMode;
 }
