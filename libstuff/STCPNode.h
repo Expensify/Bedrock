@@ -32,8 +32,7 @@ struct STCPNode : public STCPServer {
             latency = 0;
         }
 
-        // Synchronized access.
-        // TODO: Implement synchronized versions of these.
+        // Synchronized access to socket objects.
         bool socketSendBufferEmpty();
         string socketSendBuffer();
         string socketRecvBuffer();

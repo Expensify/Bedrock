@@ -407,4 +407,3 @@ uint64_t STCPNode::Peer::socketOpenTime()
         return 0;
     }
 }
-
