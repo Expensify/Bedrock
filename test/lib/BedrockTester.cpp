@@ -230,29 +230,32 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&, i](){
 
-            size_t count = 1;
-            if (mockRequestMode > 1) {
-                count = mockRequestMode;
-            }
-            for (size_t mockCount = 0; mockCount < count; mockCount++) {
-                // Create a socket.
-                int socket = S_socket(_serverAddr, true, false, true);
-                while (true) {
-                    size_t myIndex = 0;
-                    SData myRequest;
-                    {
-                        SAUTOLOCK(listLock);
-                        myIndex = currentIndex;
-                        currentIndex++;
-                        if (myIndex >= requests.size()) {
-                            // No more requests to process.
-                            break;
-                        } else {
-                            myRequest = requests[myIndex];
-                            if (mockCount) {
-                                myRequest["mockRequest"] = "true";
-                            }
-                        }
+            // Create a socket.
+            int socket = S_socket(_serverAddr, true, false, true);
+            while (true) {
+                size_t myIndex = 0;
+                SData myRequest;
+                {
+                    SAUTOLOCK(listLock);
+                    myIndex = currentIndex;
+                    currentIndex++;
+                    if (myIndex >= requests.size()) {
+                        // No more requests to process.
+                        break;
+                    } else {
+                        myRequest = requests[myIndex];
+
+                    }
+                }
+
+                size_t count = 1;
+                if (mockRequestMode > 1) {
+                    count = mockRequestMode;
+                }
+
+                for (size_t mockCount = 0; mockCount < count; mockCount++) {
+                    if (mockCount) {
+                        myRequest["mockRequest"] = "true";
                     }
 
                     // We've released our lock so other threads can dequeue stuff now.
