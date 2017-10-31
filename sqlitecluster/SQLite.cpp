@@ -341,38 +341,9 @@ bool SQLite::write(const string& query) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
     }
-    SASSERT(_insideTransaction);
-    SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
-    SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
 
-    // First, check our current state
-    SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaBefore = SToUInt64(results[0][0]);
-    uint64_t changesBefore = sqlite3_total_changes(_db);
-
-    // Try to execute the query
-    uint64_t before = STimeNow();
-    bool result = !SQuery(_db, "read/write transaction", query);
-    _checkTiming("timeout in SQLite::write"s);
-    _writeElapsed += STimeNow() - before;
-    if (!result) {
-        return false;
-    }
-
-    // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaAfter = SToUInt64(results[0][0]);
-    uint64_t changesAfter = sqlite3_total_changes(_db);
-
-    // Did something change.
-    if (schemaAfter > schemaBefore || changesAfter > changesBefore) {
-        // Changed, add to the uncommitted query
-        _uncommittedQuery += query;
-    }
-    return true;
+    // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
+    return writeIdempotent(query);
 }
 
 bool SQLite::writeIdempotent(const string& query) {
