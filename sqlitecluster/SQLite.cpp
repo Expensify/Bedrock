@@ -298,9 +298,12 @@ string SQLite::read(const string& query) {
 }
 
 bool SQLite::read(const string& query, SQResult& result) {
+    
     // Execute the read-only query
+    if (!SContains(SToUpper(query), "UPDATE ")) {
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+    }
     SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
-    SASSERT(!SContains(SToUpper(query), "UPDATE "));
     SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
     SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
