@@ -645,6 +645,10 @@ void BedrockServer::worker(SData& args,
                 continue;
             }
 
+            if (command.request.isSet("mockRequest")) {
+                SINFO("mockRequest set for  command '" << command.request.methodLine << "'.");
+            }
+
             // We'll retry on conflict up to this many times.
             int retry = 3;
             while (retry) {
