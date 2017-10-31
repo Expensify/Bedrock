@@ -338,7 +338,7 @@ void SQLite::_checkTiming(const string& error) {
 
 bool SQLite::write(const string& query) {
     if (_noopUpdateMode) {
-        SALERT("Called non-idempotent `write` from _noopUpdateMode, doing nothing.");
+        SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
     }
     SASSERT(_insideTransaction);
