@@ -303,9 +303,15 @@ bool SQLite::read(const string& query, SQResult& result) {
     if (!SContains(SToUpper(query), "UPDATE ")) {
         SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
     }
-    SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
-    SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
-    SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
+    if (!SContains(SToUpper(query), "INSERT ")) {
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+    }
+    if (!SContains(SToUpper(query), "DELETE ")) {
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+    }
+    if (!SContains(SToUpper(query), "REPLACE ")) {
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+    }
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _checkTiming("timeout in SQLite::read"s);
