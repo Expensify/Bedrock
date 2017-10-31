@@ -304,13 +304,13 @@ bool SQLite::read(const string& query, SQResult& result) {
         SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
     }
     if (!SContains(SToUpper(query), "INSERT ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"INSERT \")) != true");
     }
     if (!SContains(SToUpper(query), "DELETE ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"DELETE \")) != true");
     }
     if (!SContains(SToUpper(query), "REPLACE ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
+        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"REPLACE \")) != true");
     }
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
