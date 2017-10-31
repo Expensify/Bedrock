@@ -291,7 +291,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         } else {
                             timeouts++;
                             if (timeouts == 600) {
-                                SAUTOLOCK(listLock);
                                 cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest.methodLine << endl;
                                 break;
                             }
@@ -321,8 +320,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         }
                     }
                 }
-                close(socket);
             }
+            close(socket);
         });
     }
 
