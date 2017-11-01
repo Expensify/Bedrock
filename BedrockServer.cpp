@@ -936,17 +936,19 @@ BedrockServer::~BedrockServer() {
     // Just warn if we have outstanding requests
     SASSERTWARN(_requestCountSocketMap.empty());
 
-    // Shut down any outstanding keepalive connections
+    // Shut down the sync thread, (which will shut down worker threads in turn).
+    SINFO("Closing sync thread '" << _syncThreadName << "'");
+    _syncThread.join();
+    SINFO("Threads closed.");
+
+    // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
+    // finished, it may keep writing to these sockets.
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
         closeSocket(s);
     }
-
-    // Shut down the sync thread, (which will shut down worker threads in turn).
-    SINFO("Closing sync thread '" << _syncThreadName << "'");
-    _syncThread.join();
-    SINFO("Threads closed.");
+    SINFO("Sockets closed.");
 }
 
 bool BedrockServer::shutdownComplete() {
@@ -1125,7 +1127,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     Port* acceptPort = nullptr;
     while ((s = acceptSocket(acceptPort))) {
         // Accepted a new socket
-        // NOTE: SQLiteNode doesn't need to keep a new list; we'll just reuse the STCPManager::socketList.
+        // NOTE: BedrockServer doesn't need to keep a new list; there's already STCPManager::socketList.
         // Look up the plugin that owns this port (if any).
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];

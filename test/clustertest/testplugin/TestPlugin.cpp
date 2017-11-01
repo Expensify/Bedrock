@@ -94,7 +94,12 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
         return true;
     } else if (command.request.methodLine == "slowprocessquery") {
-        int size = 100000000;
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+
+        int size = 1;
         int count = 1;
         if (command.request.isSet("size")) {
             size = SToInt(command.request["size"]);
@@ -102,9 +107,17 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         if (command.request.isSet("count")) {
             count = SToInt(command.request["count"]);
         }
+
         for (int i = 0; i < count; i++) {
-            string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
-            SQResult result;
+            string query = "INSERT INTO test (id, value) VALUES ";
+            for (int j = 0; j < size; j++) {
+                if (j) {
+                    query += ", ";
+                }
+                query += "(" + to_string(nextID) + ", " + to_string(nextID) + ")";
+                nextID++;
+            }
+            query += ";";
             db.read(query, result);
         }
     } else if (command.request.methodLine == "dieinprocess") {
