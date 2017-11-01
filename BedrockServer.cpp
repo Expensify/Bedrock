@@ -1454,6 +1454,7 @@ void BedrockServer::_status(BedrockCommand& command) {
                 content["syncNodeAvailable"] = "true";
                 // Set some information about this node.
                 content["CommitCount"] = to_string(_syncNode->getCommitCount());
+                content["priority"] = to_string(_syncNode->getPriority());
 
                 // Retrieve information about our peers.
                 for (SQLiteNode::Peer* peer : _syncNode->peerList) {
