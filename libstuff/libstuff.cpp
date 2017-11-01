@@ -649,6 +649,9 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
         // Found the end of the line; is the line blank?
         if (lineEnd == lineStart) {
             // Blank line -- if we have at least the method, then we're done.  Otherwise, ignore.
+
+            // We want to look this up without inserting it.
+            auto it = nameValueMap.find("Transfer-Encoding");
             if (!methodLine.empty()) {
                 // If we are done processing a chunked body.
                 if (isChunked) {
@@ -663,7 +666,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                 }
 
                 // If not processing a chunked body, then finish up.
-                else if (!SIEquals(nameValueMap["Transfer-Encoding"], "chunked")) {
+                else if (it == nameValueMap.end() || !SIEquals(it->second, "chunked")) {
                     // We have a method -- we're done.  Figure out the end of the message
                     // by consuming up to 2 EOL characters, then return the total length.
                     const char* parseEnd = lineEnd;

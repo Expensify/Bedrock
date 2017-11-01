@@ -1,6 +1,11 @@
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace
 
+thread_local function<void()> SSignalHandlerDieFunc;
+void SSetSignalHandlerDieFunc(function<void()>&& func) {
+    SSignalHandlerDieFunc = move(func);
+}
+
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
 
@@ -55,6 +60,9 @@ void SClearSignals() {
 }
 
 void SInitializeSignals() {
+    // Our default die function does nothing.
+    SSignalHandlerDieFunc = [](){};
+
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
 
@@ -131,6 +139,11 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
         // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
+
+        // Call our die function and then reset it.
+        SSignalHandlerDieFunc();
+        SSignalHandlerDieFunc = [](){};
+
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
         }

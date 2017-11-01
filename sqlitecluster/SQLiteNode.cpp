@@ -1688,6 +1688,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _escalatedCommandMap.erase(commandIt);
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
+    } else if (SIEquals(message.methodLine, "CRASH_COMMAND")) {
+        // Create a new Command and send to the server.
+        PINFO("Received CRASH_COMMAND command, forwarding to server.");
+        SData messageCopy = message;
+        _server.acceptCommand(SQLiteCommand(move(messageCopy)));
     } else {
         STHROW("unrecognized message");
     }
@@ -1839,6 +1844,11 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
             peer->s->send(serializedMessage);
         }
     }
+}
+
+void SQLiteNode::emergencyBroadcast(const SData& message) {
+    SALERT("Sending emergency broadcast: " << message.serialize());
+    _sendToAllPeers(message, false);
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
