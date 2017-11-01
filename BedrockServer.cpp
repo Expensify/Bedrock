@@ -15,7 +15,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         request.deserialize(command.request.content);
 
         // Take a unique lock so nobody else can read from this table while we update it.
-        unique_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+        unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
         // Add the blacklisted command to the map.
         _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
@@ -358,9 +358,8 @@ void BedrockServer::sync(SData& args,
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
             // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
-            // like a segfault. This version is simpler than the one in `worker`, as no synchronization needs to be
-            // done, as we *are* the sync thread. Note that it's possible we're in the middle of sending a message to
-            // peers when we call this, which would probably make this message malformed. This is the best we can do.
+            // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
+            // this, which would probably make this message malformed. This is the best we can do.
             SSetSignalHandlerDieFunc([&](){
                 server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
             });
@@ -807,7 +806,7 @@ void BedrockServer::worker(SData& args,
 
 bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     // Get a shared lock so that all the workers can look at this map simultaneously.
-    shared_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+    shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
     // Typically, this map is empty and this returns no results.
     auto itpair = _crashCommands.equal_range(command.request.methodLine);
@@ -1430,7 +1429,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 
         {
             // Make it known if anything is known to cause crashes.
-            shared_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+            shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
             content["crashCommands"] = _crashCommands.size();
         }
 
@@ -1548,7 +1547,7 @@ void BedrockServer::_control(BedrockCommand& command) {
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
     } else if (SIEquals(command.request.methodLine, "ClearCrashCommands")) {
-        unique_lock<decltype(_crashCommandListMutex)> lock(_crashCommandListMutex);
+        unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
     } else if (SIEquals(command.request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
