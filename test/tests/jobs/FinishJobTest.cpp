@@ -148,6 +148,30 @@ struct FinishJobTest : tpunit::TestFixture {
         command["jobID"] = finishedChildID;
         tester->executeWaitVerifyContent(command);
 
+        // Get any remaining child jobs and finish those.
+        list<string> childIDs;
+        command.clear();
+        command.methodLine = "GetJob";
+        for (auto name : {"child_cancelled", "child_finished"}) {
+            command["name"] = name;
+            while (1) {
+                SData completeResponse = tester->executeWaitMultipleData({command})[0];
+                if (SStartsWith(completeResponse.methodLine, "404")) {
+                    break;
+                } else {
+                    childIDs.push_back(SParseJSONObject(completeResponse.content)["jobID"]);
+                }
+            }
+        }
+
+        // Finish them all.
+        command.clear();
+        command.methodLine = "FinishJob";
+        for (auto id : childIDs) {
+            command["jobID"] = id;
+            tester->executeWaitVerifyContent(command);
+        }
+
         // Confirm the parent is set to QUEUED
         SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
@@ -164,7 +188,7 @@ struct FinishJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
-        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + ";", result);
+        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') != 'true';", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
@@ -233,9 +257,10 @@ struct FinishJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
-        // Confirm that the parent is in the PAUSED state and the chilrden are in the QUEUED state
+        // Confirm that the parent is in the PAUSED state and the children are in the QUEUED state
         SQResult result;
-        tester->readDB("SELECT jobID, state FROM jobs;", result);
+        list<string> jobs = {parentID, finishedChildID, cancelledChildID};
+        tester->readDB("SELECT jobID, state FROM jobs WHERE jobID IN(" + SQList(jobs) + ") ORDER BY jobID;", result);
         ASSERT_EQUAL(result[0][0], parentID);
         ASSERT_EQUAL(result[0][1], "PAUSED");
         ASSERT_EQUAL(result[1][0], finishedChildID);

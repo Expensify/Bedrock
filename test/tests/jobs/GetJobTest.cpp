@@ -132,16 +132,25 @@ struct GetJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_1");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_2");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_3");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_4");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "low_5");
+
+        // Verify all non-mocked requests come back in the correct order.
+        list<string> responseNames;
+        while (1) {
+            SData completeResponse = tester->executeWaitMultipleData({command})[0];
+            if (SStartsWith(completeResponse.methodLine, "404")) {
+                break;
+            }
+            if (SParseJSONObject(SParseJSONObject(completeResponse.content)["data"])["mockRequest"] != "true") {
+                responseNames.push_back(SParseJSONObject(completeResponse.content)["name"]);
+             }
+        }
+
+        vector<string> expected = {"high_1", "high_2", "medium_3", "medium_4", "low_5"};
+        int index = 0;
+        for (auto& responseName : responseNames) {
+            ASSERT_EQUAL(responseName, expected[index]);
+            index++;
+        }
     }
     // Create jobs in order of low, medium, high, high, medium, low
     // with nextRun times in order of now, now+1, now+2, now+5, now+4, now+3
@@ -212,12 +221,25 @@ struct GetJobTest : tpunit::TestFixture {
 
         // GetJob and confirm that the last 3 jobs are returned in priority order since now is past nextRun for all of them
         sleep(3);
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "low");
+
+        // Verify all non-mocked requests come back in the correct order.
+        list<string> responseNames;
+        while (1) {
+            SData completeResponse = tester->executeWaitMultipleData({command})[0];
+            if (SStartsWith(completeResponse.methodLine, "404")) {
+                break;
+            }
+            if (SParseJSONObject(SParseJSONObject(completeResponse.content)["data"])["mockRequest"] != "true") {
+                responseNames.push_back(SParseJSONObject(completeResponse.content)["name"]);
+             }
+        }
+
+        vector<string> expected = {"high", "medium", "low"};
+        int index = 0;
+        for (auto& responseName : responseNames) {
+            ASSERT_EQUAL(responseName, expected[index]);
+            index++;
+        }
     }
 
     // Get a parent job that has finished and cancelled jobs
@@ -234,7 +256,9 @@ struct GetJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
+        do {
+            response = tester->executeWaitVerifyContentTable(command);
+        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
 
         // Create the children
         command.clear();
@@ -263,6 +287,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
         response = tester->executeWaitVerifyContentTable(command);
+        string firstChild = response["jobID"];
         
         // Cancel a child
         command.clear();
@@ -278,11 +303,29 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["parentJobID"], parentID);
         ASSERT_EQUAL(response["parentData"], parentData);
 
-        // Finish a child
+        // Get any remaining child jobs and finish those.
+        list<string> childIDs = {firstChild};
+        command.clear();
+        command.methodLine = "GetJob";
+        for (auto name : {"child_cancelled", "child_finished"}) {
+            command["name"] = name;
+            while (1) {
+                SData completeResponse = tester->executeWaitMultipleData({command})[0];
+                if (SStartsWith(completeResponse.methodLine, "404")) {
+                    break;
+                } else {
+                    childIDs.push_back(SParseJSONObject(completeResponse.content)["jobID"]);
+                }
+            }
+        }
+
+        // Finish them all.
         command.clear();
         command.methodLine = "FinishJob";
-        command["jobID"] = finishedChildID;
-        tester->executeWaitVerifyContent(command);
+        for (auto id : childIDs) {
+            command["jobID"] = id;
+            tester->executeWaitVerifyContent(command);
+        }
 
         // Confirm the parent is set to QUEUED
         SQResult result;
@@ -305,17 +348,29 @@ struct GetJobTest : tpunit::TestFixture {
 
         // Checking the finished job
         list<string> finishedChildJobs = SParseJSONArray(response["finishedChildJobs"]);
-        ASSERT_EQUAL(finishedChildJobs.size(), 1);
-        STable childJob = SParseJSONObject(finishedChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], finishedChildID);
-        ASSERT_EQUAL(childJob["data"], finishedChildData);
+        bool foundCorrectChild = false;
+        for (auto& child : finishedChildJobs) {
+            STable childJob = SParseJSONObject(child);
+            if (childJob["jobID"] == finishedChildID) {
+                ASSERT_EQUAL(childJob["data"], finishedChildData);
+                foundCorrectChild = true;
+            }
+
+        }
+        ASSERT_TRUE(foundCorrectChild);
 
         // Checking the cancelled job
         list<string> cancelledChildJobs = SParseJSONArray(response["cancelledChildJobs"]);
-        ASSERT_EQUAL(cancelledChildJobs.size(), 1);
-        childJob = SParseJSONObject(cancelledChildJobs.front());
-        ASSERT_EQUAL(childJob["jobID"], cancelledChildID);
-        ASSERT_EQUAL(childJob["data"], cancelledChildData);
+        foundCorrectChild = false;
+        for (auto& child : cancelledChildJobs) {
+            STable childJob = SParseJSONObject(child);
+            if (childJob["jobID"] == cancelledChildID) {
+                ASSERT_EQUAL(childJob["data"], cancelledChildData);
+                foundCorrectChild = true;
+            }
+
+        }
+        ASSERT_TRUE(foundCorrectChild);
     }
 
     // This is the same as testPriorities but some of the states are set to RUNQUEUED
@@ -373,34 +428,41 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = "medium_4";
         tester->executeWaitVerifyContent(command);
 
-        // Confirm they are in the RUNQUEUED state
+        // Confirm at least one is in the RUNQUEUED state
         SQResult result;
         tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_4');", result);
-        ASSERT_EQUAL(result.size(), 1);
-        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
+        bool foundRunQueued = false;
+        for (auto& r : result.rows) {
+            if (r[0] == "RUNQUEUED") {
+                foundRunQueued = true;
+            }
+        }
+        ASSERT_TRUE(foundRunQueued);
 
-        // Sleep for two seconds and then confirm that all jobs but high_1 have the same nextRun time
+        // Sleep for two seconds.
         sleep(2);
-        tester->readDB("SELECT DISTINCT nextRun, GROUP_CONCAT(name) FROM jobs GROUP BY nextRun;", result);
-        ASSERT_EQUAL(result.size(), 2);
-        ASSERT_EQUAL(SParseList(result[0][1]).size(), 1);
-        ASSERT_EQUAL(result[0][1], "high_1");
-        ASSERT_EQUAL(SParseList(result[1][1]).size(), 4);
 
-        // GetJob and confirm that the jobs are returned in high, medium, low order
+        // Verify all non-mocked requests come back in the correct order.
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_1");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_2");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_3"); // Because we don't order by jobID, QUEUED jobs will always run before RUNQUEUED when priority and nextRun are the same
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_4");
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "low_5");
+        list<string> responseNames;
+        while (1) {
+            SData completeResponse = tester->executeWaitMultipleData({command})[0];
+            if (SStartsWith(completeResponse.methodLine, "404")) {
+                break;
+            }
+            if (SParseJSONObject(SParseJSONObject(completeResponse.content)["data"])["mockRequest"] != "true") {
+                responseNames.push_back(SParseJSONObject(completeResponse.content)["name"]);
+             }
+        }
+
+        vector<string> expected = {"high_1", "high_2", "medium_3", "medium_4", "low_5"};
+        int index = 0;
+        for (auto& responseName : responseNames) {
+            ASSERT_EQUAL(responseName, expected[index]);
+            index++;
+        }
     }
 } __GetJobTest;
 

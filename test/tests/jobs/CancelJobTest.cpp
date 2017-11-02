@@ -47,7 +47,11 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
+
+        // Skip any mocked commands.
+        do {
+            response = tester->executeWaitVerifyContentTable(command);
+        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
 
         // Create the child
         command.clear();
@@ -67,11 +71,18 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child";
-        tester->executeWaitVerifyContent(command);
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
+
+        // Get *any* children, and finish them all.
+        while (1) {
+            SData completeResponse = tester->executeWaitMultipleData({command})[0];
+            if (SStartsWith(completeResponse.methodLine, "404")) {
+                break;
+            } else {
+                SData nextCommand("FinishJob");
+                nextCommand["jobID"] = SParseJSONObject(completeResponse.content)["jobID"];
+                tester->executeWaitVerifyContent(nextCommand);
+            }
+        }
 
         // Assert parent is in QUEUED state
         SQResult result;
@@ -311,7 +322,11 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
+
+        // Skip any mocked commands.
+        do {
+            response = tester->executeWaitVerifyContentTable(command);
+        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
 
         // Create one child
         command.clear();
@@ -346,13 +361,32 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "PAUSED");
 
-        // Cancel the last child
+        // Look up all remaining children.
+        list<string> childIDs;
         command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID2;
-        tester->executeWaitVerifyContent(command);
+        command.methodLine = "GetJob";
+        for (auto name : {"child", "child2"}) {
+            command["name"] = name;
+            while (1) {
+                SData completeResponse = tester->executeWaitMultipleData({command})[0];
+                if (SStartsWith(completeResponse.methodLine, "404")) {
+                    break;
+                } else {
+                    childIDs.push_back(SParseJSONObject(completeResponse.content)["jobID"]);
+                }
+            }
+        }
+
+        // And finish them all. We can't cancel them if they're running, and getting them marks them running.
+        command.clear();
+        command.methodLine = "FinishJob";
+        for (auto id : childIDs) {
+            command["jobID"] = id;
+            tester->executeWaitVerifyContent(command);
+        }
 
         // Parent should be queued
+        tester->readDB("SELECT jobID, state FROM jobs WHERE parentJobID = " + parentID + ";", result);
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
