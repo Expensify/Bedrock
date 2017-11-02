@@ -273,4 +273,12 @@ class SQLite {
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
+
+    // It's possible for certain transactions (namely, timing out a write operation, see here:
+    // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
+    // happens, we store a flag internally indicating that we don't need to perform the rollback ourselves. Then when
+    // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
+    // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
+    // failed query, regardless of whether or not it was already rolled back internally.
+    bool _autoRolledBack;
 };

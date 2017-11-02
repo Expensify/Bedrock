@@ -255,7 +255,7 @@ class BedrockServer : public SQLiteServer {
     // message before the worker exits.
 
     // A shared mutex to control access to the list of crash-inducing commands.
-    shared_timed_mutex _crashCommandListMutex;
+    shared_timed_mutex _crashCommandMutex;
 
     // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
     // particular command for it count as a match likely to cause a crash.
