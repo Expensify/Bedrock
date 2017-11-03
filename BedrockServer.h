@@ -171,17 +171,6 @@ class BedrockServer : public SQLiteServer {
                        int threadId,
                        int threadCount);
 
-    // Wraps the worker thread main function to make it easy to add exception handling.
-    static void workerWrapper(SData& args,
-                       atomic<SQLiteNode::State>& _replicationState,
-                       atomic<bool>& upgradeInProgress,
-                       atomic<string>& masterVersion,
-                       CommandQueue& syncNodeQueuedCommands,
-                       CommandQueue& syncNodeCompletedCommands,
-                       BedrockServer& server,
-                       int threadId,
-                       int threadCount);
-
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(BedrockCommand&);
@@ -254,4 +243,23 @@ class BedrockServer : public SQLiteServer {
     // Pointer to the control port, so we know which port not to shut down when we close the command ports.
     Port* _controlPort;
     Port* _commandPort;
+
+    // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
+    // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
+    // it gets sent again (i.e., if an end-user clicks 'refresh' after crashing the first node). Because these can
+    // originate in worker threads, much of this is synchronization code to make sure the sync thread can send this
+    // message before the worker exits.
+
+    // A shared mutex to control access to the list of crash-inducing commands.
+    shared_timed_mutex _crashCommandMutex;
+
+    // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
+    // particular command for it count as a match likely to cause a crash.
+    multimap<string, STable> _crashCommands;
+
+    // Check a command against the list of crash commands, and return whether we think the command would crash.
+    bool _wouldCrash(const BedrockCommand& command);
+
+    // Generate a CRASH_COMMAND command for a given bad command.
+    static SData _generateCrashMessage(const BedrockCommand* command);
 };

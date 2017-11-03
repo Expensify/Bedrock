@@ -74,6 +74,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         }
     } catch (const SException& e) {
         _handleCommandException(command, e);
+    } catch (...) {
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
     }
 
     // If we get here, it means the command is fully completed.
@@ -162,6 +165,12 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     } catch (const SException& e) {
         _handleCommandException(command, e);
         _db.rollback();
+        needsCommit = false;
+    } catch(...) {
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
+        _db.rollback();
+        needsCommit = false;
     }
 
     // Turn off noop-update mode.
@@ -203,4 +212,23 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const SExcept
 
     // Add the commitCount header to the response.
     command.response["commitCount"] = to_string(_db.getCommitCount());
+}
+string BedrockCore::_getExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
 }

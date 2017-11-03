@@ -107,6 +107,11 @@ class SQLiteNode : public STCPNode {
     // 2. SQLite::g_commitLock
     shared_timed_mutex stateMutex;
 
+    // This allows the caller to immediately send a message to all peers that something horrible has happened,
+    // typically, we've segfaulted and are trying to warn other servers of a bad command before we finish crashing.
+    // This is not to be used as a general messaging mechanism.
+    void emergencyBroadcast(const SData& message);
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
