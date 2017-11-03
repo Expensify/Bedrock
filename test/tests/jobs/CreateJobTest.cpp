@@ -293,11 +293,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = jobName;
-
-        // Discard any mock request commands we got.
-        do {
-            response = tester->executeWaitVerifyContentTable(command);
-        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
+        response = tester->executeWaitVerifyContentTable(command);
 
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
@@ -312,13 +308,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
 
         // Get the job, confirm error
-        SData completeResponse;
-        do {
-            completeResponse = tester->executeWaitMultipleData({command})[0];
-        } while (SParseJSONObject(SParseJSONObject(completeResponse.content)["data"])["mockRequest"] == "true");
-
-        // Now that we've got a request that wasn't mocked, verify it's method line.
-        ASSERT_EQUAL(completeResponse.methodLine, "404 No job found");
+        tester->executeWaitVerifyContent(command, "404 No job found");
 
         // Wait 1 second, get the job, confirm no error
         sleep(1);
@@ -328,12 +318,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["name"], jobName);
 
         // Get the job, confirm error
-        do {
-            completeResponse = tester->executeWaitMultipleData({command})[0];
-        } while (SParseJSONObject(SParseJSONObject(completeResponse.content)["data"])["mockRequest"] == "true");
-
-        // Now that we've got a request that wasn't mocked, verify it's method line.
-        ASSERT_EQUAL(completeResponse.methodLine, "404 No job found");
+        tester->executeWaitVerifyContent(command, "404 No job found");
 
         // Finish the job
         command.clear();

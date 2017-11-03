@@ -47,11 +47,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-
-        // Skip any mocked commands.
-        do {
-            response = tester->executeWaitVerifyContentTable(command);
-        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
+        tester->executeWaitVerifyContent(command);
 
         // Create the child
         command.clear();
@@ -71,18 +67,19 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child";
+        tester->executeWaitVerifyContent(command);
 
-        // Get *any* children, and finish them all.
-        while (1) {
-            SData completeResponse = tester->executeWaitMultipleData({command})[0];
-            if (SStartsWith(completeResponse.methodLine, "404")) {
-                break;
-            } else {
-                SData nextCommand("FinishJob");
-                nextCommand["jobID"] = SParseJSONObject(completeResponse.content)["jobID"];
-                tester->executeWaitVerifyContent(nextCommand);
-            }
-        }
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish the known child.
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = childID;
+        tester->executeWaitVerifyContent(command);
 
         // Assert parent is in QUEUED state
         SQResult result;
@@ -322,11 +319,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-
-        // Skip any mocked commands.
-        do {
-            response = tester->executeWaitVerifyContentTable(command);
-        } while (SParseJSONObject(response["data"])["mockRequest"] == "true");
+        tester->executeWaitVerifyContent(command);
 
         // Create one child
         command.clear();
@@ -361,32 +354,19 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "PAUSED");
 
-        // Look up all remaining children.
-        list<string> childIDs;
+        // The parent may have other children from mock requests, delete them.
         command.clear();
-        command.methodLine = "GetJob";
-        for (auto name : {"child", "child2"}) {
-            command["name"] = name;
-            while (1) {
-                SData completeResponse = tester->executeWaitMultipleData({command})[0];
-                if (SStartsWith(completeResponse.methodLine, "404")) {
-                    break;
-                } else {
-                    childIDs.push_back(SParseJSONObject(completeResponse.content)["jobID"]);
-                }
-            }
-        }
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
 
-        // And finish them all. We can't cancel them if they're running, and getting them marks them running.
+        // Cancel the last child
         command.clear();
-        command.methodLine = "FinishJob";
-        for (auto id : childIDs) {
-            command["jobID"] = id;
-            tester->executeWaitVerifyContent(command);
-        }
+        command.methodLine = "CancelJob";
+        command["jobID"] = childID2;
+        tester->executeWaitVerifyContent(command);
 
         // Parent should be queued
-        tester->readDB("SELECT jobID, state FROM jobs WHERE parentJobID = " + parentID + ";", result);
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }

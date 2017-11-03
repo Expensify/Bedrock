@@ -137,6 +137,12 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "child_finished";
         tester->executeWaitVerifyContent(command);
 
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
         // Cancel a child
         // if this goes 2nd this doesn't retry the parent job
         command.clear();
@@ -150,30 +156,6 @@ struct RetryJobTest : tpunit::TestFixture {
         command["jobID"] = finishedChildID;
         tester->executeWaitVerifyContent(command);
 
-        // Get any remaining child jobs and finish those.
-        list<string> childIDs;
-        command.clear();
-        command.methodLine = "GetJob";
-        for (auto name : {"child_cancelled", "child_finished"}) {
-            command["name"] = name;
-            while (1) {
-                SData completeResponse = tester->executeWaitMultipleData({command})[0];
-                if (SStartsWith(completeResponse.methodLine, "404")) {
-                    break;
-                } else {
-                    childIDs.push_back(SParseJSONObject(completeResponse.content)["jobID"]);
-                }
-            }
-        }
-
-        // Finish them all.
-        command.clear();
-        command.methodLine = "FinishJob";
-        for (auto id : childIDs) {
-            command["jobID"] = id;
-            tester->executeWaitVerifyContent(command);
-        }
-
         // Retry the parent
         command.clear();
         command.methodLine = "GetJob";
@@ -186,7 +168,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         SQResult result;
-        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') != 'true';", result);
+        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
