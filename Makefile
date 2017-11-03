@@ -146,7 +146,11 @@ $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
 	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
 
-# Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
-$(INTERMEDIATEDIR)/%.o: %.c
+# Build c files. We only do this for SQLite files, and they each require their own defines.
+$(INTERMEDIATEDIR)/libstuff/sqlite3.o: libstuff/sqlite3.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -o $@ -c $<
+
+$(INTERMEDIATEDIR)/libstuff/spellfix.o: libstuff/spellfix.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -DSQLITE_CORE -o $@ -c $<

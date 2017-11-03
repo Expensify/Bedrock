@@ -471,9 +471,9 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput) {
 }
 
 // --------------------------------------------------------------------------
-list<int64_t> SParseIntegerList(const string& value, char separator) {
+list<int64_t> SParseIntegerList(const string& value, char delimiter) {
     list<int64_t> valueList;
-    list<string> strings = SParseList(value, separator);
+    list<string> strings = SParseList(value, delimiter);
     for (string str : strings) {
         valueList.push_back(SToInt64(str));
     }
@@ -481,7 +481,7 @@ list<int64_t> SParseIntegerList(const string& value, char separator) {
 }
 
 // --------------------------------------------------------------------------
-bool SParseList(const char* ptr, list<string>& valueList, char separator) {
+bool SParseList(const char* ptr, list<string>& valueList, char delimiter) {
     // Clear the input
     valueList.clear();
 
@@ -493,7 +493,7 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
         }
 
         // Is this a delimiter?  If so, let's add a new component to the list
-        else if (*ptr == separator) {
+        else if (*ptr == delimiter) {
             // Only add if the component is non-empty
             if (!component.empty())
                 valueList.push_back(component);
@@ -503,6 +503,55 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
         // Otherwise, add to the working component
         else {
             component += *ptr;
+        }
+
+        // Finally, go to the next character
+        ++ptr;
+    }
+
+    // Reached the end of the string; if we are working on a component, add it
+    if (!component.empty())
+        valueList.push_back(component);
+
+    // Return if we were able to find anything
+    return (!component.empty());
+}
+
+// --------------------------------------------------------------------------
+bool SParseList(const char* ptr, list<string>& valueList, const char* delimiterArray) {
+    // Clear the input
+    valueList.clear();
+
+    // Walk across the string and break into comma/whitespace delimited substrings
+    string component;
+    while (*ptr) {
+        // Is this the start of a new string?  If so, ignore to trim leading whitespace.
+        if (component.empty() && *ptr == ' ') {
+            // Ignore
+        }
+        else {
+            // Is this a delimiter?  If so, let's add a new component to the list
+            bool isDelimiter = false;
+            const char* delimiter = delimiterArray;
+            while(*delimiter) {
+                if (*ptr == *delimiter) {
+                    // This is a delimiter!  Add a new component if non-empty
+                    if (!component.empty()) {
+                        valueList.push_back(component);
+                    }
+                    component.clear();
+                    isDelimiter = true;
+                    break;
+                }
+
+                // Check the next delimiter
+                ++delimiter;
+            }
+
+            // Otherwise, add to the working component
+            if (!isDelimiter) {
+                component += *ptr;
+            }
         }
 
         // Finally, go to the next character
@@ -578,18 +627,18 @@ SData SParseCommandLine(int argc, char* argv[]) {
 // Network stuff
 /////////////////////////////////////////////////////////////////////////////
 // --------------------------------------------------------------------------
-const char* _SParseHTTP_GetUpToNext(const char* start, const char* lineEnd, char separator, string& out) {
+const char* _SParseHTTP_GetUpToNext(const char* start, const char* lineEnd, char delimiter, string& out) {
     // Trim leading whitespace
     while (*start == ' ')
         ++start;
 
-    // Look for the separator
+    // Look for the delimiter
     const char* end = start;
-    while ((end < lineEnd) && (*end != separator))
+    while ((end < lineEnd) && (*end != delimiter))
         ++end;
-    const char* separatorPos = end;
+    const char* delimiterPos = end;
 
-    // Found the separator, trim off any trailing whitespace
+    // Found the delimiter, trim off any trailing whitespace
     while (*(end - 1) == ' ')
         --end;
 
@@ -602,7 +651,7 @@ const char* _SParseHTTP_GetUpToNext(const char* start, const char* lineEnd, char
     }
 
     // Return the new parse location
-    return separatorPos;
+    return delimiterPos;
 }
 
 // --------------------------------------------------------------------------

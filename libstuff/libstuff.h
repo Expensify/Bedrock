@@ -600,29 +600,38 @@ string SEncodeURIComponent(const string& value);
 // List stuff
 // --------------------------------------------------------------------------
 // List management
-list<int64_t> SParseIntegerList(const string& value, char separator = ',');
-bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-inline bool SParseList(const string& value, list<string>& valueList, char separator = ',') {
-    return SParseList(value.c_str(), valueList, separator);
+list<int64_t> SParseIntegerList(const string& value, char delimiter = ',');
+bool SParseList(const char* value, list<string>& valueList, char delimiter = ',');
+inline bool SParseList(const string& value, list<string>& valueList, char delimiter = ',') {
+    return SParseList(value.c_str(), valueList, delimiter);
 }
-inline list<string> SParseList(const string& value, char separator = ',') {
+inline list<string> SParseList(const string& value, char delimiter = ',') {
     list<string> valueList;
-    SParseList(value, valueList, separator);
+    SParseList(value, valueList, delimiter);
+    return valueList;
+}
+bool SParseList(const char* value, list<string>& valueList, const char* delimiterArray);
+inline bool SParseList(const string& value, list<string>& valueList, const char* delimiterArray) {
+    return SParseList(value.c_str(), valueList, delimiterArray);
+}
+inline list<string> SParseList(const string& value, const char* delimiterArray) {
+    list<string> valueList;
+    SParseList(value, valueList, delimiterArray);
     return valueList;
 }
 
 // Concatenates things into a string. "Things" can mean essentially any
 // standard STL container of any type of object that "stringstream" can handle.
-template <typename T> string SComposeList(const T& valueList, const string& separator = ", ") {
+template <typename T> string SComposeList(const T& valueList, const string& delimiter = ", ") {
     if (valueList.empty()) {
         return "";
     }
     string working;
     for(auto value : valueList) {
         working += SToStr(value);
-        working += separator;
+        working += delimiter;
     }
-    return working.substr(0, working.size() - separator.size());
+    return working.substr(0, working.size() - delimiter.size());
 }
 
 // --------------------------------------------------------------------------

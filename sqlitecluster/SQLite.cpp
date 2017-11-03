@@ -3,6 +3,9 @@
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
+// Prepare to access the SQLite Spellfix1 extension
+extern "C" void sqlite3_spellfix_init();
+
 // Create all of our static variables.
 atomic<uint64_t>                    SQLite::_commitCount(0);
 recursive_mutex                     SQLite::_commitLock;
@@ -46,12 +49,17 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // We need to initialize sqlite. Only the first thread to get here will do this.
     if (initializer) {
+        // Load the spellfix extension for all future DB connections.
+        // NOTE: sqlite3_auto_extension implicitly calls sqlite3_initialize, so it's no longer called explicitly
+        //       See: https://www.sqlite.org/loadext.html
+        sqlite3_auto_extension(sqlite3_spellfix_init); 
+
+        // Begin listening for logging messages
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
         // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
         sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
-        sqlite3_initialize();
         SASSERT(sqlite3_threadsafe());
 
         // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
