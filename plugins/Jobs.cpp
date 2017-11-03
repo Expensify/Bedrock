@@ -411,7 +411,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             string originalData = job["data"];
             if (command.request.isSet("mockRequest")) {
                 if (job["data"].empty()) {
-                    job["data"] = "{\"mockRequest\":\"true\"}";
+                    job["data"] = "{\"mockRequest\":true}";
                 } else {
                     STable data = SParseJSONObject(job["data"]);
                     data["mockRequest"] = "true";

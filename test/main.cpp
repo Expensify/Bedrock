@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
         exclude.insert("Perf");
     }
 
-    if (args.isSet("-10x")) {
+    if (args.isSet("-duplicateRequests")) {
         // Duplicate every request N times.
-        cout << "Setting 10x testing to: " << SToInt(args["-10x"]) << endl;
-        BedrockTester::mockRequestMode = SToInt(args["-10x"]);
+        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
+        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
