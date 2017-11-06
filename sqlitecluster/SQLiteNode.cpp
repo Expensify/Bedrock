@@ -1889,9 +1889,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 // Abort this command
                 SWARN("Stopping MASTERING/STANDINGDOWN with commit in progress. Canceling.");
                 _commitState = CommitState::FAILED;
-                if (!_db.getUncommittedHash().empty()) {
-                    _db.rollback();
-                }
+                _db.rollback();
             }
         }
 
