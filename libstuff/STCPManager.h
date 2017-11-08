@@ -12,7 +12,7 @@ struct STCPManager {
         int s;
         sockaddr_in addr;
         string recvBuffer;
-        State state;
+        atomic<State> state;
         bool connectFailure;
         uint64_t openTime;
         uint64_t lastSendTime;

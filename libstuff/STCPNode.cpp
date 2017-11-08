@@ -77,7 +77,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         Socket* socket = *socketIt;
         try {
             // Verify it's still alive
-            if (socket->state != Socket::CONNECTED)
+            if (socket->state.load() != Socket::CONNECTED)
                 STHROW("premature disconnect");
 
             // Still alive; try to login
@@ -140,7 +140,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // See if we're connected
         if (peer->s) {
             // We have a socket; process based on its state
-            switch (peer->s->state) {
+            switch (peer->s->state.load()) {
             case Socket::CONNECTED: {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures

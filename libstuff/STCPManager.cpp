@@ -10,7 +10,7 @@ void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
     for (Socket* socket : socketList) {
         // Make sure it's not closed
-        if (socket->state != Socket::CLOSED) {
+        if (socket->state.load() != Socket::CLOSED) {
             // Check and see if it looks like we're still valid.
             if (socket->s < 0) {
                 SWARN("Invalid FD number("
@@ -24,7 +24,7 @@ void STCPManager::prePoll(fd_map& fdm) {
             // sending. But if we *are* using SSL, it's a bit more complex. If we've completed the handshake, then we
             // only want to send when we have data. But if we're inside the handshake, leave it up to the SSL engine
             // to decide if it wants to send.
-            if (socket->state == Socket::CONNECTING) {
+            if (socket->state.load() == Socket::CONNECTING) {
                 // We haven't yet connected -- send regardless of SSL
                 SFDset(fdm, socket->s, SWRITEEVTS);
             } else if (!socket->ssl) {
@@ -73,7 +73,7 @@ void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     for (Socket* socket : socketList) {
         // Update this socket
-        switch (socket->state) {
+        switch (socket->state.load()) {
         case Socket::CONNECTING: {
             // See if it connected or failed
             if (!SFDAnySet(fdm, socket->s, SWRITEEVTS | POLLHUP | POLLERR)) {
@@ -88,7 +88,7 @@ void STCPManager::postPoll(fd_map& fdm) {
             if (result) {
                 // Asynchronous connect failed; close socket
                 SDEBUG("Connect to '" << socket->addr << "' failed with SO_ERROR #" << result << ", closing.");
-                socket->state = Socket::CLOSED;
+                socket->state.store(Socket::CLOSED);
                 socket->connectFailure = true;
                 break;
             }
@@ -96,7 +96,7 @@ void STCPManager::postPoll(fd_map& fdm) {
             // Asynchronous connect succeeded
             SDEBUG("Connect to '" << socket->addr << "' succeeded.");
             SASSERTWARN(SFDAnySet(fdm, socket->s, SWRITEEVTS));
-            socket->state = Socket::CONNECTED;
+            socket->state.store(Socket::CONNECTED);
             // **NOTE: Intentionally fall through to the connected state
         }
 
@@ -134,7 +134,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                 // How did we die?
                 SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv << ", send="
                        << aliveAfterSend << ")");
-                socket->state = Socket::CLOSED;
+                socket->state.store(Socket::CLOSED);
             }
             break;
         }
@@ -156,7 +156,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                         SWARN("Dirty shutdown of SSL socket '" << socket->addr << "' (" << socket->sendBufferCopy().size()
                                                                << " bytes remain)");
                     }
-                    socket->state = Socket::CLOSED;
+                    socket->state.store(Socket::CLOSED);
                     ::shutdown(socket->s, SHUT_RDWR);
                 }
             } else {
@@ -178,7 +178,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                     if (!S_recvappend(socket->s, socket->recvBuffer)) {
                         // Done shutting down
                         SDEBUG("Graceful shutdown of socket '" << socket->addr << "'");
-                        socket->state = Socket::CLOSED;
+                        socket->state.store(Socket::CLOSED);
                         ::shutdown(socket->s, SHUT_RDWR);
                     }
                 }
@@ -198,7 +198,7 @@ void STCPManager::shutdownSocket(Socket* socket, int how) {
     SASSERT(socket);
     SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
     ::shutdown(socket->s, how);
-    socket->state = Socket::SHUTTINGDOWN;
+    socket->state.store(Socket::SHUTTINGDOWN);
 }
 
 void STCPManager::closeSocket(Socket* socket) {
@@ -250,8 +250,15 @@ bool STCPManager::Socket::send() {
 
 bool STCPManager::Socket::send(const string& buffer) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    // Append to the buffer and send
-    sendBuffer += buffer;
+
+    // If the socket's in a valid state for sending, append to the sendBuffer, otherwise warn
+    if (state.load() < Socket::State::SHUTTINGDOWN) {
+        sendBuffer += buffer;
+    } else if (!sendBuffer.empty()) {
+        SWARN("Not appending to sendBuffer in socket state " << state.load());
+    }
+
+    // Send anything we've got.
     return send();
 }
 

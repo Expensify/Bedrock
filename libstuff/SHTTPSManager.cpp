@@ -98,7 +98,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
                 active->response = 500;
             }
-        } else if (active->s->state > Socket::CONNECTED || elapsed > TIMEOUT) {
+        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > TIMEOUT) {
             // Net problem. Did this transaction end in an inconsistent state?
             SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after "
                   << elapsed / STIME_US_PER_MS << "ms");
@@ -169,7 +169,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     transaction->fullRequest = request;
 
     // Ship it.
-    transaction->s->setSendBuffer(request.serialize());
+    transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);

@@ -1151,7 +1151,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
     for (auto s : socketList) {
-        switch (s->state) {
+        switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
             {
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an

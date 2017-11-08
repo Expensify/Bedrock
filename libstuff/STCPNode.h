@@ -29,7 +29,7 @@ struct STCPNode : public STCPServer {
           : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), id(id_),
             failedConnections(0), externalPeerCount(0)
         { }
-        bool connected() { return (s && s->state == STCPManager::Socket::CONNECTED); }
+        bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
         void reset() {
             clear();
             s = nullptr;
