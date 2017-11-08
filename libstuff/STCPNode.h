@@ -69,14 +69,8 @@ struct STCPNode : public STCPServer {
     // Connects to a peer in the database cluster
     void addPeer(const string& name, const string& host, const STable& params);
 
-    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
-    Peer* getPeerByID(uint64_t id);
-
     // Get an externally accessible peer object by its ID.
     ExternalPeer getExternalPeerByID(uint64_t id);
-
-    // Inverse of the above function. If the peer is not found, returns 0.
-    uint64_t getIDByPeer(Peer* peer);
 
     // Attributes
     string name;
@@ -92,6 +86,13 @@ struct STCPNode : public STCPServer {
 
     // Called when the peer sends us a message; throw an SException to reconnect.
     virtual void _onMESSAGE(Peer* peer, const SData& message) = 0;
+
+  protected:
+    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
+    Peer* getPeerByID(uint64_t id);
+
+    // Inverse of the above function. If the peer is not found, returns 0.
+    uint64_t getIDByPeer(Peer* peer);
 
   private:
     // Override dead function
