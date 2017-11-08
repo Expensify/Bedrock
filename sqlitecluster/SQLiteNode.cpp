@@ -1931,6 +1931,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Seed our last sent transaction.
             {
                 SQLITE_COMMIT_AUTOLOCK;
+                unsentTransactions.store(false);
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
                 _db.getCommittedTransactions();
@@ -2022,7 +2023,7 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
         response["NumCommits"] = SToStr(result.size());
         for (size_t c = 0; c < result.size(); ++c) {
             // Queue the result
-            //SASSERT(result[c].size() == 2);
+            SASSERT(result[c].size() == 2);
             SData commit("COMMIT");
             commit["CommitIndex"] = SToStr(peerCommitCount + c + 1);
             commit["Hash"] = result[c][0];
