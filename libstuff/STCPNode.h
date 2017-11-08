@@ -45,8 +45,6 @@ struct STCPNode : public STCPServer {
     };
 
     class ExternalPeer {
-        friend class Peer;
-
       public:
         // Standard constructor.
         ExternalPeer(Peer* peer);
