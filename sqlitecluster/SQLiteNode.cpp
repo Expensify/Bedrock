@@ -174,7 +174,7 @@ bool SQLiteNode::shutdownComplete() {
 
     // If we have unsent data, not done
     for (auto peer : peerList) {
-        if (peer->s && !peer->s->sendBuffer.empty()) {
+        if (peer->s && !peer->s->sendBufferEmpty()) {
             // Still sending data
             SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
@@ -1752,8 +1752,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   is out of touch with reality: we processed a command and reality doesn't
     ///   know it.  Not cool!
     ///
-    if (peer->s && peer->s->sendBuffer.find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating slave died before receiving response to escalation: " << peer->s->sendBuffer);
+    if (peer->s && peer->s->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
+        PWARN("Initiating slave died before receiving response to escalation: " << peer->s->sendBufferCopy());
 
     /// - Verify we didn't just lose contact with our master.  This should
     ///   only be possible if we're SUBSCRIBING or SLAVING.  If we did lose our
@@ -1968,8 +1968,8 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
 
 void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, int _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll) {
     // This is a hack to make the PXXXX macros works, since they expect `peer->name` to be defined.
-    static struct {string name;} peerBase;
-    static auto peer = &peerBase;
+    struct {string name;} peerBase;
+    auto peer = &peerBase;
     peerBase.name = peerName;
 
     // Peer is requesting synchronization.  First, does it have any data?

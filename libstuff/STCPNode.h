@@ -36,14 +36,11 @@ struct STCPNode : public STCPServer {
             latency = 0;
         }
 
-        // Get an externally accessible object that can thread-safely write responses to peers.
-        static ExternalPeer getExternalPeer(Peer* peer);
-
         // Close the peer's socket
         void closeSocket(STCPManager& manager);
 
       private:
-        recursive_mutex socketMutex;
+        recursive_mutex refCountMutex;
         atomic<int> externalPeerCount;
     };
 
@@ -51,6 +48,9 @@ struct STCPNode : public STCPServer {
         friend class Peer;
 
       public:
+        // Standard constructor.
+        ExternalPeer(Peer* peer);
+
         // Move constructor.
         ExternalPeer(ExternalPeer && other);
 
@@ -61,9 +61,6 @@ struct STCPNode : public STCPServer {
         ~ExternalPeer();
 
       private:
-        // Only instantiated by a Peer object.
-        ExternalPeer(Peer* peer);
-
         // The peer object that instantiated this object.
         Peer* _peer;
 

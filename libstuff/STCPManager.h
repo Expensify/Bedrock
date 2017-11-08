@@ -11,7 +11,6 @@ struct STCPManager {
         // Attributes
         int s;
         sockaddr_in addr;
-        string sendBuffer;
         string recvBuffer;
         State state;
         bool connectFailure;
@@ -25,9 +24,18 @@ struct STCPManager {
         bool recv();
         uint64_t id;
 
+        bool sendBufferEmpty();
+        string sendBufferCopy();
+        void setSendBuffer(const string& buffer);
+
       private:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
+
+        // This is private because it's used by our synchronized send() functions. This requires it to only
+        // be accessed through the (also synchronized) wrapper functions above.
+        // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
+        string sendBuffer;
     };
 
     // Cleans up outstanding sockets

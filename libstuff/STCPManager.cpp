@@ -29,7 +29,7 @@ void STCPManager::prePoll(fd_map& fdm) {
                 SFDset(fdm, socket->s, SWRITEEVTS);
             } else if (!socket->ssl) {
                 // No SSL, just send if we have anything buffered
-                if (!socket->sendBuffer.empty()) {
+                if (!socket->sendBufferEmpty()) {
                     SFDset(fdm, socket->s, SWRITEEVTS);
                 }
             } else {
@@ -38,7 +38,7 @@ void STCPManager::prePoll(fd_map& fdm) {
                 SSSLState* sslState = socket->ssl;
                 if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
                     // Handshake done -- send if we have anything buffered
-                    if (!socket->sendBuffer.empty()) {
+                    if (!socket->sendBufferEmpty()) {
                         SFDset(fdm, socket->s, SWRITEEVTS);
                     }
                 } else {
@@ -113,7 +113,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                 SDEBUG("sslState=" << SSSLGetState(socket->ssl) << ", canrecv=" << SFDAnySet(fdm, socket->s, SREADEVTS)
                                    << ", recvsize=" << socket->recvBuffer.size()
                                    << ", cansend=" << SFDAnySet(fdm, socket->s, SWRITEEVTS)
-                                   << ", sendsize=" << socket->sendBuffer.size());
+                                   << ", sendsize=" << socket->sendBufferCopy().size());
                 if (SFDAnySet(fdm, socket->s, SREADEVTS | SWRITEEVTS)) {
                     // Do both
                     aliveAfterRecv = socket->recv();
@@ -146,14 +146,14 @@ void STCPManager::postPoll(fd_map& fdm) {
                 // **FIXME: Add timeout.
                 bool aliveAfterRecv = socket->recv();
                 bool aliveAfterSend = socket->send();
-                if (!aliveAfterSend || (!aliveAfterRecv && socket->sendBuffer.empty())) {
+                if (!aliveAfterSend || (!aliveAfterRecv && socket->sendBufferEmpty())) {
 
                     // Did we send everything?  (Technically this the send buffer could be empty and we still haven't
                     // sent everything -- SSL buffers internally, so we should check that buffer.  But odds are it sent fine.)
-                    if (socket->sendBuffer.empty()) {
+                    if (socket->sendBufferEmpty()) {
                         SDEBUG("Graceful shutdown of SSL socket '" << socket->addr << "'");
                     } else {
-                        SWARN("Dirty shutdown of SSL socket '" << socket->addr << "' (" << socket->sendBuffer.size()
+                        SWARN("Dirty shutdown of SSL socket '" << socket->addr << "' (" << socket->sendBufferCopy().size()
                                                                << " bytes remain)");
                     }
                     socket->state = Socket::CLOSED;
@@ -161,19 +161,19 @@ void STCPManager::postPoll(fd_map& fdm) {
                 }
             } else {
                 // Not SSL -- only send if we have something to send
-                if (!socket->sendBuffer.empty()) {
+                if (!socket->sendBufferEmpty()) {
                     // Still have something to send -- try to send it.
                     if (!socket->send()) {
                         // Done trying to send
                         SHMMM("Unable to finish sending to '" << socket->addr << "' on shutdown, clearing.");
                         ::shutdown(socket->s, SHUT_RDWR);
-                        socket->sendBuffer.clear();
+                        socket->setSendBuffer("");
                     }
                 }
 
                 // Are we done sending?
                 // **FIXME: Add timeout
-                if (socket->sendBuffer.empty()) {
+                if (socket->sendBufferEmpty()) {
                     // Wait for the other side to shut down
                     if (!S_recvappend(socket->s, socket->recvBuffer)) {
                         // Done shutting down
@@ -235,7 +235,6 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     return socket;
 }
 
-// --------------------------------------------------------------------------
 bool STCPManager::Socket::send() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Send data
@@ -249,7 +248,6 @@ bool STCPManager::Socket::send() {
     return result;
 }
 
-// --------------------------------------------------------------------------
 bool STCPManager::Socket::send(const string& buffer) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Append to the buffer and send
@@ -257,9 +255,22 @@ bool STCPManager::Socket::send(const string& buffer) {
     return send();
 }
 
-// --------------------------------------------------------------------------
-bool STCPManager::Socket::recv() {
+bool STCPManager::Socket::sendBufferEmpty() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    return sendBuffer.empty();
+}
+
+string STCPManager::Socket::sendBufferCopy() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    return sendBuffer;
+}
+
+void STCPManager::Socket::setSendBuffer(const string& buffer) {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    sendBuffer = buffer;
+}
+
+bool STCPManager::Socket::recv() {
     // Read data
     bool result = false;
     const size_t oldSize = recvBuffer.size();
