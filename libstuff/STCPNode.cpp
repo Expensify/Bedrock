@@ -39,6 +39,10 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
     return nullptr;
 }
 
+STCPNode::ExternalPeer STCPNode::getExternalPeerByID(uint64_t id) {
+    return Peer::getExternalPeer(getPeerByID(id));
+}
+
 uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
     uint64_t id = 1;
     for (auto p : peerList) {
@@ -90,10 +94,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
                             // Found it!  Are we already connected?
-                            if (!peer->hasSocket()) {
+                            if (!peer->s) {
                                 // Attach to this peer and LOGIN
                                 PINFO("Attaching incoming socket");
-                                peer->setSocket(socket);
+                                peer->s = socket;
                                 peer->failedConnections = 0;
                                 acceptedSocketList.erase(socketIt);
                                 foundIt = true;
@@ -134,9 +138,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Try to establish connections with peers and process messages
     for (Peer* peer : peerList) {
         // See if we're connected
-        if (peer->hasSocket()) {
+        if (peer->s) {
             // We have a socket; process based on its state
-            switch (peer->socketState()) {
+            switch (peer->s->state) {
             case Socket::CONNECTED: {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures
@@ -144,14 +148,14 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 int messageSize = 0;
                 try {
                     // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                    if (peer->socketLastRecvTime() + recvTimeout < STimeNow()) {
+                    if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
                         SWARN("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
                     // Send PINGs 5s before the socket times out
-                    if (STimeNow() - peer->socketLastSendTime() > recvTimeout - 5 * STIME_US_PER_S) {
+                    if (STimeNow() - peer->s->lastSendTime > recvTimeout - 5 * STIME_US_PER_S) {
                         // Let's not delay on flushing the PING PONG exchanges
                         // in case we get blocked before we get to flush later.
                         SINFO("Sending PING to peer '" << peer->name << "'");
@@ -159,9 +163,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     }
 
                     // Process all messages
-                    while ((messageSize = message.deserialize(peer->socketRecvBuffer()))) {
+                    while ((messageSize = message.deserialize(peer->s->recvBuffer))) {
                         // Which message?
-                        peer->socketRecvBufferConsumeFront(messageSize);
+                        SConsumeFront(peer->s->recvBuffer, messageSize);
                         PDEBUG("Received '" << message.methodLine << "': " << message.serialize());
                         if (SIEquals(message.methodLine, "PING")) {
                             // Let's not delay on flushing the PING PONG
@@ -172,7 +176,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
                             SData pong("PONG");
                             pong["Timestamp"] = message["Timestamp"];
-                            peer->socketSend(pong.serialize());
+                            peer->s->send(pong.serialize());
                         } else if (SIEquals(message.methodLine, "PONG")) {
                             // Recevied the PONG; update our latency estimate for this peer.
                             // We set a lower bound on this at 1, because even though it should be pretty impossible
@@ -191,8 +195,8 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                                        << "), reconnecting:" << message.serialize());
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
-                    peer->socketSend(reconnect.serialize());
-                    peer->shutdownSocket(*this);
+                    peer->s->send(reconnect.serialize());
+                    shutdownSocket(peer->s);
                     break;
                 }
                 break;
@@ -201,15 +205,15 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             case Socket::CLOSED: {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
-                if (peer->socketConnectFailure()) {
-                    PINFO("Peer connection failed after " << (STimeNow() - peer->socketOpenTime()) / STIME_US_PER_MS
+                if (peer->s->connectFailure) {
+                    PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                           << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
                 } else {
-                    PHMMM("Lost peer connection after " << (STimeNow() - peer->socketOpenTime()) / STIME_US_PER_MS
+                    PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
                                                         << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
                 }
                 _onDisconnect(peer);
-                if (peer->socketConnectFailure())
+                if (peer->s->connectFailure)
                     peer->failedConnections++;
                 peer->closeSocket(*this);
                 peer->reset();
@@ -229,13 +233,13 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Try again
                 PINFO("Retrying the connection");
                 peer->reset();
-                peer->setSocket(openSocket(peer->host));
-                if (peer->hasSocket()) {
+                peer->s = openSocket(peer->host);
+                if (peer->s) {
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
                     SData login("NODE_LOGIN");
                     login["Name"] = name;
-                    peer->socketSend(login.serialize());
+                    peer->s->send(login.serialize());
                     _sendPING(peer);
                     _onConnect(peer);
                 } else {
@@ -257,75 +261,49 @@ void STCPNode::_sendPING(Peer* peer) {
     SASSERT(peer);
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
-    peer->socketSend(ping.serialize());
+    peer->s->send(ping.serialize());
 }
 
-bool STCPNode::Peer::socketSendBufferEmpty()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->sendBuffer.empty();
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return true;
+STCPNode::ExternalPeer::ExternalPeer(STCPNode::Peer* peer)
+  : _peer(peer), name(peer ? move(peer->name) : "") {
+    if (peer) {
+        // Prevent the Peer object from destroying it's socket object while this object exists. If the Peer ever had a
+        // socket during the lifetime of this object, then it always does.
+        lock_guard<decltype(peer->socketMutex)> lock(peer->socketMutex);
+
+        // Increment our reference count.
+        _peer->externalPeerCount++;
     }
 }
 
-string STCPNode::Peer::socketSendBuffer()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->sendBuffer;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return "";
+STCPNode::ExternalPeer::ExternalPeer(STCPNode::ExternalPeer&& other)
+  : _peer(other._peer), name(move(other.name)) {
+    // Clear the original objects peer so it won't get it's reference count decremented.
+    other._peer = nullptr;
+}
+
+STCPNode::ExternalPeer::~ExternalPeer() {
+    // Decrement the reference count if we have a peer (i.e., if we weren't moved from).
+    if (_peer) {
+        _peer->externalPeerCount--;
     }
 }
 
-string STCPNode::Peer::socketRecvBuffer()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->recvBuffer;
+void STCPNode::ExternalPeer::sendRequest(const SData& request) {
+    if (_peer && _peer->s) {
+        _peer->s->send(request.serialize());
     } else {
-        SWARN("Peer " << name << " has no socket.");
-        return "";
+        SWARN("Tried to send " << request.methodLine << " to peer, but not available.");
     }
 }
 
-bool STCPNode::Peer::hasSocket()
-{
+void STCPNode::Peer::closeSocket(STCPManager& manager) {
+    // We lock here so that this can't run concurrently with incrementing externalPeerCount.
     lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return true;
-    } else {
-        return false;
+    if (externalPeerCount.load()) {
+        SINFO("Can't close peer socket with " << externalPeerCount.load() << " external objects alive.");
+        return;
     }
-}
-
-void STCPNode::Peer::socketSend(const string& message)
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        s->send(message);
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-    }
-}
-
-void STCPNode::Peer::shutdownSocket(STCPManager& manager)
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        manager.shutdownSocket(s);
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-    }
-}
-
-void STCPNode::Peer::closeSocket(STCPManager& manager)
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
     if (s) {
         manager.closeSocket(s);
         s = nullptr;
@@ -334,76 +312,6 @@ void STCPNode::Peer::closeSocket(STCPManager& manager)
     }
 }
 
-void STCPNode::Peer::setSocket(Socket* socket)
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        SWARN("Peer " << name << " already has socket, leaking.");
-    }
-    s = socket;
-}
-
-STCPManager::Socket::State STCPNode::Peer::socketState()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->state;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return STCPManager::Socket::State::CLOSED;
-    }
-}
-
-uint64_t STCPNode::Peer::socketLastRecvTime()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->lastRecvTime;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return 0;
-    }
-}
-
-uint64_t STCPNode::Peer::socketLastSendTime()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->lastSendTime;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return 0;
-    }
-}
-
-void STCPNode::Peer::socketRecvBufferConsumeFront(size_t size)
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        SConsumeFront(s->recvBuffer, size);
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-    }
-}
-
-bool STCPNode::Peer::socketConnectFailure()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->connectFailure;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return false;
-    }
-}
-
-uint64_t STCPNode::Peer::socketOpenTime()
-{
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
-    if (s) {
-        return s->openTime;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
-        return 0;
-    }
+STCPNode::ExternalPeer STCPNode::Peer::getExternalPeer(STCPNode::Peer* peer) {
+    return ExternalPeer(peer);
 }

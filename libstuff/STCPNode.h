@@ -10,11 +10,15 @@ struct STCPNode : public STCPServer {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
+    class ExternalPeer;
     struct Peer : public SData {
+        friend class ExternalPeer;
+
         // Attributes
         string name;
         string host;
         STable params;
+        Socket* s;
         uint64_t latency;
         uint64_t nextReconnect;
         uint64_t id;
@@ -22,8 +26,8 @@ struct STCPNode : public STCPServer {
 
         // Helper methods
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), s(nullptr)
+          : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), id(id_),
+            failedConnections(0), externalPeerCount(0)
         { }
         bool connected() { return (s && s->state == STCPManager::Socket::CONNECTED); }
         void reset() {
@@ -32,24 +36,39 @@ struct STCPNode : public STCPServer {
             latency = 0;
         }
 
-        // Synchronized access to socket objects.
-        bool socketSendBufferEmpty();
-        string socketSendBuffer();
-        string socketRecvBuffer();
-        bool hasSocket();
-        void socketSend(const string& message);
-        void shutdownSocket(STCPManager& manager);
+        // Get an externally accessible object that can thread-safely write responses to peers.
+        static ExternalPeer getExternalPeer(Peer* peer);
+
+        // Close the peer's socket
         void closeSocket(STCPManager& manager);
-        void setSocket(Socket* socket);
-        STCPManager::Socket::State socketState();
-        uint64_t socketLastRecvTime();
-        uint64_t socketLastSendTime();
-        void socketRecvBufferConsumeFront(size_t size);
-        bool socketConnectFailure();
-        uint64_t socketOpenTime();
+
       private:
-        Socket* s;
         recursive_mutex socketMutex;
+        atomic<int> externalPeerCount;
+    };
+
+    class ExternalPeer {
+        friend class Peer;
+
+      public:
+        // Move constructor.
+        ExternalPeer(ExternalPeer && other);
+
+        // Send a request to this peer.
+        void sendRequest(const SData& request);
+
+        // Destructor
+        ~ExternalPeer();
+
+      private:
+        // Only instantiated by a Peer object.
+        ExternalPeer(Peer* peer);
+
+        // The peer object that instantiated this object.
+        Peer* _peer;
+
+        // A name for this object, since SWARN requires it.
+        string name;
     };
     
     // Connects to a peer in the database cluster
@@ -57,6 +76,9 @@ struct STCPNode : public STCPServer {
 
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
     Peer* getPeerByID(uint64_t id);
+
+    // Get an externally accessible peer object by its ID.
+    ExternalPeer getExternalPeerByID(uint64_t id);
 
     // Inverse of the above function. If the peer is not found, returns 0.
     uint64_t getIDByPeer(Peer* peer);
