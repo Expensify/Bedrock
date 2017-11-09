@@ -10,15 +10,14 @@ struct STCPNode : public STCPServer {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
-    class ExternalPeer;
     struct Peer : public SData {
-        friend class ExternalPeer;
+        friend class STCPNode;
+        friend class SQLiteNode;
 
         // Attributes
         string name;
         string host;
         STable params;
-        Socket* s;
         uint64_t latency;
         uint64_t nextReconnect;
         uint64_t id;
@@ -26,8 +25,8 @@ struct STCPNode : public STCPServer {
 
         // Helper methods
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), externalPeerCount(0)
+          : name(name_), host(host_), params(params_), latency(0), nextReconnect(0), id(id_),
+            failedConnections(0), s(nullptr)
         { }
         bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
         void reset() {
@@ -36,41 +35,20 @@ struct STCPNode : public STCPServer {
             latency = 0;
         }
 
-        // Close the peer's socket
-        void closeSocket(STCPManager& manager);
+        // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
+        // different threads.
+        void closeSocket(STCPManager* manager);
+
+        // Send a message to this peer.
+        void sendMessage(const SData& message);
 
       private:
-        recursive_mutex refCountMutex;
-        atomic<int> externalPeerCount;
+        Socket* s;
+        recursive_mutex socketMutex;
     };
 
-    class ExternalPeer {
-      public:
-        // Standard constructor.
-        ExternalPeer(Peer* peer);
-
-        // Move constructor.
-        ExternalPeer(ExternalPeer && other);
-
-        // Send a request to this peer.
-        void sendRequest(const SData& request);
-
-        // Destructor
-        ~ExternalPeer();
-
-      private:
-        // The peer object that instantiated this object.
-        Peer* _peer;
-
-        // A name for this object, since SWARN requires it.
-        string name;
-    };
-    
     // Connects to a peer in the database cluster
     void addPeer(const string& name, const string& host, const STable& params);
-
-    // Get an externally accessible peer object by its ID.
-    ExternalPeer getExternalPeerByID(uint64_t id);
 
     // Attributes
     string name;

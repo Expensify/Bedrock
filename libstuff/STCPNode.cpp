@@ -15,7 +15,7 @@ STCPNode::~STCPNode() {
     acceptedSocketList.clear();
     for (Peer* peer : peerList) {
         // Shut down the peer
-        peer->closeSocket(*this);
+        peer->closeSocket(this);
         delete peer;
     }
     peerList.clear();
@@ -37,10 +37,6 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
         return peerList[id - 1];
     }
     return nullptr;
-}
-
-STCPNode::ExternalPeer STCPNode::getExternalPeerByID(uint64_t id) {
-    return ExternalPeer(getPeerByID(id));
 }
 
 uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
@@ -215,7 +211,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)
                     peer->failedConnections++;
-                peer->closeSocket(*this);
+                peer->closeSocket(this);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect);
@@ -264,48 +260,19 @@ void STCPNode::_sendPING(Peer* peer) {
     peer->s->send(ping.serialize());
 }
 
-STCPNode::ExternalPeer::ExternalPeer(STCPNode::Peer* peer)
-  : _peer(peer), name(peer ? move(peer->name) : "") {
-    if (peer) {
-        // Prevent the Peer object from destroying it's socket object while this object exists. If the Peer ever had a
-        // socket during the lifetime of this object, then it always does.
-        lock_guard<decltype(peer->refCountMutex)> lock(peer->refCountMutex);
-
-        // Increment our reference count.
-        _peer->externalPeerCount++;
-    }
-}
-
-STCPNode::ExternalPeer::ExternalPeer(STCPNode::ExternalPeer&& other)
-  : _peer(other._peer), name(move(other.name)) {
-    // Clear the original objects peer so it won't get it's reference count decremented.
-    other._peer = nullptr;
-}
-
-STCPNode::ExternalPeer::~ExternalPeer() {
-    // Decrement the reference count if we have a peer (i.e., if we weren't moved from).
-    if (_peer) {
-        _peer->externalPeerCount--;
-    }
-}
-
-void STCPNode::ExternalPeer::sendRequest(const SData& request) {
-    if (_peer && _peer->s) {
-        _peer->s->send(request.serialize());
-    } else {
-        SWARN("Tried to send " << request.methodLine << " to peer, but not available.");
-    }
-}
-
-void STCPNode::Peer::closeSocket(STCPManager& manager) {
-    // We lock here so that this can't run concurrently with incrementing externalPeerCount.
-    lock_guard<decltype(refCountMutex)> lock(refCountMutex);
-    if (externalPeerCount.load()) {
-        SINFO("Can't close peer socket with " << externalPeerCount.load() << " external objects alive.");
-        return;
-    }
+void STCPNode::Peer::sendMessage(const SData& message) {
+    lock_guard<decltype(socketMutex)> lock(socketMutex);
     if (s) {
-        manager.closeSocket(s);
+        s->send(message.serialize());
+    } else {
+        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+    }
+}
+
+void STCPNode::Peer::closeSocket(STCPManager* manager) {
+    lock_guard<decltype(socketMutex)> lock(socketMutex);
+    if (s) {
+        manager->closeSocket(s);
         s = nullptr;
     } else {
         SWARN("Peer " << name << " has no socket.");

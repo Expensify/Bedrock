@@ -95,11 +95,10 @@ void BedrockServer::sync(SData& args,
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    server._syncNode = make_shared<SQLiteNode>(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"),
+    SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"),
                                                firstTimeout, server._version, args.calc("-quorumCheckpoint"));
 
-    // This is just a convenient reference to the above object.
-    auto& syncNode = *(server._syncNode.get());
+    server._syncNode = &syncNode;
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
@@ -555,8 +554,7 @@ void BedrockServer::worker(SData& args,
 
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-            if (SQLiteNode::isPeerCommand(command)) {
-                SQLiteNode::peekPeerCommand(server._syncNode, db, command);
+            if (SQLiteNode::peekPeerCommand(server._syncNode, db, command)) {
 
                 // Move on to the next command.
                 continue;

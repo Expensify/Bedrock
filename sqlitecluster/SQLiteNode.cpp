@@ -99,14 +99,10 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     Peer* peer = getPeerByID(command.initiatingPeerID);
     SASSERT(peer);
     // If it was a peer message, we don't need to wrap it in an escalation response.
-    if (isPeerCommand(command)) {
-        _sendToPeer(peer, command.response);
-    } else {
-        SData escalate("ESCALATE_RESPONSE");
-        escalate["ID"] = command.id;
-        escalate.content = command.response.serialize();
-        _sendToPeer(peer, escalate);
-    }
+    SData escalate("ESCALATE_RESPONSE");
+    escalate["ID"] = command.id;
+    escalate.content = command.response.serialize();
+    _sendToPeer(peer, escalate);
 }
 
 void SQLiteNode::beginShutdown() {
@@ -2190,19 +2186,16 @@ bool SQLiteNode::_majoritySubscribed() {
     return (numFullSlaves * 2 >= numFullPeers);
 }
 
-bool SQLiteNode::isPeerCommand(const SQLiteCommand& command)
-{
-    if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-        return true;
-    }
-    return false;
-}
 
-void SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLiteCommand& command)
+bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
 {
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-            ExternalPeer peer = node->getExternalPeerByID(SToUInt64(command.request["peerID"]));
+            Peer* peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
+            if (!peer) {
+                // There's nobody to send to, but this was a valid command that's been handled.
+                return true;
+            }
             command.response.methodLine = "SYNCHRONIZE_RESPONSE";
             _queueSynchronizeStateless(command.request.nameValueMap,
                                        command.request["name"],
@@ -2216,11 +2209,13 @@ void SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
             // The following two lines are copied from `_sendToPeer`.
             command.response["CommitCount"] = to_string(db.getCommitCount());
             command.response["Hash"] = db.getCommittedHash();
-            peer.sendRequest(command.response);
+            peer->sendMessage(command.response);
+            return true;
         }
     } catch (const SException& e) {
         // Any failure causes the response to in initiate a reconnect.
         command.response.methodLine = "RECONNECT";
         command.response["Reason"] = e.what();
     }
+    return false;
 }

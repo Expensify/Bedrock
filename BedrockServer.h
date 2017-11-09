@@ -188,7 +188,7 @@ class BedrockServer : public SQLiteServer {
     // until all references to it go out of scope. Since an STCPNode never deletes `Peer` objects until it's being
     // destroyed, we are also guaranteed that all peers are accesible as long as we hold a shared pointer to this
     // object.
-    shared_ptr<SQLiteNode> _syncNode;
+    SQLiteNode* _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
     mutex _syncMutex;
