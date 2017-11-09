@@ -81,6 +81,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         const uint64_t TIMEOUT = STIME_US_PER_S * 300;
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
+            SDEBUG("Server full response content: " << active->s->recvBuffer);
             // Consume how much we read.
             SConsumeFront(active->s->recvBuffer, size);
 
@@ -96,7 +97,6 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             } else {
                 // Error, failed to authenticate or receive a valid server response.
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
-                SWARN("Server response content: " << active->fullResponse.content);
                 active->response = 500;
             }
         } else if (active->s->state > Socket::CONNECTED || elapsed > TIMEOUT) {

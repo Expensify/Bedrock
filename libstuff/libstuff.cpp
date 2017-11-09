@@ -525,7 +525,7 @@ void SConsumeFront(string& lhs, ssize_t num) {
     if (!num)
         return;
 
-    // If we're clearing hte whole thing, early out
+    // If we're clearing the whole thing, early out
     if ((int)lhs.size() == num) {
         // Clear and done
         lhs.clear();
