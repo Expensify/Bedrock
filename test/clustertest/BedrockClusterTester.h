@@ -35,7 +35,10 @@ class BedrockClusterTester {
     BedrockTester* getBedrockTester(size_t index);
 
     // Starts a given node, given the same arguments given by the constructor.
-    void startNode(size_t nodeIndex);
+    string startNode(size_t nodeIndex);
+
+    // Same as above but don't wait for the command port to be ready.
+    string startNodeDontWait(size_t nodeIndex);
 
     // Stops a given node.
     void stopNode(size_t nodeIndex);
