@@ -155,7 +155,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.
-    sqlite3_progress_handler(_db, 100'000, _progressHandlerCallback, this);
+    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
