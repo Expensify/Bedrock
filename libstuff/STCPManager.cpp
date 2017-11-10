@@ -175,7 +175,7 @@ void STCPManager::postPoll(fd_map& fdm) {
                 // **FIXME: Add timeout
                 if (socket->sendBufferEmpty()) {
                     // Wait for the other side to shut down
-                    if (!S_recvappend(socket->s, socket->recvBuffer)) {
+                    if (!socket->recv()) {
                         // Done shutting down
                         SDEBUG("Graceful shutdown of socket '" << socket->addr << "'");
                         socket->state.store(Socket::CLOSED);
@@ -206,18 +206,24 @@ void STCPManager::closeSocket(Socket* socket) {
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
     socketList.remove(socket);
-    ::close(socket->s);
-    if (socket->ssl) {
-        SSSLClose(socket->ssl);
-    }
+
     delete socket;
 }
 
-
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
 { }
+
+STCPManager::Socket::~Socket() {
+    ::close(s);
+    if (ssl) {
+        SSSLClose(ssl);
+    }
+    if (_x509) {
+        SX509Close(_x509);
+    }
+}
 
 STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
@@ -228,7 +234,7 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     }
 
     // Create a new socket
-    Socket* socket = new Socket(s, Socket::CONNECTING);
+    Socket* socket = new Socket(s, Socket::CONNECTING, x509);
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
     socketList.push_back(socket);
@@ -278,6 +284,8 @@ void STCPManager::Socket::setSendBuffer(const string& buffer) {
 }
 
 bool STCPManager::Socket::recv() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
     // Read data
     bool result = false;
     const size_t oldSize = recvBuffer.size();

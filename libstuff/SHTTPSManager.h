@@ -33,6 +33,12 @@ class SHTTPSManager : public STCPManager {
     void closeTransaction(Transaction* transaction);
 
   protected: // Child API
+
+    // Used to create the signing certificate.
+    const string _pem;
+    const string _srvCrt;
+    const string _caCrt;
+
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
@@ -41,7 +47,6 @@ class SHTTPSManager : public STCPManager {
   private: // Internal API
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
-    SX509* _x509;
 
     // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
     // multiple threads can add/remove from them.
