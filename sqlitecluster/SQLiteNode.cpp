@@ -2189,9 +2189,10 @@ bool SQLiteNode::_majoritySubscribed() {
 
 bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
 {
+    Peer* peer = nullptr;
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-            Peer* peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
+            peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
             if (!peer) {
                 // There's nobody to send to, but this was a valid command that's been handled.
                 return true;
@@ -2213,9 +2214,15 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
             return true;
         }
     } catch (const SException& e) {
-        // Any failure causes the response to in initiate a reconnect.
-        command.response.methodLine = "RECONNECT";
-        command.response["Reason"] = e.what();
+        if (peer) {
+            // Any failure causes the response to in initiate a reconnect, if we got a peer.
+            command.response.methodLine = "RECONNECT";
+            command.response["Reason"] = e.what();
+            peer->sendMessage(command.response);
+        }
+
+        // If we even got here, then it must have been a peer command, so we'll call it complete.
+        return true;
     }
     return false;
 }
