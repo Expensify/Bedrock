@@ -3,7 +3,7 @@
 // --------------------------------------------------------------------------
 #include "libstuff.h"
 #include <sys/stat.h>
-#include <zlib.h>
+#include <zlib.h> // sudo apt-get install zlib1g-dev
 
 #include <mbedtls/aes.h>
 #include <mbedtls/base64.h>
