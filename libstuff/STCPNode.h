@@ -11,13 +11,11 @@ struct STCPNode : public STCPServer {
 
     // Represents a single peer in the database cluster
     struct Peer : public SData {
-        friend class STCPNode;
-        friend class SQLiteNode;
-
         // Attributes
         string name;
         string host;
         STable params;
+        Socket* s;
         uint64_t latency;
         uint64_t nextReconnect;
         uint64_t id;
@@ -25,30 +23,22 @@ struct STCPNode : public STCPServer {
 
         // Helper methods
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), s(nullptr)
+          : name(name_), host(host_), params(params_), s(nullptr), latency(0), nextReconnect(0), id(id_),
+            failedConnections(0)
         { }
-        bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
+        bool connected() { return (s && s->state == STCPManager::Socket::CONNECTED); }
         void reset() {
             clear();
             s = nullptr;
             latency = 0;
         }
-
-        // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
-        // different threads.
-        void closeSocket(STCPManager* manager);
-
-        // Send a message to this peer.
-        void sendMessage(const SData& message);
-
-      private:
-        Socket* s;
-        recursive_mutex socketMutex;
     };
-
+    
     // Connects to a peer in the database cluster
     void addPeer(const string& name, const string& host, const STable& params);
+
+    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
+    Peer* getPeerByID(uint64_t id);
 
     // Attributes
     string name;
@@ -64,13 +54,6 @@ struct STCPNode : public STCPServer {
 
     // Called when the peer sends us a message; throw an SException to reconnect.
     virtual void _onMESSAGE(Peer* peer, const SData& message) = 0;
-
-  protected:
-    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
-    Peer* getPeerByID(uint64_t id);
-
-    // Inverse of the above function. If the peer is not found, returns 0.
-    uint64_t getIDByPeer(Peer* peer);
 
   private:
     // Override dead function
