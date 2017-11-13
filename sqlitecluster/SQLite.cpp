@@ -7,8 +7,8 @@
 // Prepare to access the SQLite Spellfix1 extension
 extern "C" void sqlite3_spellfix_init();
 
-// 
-extern "C" void eudex_new_funct(sqlite3_context* context, int argc, sqlite3_value** argv) {
+// Hashes a single word
+void eudex_new_funct(sqlite3_context* context, int argc, sqlite3_value** argv) {
     // Validate
     if (argc == 1) {
         const char* input = (const char*)sqlite3_value_text(argv[0]);
@@ -22,6 +22,34 @@ extern "C" void eudex_new_funct(sqlite3_context* context, int argc, sqlite3_valu
     // On any error, return null
     sqlite3_result_null(context);
 }
+
+// Hashes a phrase of multiple words
+void eudex_phonehash_funct(sqlite3_context* context, int argc, sqlite3_value** argv) {
+    // Validate
+    if (argc == 1) {
+        const char* phrase = (const char*)sqlite3_value_text(argv[0]);
+        if (phrase && *phrase) {
+            // Split the phrase up into words and process one at a time
+            list<string> wordList = SParseList(phrase, ' ');
+            string out;
+            for (const auto& word : wordList) {
+                out += to_string(eudex_new(word.c_str())) + " ";
+            }
+
+            // Did we get anything?
+            if (!out.empty()) {
+                // Trim the final space and return
+                out.resize(out.size()-1);
+                sqlite3_result_text(context, out.c_str(), -1, SQLITE_TRANSIENT);
+                return;
+            }
+        }
+    }
+
+    // On any error, return null
+    sqlite3_result_null(context);
+}
+ 
 
 // Create all of our static variables.
 atomic<uint64_t>                    SQLite::_commitCount(0);
@@ -94,6 +122,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // Set our custom Eudex function (https://github.com/ticki/eudex)
     SASSERT(sqlite3_create_function(_db, "eudex_new", 1, SQLITE_UTF8|SQLITE_DETERMINISTIC, 0, eudex_new_funct, 0, 0)==SQLITE_OK);;
+    SASSERT(sqlite3_create_function(_db, "eudex_phonehash", 1, SQLITE_UTF8|SQLITE_DETERMINISTIC, 0, eudex_phonehash_funct, 0, 0)==SQLITE_OK);;
 
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
