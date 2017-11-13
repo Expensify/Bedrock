@@ -239,6 +239,8 @@ struct SData {
 // Various helper time functions
 uint64_t STimeNow();
 uint64_t STimeThisMorning(); // Timestamp for this morning at midnight GMT
+uint64_t STimeThisBeginningOfMonth(); // Timestamp for the 1st of this month at midnight GMT
+uint64_t STimeThisBeginningOfMonthPlusOneYear(); // Timestamp for the 1st of this month at midnight GMT, next year (in 12 months)
 int SDaysInMonth(int year, int month);
 string SComposeTime(const string& format, uint64_t when);
 timeval SToTimeval(uint64_t when);
