@@ -238,6 +238,15 @@ bool SQLite::beginConcurrentTransaction() {
     return _insideTransaction;
 }
 
+bool SQLite::setQueryOnlyPragma(bool on) {
+    if (on) {
+        SASSERT(!SQuery(_db, "setting query_only on", "PRAGMA query_only = true;"));
+    } else {
+        SASSERT(!SQuery(_db, "setting query_only off", "PRAGMA query_only = false;"));
+    }
+    return true;
+}
+
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
     // sqlite trims semicolon, so let's not supply it else we get confused later
     SASSERT(!SEndsWith(sql, ";"));
@@ -298,20 +307,6 @@ string SQLite::read(const string& query) {
 }
 
 bool SQLite::read(const string& query, SQResult& result) {
-    
-    // Execute the read-only query
-    if (!SContains(SToUpper(query), "UPDATE ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"UPDATE \")) != true");
-    }
-    if (!SContains(SToUpper(query), "INSERT ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"INSERT \")) != true");
-    }
-    if (!SContains(SToUpper(query), "DELETE ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"DELETE \")) != true");
-    }
-    if (!SContains(SToUpper(query), "REPLACE ")) {
-        SHMMM("Assertion failed: (!SContains(SToUpper(query), \"REPLACE \")) != true");
-    }
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _checkTiming("timeout in SQLite::read"s);
