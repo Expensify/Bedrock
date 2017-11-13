@@ -250,6 +250,13 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         }
         threads.clear();
 
+        /*
+        for (auto i : {0, 1, 2}) {
+            cout << "TEST Table, Node " << i << endl;
+            cout << allResults[0] << endl << endl;
+        }
+        */
+
         // Verify the actual table contains the right number of rows.
         allResults.clear();
         allResults.resize(3);
@@ -282,8 +289,9 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         // And that they're all 66.
         list<string> resultCount = SParseList(allResults[0], '\n');
         resultCount.pop_front();
-        // The "+1" is because the `synchronizing` test in `a_masteringTest` inserts one row in this table.
-        ASSERT_EQUAL(cmdID.load() + 1, SToInt(resultCount.front()));
+        int rows = SToInt(resultCount.front());
+        cout << "Rows in test: " << rows << endl;
+        ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
 
         int fail = totalRequestFailures.load();
         if (fail > 0) {
