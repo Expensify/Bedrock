@@ -1,10 +1,27 @@
 #include <libstuff/libstuff.h>
 #include "SQLite.h"
+#include <libstuff/libeudex.h>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
 // Prepare to access the SQLite Spellfix1 extension
 extern "C" void sqlite3_spellfix_init();
+
+// 
+extern "C" void eudex_new_funct(sqlite3_context* context, int argc, sqlite3_value** argv) {
+    // Validate
+    if (argc == 1) {
+        const char* input = (const char*)sqlite3_value_text(argv[0]);
+        if (input && *input) {
+            // Looks good, return!
+            sqlite3_result_int64(context, eudex_new(input));
+            return;
+        }
+    }
+
+    // On any error, return null
+    sqlite3_result_null(context);
+}
 
 // Create all of our static variables.
 atomic<uint64_t>                    SQLite::_commitCount(0);
@@ -74,6 +91,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
     sqlite3_busy_timeout(_db, 1000);
+
+    // Set our custom Eudex function (https://github.com/ticki/eudex)
+    SASSERT(sqlite3_create_function(_db, "eudex_new", 1, SQLITE_UTF8|SQLITE_DETERMINISTIC, 0, eudex_new_funct, 0, 0)==SQLITE_OK);;
 
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));

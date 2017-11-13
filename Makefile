@@ -154,3 +154,7 @@ $(INTERMEDIATEDIR)/libstuff/sqlite3.o: libstuff/sqlite3.c
 $(INTERMEDIATEDIR)/libstuff/spellfix.o: libstuff/spellfix.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -DSQLITE_CORE -o $@ -c $<
+
+$(INTERMEDIATEDIR)/libstuff/libeudex.o: libstuff/libeudex.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -o $@ -c $<
