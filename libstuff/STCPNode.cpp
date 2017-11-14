@@ -15,9 +15,7 @@ STCPNode::~STCPNode() {
     acceptedSocketList.clear();
     for (Peer* peer : peerList) {
         // Shut down the peer
-        if (peer->s) {
-            closeSocket(peer->s);
-        }
+        peer->closeSocket(this);
         delete peer;
     }
     peerList.clear();
@@ -39,6 +37,17 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
         return peerList[id - 1];
     }
     return nullptr;
+}
+
+uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
+    uint64_t id = 1;
+    for (auto p : peerList) {
+        if (p == peer) {
+            return id;
+        }
+        id++;
+    }
+    return 0;
 }
 
 void STCPNode::prePoll(fd_map& fdm) {
@@ -64,7 +73,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         Socket* socket = *socketIt;
         try {
             // Verify it's still alive
-            if (socket->state != Socket::CONNECTED)
+            if (socket->state.load() != Socket::CONNECTED)
                 STHROW("premature disconnect");
 
             // Still alive; try to login
@@ -111,11 +120,11 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             }
         } catch (const SException& e) {
             // Died prematurely
-            if (socket->recvBuffer.empty() && socket->sendBuffer.empty()) {
+            if (socket->recvBuffer.empty() && socket->sendBufferEmpty()) {
                 SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
             } else {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), recv='"
-                      << socket->recvBuffer << "', send='" << socket->sendBuffer << "'");
+                      << socket->recvBuffer << "', send='" << socket->sendBufferCopy() << "'");
             }
             closeSocket(socket);
             acceptedSocketList.erase(socketIt);
@@ -127,7 +136,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // See if we're connected
         if (peer->s) {
             // We have a socket; process based on its state
-            switch (peer->s->state) {
+            switch (peer->s->state.load()) {
             case Socket::CONNECTED: {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures
@@ -202,7 +211,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)
                     peer->failedConnections++;
-                closeSocket(peer->s);
+                peer->closeSocket(this);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect);
@@ -249,4 +258,23 @@ void STCPNode::_sendPING(Peer* peer) {
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
     peer->s->send(ping.serialize());
+}
+
+void STCPNode::Peer::sendMessage(const SData& message) {
+    lock_guard<decltype(socketMutex)> lock(socketMutex);
+    if (s) {
+        s->send(message.serialize());
+    } else {
+        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+    }
+}
+
+void STCPNode::Peer::closeSocket(STCPManager* manager) {
+    lock_guard<decltype(socketMutex)> lock(socketMutex);
+    if (s) {
+        manager->closeSocket(s);
+        s = nullptr;
+    } else {
+        SWARN("Peer " << name << " has no socket.");
+    }
 }

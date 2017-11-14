@@ -37,17 +37,19 @@ class BedrockTester {
                   bool keepFilesWhenFinished = false);
     ~BedrockTester();
 
-    // Start and stop the bedrock server.
-    void startServer();
+    // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
+    // the cmmand port, is ready.
+    string startServer(bool dontWait = false);
     void stopServer();
 
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10);
+    // If `control` is set, sends the message to the control port.
+    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
-    string executeWaitVerifyContent(SData request, const string& expectedResult = "200");
+    string executeWaitVerifyContent(SData request, const string& expectedResult = "200", bool control = false);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
@@ -66,6 +68,8 @@ class BedrockTester {
     // If these are set, they'll be used instead of the global defaults.
     string _serverAddr;
     string _dbName;
+
+    string _controlAddr;
 
     // The PID of the bedrock server we started.
     int _serverPID = 0;
