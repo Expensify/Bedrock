@@ -61,7 +61,7 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
         {"-priority",         "200"},
         {"-plugins",          "db"},
         {"-readThreads",      "8"},
-        {"-maxJournalSize",   "100"},
+        {"-maxJournalSize",   "25000"},
         {"-v",                ""},
         {"-quorumCheckpoint", "50"},
         {"-parallelCommands", "Query,idcollision"},
@@ -77,6 +77,8 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
+    
+    _controlAddr = _args["-controlPort"];
 
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
@@ -117,7 +119,7 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-void BedrockTester::startServer() {
+string BedrockTester::startServer(bool dontWait) {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
@@ -163,7 +165,7 @@ void BedrockTester::startServer() {
             }
             if (needSocket) {
                 int socket = 0;
-                socket = S_socket(_serverAddr, true, false, true);
+                socket = S_socket(dontWait ? _controlAddr : _serverAddr, true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
@@ -175,8 +177,8 @@ void BedrockTester::startServer() {
             // We've successfully opened a socket, so let's try and send a command.
             try {
                 SData status("Status");
-                executeWaitVerifyContent(status);
-                break;
+                auto result = executeWaitMultipleData({status}, 10, dontWait);
+                return result[0].content;
             } catch (...) {
                 // This will happen if the server's not up yet. We'll just try again.
                 usleep(100000); // 0.1 seconds.
@@ -184,6 +186,7 @@ void BedrockTester::startServer() {
             }
         }
     }
+    return "";
 }
 
 void BedrockTester::stopServer() {
@@ -193,8 +196,8 @@ void BedrockTester::stopServer() {
     _serverPID = 0;
 }
 
-string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult) {
-    auto results = executeWaitMultipleData({request}, 1);
+string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
+    auto results = executeWaitMultipleData({request}, 1, control);
     if (results.size() == 0) {
         STHROW("No result.");
     }
@@ -212,7 +215,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -231,7 +234,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
         threads.emplace_back([&, i](){
 
             // Create a socket.
-            int socket = S_socket(_serverAddr, true, false, true);
+            int socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
             while (true) {
                 size_t myIndex = 0;
                 SData myRequest;

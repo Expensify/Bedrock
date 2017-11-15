@@ -93,11 +93,11 @@ void BedrockServer::sync(SData& args,
 
     // And the sync node.
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
-    SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"),
-                        firstTimeout, server._version, args.calc("-quorumCheckpoint"));
 
-    // We expose the sync node to the server, because it needs it to respond to certain (Status) requests with data
-    // about the sync node.
+    // Initialize the shared pointer to our sync node object.
+    SQLiteNode syncNode(server, db, args["-nodeName"], args["-nodeHost"], args["-peerList"], args.calc("-priority"),
+                                               firstTimeout, server._version, args.calc("-quorumCheckpoint"));
+
     server._syncNode = &syncNode;
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
@@ -550,6 +550,11 @@ void BedrockServer::worker(SData& args,
                 } else {
                     server._reply(command);
                 }
+            }
+
+            // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
+            // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
+            if (SQLiteNode::peekPeerCommand(server._syncNode, db, command)) {
 
                 // Move on to the next command.
                 continue;
@@ -1144,7 +1149,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
     for (auto s : socketList) {
-        switch (s->state) {
+        switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
             {
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
