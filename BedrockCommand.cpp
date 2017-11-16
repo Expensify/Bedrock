@@ -31,13 +31,14 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
 }
 
 BedrockCommand::BedrockCommand(BedrockCommand&& from) :
-    SQLiteCommand(std::move(from)),
+    SQLiteCommand(move(from)),
     httpsRequest(from.httpsRequest),
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
+    crashIdentifyingValues(move(from.crashIdentifyingValues)),
     _inProgressTiming(from._inProgressTiming)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
@@ -85,6 +86,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         priority = from.priority;
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
+        crashIdentifyingValues = move(from.crashIdentifyingValues);
         _inProgressTiming = from._inProgressTiming;
 
         // And call the base class's move constructor as well.

@@ -123,7 +123,12 @@ void BedrockClusterTester::stopNode(size_t nodeIndex)
     _cluster[nodeIndex].stopServer();
 }
 
-void BedrockClusterTester::startNode(size_t nodeIndex)
+string BedrockClusterTester::startNode(size_t nodeIndex)
 {
-    _cluster[nodeIndex].startServer();
+    return _cluster[nodeIndex].startServer();
+}
+
+string BedrockClusterTester::startNodeDontWait(size_t nodeIndex)
+{
+    return _cluster[nodeIndex].startServer(true);
 }

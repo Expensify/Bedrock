@@ -1,6 +1,11 @@
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace
 
+thread_local function<void()> SSignalHandlerDieFunc;
+void SSetSignalHandlerDieFunc(function<void()>&& func) {
+    SSignalHandlerDieFunc = move(func);
+}
+
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
 
@@ -55,6 +60,9 @@ void SClearSignals() {
 }
 
 void SInitializeSignals() {
+    // Our default die function does nothing.
+    SSignalHandlerDieFunc = [](){};
+
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
 
@@ -133,8 +141,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
-        }
-        if (signum == SIGABRT) {
+
             // What we'd like to do here is log a stack trace to syslog. Unfortunately, neither computing the stack
             // trace nor logging to to syslog are signal safe, so we try a couple things, doing as little as possible,
             // and hope that they work (they usually do, though it's not guaranteed).
@@ -154,18 +161,21 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             // Then try and log it to syslog. Neither backtrace_symbols() nor syslog() are signal-safe, either, so this
             // also might not do what we hope.
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
-                  << ") generated ABORT, logging stack trace.");
+                  << ") caused crash, logging stack trace.");
             char** symbols = backtrace_symbols(callstack, depth);
             for (int c = 0; c < depth; ++c) {
                 SWARN(symbols[c]);
             }
 
-            // NOTE: The best thing to do here is probably just record core files, which should work as expected. It's
-            // possible that we might have data that we don't want getting written to disk, but `memset` is signal
-            // safe, so we could keep a list of addresses to 0, and do that here before returning. Then the core file
-            // wouldn't contain that data.
-        } else {
-            // We just call abort here, so that we'll generate a second signal that will be picked up above.
+            // Call our die function and then reset it.
+            SWARN("Calling DIE function.");
+            SSignalHandlerDieFunc();
+            SSignalHandlerDieFunc = [](){};
+            SWARN("DIE function returned, aborting (if not done).");
+        }
+
+        // If we weren't already in ABORT, we'll call that. The second call will skip the above callstack generation.
+        if (signum != SIGABRT) {
             abort();
         }
     } else {

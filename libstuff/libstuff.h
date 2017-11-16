@@ -44,6 +44,8 @@ using namespace std;
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "");
 
+void SSetSignalHandlerDieFunc(function<void()>&& func);
+
 // --------------------------------------------------------------------------
 // Assertion stuff
 // --------------------------------------------------------------------------
@@ -687,10 +689,6 @@ inline string S_recv(int s) {
     return buf;
 }
 bool S_sendconsume(int s, string& sendBuffer);
-inline bool S_send(int s, string sendBuffer) {
-    S_sendconsume(s, sendBuffer);
-    return sendBuffer.empty();
-}
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers

@@ -7,13 +7,13 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(int sock = 0, State state_ = CONNECTING);
+        Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
+        ~Socket();
         // Attributes
         int s;
         sockaddr_in addr;
-        string sendBuffer;
         string recvBuffer;
-        State state;
+        atomic<State> state;
         bool connectFailure;
         uint64_t openTime;
         uint64_t lastSendTime;
@@ -25,8 +25,23 @@ struct STCPManager {
         bool recv();
         uint64_t id;
 
+        bool sendBufferEmpty();
+        string sendBufferCopy();
+        void setSendBuffer(const string& buffer);
+
       private:
         static atomic<uint64_t> socketCount;
+        recursive_mutex sendRecvMutex;
+
+        // This is private because it's used by our synchronized send() functions. This requires it to only
+        // be accessed through the (also synchronized) wrapper functions above.
+        // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
+        string sendBuffer;
+
+        // Each socket owns it's own SX509 object to avoid thread-safety issues reading/writing the same certificate in
+        // the underlying ssl code. Once assigned, the socket owns this object for it's lifetime and will delete it
+        // upon destruction.
+        SX509* _x509;
     };
 
     // Cleans up outstanding sockets
