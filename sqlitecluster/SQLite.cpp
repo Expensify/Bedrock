@@ -238,15 +238,6 @@ bool SQLite::beginConcurrentTransaction() {
     return _insideTransaction;
 }
 
-bool SQLite::setQueryOnlyPragma(bool on) {
-    if (on) {
-        SASSERT(!SQuery(_db, "setting query_only on", "PRAGMA query_only = true;"));
-    } else {
-        SASSERT(!SQuery(_db, "setting query_only off", "PRAGMA query_only = false;"));
-    }
-    return true;
-}
-
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
     // sqlite trims semicolon, so let's not supply it else we get confused later
     SASSERT(!SEndsWith(sql, ";"));
