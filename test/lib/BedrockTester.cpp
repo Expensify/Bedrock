@@ -250,7 +250,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         break;
                     } else {
                         myRequest = requests[myIndex];
-
                     }
                 }
 

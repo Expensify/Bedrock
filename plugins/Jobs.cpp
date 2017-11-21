@@ -90,7 +90,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                      "  AND name GLOB " + SQ(name) + " "
-                     "  AND JSON_VALID(data)"
                      "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                      "LIMIT 1;",
                      result)) {
@@ -547,7 +546,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
-
                 // Create this new job
                 if (!db.writeIdempotent("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
@@ -615,7 +613,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=1000"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_VALID(data)"
                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
@@ -627,7 +624,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=500"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_VALID(data)"
                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
@@ -639,7 +635,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "  AND priority=0"
                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_VALID(data)"
                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
