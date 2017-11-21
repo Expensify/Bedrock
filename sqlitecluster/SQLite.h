@@ -64,7 +64,17 @@ class SQLite {
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
     // Returns true  on success.
+    // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
+    // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
+    // known to be repeatable. What counts as repeatable is up to the individual command.
+    bool writeIdempotent(const string& query);
+
+    // Enable or disable update-noop mode.
+    void setUpdateNoopMode(bool enabled);
+    bool getUpdateNoopMode();
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
@@ -281,4 +291,6 @@ class SQLite {
     // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
     // failed query, regardless of whether or not it was already rolled back internally.
     bool _autoRolledBack;
+
+    bool _noopUpdateMode;
 };

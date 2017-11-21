@@ -11,6 +11,9 @@ list<string> BedrockTester::locations = {
     "../../bedrock"
 };
 
+// Set to 2 or more for duplicated requests.
+int BedrockTester::mockRequestMode = 0;
+
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
@@ -250,62 +253,76 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
                 }
 
-                // We've released our lock so other threads can dequeue stuff now.
-                // Send some stuff on our socket.
-                string sendBuffer = myRequest.serialize();
-                // Send our data.
-                while (sendBuffer.size()) {
-                    bool result = S_sendconsume(socket, sendBuffer);
-                    if (!result) {
-                        break;
-                    }
+                size_t count = 1;
+                if (mockRequestMode > 1) {
+                    count = mockRequestMode;
                 }
 
-                // Receive some stuff on our socket.
-                string recvBuffer = "";
-                string methodLine, content;
-                STable headers;
-                int timeouts = 0;
-                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
-                    // Poll the socket, so we get a timeout.
-                    pollfd readSock;
-                    readSock.fd = socket;
-                    readSock.events = POLLIN;
-                    readSock.revents = 0;
+                for (size_t mockCount = 0; mockCount < count; mockCount++) {
+                    if (mockCount) {
+                        myRequest["mockRequest"] = "true";
+                    }
 
-                    // wait for a second...
-                    poll(&readSock, 1, 1000);
-                    if (readSock.revents & POLLIN) {
-                        bool result = S_recvappend(socket, recvBuffer);
+                    // We've released our lock so other threads can dequeue stuff now.
+                    // Send some stuff on our socket.
+                    string sendBuffer = myRequest.serialize();
+                    // Send our data.
+                    while (sendBuffer.size()) {
+                        bool result = S_sendconsume(socket, sendBuffer);
                         if (!result) {
                             break;
                         }
-                    } else {
-                        timeouts++;
-                        if (timeouts == 600) {
-                            SAUTOLOCK(listLock);
-                            cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest["Query"] << endl;
-                            break;
+                    }
+
+                    // Receive some stuff on our socket.
+                    string recvBuffer = "";
+                    string methodLine, content;
+                    STable headers;
+                    int timeouts = 0;
+                    while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+                        // Poll the socket, so we get a timeout.
+                        pollfd readSock;
+                        readSock.fd = socket;
+                        readSock.events = POLLIN;
+                        readSock.revents = 0;
+
+                        // wait for a second...
+                        poll(&readSock, 1, 1000);
+                        if (readSock.revents & POLLIN) {
+                            bool result = S_recvappend(socket, recvBuffer);
+                            if (!result) {
+                                break;
+                            }
+                        } else {
+                            timeouts++;
+                            if (timeouts == 600) {
+                                cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest.methodLine << endl;
+                                break;
+                            }
                         }
                     }
-                }
 
-                // Lock to avoid log lines writing over each other.
-                {
-                    SAUTOLOCK(listLock);
-                    if (timeouts == 600) {
-                        SData responseData = myRequest;
-                        responseData.nameValueMap = headers;
-                        responseData.methodLine = "000 Timeout";
-                        responseData.content = content;
-                        results[myIndex] = move(responseData);
-                    } else {
-                        // Ok, done, let's lock again and insert this in the results.
-                        SData responseData;
-                        responseData.nameValueMap = headers;
-                        responseData.methodLine = methodLine;
-                        responseData.content = content;
-                        results[myIndex] = move(responseData);
+                    // Lock to avoid log lines writing over each other.
+                    {
+                        SAUTOLOCK(listLock);
+                        if (timeouts == 600) {
+                            SData responseData = myRequest;
+                            responseData.nameValueMap = headers;
+                            responseData.methodLine = "000 Timeout";
+                            responseData.content = content;
+                            if (!mockCount) {
+                                results[myIndex] = move(responseData);
+                            }
+                        } else {
+                            // Ok, done, let's lock again and insert this in the results.
+                            SData responseData;
+                            responseData.nameValueMap = headers;
+                            responseData.methodLine = methodLine;
+                            responseData.content = content;
+                            if (!mockCount) {
+                                results[myIndex] = move(responseData);
+                            }
+                        }
                     }
                 }
             }

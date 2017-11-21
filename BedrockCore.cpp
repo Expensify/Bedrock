@@ -118,6 +118,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             try {
+                _db.setUpdateNoopMode(command.request.isSet("mockRequest"));
                 if (plugin->processCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
@@ -171,6 +172,9 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         _db.rollback();
         needsCommit = false;
     }
+
+    // Turn off noop-update mode.
+    _db.setUpdateNoopMode(false);
 
     // We can reset the timing info for the next command.
     _db.resetTiming();

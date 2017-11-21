@@ -278,6 +278,12 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["parentJobID"], parentID);
         ASSERT_EQUAL(response["parentData"], parentData);
 
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
         // Finish a child
         command.clear();
         command.methodLine = "FinishJob";
@@ -375,13 +381,13 @@ struct GetJobTest : tpunit::TestFixture {
 
         // Confirm they are in the RUNQUEUED state
         SQResult result;
-        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_4');", result);
+        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name IN ('high_1', 'medium_4') AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Sleep for two seconds and then confirm that all jobs but high_1 have the same nextRun time
         sleep(2);
-        tester->readDB("SELECT DISTINCT nextRun, GROUP_CONCAT(name) FROM jobs GROUP BY nextRun;", result);
+        tester->readDB("SELECT DISTINCT nextRun, GROUP_CONCAT(name) FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL GROUP BY nextRun;", result);
         ASSERT_EQUAL(result.size(), 2);
         ASSERT_EQUAL(SParseList(result[0][1]).size(), 1);
         ASSERT_EQUAL(result[0][1], "high_1");

@@ -68,6 +68,14 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "GetJob";
         command["name"] = "child";
         tester->executeWaitVerifyContent(command);
+
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish the known child.
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = childID;
@@ -345,6 +353,12 @@ struct CancelJobTest : tpunit::TestFixture {
         SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "PAUSED");
+
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
 
         // Cancel the last child
         command.clear();

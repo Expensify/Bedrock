@@ -6,6 +6,8 @@
 
 class BedrockTester {
   public:
+
+    static int mockRequestMode;
     // Generate a temporary filename for a test DB, with an optional prefix.
     static string getTempFileName(string prefix = "");
 

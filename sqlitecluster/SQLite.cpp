@@ -18,7 +18,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
     _timeoutLimit(0),
-    _autoRolledBack(false)
+    _autoRolledBack(false),
+    _noopUpdateMode(false)
 {
     // Initialize
     SINFO("Opening sqlite database");
@@ -336,6 +337,16 @@ void SQLite::_checkTiming(const string& error) {
 }
 
 bool SQLite::write(const string& query) {
+    if (_noopUpdateMode) {
+        SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
+        return true;
+    }
+
+    // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
+    return writeIdempotent(query);
+}
+
+bool SQLite::writeIdempotent(const string& query) {
     SASSERT(_insideTransaction);
     SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
@@ -692,4 +703,20 @@ void SQLite::resetTiming() {
     _timeoutLimit = 0;
     _timeoutStart = 0;
     _timeoutError = 0;
+}
+
+void SQLite::setUpdateNoopMode(bool enabled) {
+    if (_noopUpdateMode == enabled) {
+        return;
+    }
+    if (enabled) {
+        SQuery(_db, "enabling noop-update mode", "PRAGMA noop_update=ON;");
+    } else {
+        SQuery(_db, "disabling noop-update mode", "PRAGMA noop_update=OFF;");
+    }
+    _noopUpdateMode = enabled;
+}
+
+bool SQLite::getUpdateNoopMode() {
+    return _noopUpdateMode;
 }
