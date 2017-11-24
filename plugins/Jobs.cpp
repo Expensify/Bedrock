@@ -605,9 +605,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         string selectQuery =
-            "SELECT jobID, name, data, parentJobID, retryAfter FROM ( "
+            "SELECT jobID, name, data, parentJobID, retryAfter, created FROM ( "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=1000"
@@ -618,7 +618,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=500"
@@ -629,7 +629,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 ") "
             "UNION ALL "
                 "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter "
+                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "  AND priority=0"
@@ -664,7 +664,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         list<STable> retriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
-            SASSERT(result[c].size() == 5); // jobID, name, data, parentJobID, retryAfter
+            SASSERT(result[c].size() == 6); // jobID, name, data, parentJobID, retryAfter, created
 
             // Add this object to our output
             STable job;
@@ -672,6 +672,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];
+            job["created"] = result[c][5];
             int64_t parentJobID = SToInt64(result[c][3]);
 
             if (parentJobID) {

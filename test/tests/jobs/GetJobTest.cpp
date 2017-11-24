@@ -49,6 +49,7 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
+        SASSERT(!response["created"].empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
         SQResult currentJob;
