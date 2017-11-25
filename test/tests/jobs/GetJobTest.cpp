@@ -45,10 +45,11 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         response = tester->executeWaitVerifyContentTable(command);
 
-        ASSERT_EQUAL(response.size(), 3);
+        ASSERT_EQUAL(response.size(), 4);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
+        SASSERT(!response["created"].empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
         SQResult currentJob;
@@ -271,7 +272,7 @@ struct GetJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 5);
+        ASSERT_EQUAL(response.size(), 6);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
@@ -302,7 +303,7 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 5);
+        ASSERT_EQUAL(response.size(), 6);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);
