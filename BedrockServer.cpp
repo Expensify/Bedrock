@@ -1306,9 +1306,15 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
 void BedrockServer::_reply(BedrockCommand& command) {
     SAUTOLOCK(_socketIDMutex);
+    auto socketIt = _socketIDMap.find(command.initiatingClientID);
+
+    // We don't want to send any response for a command with connection forget so that it's response doesn't get mixed
+    // up with a command we send through the same socket later.
+    if (SIEquals(command.request["Connection"], "forget")) {
+        return;
+    }
 
     // Do we have a socket for this command?
-    auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
 
         // The last thing we do is total up our timing info and add it to the response.
