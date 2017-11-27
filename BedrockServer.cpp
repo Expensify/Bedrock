@@ -1239,8 +1239,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // won't get routed properly from slave to master and back.
                     command.id = _args["-nodeName"] + "#" + to_string(_requestCount++);
 
-                    // And we and keep track of the client that initiated this command, so we can respond later.
-                    command.initiatingClientID = s->id;
+                    // And we and keep track of the client that initiated this command, so we can respond later, except
+                    // if we received connection:forget in which case we don't respond later
+                    command.initiatingClientID = SIEquals(request["Connection"], "forget") ? -1 : s->id;
 
                     // Status and control requests are handled specially.
                     if (_isStatusCommand(command)) {
@@ -1306,15 +1307,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
 void BedrockServer::_reply(BedrockCommand& command) {
     SAUTOLOCK(_socketIDMutex);
-    auto socketIt = _socketIDMap.find(command.initiatingClientID);
-
-    // We don't want to send any response for a command with connection forget so that it's response doesn't get mixed
-    // up with a command we send through the same socket later.
-    if (SIEquals(command.request["Connection"], "forget")) {
-        return;
-    }
 
     // Do we have a socket for this command?
+    auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
 
         // The last thing we do is total up our timing info and add it to the response.
