@@ -27,6 +27,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             STHROW("501 Failed to begin concurrent transaction");
         }
 
+        // Make sure no writes happen while in peek command
+        _db.read("PRAGMA query_only = true;");
+
         // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
         for (auto plugin : _server.plugins) {
@@ -42,6 +45,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 STHROW("555 Timeout peeking command");
             }
         }
+
+        // Peeking is over now, allow writes
+        _db.read("PRAGMA query_only = false;");
 
         // If nobody succeeded in peeking it, then we'll need to process it.
         // TODO: Would be nice to be able to check if a plugin *can* handle a command, so that we can differentiate
@@ -73,8 +79,10 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
+        _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
     } catch (...) {
+        _db.read("PRAGMA query_only = false;");
         SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
         command.response.methodLine = "500 Unhandled Exception";
     }

@@ -299,11 +299,6 @@ string SQLite::read(const string& query) {
 }
 
 bool SQLite::read(const string& query, SQResult& result) {
-    // Execute the read-only query
-    SASSERTWARN(!SContains(SToUpper(query), "INSERT "));
-    SASSERTWARN(!SContains(SToUpper(query), "UPDATE "));
-    SASSERTWARN(!SContains(SToUpper(query), "DELETE "));
-    SASSERTWARN(!SContains(SToUpper(query), "REPLACE "));
     uint64_t before = STimeNow();
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _checkTiming("timeout in SQLite::read"s);
