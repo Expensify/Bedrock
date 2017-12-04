@@ -341,6 +341,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
+    // Reset the content object. It could have been written by a previous call to this function that conflicted in
+    // multi-write.
+    content.clear();
+
     // ----------------------------------------------------------------------
     if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
         // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
