@@ -58,6 +58,8 @@ using namespace std;
  * TRACE(message); adds a trace to the test output with a user
  * specified string message.
  */
+#define ABORTANDLOG(lhs, rhs) cout << "ASSERT failed: " << lhs << " != " << rhs << endl; tpunit_detail_assert(this, __FILE__, __LINE__); return;
+
 #define ABORT() tpunit_detail_assert(this, __FILE__, __LINE__); return;
 #define FAIL()  tpunit_detail_assert(this, __FILE__, __LINE__);
 #define PASS()  /* do nothing */
@@ -79,6 +81,7 @@ using namespace std;
 #define ASSERT_FALSE(condition) if(condition) { ABORT(); } else { PASS(); }
 #define EXPECT_FALSE(condition) if(condition) { FAIL(); } else { PASS(); }
 #define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { ABORT(); }
+#define ASSERT_LOG_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { ABORTANDLOG(lhs, rhs); }
 #define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { FAIL(); }
 #define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { ABORT(); }
 #define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { FAIL(); }
