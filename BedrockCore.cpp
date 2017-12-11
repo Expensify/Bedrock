@@ -23,27 +23,27 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
-        if (!_db.beginConcurrentTransaction()) {
-            STHROW("501 Failed to begin concurrent transaction");
-        }
-
-        // Make sure no writes happen while in peek command
-        _db.read("PRAGMA query_only = true;");
-
-        // Try each plugin, and go with the first one that says it succeeded.
         bool pluginPeeked = false;
-        for (auto plugin : _server.plugins) {
-            // Try to peek the command.
-            try {
-                if (plugin->peekCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                    pluginPeeked = true;
-                    break;
-                }
-            } catch (const SQLite::timeout_error& e) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
-                STHROW("555 Timeout peeking command");
+        try {
+            if (!_db.beginConcurrentTransaction()) {
+                STHROW("501 Failed to begin concurrent transaction");
             }
+
+            // Make sure no writes happen while in peek command
+            _db.read("PRAGMA query_only = true;");
+
+            // Try each plugin, and go with the first one that says it succeeded.
+            for (auto plugin : _server.plugins) {
+                // Try to peek the command.
+                    if (plugin->peekCommand(_db, command)) {
+                        SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
+                        pluginPeeked = true;
+                        break;
+                    }
+            }
+        } catch (const SQLite::timeout_error& e) {
+            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            STHROW("555 Timeout peeking command");
         }
 
         // Peeking is over now, allow writes
