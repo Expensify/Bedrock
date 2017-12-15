@@ -5,12 +5,12 @@ struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
-                              TEST(CreateJobTest::create),
+                              /*TEST(CreateJobTest::create),
                               TEST(CreateJobTest::createWithPriority),
                               TEST(CreateJobTest::createWithData),
                               TEST(CreateJobTest::createWithRepeat),
-                              TEST(CreateJobTest::uniqueJob),
-                              TEST(CreateJobTest::createWithBadData),
+                              */TEST(CreateJobTest::uniqueJob),
+                              /*TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
@@ -20,7 +20,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
                               AFTER(CreateJobTest::tearDown),
-                              AFTER_CLASS(CreateJobTest::tearDownClass)) { }
+                              */AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
@@ -149,12 +149,12 @@ struct CreateJobTest : tpunit::TestFixture {
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
 
-        // Try to recreate the job with new data
+        // Try to recreate the job with the same data.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
+
+        // Try to recreate the job with new data, it should get updated.
         string data = "{\"blabla\":\"test\"}";
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = jobName;
-        command["unique"] = "true";
         command["data"] = data;
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
