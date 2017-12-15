@@ -5,12 +5,12 @@ struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
-                              /*TEST(CreateJobTest::create),
+                              TEST(CreateJobTest::create),
                               TEST(CreateJobTest::createWithPriority),
                               TEST(CreateJobTest::createWithData),
                               TEST(CreateJobTest::createWithRepeat),
-                              */TEST(CreateJobTest::uniqueJob),
-                              /*TEST(CreateJobTest::createWithBadData),
+                              TEST(CreateJobTest::uniqueJob),
+                              TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
@@ -20,7 +20,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
                               AFTER(CreateJobTest::tearDown),
-                              */AFTER_CLASS(CreateJobTest::tearDownClass)) { }
+                              AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
