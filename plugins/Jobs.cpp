@@ -167,9 +167,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
+    else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         list<STable> jsonJobs;
-        if (SIEquals(request.methodLine, "CreateJob")) {
+        if (SIEquals(requestVerb, "CreateJob")) {
             verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
@@ -251,12 +251,15 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Verify unique, but only do so when creating a single job using CreateJob
-            if (SIEquals(request.methodLine, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+            if (SIEquals(requestVerb, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
-                SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+                SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
+                      << (command.request.isSet("mockRequest") ? "true" : "false"));
+                string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, data "
                              "FROM jobs "
-                             "WHERE name=" + SQ(job["name"]) + ";",
+                             "WHERE name=" + SQ(job["name"]) +
+                             "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
                              result)) {
                     STHROW("502 Select failed");
                 }
@@ -264,7 +267,8 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
                 if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     // Return early, no need to pass to master, there are no more jobs to create.
-                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0]);
+                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
+                      << (command.request.isSet("mockRequest") ? "true" : "false"));
                     content["jobID"] = result[0][0];
                     return true;
                 }
@@ -346,7 +350,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     content.clear();
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
+    if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
@@ -386,7 +390,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
 
         list<STable> jsonJobs;
-        if (SIEquals(request.methodLine, "CreateJob")) {
+        if (SIEquals(requestVerb, "CreateJob")) {
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
@@ -424,27 +428,25 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             uint64_t updateJobID = 0;
             if (SContains(job, "unique") && job["unique"] == "true") {
-                // We don't try to handle unique jobs in mock requests.
-                if (command.request.isSet("mockRequest")) {
-                    return true;
-                }
-
                 SQResult result;
-                SINFO("Unique flag was passed, checking existing job with name " << job["name"]);
+                SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
+                      << (command.request.isSet("mockRequest") ? "true" : "false"));
+                string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, data "
                              "FROM jobs "
-                             "WHERE name=" + SQ(job["name"]) + ";",
+                             "WHERE name=" + SQ(job["name"]) +
+                             "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
                              result)) {
                     STHROW("502 Select failed");
                 }
 
                 // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == originalData))) {
+                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                          << result[0][0]);
+                          << result[0][0] << ", mocked? " << (command.request.isSet("mockRequest") ? "true" : "false"));
 
                     // If we are calling CreateJob, return early, there are no more jobs to create.
-                    if (SIEquals(request.methodLine, "CreateJob")) {
+                    if (SIEquals(requestVerb, "CreateJob")) {
                         content["jobID"] = result[0][0];
                         return true;
                     }
@@ -518,7 +520,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // Update the existing job.
                 if(!db.writeIdempotent("UPDATE jobs SET "
                                          "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
-                                         "data     = JSON_PATCH(data, " + safeOriginalData + "), " +
+                                         "data     = JSON_PATCH(data, " + safeData + "), " +
                                          "priority = " + SQ(priority) + " " +
                                        "WHERE jobID = " + SQ(updateJobID) + ";"))
                 {
@@ -526,7 +528,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                if (SIEquals(requestVerb, "CreateJob")) {
                     content["jobID"] = SToStr(updateJobID);
                     return true;
                 }
@@ -575,7 +577,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                                                              << " lastInsertRowID=" << lastInsertRowID);
                 }
 
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                if (SIEquals(requestVerb, "CreateJob")) {
                     content["jobID"] = SToStr(lastInsertRowID);
                     return true;
                 }

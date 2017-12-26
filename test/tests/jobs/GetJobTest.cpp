@@ -5,6 +5,7 @@ struct GetJobTest : tpunit::TestFixture {
         : tpunit::TestFixture("GetJob",
                               BEFORE_CLASS(GetJobTest::setupClass),
                               TEST(GetJobTest::getJob),
+                              TEST(GetJobTest::getJobWithHttp),
                               TEST(GetJobTest::withNumResults),
                               TEST(GetJobTest::noJobFound),
                               TEST(GetJobTest::testPriorities),
@@ -42,6 +43,45 @@ struct GetJobTest : tpunit::TestFixture {
         // GetJob
         command.clear();
         command.methodLine = "GetJob";
+        command["name"] = jobName;
+        response = tester->executeWaitVerifyContentTable(command);
+
+        ASSERT_EQUAL(response.size(), 4);
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+        ASSERT_EQUAL(response["data"], "{}");
+        SASSERT(!response["created"].empty());
+
+        // Check that nothing changed after we created the job except for the state and lastRun value
+        SQResult currentJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", currentJob);
+        ASSERT_EQUAL(currentJob[0][0], originalJob[0][0]);
+        ASSERT_EQUAL(currentJob[0][1], originalJob[0][1]);
+        ASSERT_EQUAL(currentJob[0][2], "RUNNING");
+        ASSERT_EQUAL(currentJob[0][3], jobName);
+        ASSERT_EQUAL(currentJob[0][4], originalJob[0][4]);
+        ASSERT_EQUAL(currentJob[0][5], SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()));
+        ASSERT_EQUAL(currentJob[0][6], originalJob[0][6]);
+        ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
+        ASSERT_EQUAL(currentJob[0][8], originalJob[0][8]);
+        ASSERT_EQUAL(currentJob[0][9], originalJob[0][9]);
+    }
+
+    // Simple GetJob with Http
+    void getJobWithHttp() {
+        // Create the job
+        SData command("CreateJob");
+        string jobName = "job";
+        command["name"] = jobName;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+        ASSERT_GREATER_THAN(SToInt(jobID), 0);
+        SQResult originalJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
+
+        // GetJob
+        command.clear();
+        command.methodLine = "GetJob / HTTP/1.1";
         command["name"] = jobName;
         response = tester->executeWaitVerifyContentTable(command);
 

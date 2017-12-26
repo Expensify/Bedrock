@@ -5,6 +5,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         : tpunit::TestFixture("CreateJobs",
                               BEFORE_CLASS(CreateJobsTest::setupClass),
                               TEST(CreateJobsTest::create),
+                              TEST(CreateJobsTest::createWithHttp),
                               TEST(CreateJobsTest::createWithInvalidJson),
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               AFTER(CreateJobsTest::tearDown),
@@ -25,6 +26,17 @@ struct CreateJobsTest : tpunit::TestFixture {
 
     void create() {
         SData command("CreateJobs");
+        command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDList.size(), 2);
+        string jobID1 = jobIDList.front();
+        string jobID2 = jobIDList.back();
+        ASSERT_NOT_EQUAL(jobID1, jobID2);
+    }
+
+    void createWithHttp() {
+        SData command("CreateJobs / HTTP/1.1");
         command["jobs"] = "[{\"name\":\"testCreate\", \"data\":{\"blabla\":\"blabla\"}, \"repeat\": \"SCHEDULED, +1 HOUR\"}, {\"name\":\"testCreate2\", \"data\":{\"nope\":\"nope\"}}]";
         STable response = tester->executeWaitVerifyContentTable(command);
         list<string> jobIDList = SParseJSONArray(response["jobIDs"]);
