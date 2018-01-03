@@ -829,6 +829,11 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
         // These are all of the keys that need to match to kill this command.
         bool isMatch = true;
         for (auto& pair : values) {
+            // We skip Content-Length, as it's added automatically when serializing commands.
+            if (SIEquals(pair.first, "Content-Length")) {
+                continue;
+            }
+
             // See if our current command even has the blacklisted key.
             auto it = command.request.nameValueMap.find(pair.first);
             if (it ==  command.request.nameValueMap.end()) {
@@ -1636,4 +1641,19 @@ SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
     }
     message.content = subMessage.serialize();
     return message;
+}
+
+void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
+{
+    shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+    for (const auto& p : _crashCommands) {
+        SINFO("Sending crash command " << p.first << " to node " << peer->name << " on login");
+        SData command(p.first);
+        command.nameValueMap = p.second;
+        BedrockCommand cmd(command);
+        for (const auto& fields : command.nameValueMap) {
+            cmd.crashIdentifyingValues.insert(fields.first);
+        }
+        _syncNode->emergencyBroadcast(_generateCrashMessage(&cmd), peer);
+    }
 }
