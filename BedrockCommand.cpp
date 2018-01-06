@@ -174,7 +174,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
-                                            queueWorkerTotal + queueSyncTotal);
+                                            escalationTimeUS + queueWorkerTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
@@ -226,7 +226,8 @@ void BedrockCommand::finalizeTimingInfo() {
           << queueWorkerTotal << ", "
           << queueSyncTotal << ", "
           << totalTime << ", "
-          << unaccountedTime << ". Upstream: "
+          << unaccountedTime << ", "
+          << escalationTimeUS << ". Upstream: "
           << upstreamPeekTime << ", "
           << upstreamProcessTime << ", "
           << upstreamTotalTime << ", "
