@@ -268,7 +268,6 @@ void BedrockServer::sync(SData& args,
                     command = syncNodeQueuedCommands.pop();
                     if (command.initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
-                        SINFO("Queued new '" << command.request.methodLine << "' command from local client.");
                         server._commandQueue.push(move(command));
                     }
                 }
@@ -1267,6 +1266,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     } else if (_shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
+                        SINFO("Queued new '" << command.request.methodLine << "' command from local client.");
                         _commandQueue.push(move(command));
                     }
                 }
