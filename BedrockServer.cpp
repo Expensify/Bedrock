@@ -21,7 +21,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
         SALERT("Blacklisting command (now have " << _crashCommands.size() << " blacklisted commands): " << request.serialize());
     } else {
-        SINFO("Queued new '" << command.methodline << "' command from bedrock node.");
+        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node.");
         _commandQueue.push(BedrockCommand(move(command)));
     }
 }
@@ -268,7 +268,7 @@ void BedrockServer::sync(SData& args,
                     command = syncNodeQueuedCommands.pop();
                     if (command.initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
-                        SINFO("Queued new '" << command.methodline << "' command from local client.");
+                        SINFO("Queued new '" << command.request.methodLine << "' command from local client.");
                         server._commandQueue.push(move(command));
                     }
                 }
