@@ -21,6 +21,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
         SALERT("Blacklisting command (now have " << _crashCommands.size() << " blacklisted commands): " << request.serialize());
     } else {
+        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node.");
         _commandQueue.push(BedrockCommand(move(command)));
     }
 }
@@ -1265,6 +1266,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     } else if (_shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
+                        SINFO("Queued new '" << command.request.methodLine << "' command from local client.");
                         _commandQueue.push(move(command));
                     }
                 }
