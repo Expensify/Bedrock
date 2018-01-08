@@ -176,25 +176,20 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
                                             queueWorkerTotal + queueSyncTotal);
 
-    // Log all this info.
-    SINFO("command '" << request.methodLine << "' timing info (us): "
-          << peekTotal << " (" << peekCount << "), "
-          << processTotal << " (" << processCount << "), "
-          << commitWorkerTotal << ", "
-          << commitSyncTotal << ", "
-          << queueWorkerTotal << ", "
-          << queueSyncTotal << ", "
-          << totalTime << ", "
-          << unaccountedTime << "."
-    );
-
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
-        {"peekTime",       peekTotal},
-        {"processTime",    processTotal},
-        {"totalTime",      totalTime},
-        {"escalationTime", escalationTimeUS},
+        {"peekTime",        peekTotal},
+        {"processTime",     processTotal},
+        {"totalTime",       totalTime},
+        {"escalationTime",  escalationTimeUS},
+        {"unaccountedTime", unaccountedTime},
     };
+
+    // We also want to know what master did if we're on a slave.
+    uint64_t upstreamPeekTime = 0;
+    uint64_t upstreamProcessTime = 0;
+    uint64_t upstreamUnaccountedTime = 0;
+    uint64_t upstreamTotalTime = 0;
 
     // Now promote any existing values that were set upstream. This prepends `upstream` and makes the first existing
     // character of the name uppercase, (i.e. myValue -> upstreamMyValue), letting us keep anything that was set by the
@@ -205,8 +200,38 @@ void BedrockCommand::finalizeTimingInfo() {
             string temp = it->second;
             response.nameValueMap.erase(it);
             response.nameValueMap[string("upstream") + (char)toupper(p.first[0]) + (p.first.substr(1))] = temp;
+
+            // Note the upstream times for our logline.
+            if (p.first == "peekTime") {
+                upstreamPeekTime = SToUInt64(temp);
+            }
+            else if (p.first == "processTime") {
+                upstreamProcessTime = SToUInt64(temp);
+            }
+            else if (p.first == "unaccountedTime") {
+                upstreamUnaccountedTime = SToUInt64(temp);
+            }
+            else if (p.first == "totalTime") {
+                upstreamTotalTime = SToUInt64(temp);
+            }
         }
     }
+
+    // Log all this info.
+    SINFO("command '" << request.methodLine << "' timing info (us): "
+          << peekTotal << " (" << peekCount << "), "
+          << processTotal << " (" << processCount << "), "
+          << commitWorkerTotal << ", "
+          << commitSyncTotal << ", "
+          << queueWorkerTotal << ", "
+          << queueSyncTotal << ", "
+          << totalTime << ", "
+          << unaccountedTime << ". Upstream: "
+          << upstreamPeekTime << ", "
+          << upstreamProcessTime << ", "
+          << upstreamTotalTime << ", "
+          << upstreamUnaccountedTime << "."
+    );
 
     // And here's where we set our own values.
     for (const auto& p : valuePairs) {
