@@ -707,7 +707,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
     // Enable or disable this query.
     string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
-    SQuery(_db, "enabling noop-update mode", query);
+    SQuery(_db, "setting noop-update mode", query);
     _noopUpdateMode = enabled;
 
     // If we're inside a transaction, make sure this gets saved so it can be replicated.
