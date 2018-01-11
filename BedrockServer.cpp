@@ -1647,7 +1647,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {
-        SINFO("Sending crash command " << p.first << " to node " << peer->name << " on login");
+        SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
         SData command(p.first);
         command.nameValueMap = p.second;
         BedrockCommand cmd(command);
