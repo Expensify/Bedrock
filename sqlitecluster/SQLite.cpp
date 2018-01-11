@@ -704,12 +704,17 @@ void SQLite::setUpdateNoopMode(bool enabled) {
     if (_noopUpdateMode == enabled) {
         return;
     }
-    if (enabled) {
-        SQuery(_db, "enabling noop-update mode", "PRAGMA noop_update=ON;");
-    } else {
-        SQuery(_db, "disabling noop-update mode", "PRAGMA noop_update=OFF;");
-    }
+
+    // Enable or disable this query.
+    string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
+    SQuery(_db, "setting noop-update mode", query);
     _noopUpdateMode = enabled;
+
+    // If we're inside a transaction, make sure this gets saved so it can be replicated.
+    // If we're not (i.e., a transaction's already been rolled back), no need, there's nothing to replicate.
+    if (_insideTransaction) {
+        _uncommittedQuery += query;
+    }
 }
 
 bool SQLite::getUpdateNoopMode() {
