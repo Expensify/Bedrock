@@ -19,9 +19,10 @@ class TestServer : public SQLiteServer {
   public:
     TestServer(const string& host) : SQLiteServer(host) { }
 
-    virtual void acceptCommand(SQLiteCommand&& command) { };
-    virtual void cancelCommand(const string& commandID) { };
-    virtual bool canStandDown() { return true; };
+    virtual void acceptCommand(SQLiteCommand&& command) { }
+    virtual void cancelCommand(const string& commandID) { }
+    virtual bool canStandDown() { return true; }
+    virtual void onNodeLogin(SQLiteNode::Peer* peer) { }
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {

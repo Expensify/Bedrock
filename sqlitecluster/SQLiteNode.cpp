@@ -1062,6 +1062,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         peer->set("State",    message["State"]);
         peer->set("LoggedIn", "true");
         peer->set("Version",  message["Version"]);
+
+        // Let the server know that a peer has logged in.
+        _server.onNodeLogin(peer);
     } else if (!SIEquals((*peer)["LoggedIn"], "true")) {
         STHROW("not logged in");
     }
@@ -1867,9 +1870,14 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     }
 }
 
-void SQLiteNode::emergencyBroadcast(const SData& message) {
-    SALERT("Sending emergency broadcast: " << message.serialize());
-    _sendToAllPeers(message, false);
+void SQLiteNode::emergencyBroadcast(const SData& message, Peer* peer) {
+    if (peer) {
+        SALERT("Sending emergency broadcast: " << message.serialize() << " to peer: " << peer->name);
+        _sendToPeer(peer, message);
+    } else {
+        SALERT("Sending emergency broadcast: " << message.serialize());
+        _sendToAllPeers(message, false);
+    }
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {

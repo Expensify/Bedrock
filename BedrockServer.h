@@ -67,6 +67,9 @@ class BedrockServer : public SQLiteServer {
     // STCPNode API.
     void prePoll(fd_map& fdm);
 
+    // When a peer node logs in, we'll send it our crash command list.
+    void onNodeLogin(SQLiteNode::Peer* peer);
+
     // Accept connections and dispatch requests
     // STCPNode API.
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
