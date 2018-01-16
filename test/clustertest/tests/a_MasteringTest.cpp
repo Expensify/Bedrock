@@ -134,6 +134,9 @@ struct a_MasteringTest : tpunit::TestFixture {
         BedrockTester* master = tester->getBedrockTester(0);
         master->executeWaitMultipleData(requests);
 
+        SData blankQuery("ineffectiveUpdate");
+        master->executeWaitMultipleData({blankQuery});
+
         // Start the slave back up.
         bool wasSynchronizing = false;
         string startstatus = tester->startNodeDontWait(1);

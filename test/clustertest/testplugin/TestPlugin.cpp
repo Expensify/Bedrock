@@ -126,6 +126,9 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);
+    } else if (command.request.methodLine == "ineffectiveUpdate") {
+        // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
+        return true;
     }
     return false;
 }
