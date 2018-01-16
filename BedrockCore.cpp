@@ -2,7 +2,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
-BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : 
+BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) :
 SQLiteCore(db),
 _server(server)
 { }
@@ -149,7 +149,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.
         if (_db.getUncommittedQuery().empty()) {
             //_db.rollback();
-            SALERT("Committing blank query.");
         } else {
             // The `needsCommit` line below is supposed to be here.
         }
