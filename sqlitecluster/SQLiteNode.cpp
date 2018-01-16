@@ -848,7 +848,8 @@ bool SQLiteNode::update() {
             uint64_t commitCount = _db.getCommitCount();
 
             // If there was nothing changed, then we shouldn't have anything to commit.
-            SASSERT(!_db.getUncommittedQuery().empty());
+            // Except that this is allowed right now.
+            // SASSERT(!_db.getUncommittedQuery().empty());
 
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
@@ -2060,7 +2061,8 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         if (!commit.isSet("Hash"))
             STHROW("missing Hash");
         if (commit.content.empty())
-            STHROW("missing content");
+            SALERT("Synchronized blank query");
+        //    STHROW("missing content");
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
             STHROW("commit index mismatch");
         if (!_db.beginTransaction())

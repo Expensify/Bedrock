@@ -343,7 +343,7 @@ bool SQLite::write(const string& query) {
 
 bool SQLite::writeIdempotent(const string& query) {
     SASSERT(_insideTransaction);
-    SASSERT(SEndsWith(query, ";"));                                         // Must finish everything with semicolon
+    SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
 
     // First, check our current state
@@ -554,7 +554,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
         SASSERTWARN(!query.empty());
         SASSERTWARN(!hash.empty());
     }
-    return (!query.empty() && !hash.empty());
+    return (/*!query.empty() && */!hash.empty());
 }
 
 string SQLite::getCommittedHash() {
