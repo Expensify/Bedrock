@@ -2107,9 +2107,17 @@ void SQLiteNode::_updateSyncPeer()
         if (!newSyncPeer) {
             newSyncPeer = peer;
         }
+
+        // Master is *only* a sync peer in the above case that it's better than nothing. Otherwise, we avoid using
+        // master to sync from, because for large synchronizations, it causes a lot of load on master that can slow
+        // down the whole cluster.
+        if ((*peer)["State"] == "MASTERING") {
+            continue;
+        }
+
         // If the previous best peer and this one have the same latency (meaning they're probably both 0), the best one
         // is the one with the highest commit count.
-        else if (newSyncPeer->latency == peer->latency) {
+        if (newSyncPeer->latency == peer->latency) {
             if (peer->calc64("CommitCount") > newSyncPeer->calc64("CommitCount")) {
                 newSyncPeer = peer;
             }
