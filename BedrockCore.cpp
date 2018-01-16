@@ -148,11 +148,10 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
 
         // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.
         if (_db.getUncommittedQuery().empty()) {
-            //_db.rollback();
+            _db.rollback();
         } else {
-            // The `needsCommit` line below is supposed to be here.
+            needsCommit = true;
         }
-        needsCommit = true;
 
         // If no response was set, assume 200 OK
         if (response.methodLine == "") {
