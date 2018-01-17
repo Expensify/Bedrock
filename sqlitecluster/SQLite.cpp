@@ -338,10 +338,18 @@ bool SQLite::write(const string& query) {
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return writeIdempotent(query);
+    return _writeIdempotent(query);
 }
 
 bool SQLite::writeIdempotent(const string& query) {
+    return _writeIdempotent(query);
+}
+
+bool SQLite::writeUnmodified(const string& query) {
+    return _writeIdempotent(query, true);
+}
+
+bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
@@ -368,9 +376,8 @@ bool SQLite::writeIdempotent(const string& query) {
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
-    // Did something change.
-    if (schemaAfter > schemaBefore || changesAfter > changesBefore) {
-        // Changed, add to the uncommitted query
+    // If something changed, or we're always keeping queries, then save this.
+    if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
         _uncommittedQuery += query;
     }
     return true;
@@ -554,7 +561,9 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
         SASSERTWARN(!query.empty());
         SASSERTWARN(!hash.empty());
     }
-    return (/*!query.empty() && */!hash.empty());
+
+    // If we found a hash, we assume this was a good commit, as we'll allow an empty commit.
+    return (!hash.empty());
 }
 
 string SQLite::getCommittedHash() {

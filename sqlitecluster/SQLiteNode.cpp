@@ -757,6 +757,7 @@ bool SQLiteNode::update() {
                 _commitState = CommitState::FAILED;
             } else if (consistentEnough) {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
+                SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
                 int result = _db.commit();
 
                 // If this is the case, there was a commit conflict.
@@ -1431,7 +1432,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         try {
             // Inside transaction; get ready to back out on error
-            if (!_db.write(message.content)) {
+            if (!_db.writeUnmodified(message.content)) {
                 STHROW("failed to write transaction");
             }
             if (!_db.prepare()) {
@@ -1551,6 +1552,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             STHROW("hash mismatch");
         }
 
+        SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << _db.getUncommittedQuery());
         _db.commit();
 
         // Clear the list of committed transactions. We're slaving, so we don't need to send these.
@@ -2062,14 +2064,13 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             STHROW("missing Hash");
         if (commit.content.empty())
             SALERT("Synchronized blank query");
-        //    STHROW("missing content");
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
             STHROW("commit index mismatch");
         if (!_db.beginTransaction())
             STHROW("failed to begin transaction");
         try {
             // Inside a transaction; get ready to back out if an error
-            if (!_db.write(commit.content))
+            if (!_db.writeUnmodified(commit.content))
                 STHROW("failed to write transaction");
             if (!_db.prepare())
                 STHROW("failed to prepare transaction");
@@ -2082,6 +2083,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Transaction succeeded, commit and go to the next
+        SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
         if (_db.getCommittedHash() != commit["Hash"])
             STHROW("potential hash mismatch");
