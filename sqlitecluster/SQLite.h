@@ -72,6 +72,11 @@ class SQLite {
     // known to be repeatable. What counts as repeatable is up to the individual command.
     bool writeIdempotent(const string& query);
 
+    // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
+    // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added
+    // to the journal *even if they have no effect* on the rest of the database.
+    bool writeUnmodified(const string& query);
+
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode();
@@ -247,6 +252,8 @@ class SQLite {
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
     // any transactions. Instead of reading from an atomic var, reads directly from the database.
     uint64_t _getCommitCount();
+
+    bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
