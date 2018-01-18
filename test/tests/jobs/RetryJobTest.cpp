@@ -20,6 +20,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::hasRepeatWithNextRun),
                               TEST(RetryJobTest::hasRepeatWithDelay),
                               TEST(RetryJobTest::hasDelayAndNextRun),
+                              TEST(RetryJobTest::simpleRetryWithHttp),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -489,6 +490,34 @@ struct RetryJobTest : tpunit::TestFixture {
         const string nextRun = getTimeInFuture(10);
         command["nextRun"] = nextRun;
         command["delay"] = "900";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun updated correctly
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], nextRun);
+    }
+
+    // Retry the job with HTTP
+    void simpleRetryWithHttp() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob / HTTP/1.1";
+        command["jobID"] = jobID;
+        const string nextRun = getTimeInFuture(10);
+        command["nextRun"] = nextRun;
         tester->executeWaitVerifyContent(command);
 
         // Confirm nextRun updated correctly

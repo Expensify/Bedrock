@@ -167,9 +167,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     }
 
     // ----------------------------------------------------------------------
-    else if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
+    else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         list<STable> jsonJobs;
-        if (SIEquals(request.methodLine, "CreateJob")) {
+        if (SIEquals(requestVerb, "CreateJob")) {
             verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
@@ -251,7 +251,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Verify unique, but only do so when creating a single job using CreateJob
-            if (SIEquals(request.methodLine, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+            if (SIEquals(requestVerb, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                       << (command.request.isSet("mockRequest") ? "true" : "false"));
@@ -350,7 +350,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     content.clear();
 
     // ----------------------------------------------------------------------
-    if (SIEquals(request.methodLine, "CreateJob") || SIEquals(request.methodLine, "CreateJobs")) {
+    if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
@@ -390,7 +390,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //
 
         list<STable> jsonJobs;
-        if (SIEquals(request.methodLine, "CreateJob")) {
+        if (SIEquals(requestVerb, "CreateJob")) {
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
@@ -446,7 +446,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                           << result[0][0] << ", mocked? " << (command.request.isSet("mockRequest") ? "true" : "false"));
 
                     // If we are calling CreateJob, return early, there are no more jobs to create.
-                    if (SIEquals(request.methodLine, "CreateJob")) {
+                    if (SIEquals(requestVerb, "CreateJob")) {
                         content["jobID"] = result[0][0];
                         return true;
                     }
@@ -528,7 +528,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                if (SIEquals(requestVerb, "CreateJob")) {
                     content["jobID"] = SToStr(updateJobID);
                     return true;
                 }
@@ -577,7 +577,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                                                              << " lastInsertRowID=" << lastInsertRowID);
                 }
 
-                if (SIEquals(request.methodLine, "CreateJob")) {
+                if (SIEquals(requestVerb, "CreateJob")) {
                     content["jobID"] = SToStr(lastInsertRowID);
                     return true;
                 }
