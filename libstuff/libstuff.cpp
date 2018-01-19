@@ -2235,6 +2235,12 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
+
+        // If the query contains any non-printing characters, exit early, this is probably an SQL-injection attack.
+        if (find_if(sql.begin(), sql.end(), [](unsigned char c){return !isprint(c);}) != sql.end()) {
+            STHROW("401 Non-printing character not allowed.");
+        }
+
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
