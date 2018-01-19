@@ -2237,7 +2237,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SDEBUG(sql);
 
         // If the query contains any non-printing characters, exit early, this is probably an SQL-injection attack.
-        if (find_if(sql.begin(), sql.end(), [](unsigned char c){return !isprint(c);}) != sql.end()) {
+        if (find_if(sql.begin(), sql.end(), [](unsigned char c){return iscntrl(c) && !isspace(c);}) != sql.end()) {
             STHROW("401 Non-printing character not allowed.");
         }
 
