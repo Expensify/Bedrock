@@ -622,17 +622,11 @@ struct LibStuff : tpunit::TestFixture {
         // Run a successful query.
         SQuery(db, "", "SELECT 1;", result, 1000);
 
-        // Run a query we expect to throw
-        bool threw = false;
-        try {
-            SQuery(db, "", "SEL\1CT 1;", result, 1000);
-        } catch (const SException& e) {
-            if (SStartsWith(e.what(), "401")) {
-                threw = true;
-            }
-        }
-        if (!threw) {
-            throw SException("Query should have failed, but didn't");
+        // Run a query we expect to work, because invalid chars were stripped. Also test boundary cases.
+        for (auto& q: {"SEL\1ECT 12;"s, "\2SELECT 12;"s, "SELECT 12;\3"s} ) {
+            SQuery(db, "", q, result, 1000);
+            ASSERT_EQUAL(result.size(), 1);
+            ASSERT_EQUAL(result[0][0], "12");
         }
     }
 } __LibStuff;
