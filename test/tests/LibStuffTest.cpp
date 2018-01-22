@@ -24,14 +24,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion),
-                                    TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testSQuery)
-                                    )
+                                    TEST(LibStuff::testContains))
     { }
-
-    static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
-        SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
-    }
 
     void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";
@@ -607,32 +601,5 @@ struct LibStuff : tpunit::TestFixture {
 
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
-    }
-
-    void testSQuery() {
-
-        // Open a DB.
-        sqlite3* db = nullptr;
-        sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
-        sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
-        sqlite3_initialize();
-        sqlite3_open_v2(":memory:", &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
-
-        SQResult result;
-        // Run a successful query.
-        SQuery(db, "", "SELECT 1;", result, 1000);
-
-        // Run a query we expect to throw
-        bool threw = false;
-        try {
-            SQuery(db, "", "SEL\1CT 1;", result, 1000);
-        } catch (const SException& e) {
-            if (SStartsWith(e.what(), "401")) {
-                threw = true;
-            }
-        }
-        if (!threw) {
-            throw SException("Query should have failed, but didn't");
-        }
     }
 } __LibStuff;
