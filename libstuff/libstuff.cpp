@@ -2232,16 +2232,26 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     uint64_t startTime = STimeNow();
     int error = 0;
     int extErr = 0;
+
+    // If the query contains any non-printing characters, exit early, this is probably an SQL-injection attack, or
+    // a formatting mistake. Let's strip them.
+    string safeSQL;
+    bool strippedChars = false;
+    copy_if(sql.begin(), sql.end(), back_inserter(safeSQL), [&strippedChars](unsigned char c){
+        bool bad = iscntrl(c) && !isspace(c);
+        strippedChars = strippedChars || bad;
+        return !bad;
+    });
+
+    if (strippedChars) {
+        SALERT("Query contained invalid characters! " << sql);
+    }
+
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
 
-        // If the query contains any non-printing characters, exit early, this is probably an SQL-injection attack.
-        if (find_if(sql.begin(), sql.end(), [](unsigned char c){return iscntrl(c) && !isspace(c);}) != sql.end()) {
-            STHROW("401 Non-printing character not allowed.");
-        }
-
-        error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
+        error = sqlite3_exec(db, safeSQL.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
@@ -2260,20 +2270,20 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << safeSQL.length() << ": " << safeSQL.substr(0, 150));
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
         const string& csvRow =
-            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sql), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
+            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(safeSQL), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
-        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << safeSQL);
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
