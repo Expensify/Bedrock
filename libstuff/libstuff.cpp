@@ -1516,6 +1516,9 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             }
             in_addr* addr = (in_addr*)hostent->h_addr_list[0];
             ip = addr->s_addr;
+            char plainTextIP[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, addr, plainTextIP, INET_ADDRSTRLEN);
+            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
         }
 
         // Open a socket
