@@ -5,7 +5,7 @@
 string BedrockTester::defaultDBFile;
 string BedrockTester::defaultServerAddr;
 SData BedrockTester::globalArgs;
-mutex _testersMutex;
+mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
     "../bedrock",

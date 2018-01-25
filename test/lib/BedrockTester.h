@@ -84,4 +84,7 @@ class BedrockTester {
 
     // A version of the DB that can be queries without going through bedrock.
     SQLite* _db = 0;
+
+    // For locking around changes to the _testers list.
+    static mutex _testersMutex;
 };
