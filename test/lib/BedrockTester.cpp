@@ -5,6 +5,7 @@
 string BedrockTester::defaultDBFile;
 string BedrockTester::defaultServerAddr;
 SData BedrockTester::globalArgs;
+mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
     "../bedrock",
@@ -33,6 +34,7 @@ string BedrockTester::getServerName() {
 }
 
 void BedrockTester::stopAll() {
+    lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     for (auto p : _testers) {
         p->stopServer();
     }
@@ -41,7 +43,10 @@ void BedrockTester::stopAll() {
 BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
   : _keepFilesWhenFinished(keepFilesWhenFinished)
 {
-    _testers.insert(this);
+    {
+        lock_guard<decltype(_testersMutex)> lock(_testersMutex);
+        _testers.insert(this);
+    }
 
     // Set these values from the arguments if provided, or the defaults if not.
     try {
@@ -119,6 +124,7 @@ BedrockTester::~BedrockTester() {
         SFileExists((_dbName + "-shm").c_str()) && unlink((_dbName + "-shm").c_str());
         SFileExists((_dbName + "-wal").c_str()) && unlink((_dbName + "-wal").c_str());
     }
+    lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
 }
 
