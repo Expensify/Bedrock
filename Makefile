@@ -73,7 +73,6 @@ clean:
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
-	cd mbedtls && git checkout c49b808ae490f03d665df5faae457f613aa31aaf
 	cd mbedtls && make no_test && touch library/libmbedcrypto.a && touch library/libmbedtls.a && touch library/libmbedx509.a
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
