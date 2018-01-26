@@ -2099,8 +2099,8 @@ string SHashSHA1(const string& buffer) {
 
 string SHashArgon2(const string& buffer) {
     string result;
-    result.resize(20);
-    crypto_pwhash_str((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    result.resize(crypto_pwhash_STRBYTES);
+    crypto_pwhash_str((char*)result.c_str(), (const char*)buffer.c_str(), (int)buffer.size(), 3, crypto_pwhash_MEMLIMIT_SENSITIVE);
     return result;
 }
 
