@@ -712,6 +712,7 @@ uint64_t SFileSize(const string& path);
 // --------------------------------------------------------------------------
 // Various hashing functions
 string SHashSHA1(const string& buffer);
+string SHashArgon2(const string& buffer);
 
 // Various encoding/decoding functions
 string SEncodeBase64(const string& buffer);
