@@ -21,6 +21,38 @@ size_t BedrockCommandQueue::size()  {
     return size;
 }
 
+size_t BedrockCommandQueue::_runnableSize(size_t* totalSize)  {
+    // This doesn't lock _queueMutex on purpose.
+    uint64_t now = STimeNow();
+    size_t size = 0;
+    for (const auto& queue : _commandQueue) {
+        const auto& subQueue = queue.second;
+
+        // Skip this queue if it's empty.
+        if (subQueue.empty()) {
+            continue;
+        }
+
+        // If the caller asked for the total size, record that as well.
+        if (totalSize) {
+            *totalSize += subQueue.size();
+        }
+
+        // If the last item isn't in the future, then we can just use size().
+        if (subQueue.rbegin()->first < now) {
+            size += subQueue.size();
+        } else {
+            // Otherwise, we need to only count items scheduled before now.
+            // Start with the first item after now.
+            auto it = subQueue.upper_bound(now);
+
+            // And count the number of increments it takes to get there.
+            size += distance(subQueue.begin(), it);
+        }
+    }
+    return size;
+}
+
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
     unique_lock<mutex> queueLock(_queueMutex);
 
@@ -88,6 +120,10 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     item.startTiming(BedrockCommand::QUEUE_WORKER);
+    size_t totalQueueSize = 0;
+    size_t runnableQueueSize = _runnableSize(&totalQueueSize);
+    SINFO("Enqueuing command '" << item.request.methodLine << "', with " << runnableQueueSize
+          << " runnable commands already queued (" << totalQueueSize << " total commands queued).");
     queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
     _queueCondition.notify_one();
 }
