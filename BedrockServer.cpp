@@ -21,7 +21,10 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
         SALERT("Blacklisting command (now have " << _crashCommands.size() << " blacklisted commands): " << request.serialize());
     } else {
-        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node.");
+        size_t totalQueueSize = 0;
+        size_t runnableQueueSize = _commandQueue.runnableSize(&totalQueueSize);
+        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << runnableQueueSize
+              << " runnable commands already queued (" << totalQueueSize << " total commands queued).");
         _commandQueue.push(BedrockCommand(move(command)));
     }
 }
@@ -1271,7 +1274,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     } else if (_shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
-                        SINFO("Queued new '" << command.request.methodLine << "' command from local client.");
+                        size_t totalQueueSize = 0;
+                        size_t runnableQueueSize = _commandQueue.runnableSize(&totalQueueSize);
+                        SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
+                              << runnableQueueSize << " runnable commands already queued (" << totalQueueSize
+                              << " total commands queued).");
                         _commandQueue.push(move(command));
                     }
                 }

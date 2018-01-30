@@ -21,8 +21,8 @@ size_t BedrockCommandQueue::size()  {
     return size;
 }
 
-size_t BedrockCommandQueue::_runnableSize(size_t* totalSize)  {
-    // This doesn't lock _queueMutex on purpose.
+size_t BedrockCommandQueue::runnableSize(size_t* totalSize)  {
+    SAUTOLOCK(_queueMutex);
     uint64_t now = STimeNow();
     size_t size = 0;
     for (const auto& queue : _commandQueue) {
@@ -120,10 +120,6 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     item.startTiming(BedrockCommand::QUEUE_WORKER);
-    size_t totalQueueSize = 0;
-    size_t runnableQueueSize = _runnableSize(&totalQueueSize);
-    SINFO("Enqueuing command '" << item.request.methodLine << "', with " << runnableQueueSize
-          << " runnable commands already queued (" << totalQueueSize << " total commands queued).");
     queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
     _queueCondition.notify_one();
 }

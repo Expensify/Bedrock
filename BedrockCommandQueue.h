@@ -34,6 +34,10 @@ class BedrockCommandQueue {
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
 
+    // Returns the size of the queue, only counting items that aren't scheduled in the future, optionally counting all
+    // the items in the queue.
+    size_t runnableSize(size_t* totalSize);
+
   private:
     // Removes and returns the first workable command in the queue. A command is workable if it's executeTimestamp is
     // not in the future.
@@ -51,9 +55,4 @@ class BedrockCommandQueue {
     // The priority queue in which we store commands. This is a map of integer priorities to their respective maps.
     // Each of those maps maps timestamps to commands.
     map<int, multimap<uint64_t, BedrockCommand>> _commandQueue;
-
-    // Returns the size of the queue, only counting items that aren't scheduled in the future, optionally counting all
-    // the items in the queue. This function does *not* lock _queueMutex, as it's only intended to be called
-    // internally.
-    size_t _runnableSize(size_t* totalSize);
 };
