@@ -38,14 +38,14 @@ class SQLite {
            int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
-    // Returns the filename for this database
+    // Returns the canonicalized filename for this database
     string getFilename() { return _filename; }
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
     bool read(const string& query, SQResult& result);
 
-    // Performs a read-only query (eg, SELECT) that returns a single cell.
+    // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
     // Begins a new transaction. Returns true on success.

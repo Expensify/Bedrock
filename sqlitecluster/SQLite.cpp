@@ -49,24 +49,17 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     }
     SINFO("Opening sqlite database: " << _filename);
 
-    // Set our journal table name.
+    // Set our journal table name for this DB handle.
     _journalName = _getJournalTableName(journalTable);
 
-    // There are several initialization tasks that need to be performed only by the *first* thread to initialize the
-    // DB. We grab this lock so that only the first thread to reach this point can perform this operation, and any
-    // other threads will be blocked until it's complete.
+    // We lock here To initialize the database. Because there's a global map of currently opened DB files, we lock
+    // whenever we might need to insert a new one. These are only ever added or changed in the constructor and
+    // destructor.
     SQLITE_COMMIT_AUTOLOCK;
 
-    // We're the initializer if we're the first one to add this entry to the map.
-    auto sharedDataIterator = _sharedDataLookupMap.find(_filename);
-    bool initializer = sharedDataIterator == _sharedDataLookupMap.end();
-
-    // We need to initialize sqlite. Only the first thread to get here will do this.
-    if (initializer) {
-        // Insert our SharedData object into the global map.
-        _sharedData = new SharedData();
-        _sharedDataLookupMap.emplace(_filename, make_pair(1, _sharedData));
-
+    // sqlite3_config can't run concurrently with *anything* else, so we make sure it's set not only on creating
+    // an entry, but on creating the *first* entry.
+    if(_sharedDataLookupMap.empty()) {
         // Set the logging callback for sqlite errors.
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
 
@@ -79,6 +72,15 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
         // created in this thread.
         SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
+    }
+
+    // We're the initializer if we're the first one to add this entry to the map.
+    auto sharedDataIterator = _sharedDataLookupMap.find(_filename);
+    bool initializer = sharedDataIterator == _sharedDataLookupMap.end();
+    if (initializer) {
+        // Insert our SharedData object into the global map.
+        _sharedData = new SharedData();
+        _sharedDataLookupMap.emplace(_filename, make_pair(1, _sharedData));
     } else {
         // If we're not the initializer, we'll just use the existing value, and update our ref count.
         sharedDataIterator->second.first++;
