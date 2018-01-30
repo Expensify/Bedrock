@@ -1158,6 +1158,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
+    size_t socketListSize = socketList.size();
+    size_t deserializationAttempts = 0;
+    size_t deserializedRequests = 0;
+    uint64_t startTime = STimeNow();
     for (auto s : socketList) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
@@ -1203,11 +1207,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // Otherwise, handle any default request.
                     int requestSize = request.deserialize(s->recvBuffer);
                     SConsumeFront(s->recvBuffer, requestSize);
+                    deserializationAttempts++;
                 }
 
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
+                    deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
                         (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
@@ -1290,6 +1296,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
         }
     }
+
+    // Log the timing of this loop.
+    uint64_t elapsedMS = (STimeNow() - startTime) / 1000;
+    SINFO("Read from " << socketListSize << " sockets, attempted to deserialize " << deserializationAttempts
+          << " commands, " << deserializedRequests << " were complete and deserialized. Took " << elapsedMS << "ms.");
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
