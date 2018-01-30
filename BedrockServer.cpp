@@ -1136,10 +1136,17 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
+    // Timing variables.
+    int deserializationAttempts = 0;
+    int deserializedRequests = 0;
+    int acceptedSockets = 0;
+    uint64_t startTime = STimeNow();
+
     // Accept any new connections
     Socket* s = nullptr;
     Port* acceptPort = nullptr;
     while ((s = acceptSocket(acceptPort))) {
+        acceptedSockets++;
         // Accepted a new socket
         // NOTE: BedrockServer doesn't need to keep a new list; there's already STCPManager::socketList.
         // Look up the plugin that owns this port (if any).
@@ -1155,12 +1162,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
+    // Time the end of the accept section.
+    uint64_t acceptEndTime = STimeNow();
+
     // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
-    int deserializationAttempts = 0;
-    int deserializedRequests = 0;
-    uint64_t startTime = STimeNow();
+
     for (auto s : socketList) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
@@ -1297,9 +1305,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Log the timing of this loop.
-    uint64_t elapsedMS = (STimeNow() - startTime) / 1000;
-    SINFO("Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
-          << " commands, " << deserializedRequests << " were complete and deserialized. Took " << elapsedMS << "ms.");
+    uint64_t acceptElapsedMS = (acceptEndTime - startTime) / 1000;
+    uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / 1000;
+    SINFO("Accepted " << acceptedSockets << " new sockets in " << acceptElapsedMS << "ms. Read from " << socketList.size()
+          << " sockets, attempted to deserialize " << deserializationAttempts << " commands, " << deserializedRequests
+          << " were complete and deserialized in " << readElapsedMS << "ms.");
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
