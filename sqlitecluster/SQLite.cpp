@@ -15,25 +15,23 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
+    _maxJournalSize(maxJournalSize),
+    _insideTransaction(false),
+    _beginElapsed(0),
+    _readElapsed(0),
+    _writeElapsed(0),
+    _prepareElapsed(0),
+    _commitElapsed(0),
+    _rollbackElapsed(0),
     _timeoutLimit(0),
     _autoRolledBack(false),
     _noopUpdateMode(false)
 {
-    // Initialize
-    SINFO("Opening sqlite database");
+    // Perform sanity checks.
     SASSERT(!filename.empty());
     SASSERT(cacheSize > 0);
     SASSERT(autoCheckpoint >= 0);
     SASSERT(maxJournalSize > 0);
-    _filename = filename;
-    _insideTransaction = false;
-    _maxJournalSize = maxJournalSize;
-    _beginElapsed = 0;
-    _readElapsed = 0;
-    _writeElapsed = 0;
-    _prepareElapsed = 0;
-    _commitElapsed = 0;
-    _rollbackElapsed = 0;
 
     // Canonicalize our filename and save that version.
     if (filename == ":memory:") {
@@ -49,6 +47,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         }
         _filename = resolvedPath;
     }
+    SINFO("Opening sqlite database: " << _filename);
 
     // Set our journal table name.
     _journalName = _getJournalTableName(journalTable);
@@ -68,6 +67,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
         _sharedData = new SharedData();
         _sharedDataLookupMap.emplace(_filename, make_pair(1, _sharedData));
 
+        // Set the logging callback for sqlite errors.
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
