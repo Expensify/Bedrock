@@ -9,6 +9,8 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/sha1.h>
 
+#include <libsodium/src/libsodium/include/sodium/crypto_pwhash.h>
+
 // Additional headers
 #include <netdb.h>
 #include <sys/time.h>
@@ -2095,6 +2097,13 @@ string SHashSHA1(const string& buffer) {
     string result;
     result.resize(20);
     mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    return result;
+}
+
+string SHashArgon2(const string& buffer) {
+    string result;
+    result.resize(crypto_pwhash_STRBYTES);
+    crypto_pwhash_str((char*)result.c_str(), (const char*)buffer.c_str(), (int)buffer.size(), 3, crypto_pwhash_MEMLIMIT_SENSITIVE);
     return result;
 }
 
