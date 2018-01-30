@@ -1,0 +1,25 @@
+[Unit]
+Description=Expensify Bedrock Server
+Documentation=http://bedrockdb.com/
+After=network.target
+
+# The following creates database file if absent
+After=bedrock_prerequisites.service
+Requires=bedrock_prerequisites.service
+
+[Service]
+EnvironmentFile=/etc/bedrock/bedrock.conf
+PIDFile=/var/run/bedrock.pid
+
+Type=simple
+
+ExecStart=/usr/sbin/bedrock \
+        -nodeName ${THISNODE} \
+        -db ${BEDROCK_DB_PATH} \
+        -serverHost ${SERVER_HOST} \
+        -nodeHost ${NODE_HOST} \
+        -priority ${PRIORITY} \
+        -cache ${CACHE_SIZE} \
+        ${VERBOSE} ${PEERS} $EXTRA_FLAGS
+ExecStop=/bin/kill -HUP $MAINPID
+KillMode=process
