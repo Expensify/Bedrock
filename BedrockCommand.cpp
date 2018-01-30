@@ -256,10 +256,11 @@ BedrockCommand SSynchronizedQueue<BedrockCommand>::pop() {
 }
 
 template<>
-void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& rhs) {
+void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& cmd) {
     SAUTOLOCK(_queueMutex);
+    SINFO("Enqueuing command '" << cmd.request.methodLine << "', with " << _queue.size() << " commands already queued.");
     // Just add to the queue
-    _queue.push_back(move(rhs));
+    _queue.push_back(move(cmd));
     _queue.back().startTiming(BedrockCommand::QUEUE_SYNC);
 
     // Write arbitrary buffer to the pipe so any subscribers will be awoken.
