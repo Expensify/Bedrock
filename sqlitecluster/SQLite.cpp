@@ -14,6 +14,10 @@ atomic_flag                         SQLite::_sqliteInitialized = ATOMIC_FLAG_INI
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
+// The shared list of journal names.
+map<string, pair<size_t, const list<string>*>> SQLite::_journalLookupMap; 
+
+
 SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
@@ -41,13 +45,17 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     _journalName = _getJournalTableName(journalTable);
 
     // There are several initialization tasks that need to be performed only by the *first* thread to initialize the
-    // DB. We grab this lock and set a flag so that only the first thread to reach this point can perform this
-    // operation, and any other threads will be blocked until it's complete.
+    // DB. We grab this lock so that only the first thread to reach this point can perform this operation, and any
+    // other threads will be blocked until it's complete.
     SQLITE_COMMIT_AUTOLOCK;
-    bool initializer = !_sqliteInitialized.test_and_set();
+
+    // We're the initializer if we're the first one to add this entry to the map.
+    bool initializer = _journalLookupMap.find(_filename) == _journalLookupMap.end();
 
     // We need to initialize sqlite. Only the first thread to get here will do this.
     if (initializer) {
+
+
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
@@ -92,25 +100,44 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     SINFO("Setting cache_size to " << cacheSize << "KB");
     SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
 
-    // Now we verify (and create if non-existent) all of our required journal tables.
-    for (int i = -1; i <= maxRequiredJournalTableID; i++) {
-        if (SQVerifyTable(_db, _getJournalTableName(i), "CREATE TABLE " + _getJournalTableName(i) +
-                          " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-            SHMMM("Created " << _getJournalTableName(i) << " table.");
+    // Now we (if we're the initializer) verify (and create if non-existent) all of our required journal tables.
+    if (initializer) {
+        for (int i = -1; i <= maxRequiredJournalTableID; i++) {
+            if (SQVerifyTable(_db, _getJournalTableName(i), "CREATE TABLE " + _getJournalTableName(i) +
+                              " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
+                SHMMM("Created " << _getJournalTableName(i) << " table.");
+            }
         }
-    }
 
-    // And we'll figure out which journal tables actually exist, which may be more than we require. They must be
-    // sequential.
-    int currentJounalTable = -1;
-    while(true) {
-        string name = _getJournalTableName(currentJounalTable);
-        if (SQVerifyTableExists(_db, name)) {
-            _allJournalNames.push_back(name);
-            currentJounalTable++;
-        } else {
-            break;
+        // And we'll figure out which journal tables actually exist, which may be more than we require. They must be
+        // sequential.
+        int currentJounalTable = -1;
+        list<string> mutableJournalNames;
+        while(true) {
+            string name = _getJournalTableName(currentJounalTable);
+            if (SQVerifyTableExists(_db, name)) {
+                mutableJournalNames.push_back(name);
+                currentJounalTable++;
+            } else {
+                break;
+            }
         }
+
+        // Initalize our constant list of journal names.
+        const list<string>* journalNames = new const list<string>(move(mutableJournalNames));
+        
+        // Insert this value in our map and save it in our local variable. Initialize our refernce count to 1.
+        _journalLookupMap.emplace(_filename, make_pair(1, journalNames));
+        _journalNames = journalNames;
+    } else {
+        // If we're not the initializer, now we can update the ref count and retrieve the list of journal names.
+        // Update reference count
+        auto it = _journalLookupMap.find(_filename);
+        it->second.first++;
+
+        // And store our pointer. Since this is const and only deleted when there are no more references to it, we can
+        // access it without locking.
+        _journalNames = it->second.second;
     }
 
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
@@ -178,7 +205,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
     list<string> queries;
-    for (string& name : _allJournalNames) {
+    for (const string& name : *_journalNames) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
     }
     string query = SComposeList(queries, " UNION ");
@@ -205,6 +232,18 @@ SQLite::~SQLite() {
     SASSERTWARN(_uncommittedQuery.empty());
     SASSERT(!sqlite3_close(_db));
     DBINFO("Database closed.");
+
+    // Clean up the journal table list, if required. First lock, in case some other thread is creating or destroying
+    // an SQLite object.
+    SQLITE_COMMIT_AUTOLOCK;
+    auto it = _journalLookupMap.find(_filename);
+    // Decrement the reference count.
+    it->second.first--;
+    if(it->second.first == 0) {
+        // We were the last one, so let's delete the list of journal names and remove this entry from the map.
+        delete it->second.second;
+        _journalLookupMap.erase(it);
+    }
 }
 
 bool SQLite::beginTransaction() {

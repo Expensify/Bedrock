@@ -234,8 +234,18 @@ class SQLite {
     // The name of the journal table, computed from the 'journalTable' parameter passed to our constructor.
     string _journalName;
 
-    // A list of all the journal tables names.
-    list<string> _allJournalNames;
+    const list<string>* _journalNames;
+
+    // We keep a map of filenames identifying individual databases to pairs of count, list<journal tables names>/
+    // Whenever we initialize a new SQLite object (or call the destructor), we lock here, as we will potentially modify the map.
+    // If this is a new filename with no entry, we add the entry with the list of journal tables for this map, and a
+    // count of 1.
+    // If the this filename already exists in the map, we increment it's count.
+    // On destruction of an SQLite object, we decrement the count, destroying the object if we're the last one
+    // referencing it.
+    // The lock exists only to control modifying the map, we do not need to lock on accessing the list it contains, as
+    // it's constant and persists as long as the reference count is non-zero.
+    static map<string, pair<size_t, const list<string>*>> _journalLookupMap; 
 
     // Timing information.
     uint64_t _beginElapsed;
