@@ -1122,6 +1122,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (result[0][0] == "RUNNING") {
             STHROW("405 Can't delete a RUNNING job");
         }
+        if (result[0][0] == "PAUSED") {
+            STHROW("405 Can't delete a parent jobs with children running");
+        }
 
         // Delete the job
         if (!db.writeIdempotent("DELETE FROM jobs "
