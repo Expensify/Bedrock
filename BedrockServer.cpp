@@ -655,6 +655,10 @@ void BedrockServer::worker(SData& args,
 
             // We'll retry on conflict up to this many times.
             int retry = 3;
+
+            // We check first, and allow this command to retry all three times, even if it becomes disallowed during
+            // iteration.
+            bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
             while (retry) {
                 // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
                 // the command at the bottom.
@@ -684,7 +688,7 @@ void BedrockServer::worker(SData& args,
 
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
-                    canWriteParallel = canWriteParallel && BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
+                    canWriteParallel = canWriteParallel && multiWriteOK;
                     if (!canWriteParallel                 ||
                         server._suppressMultiWrite.load() ||
                         state != SQLiteNode::MASTERING    ||
@@ -753,7 +757,6 @@ void BedrockServer::worker(SData& args,
                                 command.response["commitCount"] = to_string(db.getCommitCount());
                                 command.complete = true;
                             } else {
-                                BedrockConflictMetrics::recordConflict(command.request.methodLine);
                                 SINFO("Conflict or state change committing " << command.request.methodLine
                                       << " on worker thread with " << retry << " retries remaining.");
                             }
@@ -785,6 +788,7 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
+                BedrockConflictMetrics::recordConflict(command.request.methodLine);
                 SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
                       << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
