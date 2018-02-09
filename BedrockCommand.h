@@ -46,8 +46,8 @@ class BedrockCommand : public SQLiteCommand {
     void startTiming(TIMING_INFO type);
 
     // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
-    // `startTiming`.
-    void stopTiming(TIMING_INFO type);
+    // `startTiming`. Returns the amount of time recorded in microseconds.
+    uint64_t stopTiming(TIMING_INFO type);
 
     // Add a summary of our timing info to our response object.
     void finalizeTimingInfo();

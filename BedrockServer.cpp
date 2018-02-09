@@ -284,7 +284,8 @@ void BedrockServer::sync(SData& args,
             SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
 
             // Record the time spent.
-            command.stopTiming(BedrockCommand::COMMIT_SYNC);
+            uint64_t syncCommitTime = command.stopTiming(BedrockCommand::COMMIT_SYNC);
+            SINFO("Sync thread committed command " << command.request.methodLine << " in " << (syncCommitTime/1000) << "ms.");
 
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
@@ -739,7 +740,7 @@ void BedrockServer::worker(SData& args,
                                 // locks in the same order. Always acquiring the locks in the same order prevents the
                                 // deadlocks.
                                 try {
-                                    shared_lock<decltype(server._syncNode->stateMutex)> lock2(server._syncNode->stateMutex);
+                                    shared_lock<decltype(server._syncNode->stateMutex)> lock(server._syncNode->stateMutex);
                                     if (replicationState.load() != SQLiteNode::MASTERING &&
                                         replicationState.load() != SQLiteNode::STANDINGDOWN) {
                                         SWARN("Node State changed from MASTERING to "
