@@ -4,6 +4,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
+#include <iomanip>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -727,7 +728,11 @@ void BedrockServer::worker(SData& args,
 
                             // We'll wait up to 3ms for this lock, and if we don't get it, we treat that like a
                             // conflict.
-                            if (server._syncThreadCommitMutex.try_lock_for(chrono::milliseconds(3))) {
+                            uint64_t preLockTime = STimeNow();
+                            if (server._syncThreadCommitMutex.try_lock_for(chrono::milliseconds(10))) {
+                                uint64_t lockTime = STimeNow() - preLockTime;
+                                SINFO("_syncThreadCommitMutex successfully acquired in worker in " << fixed
+                                      << setprecision(2) << double(lockTime/1000.0) << "ms.");
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
                                 // not allow the state of the node to change while we're committing. If it turns out
@@ -760,7 +765,10 @@ void BedrockServer::worker(SData& args,
                                 // Done with this, we need to unlock it.
                                 server._syncThreadCommitMutex.unlock();
                             } else {
-                                SINFO("Timeout attempting to lock _syncThreadCommitMutex for command " << command.request.methodLine << ", treating as conflict.");
+                                uint64_t lockWaitTime = STimeNow() - preLockTime;
+                                SINFO("Timeout attempting to lock _syncThreadCommitMutex (waited " << fixed
+                                      << setprecision(2) << double(lockWaitTime/1000.0) << "ms) for command "
+                                      << command.request.methodLine << ", treating as conflict.");
                                 core.rollback();
                             }
                             if (commitSuccess) {
