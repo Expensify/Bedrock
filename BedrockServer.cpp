@@ -285,8 +285,7 @@ void BedrockServer::sync(SData& args,
             SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
 
             // Record the time spent.
-            uint64_t syncCommitTime = command.stopTiming(BedrockCommand::COMMIT_SYNC);
-            SINFO("Sync thread committed command " << command.request.methodLine << " in " << (syncCommitTime/1000) << "ms.");
+            command.stopTiming(BedrockCommand::COMMIT_SYNC);
 
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
@@ -725,14 +724,12 @@ void BedrockServer::worker(SData& args,
                             // conflict as long as we don't commit while it's performing a transaction. This is scoped
                             // to the minimum time required.
                             bool commitSuccess = false;
+                            {
+                                uint64_t preLockTime = STimeNow();
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
+                                SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
+                                      << ((STimeNow() - preLockTime)/1000.0) << "ms.");
 
-                            // We'll wait up to 3ms for this lock, and if we don't get it, we treat that like a
-                            // conflict.
-                            uint64_t preLockTime = STimeNow();
-                            if (server._syncThreadCommitMutex.try_lock_for(chrono::milliseconds(10))) {
-                                uint64_t lockTime = STimeNow() - preLockTime;
-                                SINFO("_syncThreadCommitMutex successfully acquired in worker in " << fixed
-                                      << setprecision(2) << double(lockTime/1000.0) << "ms.");
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
                                 // not allow the state of the node to change while we're committing. If it turns out
@@ -744,32 +741,17 @@ void BedrockServer::worker(SData& args,
                                 // sync thread to to change states mid-commit, meaning that it needs to acquire these
                                 // locks in the same order. Always acquiring the locks in the same order prevents the
                                 // deadlocks.
-                                try {
-                                    shared_lock<decltype(server._syncNode->stateMutex)> lock(server._syncNode->stateMutex);
-                                    if (replicationState.load() != SQLiteNode::MASTERING &&
-                                        replicationState.load() != SQLiteNode::STANDINGDOWN) {
-                                        SWARN("Node State changed from MASTERING to "
-                                              << SQLiteNode::stateNames[replicationState.load()]
-                                              << " during worker commit. Rolling back transaction!");
-                                        core.rollback();
-                                    } else {
-                                        BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
-                                        commitSuccess = core.commit();
-                                    }
-                                } catch (...) {
-                                    SWARN("Caught exception while trying to commit. Freeing mutex and re-throwing.");
-                                    server._syncThreadCommitMutex.unlock();
-                                    throw;
+                                shared_lock<decltype(server._syncNode->stateMutex)> lock2(server._syncNode->stateMutex);
+                                if (replicationState.load() != SQLiteNode::MASTERING &&
+                                    replicationState.load() != SQLiteNode::STANDINGDOWN) {
+                                    SWARN("Node State changed from MASTERING to "
+                                          << SQLiteNode::stateNames[replicationState.load()]
+                                          << " during worker commit. Rolling back transaction!");
+                                    core.rollback();
+                                } else {
+                                    BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
+                                    commitSuccess = core.commit();
                                 }
-
-                                // Done with this, we need to unlock it.
-                                server._syncThreadCommitMutex.unlock();
-                            } else {
-                                uint64_t lockWaitTime = STimeNow() - preLockTime;
-                                SINFO("Timeout attempting to lock _syncThreadCommitMutex (waited " << fixed
-                                      << setprecision(2) << double(lockWaitTime/1000.0) << "ms) for command "
-                                      << command.request.methodLine << ", treating as conflict.");
-                                core.rollback();
                             }
                             if (commitSuccess) {
                                 BedrockConflictMetrics::recordSuccess(command.request.methodLine);
