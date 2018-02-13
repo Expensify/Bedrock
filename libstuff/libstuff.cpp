@@ -1894,6 +1894,7 @@ string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
 }
 
 string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
     return SAESEncrypt(buffer, iv, key);
@@ -1924,6 +1925,7 @@ string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
 }
 
 string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
     return SAESDecrypt(buffer, iv, key);
@@ -2117,8 +2119,7 @@ string SEncodeBase64(const unsigned char* buffer, int size) {
 }
 
 string SEncodeBase64(const string& bufferString) {
-    unsigned char* buffer = (unsigned char*)bufferString.c_str();
-    return SEncodeBase64(buffer, bufferString.size());
+    return SEncodeBase64((unsigned char*)bufferString.c_str(), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
@@ -2135,8 +2136,7 @@ string SDecodeBase64(const unsigned char* buffer, int size) {
 }
 
 string SDecodeBase64(const string& bufferString) {
-    unsigned char* buffer = (unsigned char*)bufferString.c_str();
-    return SDecodeBase64(buffer, bufferString.size());
+    return SDecodeBase64((unsigned char*)bufferString.c_str(), bufferString.size());
 }
 
 // --------------------------------------------------------------------------
