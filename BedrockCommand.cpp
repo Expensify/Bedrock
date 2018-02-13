@@ -129,27 +129,21 @@ void BedrockCommand::startTiming(TIMING_INFO type) {
     get<2>(_inProgressTiming) = 0;
 }
 
-uint64_t BedrockCommand::stopTiming(TIMING_INFO type) {
-    // Add it to the list of timing info.
-    get<2>(_inProgressTiming) = STimeNow();
-    timingInfo.push_back(_inProgressTiming);
-
-    // Warn if it looks like it was set incorrectly.
-    uint64_t retVal = 0;
+void BedrockCommand::stopTiming(TIMING_INFO type) {
     if (get<0>(_inProgressTiming) != type ||
         get<1>(_inProgressTiming) == 0
        ) {
         SWARN("Stopping timing, but looks like it wasn't already running.");
-    } else {
-        // If it was correct, return the time.
-        retVal = get<2>(_inProgressTiming) - get<1>(_inProgressTiming);
     }
+
+    // Add it to the list of timing info.
+    get<2>(_inProgressTiming) = STimeNow();
+    timingInfo.push_back(_inProgressTiming);
 
     // And reset it for next use.
     get<0>(_inProgressTiming) = INVALID;
     get<1>(_inProgressTiming) = 0;
     get<2>(_inProgressTiming) = 0;
-    return retVal;
 }
 
 void BedrockCommand::finalizeTimingInfo() {
