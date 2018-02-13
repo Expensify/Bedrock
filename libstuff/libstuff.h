@@ -131,6 +131,12 @@ class SString : public string {
         return *this;
     }
 
+    // Handle C-strings
+    SString& operator=(const char* from) {
+        string::operator=(from);
+        return *this;
+    }
+
     // Booleans get converted to strings.
     SString& operator=(const bool from) {
         string::operator=(from ? "true" : "false");
