@@ -56,6 +56,11 @@ void SHTTPSManager::prePoll(fd_map& fdm) {
 }
 
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    list<SHTTPSManager::Transaction*> completedRequests;
+    postPoll(fdm, nextActivity, completedRequests);
+}
+
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -83,6 +88,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // If true, then the transaction was closed in onRecv.
                     continue;
                 }
+                completedRequests.push_back(active);
                 SASSERT(active->response);
             } else {
                 // Error, failed to authenticate or receive a valid server response.

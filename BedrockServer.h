@@ -269,4 +269,9 @@ class BedrockServer : public SQLiteServer {
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
+
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their https requests finish and move them back to the main queue.
+    mutex _httpsCommandMutex;
+    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
 };

@@ -107,11 +107,6 @@ void BedrockServer::sync(SData& args,
     // that just needs to be returned to a peer.
     CommandQueue completedCommands;
 
-    // And we keep a list of commands with outstanding HTTPS requests. This is not synchronized because it's only used
-    // internally in this thread. We temporarily move commands here while we wait for their HTTPS requests to complete,
-    // so that we don't clog up the regular command queue with commands that are waiting.
-    list<BedrockCommand> httpsCommands;
-
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
@@ -204,18 +199,6 @@ void BedrockServer::sync(SData& args,
         syncNode.postPoll(fdm, nextActivity);
         syncNodeQueuedCommands.postPoll(fdm);
         completedCommands.postPoll(fdm);
-
-        // If any of our plugins finished any outstanding HTTPS requests, we'll move those commands back into the
-        // regular queue. This code modifies a list while iterating over it.
-        auto httpsIt = httpsCommands.begin();
-        while (httpsIt != httpsCommands.end()) {
-            if (httpsIt->httpsRequest->response) {
-                syncNodeQueuedCommands.push(move(*httpsIt));
-                httpsIt = httpsCommands.erase(httpsIt);
-            } else {
-                httpsIt++;
-            }
-        }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
@@ -406,26 +389,6 @@ void BedrockServer::sync(SData& args,
                     }
                 }
 
-                // If we've dequeued a command with an incomplete HTTPS request, we move it to httpsCommands so that every
-                // subsequent dequeue doesn't have to iterate past it while ignoring it. Then we'll just start on the next
-                // command.
-                if (command.httpsRequest && !command.httpsRequest->response) {
-                    // We can't finish this transaction right now. We'll restart it later when the httpsRequest is
-                    // complete.
-                    if (db.insideTransaction()) {
-                        // We only rollback if we're inside a transaction. This will happen if `peekCommand` created an
-                        // httpsRequest above. However, if `peekCommand` was done in a worker thread, then this has
-                        // already been done, so we won't roll it back again.
-                        core.rollback();
-                    }
-
-                    // Done with the lock.
-                    server._syncThreadCommitMutex.unlock();
-
-                    // Set this aside and move on to the next command.
-                    httpsCommands.push_back(move(command));
-                    continue;
-                }
                 if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
@@ -661,9 +624,10 @@ void BedrockServer::worker(SData& args,
             // iteration.
             bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
             while (retry) {
-                // Try peeking the command. If this succeeds, then it's finished, and all we need to do is respond to
-                // the command at the bottom.
-                if (!core.peekCommand(command)) {
+                // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
+                // now. We don't duplicate peeks for commands that make https requests.
+                // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
+                if (command.httpsRequest || !core.peekCommand(command)) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
@@ -676,6 +640,25 @@ void BedrockServer::worker(SData& args,
                         // peeking certain commands on the sync thread, but even still, we could lose HTTP responses
                         // due to a crash or network event, so we don't try to hard to be perfect here.
                         SASSERTWARN(state == SQLiteNode::MASTERING);
+
+                        // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
+                        if (!command.httpsRequest->response) {
+                            // Roll back the existing transaction.
+                            core.rollback();
+
+                            // We're not handling a writable command anymore (at the moment). We need to make sure we
+                            // don't shut down without checking for outstanding HTTPS commands.
+                            lock_guard<mutex> lock(server._httpsCommandMutex);
+                            SINFO("[performance] Waiting on HTTPS response " << command.request.methodLine
+                                  << ", " << server._outstandingHTTPSRequests.size() << " queued HTTPS commands.");
+                            server._writableCommandsInProgress--;
+
+                            // Save this in our https commads queue.
+                            server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+
+                            // Move on to the next command until this one finishes.
+                            break;
+                        }
                     }
                     // Peek wasn't enough to handle this command. Now we need to decide if we should try and process
                     // it, or if we should send it off to the sync node.
@@ -693,7 +676,6 @@ void BedrockServer::worker(SData& args,
                     if (!canWriteParallel                 ||
                         server._suppressMultiWrite.load() ||
                         state != SQLiteNode::MASTERING    ||
-                        command.httpsRequest              ||
                         command.onlyProcessOnSyncThread   ||
                         command.writeConsistency != SQLiteNode::ASYNC)
                     {
@@ -1629,7 +1611,20 @@ void BedrockServer::_prePollPlugins(fd_map& fdm) {
 void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
-            manager->postPoll(fdm, nextActivity);
+            list<SHTTPSManager::Transaction*> completedHTTPSRequests;
+            manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
+
+            // Move these back to the main queue to finish.
+            lock_guard<mutex> lock(_httpsCommandMutex);
+            for (auto request : completedHTTPSRequests) {
+                auto pairIt = _outstandingHTTPSRequests.find(request);
+                if (pairIt != _outstandingHTTPSRequests.end()) {
+                    _commandQueue.push(move(pairIt->second));
+                    _outstandingHTTPSRequests.erase(pairIt);
+                } else {
+                    SWARN("HTTPS request said it completed, but we can't find it.");
+                }
+            }
         }
     }
 }
