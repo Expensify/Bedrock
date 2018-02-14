@@ -31,9 +31,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             return false;
         }
         SData request("GET / HTTP/1.1");
-        request["Host"] = "www.expensify.com";
+        request["Host"] = "www.google.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
-        command.httpsRequest = httpsManager.send("https://www.expensify.com/", request);
+        command.httpsRequest = httpsManager.send("https://www.google.com/", request);
         return false; // Not complete.
     } else if (command.request.methodLine == "slowquery") {
         int size = 100000000;
@@ -56,9 +56,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
         // up correctly on the former master.
         SData request("GET / HTTP/1.1");
-        request["Host"] = "www.expensify.com";
+        request["Host"] = "www.google.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
-        auto transaction = httpsManager.httpsDontSend("https://www.expensify.com/", request);
+        auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
         command.httpsRequest = transaction;
         thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
     } else if (command.request.methodLine == "dieinpeek") {
