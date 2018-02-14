@@ -33,7 +33,16 @@ void BedrockServer::cancelCommand(const string& commandID) {
 }
 
 bool BedrockServer::canStandDown() {
-    return _writableCommandsInProgress.load() == 0;
+    
+    size_t httpsCommands = 0;
+    {
+        lock_guard<mutex> lock(_httpsCommandMutex);
+        httpsCommands = _outstandingHTTPSRequests.size();
+    }
+    if (httpsCommands) {
+        SINFO("Can't stand down yet, " << httpsCommands << " HTTPS commands in progress.");
+    }
+    return _writableCommandsInProgress.load() == 0 && httpsCommands == 0;
 }
 
 void BedrockServer::syncWrapper(SData& args,
@@ -971,6 +980,16 @@ bool BedrockServer::shutdownComplete() {
         return true;
     }
 
+    // Get the count of outstanding HTTPS commands.
+    size_t httpsCommands = 0;
+    {
+        lock_guard<mutex> lock(_httpsCommandMutex);
+        httpsCommands = _outstandingHTTPSRequests.size();
+    }
+    if (httpsCommands) {
+        return false;
+    }
+
     // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
     // return true anyway.
     if (_gracefulShutdownTimeout.ringing()) {
@@ -991,7 +1010,8 @@ bool BedrockServer::shutdownComplete() {
         }
         SWARN("Graceful shutdown timed out. "
               << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
-              << "Commands queue size: " << _commandQueue.size() << ". "
+              << "Command queue size: " << _commandQueue.size() << ". "
+              << "HTTPS command queue size: " << httpsCommands << ". "
               << "Command Counts: " << commandCounts << "killing non gracefully.");
         return true;
     }
@@ -1003,7 +1023,10 @@ bool BedrockServer::shutdownComplete() {
         logLine += " Replication State: " + SQLiteNode::stateNames[_replicationState.load()] + " > SQLC_WAITING.";
     }
     if (!_commandQueue.empty()) {
-        logLine += " Commands queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
+        logLine += " Command queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
+    }
+    if (httpsCommands) {
+        logLine += " HTTPS command queue not empty. Size: " + to_string(httpsCommands) + ".";
     }
 
     // Also log the shutdown state.
