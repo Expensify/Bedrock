@@ -928,8 +928,9 @@ bool SQLiteNode::update() {
         if (_state == STANDINGDOWN) {
             // See if we're done
             // We can only switch to SEARCHING if the server has no outstanding write work to do.
-            // **FIXME: Add timeout?
-            if (!_server.canStandDown()) {
+            if (_standDownTimeOut.ringing()) {
+                SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
+            } else if (!_server.canStandDown()) {
                 // Try again.
                 SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return false;
@@ -1942,6 +1943,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _db.getCommittedTransactions();
             }
         } else if (newState == STANDINGDOWN) {
+            // start the timeout countdown.
+            _standDownTimeOut.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+            _standDownTimeOut.start();
+
             // Abort all remote initiated commands if no longer MASTERING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SEARCHING) {

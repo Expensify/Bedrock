@@ -6,6 +6,9 @@ class TestHTTPSMananager : public SHTTPSManager {
   public:
     Transaction* send(const string& url, const SData& request);
     virtual bool _onRecv(Transaction* transaction);
+
+    // Like _httpsSend in the base class, but doesn't actually send, so we can test timeouts.
+    Transaction* httpsDontSend(const string& url, const SData& request);
     virtual ~TestHTTPSMananager();
 };
 
