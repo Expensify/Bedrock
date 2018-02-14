@@ -5,7 +5,8 @@ struct a_MasteringTest : tpunit::TestFixture {
         : tpunit::TestFixture("a_Mastering",
                               TEST(a_MasteringTest::clusterUp),
                               TEST(a_MasteringTest::failover),
-                              TEST(a_MasteringTest::standDownTimeout),
+                              // Disabled for speed. Enable to test stand down timeout.
+                              // TEST(a_MasteringTest::standDownTimeout),
                               TEST(a_MasteringTest::restoreMaster),
                               TEST(a_MasteringTest::synchronizing)
                              ) { }
