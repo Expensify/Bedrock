@@ -5,6 +5,7 @@ struct a_MasteringTest : tpunit::TestFixture {
         : tpunit::TestFixture("a_Mastering",
                               TEST(a_MasteringTest::clusterUp),
                               TEST(a_MasteringTest::failover),
+                              TEST(a_MasteringTest::standDownTimeout),
                               TEST(a_MasteringTest::restoreMaster),
                               TEST(a_MasteringTest::synchronizing)
                              ) { }
@@ -64,6 +65,15 @@ struct a_MasteringTest : tpunit::TestFixture {
         }
 
         ASSERT_TRUE(success);
+    }
+
+    // The only point of this test is to verify that a new master comes up even if the old one has a stuck HTTPS
+    // request. It's slow so is disabled.
+    void standDownTimeout() {
+        BedrockTester* newMaster = tester->getBedrockTester(1);
+        SData cmd("httpstimeout");
+        cmd["Connection"] = "forget";
+        auto result = newMaster->executeWaitVerifyContent(cmd, "202");
     }
 
     void restoreMaster()

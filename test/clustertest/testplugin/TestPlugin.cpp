@@ -50,6 +50,17 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             db.read(query, result);
         }
         return true;
+    } else if (command.request.methodLine == "httpstimeout") {
+        // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
+        // when there's a blocking command and master needs to stand down, to verify the timeout for that works.
+        // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
+        // up correctly on the former master.
+        SData request("GET / HTTP/1.1");
+        request["Host"] = "www.expensify.com";
+        command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
+        auto transaction = httpsManager.httpsDontSend("https://www.expensify.com/", request);
+        command.httpsRequest = transaction;
+        thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
     } else if (command.request.methodLine == "dieinpeek") {
         throw 1;
     } else if (command.request.methodLine == "generatesegfaultpeek") {
@@ -165,4 +176,37 @@ TestHTTPSMananager::~TestHTTPSMananager() {
 
 TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
     return _httpsSend(url, request);
+}
+
+SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url, const SData& request) {
+    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
+    // completed transaction with an error response.
+    string host, path;
+    if (!SParseURI(url, host, path)) {
+        return _createErrorTransaction();
+    }
+    if (!SContains(host, ":")) {
+        host += ":443";
+    }
+
+    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+    Socket* s = openSocket(host, x509);
+    if (!s) {
+        return _createErrorTransaction();
+    }
+
+    // Wrap in a transaction
+    Transaction* transaction = new Transaction(*this);
+    transaction->s = s;
+    transaction->fullRequest = request;
+
+    // Ship it.
+    // DOESN'T actually send
+    //transaction->s->send(request.serialize());
+
+    // Keep track of the transaction.
+    SAUTOLOCK(_listMutex);
+    _activeTransactionList.push_front(transaction);
+    return transaction;
 }

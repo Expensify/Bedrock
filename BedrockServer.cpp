@@ -33,7 +33,6 @@ void BedrockServer::cancelCommand(const string& commandID) {
 }
 
 bool BedrockServer::canStandDown() {
-    
     size_t httpsCommands = 0;
     {
         lock_guard<mutex> lock(_httpsCommandMutex);
@@ -648,7 +647,11 @@ void BedrockServer::worker(SData& args,
                         // node, not the one we saved in `state`. We could potentially mitigate this by only ever
                         // peeking certain commands on the sync thread, but even still, we could lose HTTP responses
                         // due to a crash or network event, so we don't try to hard to be perfect here.
-                        SASSERTWARN(state == SQLiteNode::MASTERING);
+                        if (state != SQLiteNode::MASTERING) {
+                            SWARN("Not mastering but have outstanding HTTPS command: " << command.request.methodLine
+                                  << ", it's being discarded.");
+                            break;
+                        }
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
                         if (!command.httpsRequest->response) {
@@ -795,6 +798,16 @@ void BedrockServer::worker(SData& args,
         // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
         // inform the sync thread that we're done with this queue.
         if (server._shutdownState.load() == PORTS_CLOSED) {
+            // We can only do this if we're done with HTTPS commands as well.
+            {
+                lock_guard<mutex> lock(server._httpsCommandMutex);
+                if (!server._outstandingHTTPSRequests.empty()) {
+                    SINFO("Outstanding HTTPS requests blocking shutdown ("
+                          << server._outstandingHTTPSRequests.size() << ").");
+                    continue;
+                }
+            }
+
             server._shutdownState.store(QUEUE_PROCESSED);
             SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
         }
@@ -986,9 +999,6 @@ bool BedrockServer::shutdownComplete() {
         lock_guard<mutex> lock(_httpsCommandMutex);
         httpsCommands = _outstandingHTTPSRequests.size();
     }
-    if (httpsCommands) {
-        return false;
-    }
 
     // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
     // return true anyway.
@@ -1014,6 +1024,12 @@ bool BedrockServer::shutdownComplete() {
               << "HTTPS command queue size: " << httpsCommands << ". "
               << "Command Counts: " << commandCounts << "killing non gracefully.");
         return true;
+    }
+    
+    // If there outstanding https commands, we're not done (this is below the timeout code so that we still shutdown
+    // if an https command gets stuck).
+    if (httpsCommands) {
+        return false;
     }
 
     // At this point, we've got something blocking shutdown, and our timeout hasn't passed, so we'll log and return

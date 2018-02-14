@@ -45,7 +45,6 @@ class SHTTPSManager : public STCPManager {
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction) = 0;
 
-  private: // Internal API
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
 
