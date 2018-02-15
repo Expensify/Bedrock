@@ -491,7 +491,9 @@ int SQLite::commit() {
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
     uint64_t before = STimeNow();
+    uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+    SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);

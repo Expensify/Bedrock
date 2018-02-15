@@ -758,7 +758,9 @@ bool SQLiteNode::update() {
             } else if (consistentEnough) {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
+                uint64_t beforeCommit = STimeNow();
                 int result = _db.commit();
+                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
@@ -875,7 +877,9 @@ bool SQLiteNode::update() {
             }
 
             // And send it to everyone who's subscribed.
+            uint64_t beforeSend = STimeNow();
             _sendToAllPeers(transaction, true);
+            SINFO("SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/1000) << "ms.");
 
             // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
             // asynchronous.
