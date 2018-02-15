@@ -88,7 +88,6 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                     // If true, then the transaction was closed in onRecv.
                     continue;
                 }
-                completedRequests.push_back(active);
                 SASSERT(active->response);
             } else {
                 // Error, failed to authenticate or receive a valid server response.
@@ -104,10 +103,6 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                 // This is pretty serious. Let us know.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
                       << "' sent with no response. We don't know if they processed it!");
-                      
-            // This request timed out, but we need to mark it completed so we can remove it
-            // from the queue of outstanding commands for our workers to proces.
-            completedRequests.push_back(active);
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
@@ -121,6 +116,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                   << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
             _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
+            completedRequests.push_back(active);
         }
     }
 }
