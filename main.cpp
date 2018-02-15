@@ -140,9 +140,26 @@ set<string> loadPlugins(SData& args) {
 int main(int argc, char* argv[]) {
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
+    if (args.empty() || args.isSet("-c")) {
+        // There was nothing in the command line to parse OR the -c flag was set,
+        // so lets try to parse our config file.
+        string configFile;
+        if (args.isSet("-c") && SFileExists(args["-c"])) {
+            configFile = args["-c"];
+        } else if (args.isSet("-c") && !SFileExists(args["-c"]))   {
+            SWARN("Config file " + args["-c"] + " could not be found. Trying default /etc/bedrock/bedrock.conf");
+            configFile = "/etc/bedrock/bedrock.conf";
+        } else {
+            configFile = "/etc/bedrock/bedrock.conf";
+        }
+        SINFO("Loading config file " + configFile);
+        SParseConfigFile(configFile);
+    }
+
+    // Check if we have any args after processing the config file
     if (args.empty()) {
-        // It's valid to run bedrock with no parameters provided, but unusual
-        // -- let's provide some help just in case
+        // It's valid to run bedrock with no parameters or config file provided,
+        // but unusual -- let's provide some help just in case
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
 
