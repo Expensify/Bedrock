@@ -524,6 +524,7 @@ void BedrockServer::worker(SData& args,
                 } else {
                     server._reply(command);
                 }
+                continue;
             }
 
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
