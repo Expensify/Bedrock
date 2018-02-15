@@ -104,6 +104,10 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                 // This is pretty serious. Let us know.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
                       << "' sent with no response. We don't know if they processed it!");
+                      
+            // This request timed out, but we need to mark it completed so we can remove it
+            // from the queue of outstanding commands for our workers to proces.
+            completedRequests.push_back(active);
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
