@@ -490,10 +490,28 @@ int SQLite::commit() {
 
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
+
+    // Record DB pages before commit to see how many the commit touches.
+    int startPages, dummy;
+    sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
+
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
     SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
+
+    // And record pages after the commit.
+    int endPages;
+    sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &endPages, &dummy, 0);
+
+    // Similarly, record WAL file size.
+    sqlite3_file *pWal = 0;
+    sqlite3_int64 sz;
+    sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
+    pWal->pMethods->xFileSize(pWal, &sz);
+
+    // And log both these statistics.
+    SINFO("COMMIT operation wrote " << (endPages - startPages) << " pages. WAL file size is " << sz << " bytes.");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
