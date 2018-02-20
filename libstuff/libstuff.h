@@ -248,27 +248,27 @@ timeval SToTimeval(uint64_t when);
 // Helpful class for timing
 struct SStopwatch {
     // Attributes
-    uint64_t startTime;
-    uint64_t alarmDuration;
+    atomic<uint64_t> startTime;
+    atomic<uint64_t> alarmDuration;
 
     // Constructors -- If constructed with an alarm, starts out in the
     // ringing state.  If constructed without an alarm, starts out timing
     // from construction.
     SStopwatch() {
         start();
-        alarmDuration = 0;
+        alarmDuration.store(0);
     }
     SStopwatch(uint64_t alarm) {
-        startTime = 0;
-        alarmDuration = alarm;
+        startTime.store(0);
+        alarmDuration.store(alarm);
     }
 
     // Accessors
-    uint64_t elapsed() { return STimeNow() - startTime; }
-    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration); }
+    uint64_t elapsed() { return STimeNow() - startTime.load(); }
+    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration.load()); }
 
     // Mutators
-    void start() { startTime = STimeNow(); }
+    void start() { startTime.store(STimeNow()); }
     bool ding() {
         if (!ringing())
             return false;
