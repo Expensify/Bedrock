@@ -265,7 +265,7 @@ struct SStopwatch {
 
     // Accessors
     uint64_t elapsed() { return STimeNow() - startTime.load(); }
-    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration.load()); }
+    uint64_t ringing() { return alarmDuration.load() && (elapsed() > alarmDuration.load()); }
 
     // Mutators
     void start() { startTime.store(STimeNow()); }
