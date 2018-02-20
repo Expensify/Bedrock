@@ -807,9 +807,13 @@ void BedrockServer::worker(SData& args,
             {
                 lock_guard<mutex> lock(server._httpsCommandMutex);
                 if (!server._outstandingHTTPSRequests.empty()) {
-                    SINFO("Outstanding HTTPS requests blocking shutdown ("
-                          << server._outstandingHTTPSRequests.size() << ").");
-                    continue;
+                    if (server._gracefulShutdownTimeout.ringing()) {
+                        SINFO("Shutdown timed out waiting on HTTPS requests.");
+                    } else {
+                        SINFO("Outstanding HTTPS requests blocking shutdown ("
+                              << server._outstandingHTTPSRequests.size() << ").");
+                        continue;
+                    }
                 }
             }
 
