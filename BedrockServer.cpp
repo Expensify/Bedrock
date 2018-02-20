@@ -19,8 +19,12 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
         // Add the blacklisted command to the map.
-        _crashCommands.insert(make_pair(request.methodLine, request.nameValueMap));
-        SALERT("Blacklisting command (now have " << _crashCommands.size() << " blacklisted commands): " << request.serialize());
+        _crashCommands[request.methodLine].insert(request.nameValueMap);
+        size_t totalCount = 0;
+        for (const auto& s : _crashCommands) {
+            totalCount += s.second.size();
+        }
+        SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
@@ -833,13 +837,13 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
     // Typically, this map is empty and this returns no results.
-    auto itpair = _crashCommands.equal_range(command.request.methodLine);
-    auto& current = itpair.first;
-    auto& end = itpair.second;
+    auto commandIt = _crashCommands.find(command.request.methodLine);
+    if (commandIt == _crashCommands.end()) {
+        return false;
+    }
 
     // Look at each crash-inducing command that has the same methodLine.
-    while (current != end && current != _crashCommands.end()) {
-        const STable& values = current->second;
+    for (const STable& values : commandIt->second) {
 
         // These are all of the keys that need to match to kill this command.
         bool isMatch = true;
@@ -868,9 +872,6 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
         if (isMatch) {
             return true;
         }
-        
-        // Otherwise, check the next entry in our range.
-        current++;
     }
 
     // If nothing in our range returned true, then this command looks fine.
@@ -1499,7 +1500,11 @@ void BedrockServer::_status(BedrockCommand& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-            content["crashCommands"] = _crashCommands.size();
+            size_t totalCount = 0;
+            for (const auto& s : _crashCommands) {
+                totalCount += s.second.size();
+            }
+            content["crashCommands"] = totalCount;
         }
 
         // On master, return the current multi-write blacklists.
@@ -1714,13 +1719,15 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {
-        SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
-        SData command(p.first);
-        command.nameValueMap = p.second;
-        BedrockCommand cmd(command);
-        for (const auto& fields : command.nameValueMap) {
-            cmd.crashIdentifyingValues.insert(fields.first);
+        for (const auto& table : p.second) {
+            SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
+            SData command(p.first);
+            command.nameValueMap = table;
+            BedrockCommand cmd(command);
+            for (const auto& fields : command.nameValueMap) {
+                cmd.crashIdentifyingValues.insert(fields.first);
+            }
+            _syncNode->emergencyBroadcast(_generateCrashMessage(&cmd), peer);
         }
-        _syncNode->emergencyBroadcast(_generateCrashMessage(&cmd), peer);
     }
 }

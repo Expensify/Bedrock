@@ -262,7 +262,7 @@ class BedrockServer : public SQLiteServer {
 
     // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
     // particular command for it count as a match likely to cause a crash.
-    multimap<string, STable> _crashCommands;
+    map<string, set<STable>> _crashCommands;
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
