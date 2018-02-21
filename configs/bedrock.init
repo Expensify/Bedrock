@@ -36,7 +36,7 @@ if [ -n "$OTHERNODES" ]; then
     FLAGS="-peerList $OTHERNODES"
 fi
 
-DAEMON_OPTS="-fork -nodeName $THISNODE -db $BEDROCK_DB_PATH -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIORITY -pidfile $PIDFILE -workerThreads 1 $FLAGS"
+DAEMON_OPTS="-fork -nodeName $THISNODE -db $BEDROCK_DB_PATH -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIORITY -pidfile $PIDFILE $FLAGS"
 
 if ! [[ -x $BIN ]]; then echo "$1: Job failed! Missing or broken binary file: $BIN" && exit 2; fi
 set -e
