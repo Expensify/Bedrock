@@ -262,11 +262,16 @@ class BedrockServer : public SQLiteServer {
 
     // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
     // particular command for it count as a match likely to cause a crash.
-    multimap<string, STable> _crashCommands;
+    map<string, set<STable>> _crashCommands;
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
+
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their https requests finish and move them back to the main queue.
+    mutex _httpsCommandMutex;
+    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
 };

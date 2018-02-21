@@ -1497,28 +1497,49 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // First, just parse the host
         string domain;
         uint16_t port = 0;
-        if (!SParseHost(host, domain, port))
+        if (!SParseHost(host, domain, port)) {
             STHROW("invalid host");
+        }
 
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
         if (!ip || ip == INADDR_NONE) {
             // Nope -- resolve the domain
-            // NOTE: gethostbyname blocks so set the DNS timeout to 1s in /etc/resolv.conf
             uint64_t start = STimeNow();
-            hostent* hostent = gethostbyname(domain.c_str());
+
+            // Allocate and initialize addrinfo structures.
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof hints);
+            struct addrinfo* resolved = nullptr;
+
+            // Set up the hints.
+            hints.ai_family = AF_INET; // IPv4
+            hints.ai_socktype = SOCK_STREAM;
+
+            // Do the initialization.
+            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+
+            // There was a problem.
+            if (result || !resolved) {
+                freeaddrinfo(resolved);
+                STHROW("can't resolve host");
+            }
+
+            // Note if this seems slow.
             uint64_t elapsed = STimeNow() - start;
             if (elapsed > 100 * STIME_US_PER_MS) {
                 SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
             }
-            if (!hostent || hostent->h_length != 4 || !hostent->h_addr_list || !hostent->h_addr_list[0]) {
-                STHROW("can't resolve host");
-            }
-            in_addr* addr = (in_addr*)hostent->h_addr_list[0];
-            ip = addr->s_addr;
+
+            // Grab the resolved address.
+            sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
+            ip = addr->sin_addr.s_addr;
             char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, addr, plainTextIP, INET_ADDRSTRLEN);
+            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
             SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
+
+            // Done resolving.
+            freeaddrinfo(resolved);
         }
 
         // Open a socket

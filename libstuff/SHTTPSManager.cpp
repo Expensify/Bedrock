@@ -56,6 +56,11 @@ void SHTTPSManager::prePoll(fd_map& fdm) {
 }
 
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    list<SHTTPSManager::Transaction*> completedRequests;
+    postPoll(fdm, nextActivity, completedRequests);
+}
+
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -111,6 +116,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                   << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
             _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
+            completedRequests.push_back(active);
         }
     }
 }
