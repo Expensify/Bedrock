@@ -660,8 +660,12 @@ void BedrockServer::worker(SData& args,
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
                         if (!command.httpsRequest->response) {
-                            // Roll back the existing transaction.
-                            core.rollback();
+                            // Roll back the existing transaction, but only if we peeked the command.
+                            // This prevents unneccesary rollbacks for commands that have https requests
+                            // but no response yet.
+                            if (!core.peekCommand(command)) {
+                                core.rollback();
+                            }
 
                             // We're not handling a writable command anymore (at the moment). We need to make sure we
                             // don't shut down without checking for outstanding HTTPS commands.
@@ -1031,7 +1035,7 @@ bool BedrockServer::shutdownComplete() {
               << "Command Counts: " << commandCounts << "killing non gracefully.");
         return true;
     }
-    
+
     // If there outstanding https commands, we're not done (this is below the timeout code so that we still shutdown
     // if an https command gets stuck).
     if (httpsCommands) {

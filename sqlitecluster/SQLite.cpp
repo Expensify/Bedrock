@@ -587,7 +587,7 @@ void SQLite::rollback() {
             g_commitLock.unlock();
         }
     } else {
-        SHMMM("Rolling back but not inside transaction, ignoring.");
+        SWARN("Rolling back but not inside transaction, ignoring.");
     }
 }
 
