@@ -148,11 +148,17 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist;
 
+    // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
+    void waitForCheckpoint();
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     struct SharedData {
+        // Constructor.
+        SharedData();
+
         // This is the last committed hash by *any* thread for this file.
         atomic<string> _lastCommittedHash;
 
@@ -213,6 +219,9 @@ class SQLite {
         // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
         // called to generate a journal row, but have not yet been sent to peers.
         map<uint64_t, pair<string, string>> _inFlightTransactions;
+
+        mutex blockNewTransactionsMutex;
+        atomic<int> currentTransactionCount;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want

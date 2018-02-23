@@ -212,13 +212,32 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     if (autocheckpoint) {
         if (pageCount < autocheckpoint) {
             SINFO("WAL callback skipping checkpoint with " << pageCount << " pages in WAL file.");
-        } else {
+        } else if (pageCount < autocheckpoint * 2) {
             int walSizeFrames = 0;
             int framesCheckpointed = 0;
             uint64_t start = STimeNow();
             sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
             SINFO("WAL callback passive checkpoint with " << pageCount << " pages in WAL file. Frames checkpointed: "
             << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+        } else {
+            SINFO("WAL file falling behind, beginning complete checkpoint.");
+
+            // This thread will run independently.
+            thread([object](){
+                SInitialize("checkpoint");
+
+                // Lock the mutex that keeps anyone from starting a new transaction.
+                object->_sharedData->blockNewTransactionsMutex.lock();
+
+                while (1) {
+                    int count = object->_sharedData->currentTransactionCount.load();
+                    if (count == 0) {
+                        SINFO("TYLER - should checkpoint now. We need a better mechanism than `while(1)`.");
+                        object->_sharedData->blockNewTransactionsMutex.unlock();
+                        break;
+                    }
+                }
+            }).detach();
         }
     }
     return SQLITE_OK;
@@ -267,10 +286,15 @@ SQLite::~SQLite() {
     }
 }
 
+void SQLite::waitForCheckpoint() {
+    lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
+}
+
 bool SQLite::beginTransaction() {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
+    _sharedData->currentTransactionCount++;
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
@@ -287,6 +311,7 @@ bool SQLite::beginConcurrentTransaction() {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
+    _sharedData->currentTransactionCount++;
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
@@ -546,6 +571,7 @@ int SQLite::commit() {
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
         _mutexLocked = false;
+        _sharedData->currentTransactionCount--;
         g_commitLock.unlock();
     } else {
         SINFO("Commit failed, waiting for rollback.");
@@ -606,6 +632,7 @@ void SQLite::rollback() {
             _mutexLocked = false;
             g_commitLock.unlock();
         }
+        _sharedData->currentTransactionCount--;
     } else {
         SWARN("Rolling back but not inside transaction, ignoring.");
     }
@@ -809,3 +836,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 bool SQLite::getUpdateNoopMode() {
     return _noopUpdateMode;
 }
+
+SQLite::SharedData::SharedData() :
+currentTransactionCount(0)
+{ }
