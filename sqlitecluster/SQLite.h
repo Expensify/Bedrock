@@ -34,7 +34,7 @@ class SQLite {
     //
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
-    SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
+    SQLite(const string& filename, int cacheSize, int checkpointInterval, int maxJournalSize, int journalTable,
            int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
@@ -293,6 +293,9 @@ class SQLite {
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
 
+    // Handles running checkpointing operations.
+    static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
+
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
     uint64_t _timeoutLimit;
@@ -314,4 +317,5 @@ class SQLite {
     bool _autoRolledBack;
 
     bool _noopUpdateMode;
+    int _checkpointInterval;
 };

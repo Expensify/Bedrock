@@ -12,7 +12,7 @@ map<string, pair<int, SQLite::SharedData*>> SQLite::_sharedDataLookupMap;
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
-SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
+SQLite::SQLite(const string& filename, int cacheSize, int checkpointInterval, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous) :
     whitelist(nullptr),
     _maxJournalSize(maxJournalSize),
@@ -25,12 +25,13 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
     _rollbackElapsed(0),
     _timeoutLimit(0),
     _autoRolledBack(false),
-    _noopUpdateMode(false)
+    _noopUpdateMode(false),
+    _checkpointInterval(checkpointInterval)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
     SASSERT(cacheSize > 0);
-    SASSERT(autoCheckpoint >= 0);
+    SASSERT(_checkpointInterval >= 0);
     SASSERT(maxJournalSize > 0);
 
     // Canonicalize our filename and save that version.
@@ -111,8 +112,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int autoCheckpoint, int ma
 
     // These other pragmas only relate to read/write databases.
     SASSERT(!SQuery(_db, "disabling change counting", "PRAGMA count_changes = OFF;"));
-    DBINFO("Enabling automatic checkpointing every " << autoCheckpoint << " pages.");
-    sqlite3_wal_autocheckpoint(_db, autoCheckpoint);
+
+    // Do our own checkpointing.
+    sqlite3_wal_hook(_db, _sqliteWALCallback, this);
 
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
@@ -202,6 +204,24 @@ int SQLite::_progressHandlerCallback(void* arg) {
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
+}
+
+int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
+    SQLite* object = static_cast<SQLite*>(data);
+    int autocheckpoint = object->_checkpointInterval;
+    if (autocheckpoint) {
+        if (pageCount < autocheckpoint) {
+            SINFO("WAL callback skipping checkpoint with " << pageCount << " pages in WAL file.");
+        } else {
+            int walSizeFrames = 0;
+            int framesCheckpointed = 0;
+            uint64_t start = STimeNow();
+            sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
+            SINFO("WAL callback passive checkpoint with " << pageCount << " pages in WAL file. Frames checkpointed: "
+            << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+        }
+    }
+    return SQLITE_OK;
 }
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
