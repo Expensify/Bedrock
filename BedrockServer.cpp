@@ -658,15 +658,13 @@ void BedrockServer::worker(SData& args,
                             break;
                         }
 
+                        // Roll back the existing transaction, but only if we peeked the command.
+                        // This prevents unneccesary rollbacks for commands that have https requests
+                        // but no response yet
+                        core.rollback();
+
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
                         if (!command.httpsRequest->response) {
-                            // Roll back the existing transaction, but only if we peeked the command.
-                            // This prevents unneccesary rollbacks for commands that have https requests
-                            // but no response yet.
-                            if (!core.peekCommand(command)) {
-                                core.rollback();
-                            }
-
                             // We're not handling a writable command anymore (at the moment). We need to make sure we
                             // don't shut down without checking for outstanding HTTPS commands.
                             lock_guard<mutex> lock(server._httpsCommandMutex);
