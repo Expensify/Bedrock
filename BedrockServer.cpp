@@ -443,6 +443,15 @@ void BedrockServer::sync(SData& args,
         }
     }
 
+    // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
+    // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
+    // release the lock.
+    if (syncNode.commitInProgress()) {
+        SWARN("Shutting down mid-commit. Rolling back.");
+        db.rollback();
+        server._syncThreadCommitMutex.unlock();
+    }
+
     // Done with the global lock.
     server._syncMutex.unlock();
 
