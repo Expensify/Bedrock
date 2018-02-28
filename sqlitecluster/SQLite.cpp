@@ -7,7 +7,7 @@
 recursive_mutex SQLite::_commitLock;
 
 // Global map for looking up shared data by file when creating new instances.
-map<string, pair<int, SQLite::SharedData*>> SQLite::_sharedDataLookupMap; 
+map<string, pair<int, SQLite::SharedData*>> SQLite::_sharedDataLookupMap;
 
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
