@@ -1,0 +1,11 @@
+[Unit]
+Description=Generates prerequisite files for bedrock.service, if absent
+Documentation=http://bedrockdb.com/
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/bedrock/bedrock.conf
+
+# The following creates database dir and database file
+ExecStart=/bin/sh -c 'mkdir -p "$(dirname "${BEDROCK_DB_PATH}")"'
+ExecStart=/bin/sh -c 'test -f "${BEDROCK_DB_PATH}" || touch "${BEDROCK_DB_PATH}"'

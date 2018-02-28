@@ -160,6 +160,9 @@ class SQLiteNode : public STCPNode {
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
 
+    // Stopwatch to track if we're giving up on the server preventing a standdown.
+    SStopwatch _standDownTimeOut;
+
     // Our version string. Supplied by constructor.
     string _version;
 

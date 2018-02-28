@@ -248,27 +248,27 @@ timeval SToTimeval(uint64_t when);
 // Helpful class for timing
 struct SStopwatch {
     // Attributes
-    uint64_t startTime;
-    uint64_t alarmDuration;
+    atomic<uint64_t> startTime;
+    atomic<uint64_t> alarmDuration;
 
     // Constructors -- If constructed with an alarm, starts out in the
     // ringing state.  If constructed without an alarm, starts out timing
     // from construction.
     SStopwatch() {
         start();
-        alarmDuration = 0;
+        alarmDuration.store(0);
     }
     SStopwatch(uint64_t alarm) {
-        startTime = 0;
-        alarmDuration = alarm;
+        startTime.store(0);
+        alarmDuration.store(alarm);
     }
 
     // Accessors
-    uint64_t elapsed() { return STimeNow() - startTime; }
-    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration); }
+    uint64_t elapsed() { return STimeNow() - startTime.load(); }
+    uint64_t ringing() { return alarmDuration.load() && (elapsed() > alarmDuration.load()); }
 
     // Mutators
-    void start() { startTime = STimeNow(); }
+    void start() { startTime.store(STimeNow()); }
     bool ding() {
         if (!ringing())
             return false;
@@ -714,7 +714,9 @@ uint64_t SFileSize(const string& path);
 string SHashSHA1(const string& buffer);
 
 // Various encoding/decoding functions
+string SEncodeBase64(const unsigned char* buffer, const int size);
 string SEncodeBase64(const string& buffer);
+string SDecodeBase64(const unsigned char* buffer, const int size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
@@ -722,8 +724,11 @@ string SHMACSHA1(const string& key, const string& buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
+#define SAES_IV_SIZE 16
 #define SAES_BLOCK_SIZE 16
+string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESEncrypt(const string& buffer, const string& iv, const string& key);
+string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
 
 // --------------------------------------------------------------------------

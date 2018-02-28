@@ -758,7 +758,9 @@ bool SQLiteNode::update() {
             } else if (consistentEnough) {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
+                uint64_t beforeCommit = STimeNow();
                 int result = _db.commit();
+                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
@@ -875,7 +877,9 @@ bool SQLiteNode::update() {
             }
 
             // And send it to everyone who's subscribed.
+            uint64_t beforeSend = STimeNow();
             _sendToAllPeers(transaction, true);
+            SINFO("SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/1000) << "ms.");
 
             // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
             // asynchronous.
@@ -928,8 +932,9 @@ bool SQLiteNode::update() {
         if (_state == STANDINGDOWN) {
             // See if we're done
             // We can only switch to SEARCHING if the server has no outstanding write work to do.
-            // **FIXME: Add timeout?
-            if (!_server.canStandDown()) {
+            if (_standDownTimeOut.ringing()) {
+                SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
+            } else if (!_server.canStandDown()) {
                 // Try again.
                 SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return false;
@@ -1942,6 +1947,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _db.getCommittedTransactions();
             }
         } else if (newState == STANDINGDOWN) {
+            // start the timeout countdown.
+            _standDownTimeOut.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+            _standDownTimeOut.start();
+
             // Abort all remote initiated commands if no longer MASTERING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SEARCHING) {

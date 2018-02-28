@@ -96,7 +96,6 @@ class BedrockPlugin_MySQL : public BedrockPlugin {
     virtual string getName() { return "MySQL"; }
     virtual void initialize(const SData& args, BedrockServer& server) { _args = args; }
     virtual string getPort() {
-        SWARN("ARGS: " << _args.serialize());
         return _args.isSet("-mysql.host") ? _args["-mysql.host"] : "localhost:3306";
     }
     virtual void onPortAccept(STCPManager::Socket* s);
