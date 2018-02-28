@@ -647,7 +647,6 @@ void BedrockServer::worker(SData& args,
                     calledPeek = true;
                 }
 
-
                 if (!calledPeek || !peekResult) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
