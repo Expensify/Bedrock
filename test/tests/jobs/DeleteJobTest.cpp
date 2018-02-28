@@ -4,14 +4,14 @@ struct DeleteJobTest : tpunit::TestFixture {
     DeleteJobTest()
         : tpunit::TestFixture("DeleteJob",
                               BEFORE_CLASS(DeleteJobTest::setupClass),
-                              TEST(DeleteJobTest::cancelNonExistentJob),
-                              TEST(DeleteJobTest::cancelJobWithChild),
-                              TEST(DeleteJobTest::cancelRunningJob),
-                              TEST(DeleteJobTest::cancelFinishedJob),
-                              TEST(DeleteJobTest::cancelPausedJob),
-                              TEST(DeleteJobTest::cancelChildJob),
-                              TEST(DeleteJobTest::cancelJobWithoutParent),
-                              TEST(DeleteJobTest::cancelJobWithSiblings),
+                              TEST(DeleteJobTest::deleteNonExistentJob),
+                              TEST(DeleteJobTest::deleteJobWithChild),
+                              //TEST(DeleteJobTest::cancelRunningJob),
+                              //TEST(DeleteJobTest::cancelFinishedJob),
+                              //TEST(DeleteJobTest::cancelPausedJob),
+                              //TEST(DeleteJobTest::cancelChildJob),
+                              //TEST(DeleteJobTest::cancelJobWithoutParent),
+                              //TEST(DeleteJobTest::cancelJobWithSiblings),
                               AFTER(DeleteJobTest::tearDown),
                               AFTER_CLASS(DeleteJobTest::tearDownClass)) { }
 
@@ -28,15 +28,15 @@ struct DeleteJobTest : tpunit::TestFixture {
 
     void tearDownClass() { delete tester; }
 
-    // Cannot cancel a job that doesn't exist
-    void cancelNonExistentJob() {
-        SData command("CancelJob");
+    // Cannot delete a job that doesn't exist
+    void deleteNonExistentJob() {
+        SData command("DeleteJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
-    // Cannot cancel a job with children
-    void cancelJobWithChild() {
+    // Cannot delete a job with children
+    void deleteJobWithChild() {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -63,34 +63,22 @@ struct DeleteJobTest : tpunit::TestFixture {
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
-        // Get the child and finish it to put the parent in the QUEUED state
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "child";
-        tester->executeWaitVerifyContent(command);
-
         // The parent may have other children from mock requests, delete them.
         command.clear();
         command.methodLine = "Query";
         command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
         tester->executeWaitVerifyContent(command);
 
-        // Finish the known child.
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
-
-        // Assert parent is in QUEUED state
+        // Assert parent is in PAUSED state
         SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
-        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][0], "PAUSED");
 
         // Cannot finish a job with a child
         command.clear();
-        command.methodLine = "CancelJob";
+        command.methodLine = "DeleteJob";
         command["jobID"] = parentID;
-        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job with children");
+        tester->executeWaitVerifyContent(command, "405 Can't delete a parent jobs with children running");
     }
 
     // Ignore canceljob for RUNNING jobs
