@@ -6,12 +6,8 @@ struct DeleteJobTest : tpunit::TestFixture {
                               BEFORE_CLASS(DeleteJobTest::setupClass),
                               TEST(DeleteJobTest::deleteNonExistentJob),
                               TEST(DeleteJobTest::deleteJobWithChild),
-                              //TEST(DeleteJobTest::cancelRunningJob),
-                              //TEST(DeleteJobTest::cancelFinishedJob),
-                              //TEST(DeleteJobTest::cancelPausedJob),
-                              //TEST(DeleteJobTest::cancelChildJob),
-                              //TEST(DeleteJobTest::cancelJobWithoutParent),
-                              //TEST(DeleteJobTest::cancelJobWithSiblings),
+                              TEST(DeleteJobTest::deleteRunningJob),
+                              TEST(DeleteJobTest::deleteFinishedJob),
                               AFTER(DeleteJobTest::tearDown),
                               AFTER_CLASS(DeleteJobTest::tearDownClass)) { }
 
@@ -81,8 +77,8 @@ struct DeleteJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Can't delete a parent jobs with children running");
     }
 
-    // Ignore canceljob for RUNNING jobs
-    void cancelRunningJob() {
+    // Ignore deletejob for RUNNING jobs
+    void deleteRunningJob() {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -122,17 +118,17 @@ struct DeleteJobTest : tpunit::TestFixture {
 
         // Cannot finish a job in RUNNING state
         command.clear();
-        command.methodLine = "CancelJob";
+        command.methodLine = "DeleteJob";
         command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command);
+        tester->executeWaitVerifyContent(command, "405 Can't delete a RUNNING job");
 
         // Assert job state is unchanged
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
     }
 
-    // Ignore canceljob for FINISHED jobs
-    void cancelFinishedJob() {
+    // Delete finished jobs
+    void deleteFinishedJob() {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -174,188 +170,16 @@ struct DeleteJobTest : tpunit::TestFixture {
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
         ASSERT_EQUAL(result[0][0], "FINISHED");
 
-        // Cannot finish a job in FINISHED state
+        // Delete the child job
         command.clear();
-        command.methodLine = "CancelJob";
+        command.methodLine = "DeleteJob";
         command["jobID"] = childID;
         tester->executeWaitVerifyContent(command);
 
-        // Assert job state is unchanged
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
-        ASSERT_EQUAL(result[0][0], "FINISHED");
-    }
-
-    // Ignore canceljob for PAUSED jobs
-    void cancelPausedJob() {
-        // Create a parent job
-        SData command("CreateJob");
-        command["name"] = "parent";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string parentID = response["jobID"];
-
-        // Get the parent
+        // Delete the parent job
         command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
-
-        // Create the child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string childID = response["jobID"];
-
-        // Assert job is in PAUSED state
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
-        ASSERT_EQUAL(result[0][0], "PAUSED");
-
-        // Cannot finish a job in PAUSED state
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
-
-        // Assert job state is unchanged
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
-        ASSERT_EQUAL(result[0][0], "PAUSED");
-    }
-
-    // Cancel a child job
-    void cancelChildJob() {
-        // Create a parent job
-        SData command("CreateJob");
-        command["name"] = "parent";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string parentID = response["jobID"];
-
-        // Get the parent
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
-
-        // Create the child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string childID = response["jobID"];
-
-        // Create a sibling
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "sibling";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string siblingID = response["jobID"];
-
-        // Finish the parent to put the children in the QUEUED state
-        command.clear();
-        command.methodLine = "FinishJob";
+        command.methodLine = "DeleteJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-
-        // Get one the children
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "sibling";
-        tester->executeWaitVerifyContent(command);
-
-        // Cancel the QUEUED child job
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
-
-        // Assert job state is cancelled, but sibling is still running
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
-        ASSERT_EQUAL(result[0][0], "CANCELLED");
-
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingID + ";", result);
-        ASSERT_EQUAL(result[0][0], "RUNNING");
-    }
-
-    // Cancel a child job that doesn't have a parent
-    void cancelJobWithoutParent() {
-        // Create the job
-        SData command("CreateJob");
-        command["name"] = "orphanChild";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
-
-        // Try cancelling the job
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "404 Invalid jobID - Cannot cancel a job without a parent");
-    }
-
-    // Cancel a child job that's the last child job of the parent
-    void cancelJobWithSiblings() {
-        // Create a parent job
-        SData command("CreateJob");
-        command["name"] = "parent";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string parentID = response["jobID"];
-
-        // Get the parent
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
-
-        // Create one child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string childID = response["jobID"];
-
-        // Create another child
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child2";
-        command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
-        string childID2 = response["jobID"];
-
-        // Finish the parent to put the child in the QUEUED state
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = parentID;
-        tester->executeWaitVerifyContent(command);
-
-        // Cancel one child
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
-
-        // Parent should still be PAUSED
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
-        ASSERT_EQUAL(result[0][0], "PAUSED");
-
-        // The parent may have other children from mock requests, delete them.
-        command.clear();
-        command.methodLine = "Query";
-        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
-        tester->executeWaitVerifyContent(command);
-
-        // Cancel the last child
-        command.clear();
-        command.methodLine = "CancelJob";
-        command["jobID"] = childID2;
-        tester->executeWaitVerifyContent(command);
-
-        // Parent should be queued
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
-        ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 } __DeleteJobTest;
