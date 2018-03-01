@@ -446,6 +446,15 @@ void BedrockServer::sync(SData& args,
         }
     }
 
+    // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
+    // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
+    // release the lock.
+    if (syncNode.commitInProgress()) {
+        SWARN("Shutting down mid-commit. Rolling back.");
+        db.rollback();
+        server._syncThreadCommitMutex.unlock();
+    }
+
     // Done with the global lock.
     server._syncMutex.unlock();
 
@@ -646,7 +655,14 @@ void BedrockServer::worker(SData& args,
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
-                if (command.httpsRequest || !core.peekCommand(command)) {
+                bool calledPeek = false;
+                bool peekResult = false;
+                if (!command.httpsRequest) {
+                    peekResult = core.peekCommand(command);
+                    calledPeek = true;
+                }
+
+                if (!calledPeek || !peekResult) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
@@ -666,8 +682,10 @@ void BedrockServer::worker(SData& args,
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
                         if (!command.httpsRequest->response) {
-                            // Roll back the existing transaction.
-                            core.rollback();
+                            // Roll back the existing transaction, but only if we are inside an transaction
+                            if (calledPeek) {
+                                core.rollback();
+                            }
 
                             // We're not handling a writable command anymore (at the moment). We need to make sure we
                             // don't shut down without checking for outstanding HTTPS commands.
@@ -1037,7 +1055,7 @@ bool BedrockServer::shutdownComplete() {
               << "Command Counts: " << commandCounts << "killing non gracefully.");
         return true;
     }
-    
+
     // If there outstanding https commands, we're not done (this is below the timeout code so that we still shutdown
     // if an https command gets stuck).
     if (httpsCommands) {
