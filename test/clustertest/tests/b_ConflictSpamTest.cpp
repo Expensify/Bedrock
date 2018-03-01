@@ -18,12 +18,27 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void setup() {
         cmdID.store(0);
+
+        // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
+        // happen as expected.
+        tester = BedrockClusterTester::testers.front();
+        for (int i = 0; i < 3; i++) {
+            BedrockTester* node = tester->getBedrockTester(i);
+            SData controlCommand("SetCheckpointIntervals");
+            controlCommand["passiveCheckpointPageMin"] = to_string(3);
+            controlCommand["fullCheckpointPageMin"] = to_string(10);
+            vector<SData> results = node->executeWaitMultipleData({controlCommand}, 1, true);
+
+            // Verify we got a reasonable result.
+            ASSERT_EQUAL(results.size(), 1);
+            ASSERT_EQUAL(results[0].methodLine, "200 OK");
+            ASSERT_EQUAL(results[0]["fullCheckpointPageMin"], to_string(25000));
+            ASSERT_EQUAL(results[0]["passiveCheckpointPageMin"], to_string(2500));
+        }
     }
 
     void slow()
     {
-        tester = BedrockClusterTester::testers.front();
-
         // Send some write commands to each node in the cluster.
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {

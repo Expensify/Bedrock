@@ -34,7 +34,7 @@ class SQLite {
     //
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
-    SQLite(const string& filename, int cacheSize, int checkpointInterval, int maxJournalSize, int journalTable,
+    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
            int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
@@ -151,6 +151,11 @@ class SQLite {
     // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
     void waitForCheckpoint();
 
+    // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
+    // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
+    static atomic<int> passiveCheckpointPageMin;
+    static atomic<int> fullCheckpointPageMin;
+    
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -337,5 +342,6 @@ class SQLite {
     bool _autoRolledBack;
 
     bool _noopUpdateMode;
-    int _checkpointInterval;
+
+    bool _enableFullCheckpoints;
 };
