@@ -123,9 +123,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.22.0"
-#define SQLITE_VERSION_NUMBER 3022000
-#define SQLITE_SOURCE_ID      "2018-01-04 18:36:39 dc0fc2aa7cbefeb5f0ba8c992fd3e9adcfb5a4d61e2321c1bd93f4d36ba9alt1"
+#define SQLITE_VERSION        "3.23.0"
+#define SQLITE_VERSION_NUMBER 3023000
+#define SQLITE_SOURCE_ID      "2018-03-02 18:26:50 8ade94ba6712827c672ddad8436f8b97cc520ced122e7d0043ad3c3ba94f1ed6"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -470,6 +470,8 @@ SQLITE_API int sqlite3_exec(
 ** the most recent error can be obtained using
 ** [sqlite3_extended_errcode()].
 */
+#define SQLITE_ERROR_MISSING_COLLSEQ   (SQLITE_ERROR | (1<<8))
+#define SQLITE_ERROR_RETRY             (SQLITE_ERROR | (2<<8))
 #define SQLITE_IOERR_READ              (SQLITE_IOERR | (1<<8))
 #define SQLITE_IOERR_SHORT_READ        (SQLITE_IOERR | (2<<8))
 #define SQLITE_IOERR_WRITE             (SQLITE_IOERR | (3<<8))
@@ -513,6 +515,8 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_READONLY_CANTLOCK       (SQLITE_READONLY | (2<<8))
 #define SQLITE_READONLY_ROLLBACK       (SQLITE_READONLY | (3<<8))
 #define SQLITE_READONLY_DBMOVED        (SQLITE_READONLY | (4<<8))
+#define SQLITE_READONLY_CANTINIT       (SQLITE_READONLY | (5<<8))
+#define SQLITE_READONLY_DIRECTORY      (SQLITE_READONLY | (6<<8))
 #define SQLITE_ABORT_ROLLBACK          (SQLITE_ABORT | (2<<8))
 #define SQLITE_CONSTRAINT_CHECK        (SQLITE_CONSTRAINT | (1<<8))
 #define SQLITE_CONSTRAINT_COMMITHOOK   (SQLITE_CONSTRAINT | (2<<8))
@@ -2055,7 +2059,6 @@ struct sqlite3_mem_methods {
 ** into which is written 0 or 1 to indicate whether checkpoints-on-close
 ** have been disabled - 0 if they are not disabled, 1 if they are.
 ** </dd>
-**
 ** <dt>SQLITE_DBCONFIG_ENABLE_QPSG</dt>
 ** <dd>^(The SQLITE_DBCONFIG_ENABLE_QPSG option activates or deactivates
 ** the [query planner stability guarantee] (QPSG).  When the QPSG is active,
@@ -2066,7 +2069,16 @@ struct sqlite3_mem_methods {
 ** the QPSG active, SQLite will always use the same query plan in the field as
 ** was used during testing in the lab.
 ** </dd>
-**
+** <dt>SQLITE_DBCONFIG_TRIGGER_EQP</dt>
+** <dd> By default, the output of EXPLAIN QUERY PLAN commands does not 
+** include output for any operations performed by trigger programs. This
+** option is used to set or clear (the default) a flag that governs this
+** behavior. The first parameter passed to this operation is an integer -
+** non-zero to enable output for trigger programs, or zero to disable it.
+** The second parameter is a pointer to an integer into which is written 
+** 0 or 1 to indicate whether output-for-triggers has been disabled - 0 if 
+** it is not disabled, 1 if it is.  
+** </dd>
 ** </dl>
 */
 #define SQLITE_DBCONFIG_MAINDBNAME            1000 /* const char* */
@@ -2077,7 +2089,8 @@ struct sqlite3_mem_methods {
 #define SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION 1005 /* int int* */
 #define SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE      1006 /* int int* */
 #define SQLITE_DBCONFIG_ENABLE_QPSG           1007 /* int int* */
-
+#define SQLITE_DBCONFIG_TRIGGER_EQP           1008 /* int int* */
+#define SQLITE_DBCONFIG_MAX                   1008 /* Largest DBCONFIG */
 
 /*
 ** CAPI3REF: Enable Or Disable Extended Result Codes
@@ -2483,16 +2496,16 @@ SQLITE_API void sqlite3_free_table(char **result);
 **
 ** These routines are work-alikes of the "printf()" family of functions
 ** from the standard C library.
-** These routines understand most of the common K&R formatting options,
-** plus some additional non-standard formats, detailed below.
-** Note that some of the more obscure formatting options from recent
-** C-library standards are omitted from this implementation.
+** These routines understand most of the common formatting options from
+** the standard library printf() 
+** plus some additional non-standard formats ([%q], [%Q], [%w], and [%z]).
+** See the [built-in printf()] documentation for details.
 **
 ** ^The sqlite3_mprintf() and sqlite3_vmprintf() routines write their
-** results into memory obtained from [sqlite3_malloc()].
+** results into memory obtained from [sqlite3_malloc64()].
 ** The strings returned by these two routines should be
 ** released by [sqlite3_free()].  ^Both routines return a
-** NULL pointer if [sqlite3_malloc()] is unable to allocate enough
+** NULL pointer if [sqlite3_malloc64()] is unable to allocate enough
 ** memory to hold the resulting string.
 **
 ** ^(The sqlite3_snprintf() routine is similar to "snprintf()" from
@@ -2516,71 +2529,7 @@ SQLITE_API void sqlite3_free_table(char **result);
 **
 ** ^The sqlite3_vsnprintf() routine is a varargs version of sqlite3_snprintf().
 **
-** These routines all implement some additional formatting
-** options that are useful for constructing SQL statements.
-** All of the usual printf() formatting options apply.  In addition, there
-** is are "%q", "%Q", "%w" and "%z" options.
-**
-** ^(The %q option works like %s in that it substitutes a nul-terminated
-** string from the argument list.  But %q also doubles every '\'' character.
-** %q is designed for use inside a string literal.)^  By doubling each '\''
-** character it escapes that character and allows it to be inserted into
-** the string.
-**
-** For example, assume the string variable zText contains text as follows:
-**
-** <blockquote><pre>
-**  char *zText = "It's a happy day!";
-** </pre></blockquote>
-**
-** One can use this text in an SQL statement as follows:
-**
-** <blockquote><pre>
-**  char *zSQL = sqlite3_mprintf("INSERT INTO table VALUES('%q')", zText);
-**  sqlite3_exec(db, zSQL, 0, 0, 0);
-**  sqlite3_free(zSQL);
-** </pre></blockquote>
-**
-** Because the %q format string is used, the '\'' character in zText
-** is escaped and the SQL generated is as follows:
-**
-** <blockquote><pre>
-**  INSERT INTO table1 VALUES('It''s a happy day!')
-** </pre></blockquote>
-**
-** This is correct.  Had we used %s instead of %q, the generated SQL
-** would have looked like this:
-**
-** <blockquote><pre>
-**  INSERT INTO table1 VALUES('It's a happy day!');
-** </pre></blockquote>
-**
-** This second example is an SQL syntax error.  As a general rule you should
-** always use %q instead of %s when inserting text into a string literal.
-**
-** ^(The %Q option works like %q except it also adds single quotes around
-** the outside of the total string.  Additionally, if the parameter in the
-** argument list is a NULL pointer, %Q substitutes the text "NULL" (without
-** single quotes).)^  So, for example, one could say:
-**
-** <blockquote><pre>
-**  char *zSQL = sqlite3_mprintf("INSERT INTO table VALUES(%Q)", zText);
-**  sqlite3_exec(db, zSQL, 0, 0, 0);
-**  sqlite3_free(zSQL);
-** </pre></blockquote>
-**
-** The code above will render a correct SQL statement in the zSQL
-** variable even if the zText variable is a NULL pointer.
-**
-** ^(The "%w" formatting option is like "%q" except that it expects to
-** be contained within double-quotes instead of single quotes, and it
-** escapes the double-quote character instead of the single-quote
-** character.)^  The "%w" formatting option is intended for safely inserting
-** table and column names into a constructed SQL statement.
-**
-** ^(The "%z" formatting option works like "%s" but with the
-** addition that after the string has been read and copied into
-** the result, [sqlite3_free()] is called on the input string.)^
+** See also:  [built-in printf()], [printf() SQL function]
 */
 SQLITE_API char *sqlite3_mprintf(const char*,...);
 SQLITE_API char *sqlite3_vmprintf(const char*, va_list);
@@ -2938,8 +2887,8 @@ SQLITE_API SQLITE_DEPRECATED void *sqlite3_profile(sqlite3*,
 ** KEYWORDS: SQLITE_TRACE
 **
 ** These constants identify classes of events that can be monitored
-** using the [sqlite3_trace_v2()] tracing logic.  The third argument
-** to [sqlite3_trace_v2()] is an OR-ed combination of one or more of
+** using the [sqlite3_trace_v2()] tracing logic.  The M argument
+** to [sqlite3_trace_v2(D,M,X,P)] is an OR-ed combination of one or more of
 ** the following constants.  ^The first argument to the trace callback
 ** is one of the following constants.
 **
@@ -3646,13 +3595,13 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** or [GLOB] operator or if the parameter is compared to an indexed column
 ** and the [SQLITE_ENABLE_STAT3] compile-time option is enabled.
 ** </li>
+** </ol>
 **
 ** <p>^sqlite3_prepare_v3() differs from sqlite3_prepare_v2() only in having
 ** the extra prepFlags parameter, which is a bit array consisting of zero or
 ** more of the [SQLITE_PREPARE_PERSISTENT|SQLITE_PREPARE_*] flags.  ^The
 ** sqlite3_prepare_v2() interface works exactly the same as
 ** sqlite3_prepare_v3() with a zero prepFlags parameter.
-** </ol>
 */
 SQLITE_API int sqlite3_prepare(
   sqlite3 *db,            /* Database handle */
@@ -4785,6 +4734,9 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** datatype of the value
 ** <tr><td><b>sqlite3_value_numeric_type&nbsp;&nbsp;</b>
 ** <td>&rarr;&nbsp;&nbsp;<td>Best numeric datatype of the value
+** <tr><td><b>sqlite3_value_nochange&nbsp;&nbsp;</b>
+** <td>&rarr;&nbsp;&nbsp;<td>True if the column is unchanged in an UPDATE
+** against a virtual table.
 ** </table></blockquote>
 **
 ** <b>Details:</b>
@@ -4833,6 +4785,19 @@ SQLITE_API SQLITE_DEPRECATED int sqlite3_memory_alarm(void(*)(void*,sqlite3_int6
 ** then the conversion is performed.  Otherwise no conversion occurs.
 ** The [SQLITE_INTEGER | datatype] after conversion is returned.)^
 **
+** ^Within the [xUpdate] method of a [virtual table], the
+** sqlite3_value_nochange(X) interface returns true if and only if
+** the column corresponding to X is unchanged by the UPDATE operation
+** that the xUpdate method call was invoked to implement and if
+** and the prior [xColumn] method call that was invoked to extracted
+** the value for that column returned without setting a result (probably
+** because it queried [sqlite3_vtab_nochange()] and found that the column
+** was unchanging).  ^Within an [xUpdate] method, any value for which
+** sqlite3_value_nochange(X) is true will in all other respects appear
+** to be a NULL value.  If sqlite3_value_nochange(X) is invoked anywhere other
+** than within an [xUpdate] method call for an UPDATE statement, then
+** the return value is arbitrary and meaningless.
+**
 ** Please pay particular attention to the fact that the pointer returned
 ** from [sqlite3_value_blob()], [sqlite3_value_text()], or
 ** [sqlite3_value_text16()] can be invalidated by a subsequent call to
@@ -4855,6 +4820,7 @@ SQLITE_API int sqlite3_value_bytes(sqlite3_value*);
 SQLITE_API int sqlite3_value_bytes16(sqlite3_value*);
 SQLITE_API int sqlite3_value_type(sqlite3_value*);
 SQLITE_API int sqlite3_value_numeric_type(sqlite3_value*);
+SQLITE_API int sqlite3_value_nochange(sqlite3_value*);
 
 /*
 ** CAPI3REF: Finding The Subtype Of SQL Values
@@ -6957,9 +6923,9 @@ SQLITE_API sqlite3_mutex *sqlite3_db_mutex(sqlite3*);
 ** the xFileControl method.  ^The return value of the xFileControl
 ** method becomes the return value of this routine.
 **
-** ^The SQLITE_FCNTL_FILE_POINTER value for the op parameter causes
+** ^The [SQLITE_FCNTL_FILE_POINTER] value for the op parameter causes
 ** a pointer to the underlying [sqlite3_file] object to be written into
-** the space pointed to by the 4th parameter.  ^The SQLITE_FCNTL_FILE_POINTER
+** the space pointed to by the 4th parameter.  ^The [SQLITE_FCNTL_FILE_POINTER]
 ** case is a short-circuit path which does not actually invoke the
 ** underlying sqlite3_io_methods.xFileControl method.
 **
@@ -6971,7 +6937,7 @@ SQLITE_API sqlite3_mutex *sqlite3_db_mutex(sqlite3*);
 ** an incorrect zDbName and an SQLITE_ERROR return from the underlying
 ** xFileControl method.
 **
-** See also: [SQLITE_FCNTL_LOCKSTATE]
+** See also: [file control opcodes]
 */
 SQLITE_API int sqlite3_file_control(sqlite3*, const char *zDbName, int op, void*);
 
@@ -7028,7 +6994,8 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_ISINIT                  23
 #define SQLITE_TESTCTRL_SORTER_MMAP             24
 #define SQLITE_TESTCTRL_IMPOSTER                25
-#define SQLITE_TESTCTRL_LAST                    25
+#define SQLITE_TESTCTRL_PARSER_COVERAGE         26
+#define SQLITE_TESTCTRL_LAST                    26  /* Largest TESTCTRL */
 
 /*
 ** CAPI3REF: SQLite Runtime Status
@@ -8283,6 +8250,40 @@ SQLITE_API int sqlite3_vtab_config(sqlite3*, int op, ...);
 SQLITE_API int sqlite3_vtab_on_conflict(sqlite3 *);
 
 /*
+** CAPI3REF: Determine If Virtual Table Column Access Is For UPDATE
+**
+** If the sqlite3_vtab_nochange(X) routine is called within the [xColumn]
+** method of a [virtual table], then it returns true if and only if the
+** column is being fetched as part of an UPDATE operation during which the
+** column value will not change.  Applications might use this to substitute
+** a lighter-weight value to return that the corresponding [xUpdate] method
+** understands as a "no-change" value.
+**
+** If the [xColumn] method calls sqlite3_vtab_nochange() and finds that
+** the column is not changed by the UPDATE statement, they the xColumn
+** method can optionally return without setting a result, without calling
+** any of the [sqlite3_result_int|sqlite3_result_xxxxx() interfaces].
+** In that case, [sqlite3_value_nochange(X)] will return true for the
+** same column in the [xUpdate] method.
+*/
+SQLITE_API int sqlite3_vtab_nochange(sqlite3_context*);
+
+/*
+** CAPI3REF: Determine The Collation For a Virtual Table Constraint
+**
+** This function may only be called from within a call to the [xBestIndex]
+** method of a [virtual table]. 
+**
+** The first argument must be the sqlite3_index_info object that is the
+** first parameter to the xBestIndex() method. The second argument must be
+** an index into the aConstraint[] array belonging to the sqlite3_index_info
+** structure passed to xBestIndex. This function returns a pointer to a buffer 
+** containing the name of the collation sequence for the corresponding
+** constraint.
+*/
+SQLITE_API SQLITE_EXPERIMENTAL const char *sqlite3_vtab_collation(sqlite3_index_info*,int);
+
+/*
 ** CAPI3REF: Conflict resolution modes
 ** KEYWORDS: {conflict resolution mode}
 **
@@ -8900,16 +8901,23 @@ extern "C" {
 
 /*
 ** CAPI3REF: Session Object Handle
+**
+** An instance of this object is a [session] that can be used to
+** record changes to a database.
 */
 typedef struct sqlite3_session sqlite3_session;
 
 /*
 ** CAPI3REF: Changeset Iterator Handle
+**
+** An instance of this object acts as a cursor for iterating
+** over the elements of a [changeset] or [patchset].
 */
 typedef struct sqlite3_changeset_iter sqlite3_changeset_iter;
 
 /*
 ** CAPI3REF: Create A New Session Object
+** CONSTRUCTOR: sqlite3_session
 **
 ** Create a new session object attached to database handle db. If successful,
 ** a pointer to the new object is written to *ppSession and SQLITE_OK is
@@ -8946,6 +8954,7 @@ SQLITE_API int sqlite3session_create(
 
 /*
 ** CAPI3REF: Delete A Session Object
+** DESTRUCTOR: sqlite3_session
 **
 ** Delete a session object previously allocated using 
 ** [sqlite3session_create()]. Once a session object has been deleted, the
@@ -8961,6 +8970,7 @@ SQLITE_API void sqlite3session_delete(sqlite3_session *pSession);
 
 /*
 ** CAPI3REF: Enable Or Disable A Session Object
+** METHOD: sqlite3_session
 **
 ** Enable or disable the recording of changes by a session object. When
 ** enabled, a session object records changes made to the database. When
@@ -8980,6 +8990,7 @@ SQLITE_API int sqlite3session_enable(sqlite3_session *pSession, int bEnable);
 
 /*
 ** CAPI3REF: Set Or Clear the Indirect Change Flag
+** METHOD: sqlite3_session
 **
 ** Each change recorded by a session object is marked as either direct or
 ** indirect. A change is marked as indirect if either:
@@ -9009,6 +9020,7 @@ SQLITE_API int sqlite3session_indirect(sqlite3_session *pSession, int bIndirect)
 
 /*
 ** CAPI3REF: Attach A Table To A Session Object
+** METHOD: sqlite3_session
 **
 ** If argument zTab is not NULL, then it is the name of a table to attach
 ** to the session object passed as the first argument. All subsequent changes 
@@ -9034,6 +9046,35 @@ SQLITE_API int sqlite3session_indirect(sqlite3_session *pSession, int bIndirect)
 **
 ** SQLITE_OK is returned if the call completes without error. Or, if an error 
 ** occurs, an SQLite error code (e.g. SQLITE_NOMEM) is returned.
+**
+** <h3>Special sqlite_stat1 Handling</h3>
+**
+** As of SQLite version 3.22.0, the "sqlite_stat1" table is an exception to 
+** some of the rules above. In SQLite, the schema of sqlite_stat1 is:
+**  <pre>
+**  &nbsp;     CREATE TABLE sqlite_stat1(tbl,idx,stat)  
+**  </pre>
+**
+** Even though sqlite_stat1 does not have a PRIMARY KEY, changes are 
+** recorded for it as if the PRIMARY KEY is (tbl,idx). Additionally, changes 
+** are recorded for rows for which (idx IS NULL) is true. However, for such
+** rows a zero-length blob (SQL value X'') is stored in the changeset or
+** patchset instead of a NULL value. This allows such changesets to be
+** manipulated by legacy implementations of sqlite3changeset_invert(),
+** concat() and similar.
+**
+** The sqlite3changeset_apply() function automatically converts the 
+** zero-length blob back to a NULL value when updating the sqlite_stat1
+** table. However, if the application calls sqlite3changeset_new(),
+** sqlite3changeset_old() or sqlite3changeset_conflict on a changeset 
+** iterator directly (including on a changeset iterator passed to a
+** conflict-handler callback) then the X'' value is returned. The application
+** must translate X'' to NULL itself if required.
+**
+** Legacy (older than 3.22.0) versions of the sessions module cannot capture
+** changes made to the sqlite_stat1 table. Legacy versions of the
+** sqlite3changeset_apply() function silently ignore any modifications to the
+** sqlite_stat1 table that are part of a changeset or patchset.
 */
 SQLITE_API int sqlite3session_attach(
   sqlite3_session *pSession,      /* Session object */
@@ -9042,6 +9083,7 @@ SQLITE_API int sqlite3session_attach(
 
 /*
 ** CAPI3REF: Set a table filter on a Session Object.
+** METHOD: sqlite3_session
 **
 ** The second argument (xFilter) is the "filter callback". For changes to rows 
 ** in tables that are not attached to the Session object, the filter is called
@@ -9060,6 +9102,7 @@ SQLITE_API void sqlite3session_table_filter(
 
 /*
 ** CAPI3REF: Generate A Changeset From A Session Object
+** METHOD: sqlite3_session
 **
 ** Obtain a changeset containing changes to the tables attached to the 
 ** session object passed as the first argument. If successful, 
@@ -9182,7 +9225,8 @@ SQLITE_API int sqlite3session_fullchangeset(
 );
 
 /*
-** CAPI3REF: Load The Difference Between Tables Into A Session 
+** CAPI3REF: Load The Difference Between Tables Into A Session
+** METHOD: sqlite3_session
 **
 ** If it is not already attached to the session object passed as the first
 ** argument, this function attaches table zTbl in the same manner as the
@@ -9247,6 +9291,7 @@ SQLITE_API int sqlite3session_diff(
 
 /*
 ** CAPI3REF: Generate A Patchset From A Session Object
+** METHOD: sqlite3_session
 **
 ** The differences between a patchset and a changeset are that:
 **
@@ -9298,6 +9343,7 @@ SQLITE_API int sqlite3session_isempty(sqlite3_session *pSession);
 
 /*
 ** CAPI3REF: Create An Iterator To Traverse A Changeset 
+** CONSTRUCTOR: sqlite3_changeset_iter
 **
 ** Create an iterator used to iterate through the contents of a changeset.
 ** If successful, *pp is set to point to the iterator handle and SQLITE_OK
@@ -9338,6 +9384,7 @@ SQLITE_API int sqlite3changeset_start(
 
 /*
 ** CAPI3REF: Advance A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** This function may only be used with iterators created by function
 ** [sqlite3changeset_start()]. If it is called on an iterator passed to
@@ -9362,6 +9409,7 @@ SQLITE_API int sqlite3changeset_next(sqlite3_changeset_iter *pIter);
 
 /*
 ** CAPI3REF: Obtain The Current Operation From A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** The pIter argument passed to this function may either be an iterator
 ** passed to a conflict-handler by [sqlite3changeset_apply()], or an iterator
@@ -9396,6 +9444,7 @@ SQLITE_API int sqlite3changeset_op(
 
 /*
 ** CAPI3REF: Obtain The Primary Key Definition Of A Table
+** METHOD: sqlite3_changeset_iter
 **
 ** For each modified table, a changeset includes the following:
 **
@@ -9427,6 +9476,7 @@ SQLITE_API int sqlite3changeset_pk(
 
 /*
 ** CAPI3REF: Obtain old.* Values From A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** The pIter argument passed to this function may either be an iterator
 ** passed to a conflict-handler by [sqlite3changeset_apply()], or an iterator
@@ -9457,6 +9507,7 @@ SQLITE_API int sqlite3changeset_old(
 
 /*
 ** CAPI3REF: Obtain new.* Values From A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** The pIter argument passed to this function may either be an iterator
 ** passed to a conflict-handler by [sqlite3changeset_apply()], or an iterator
@@ -9490,6 +9541,7 @@ SQLITE_API int sqlite3changeset_new(
 
 /*
 ** CAPI3REF: Obtain Conflicting Row Values From A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** This function should only be used with iterator objects passed to a
 ** conflict-handler callback by [sqlite3changeset_apply()] with either
@@ -9517,6 +9569,7 @@ SQLITE_API int sqlite3changeset_conflict(
 
 /*
 ** CAPI3REF: Determine The Number Of Foreign Key Constraint Violations
+** METHOD: sqlite3_changeset_iter
 **
 ** This function may only be called with an iterator passed to an
 ** SQLITE_CHANGESET_FOREIGN_KEY conflict handler callback. In this case
@@ -9533,6 +9586,7 @@ SQLITE_API int sqlite3changeset_fk_conflicts(
 
 /*
 ** CAPI3REF: Finalize A Changeset Iterator
+** METHOD: sqlite3_changeset_iter
 **
 ** This function is used to finalize an iterator allocated with
 ** [sqlite3changeset_start()].
@@ -9549,6 +9603,7 @@ SQLITE_API int sqlite3changeset_fk_conflicts(
 ** to that error is returned by this function. Otherwise, SQLITE_OK is
 ** returned. This is to allow the following pattern (pseudo-code):
 **
+** <pre>
 **   sqlite3changeset_start();
 **   while( SQLITE_ROW==sqlite3changeset_next() ){
 **     // Do something with change.
@@ -9557,6 +9612,7 @@ SQLITE_API int sqlite3changeset_fk_conflicts(
 **   if( rc!=SQLITE_OK ){
 **     // An error has occurred 
 **   }
+** </pre>
 */
 SQLITE_API int sqlite3changeset_finalize(sqlite3_changeset_iter *pIter);
 
@@ -9604,6 +9660,7 @@ SQLITE_API int sqlite3changeset_invert(
 ** sqlite3_changegroup object. Calling it produces similar results as the
 ** following code fragment:
 **
+** <pre>
 **   sqlite3_changegroup *pGrp;
 **   rc = sqlite3_changegroup_new(&pGrp);
 **   if( rc==SQLITE_OK ) rc = sqlite3changegroup_add(pGrp, nA, pA);
@@ -9614,6 +9671,7 @@ SQLITE_API int sqlite3changeset_invert(
 **     *ppOut = 0;
 **     *pnOut = 0;
 **   }
+** </pre>
 **
 ** Refer to the sqlite3_changegroup documentation below for details.
 */
@@ -9629,11 +9687,15 @@ SQLITE_API int sqlite3changeset_concat(
 
 /*
 ** CAPI3REF: Changegroup Handle
+**
+** A changegroup is an object used to combine two or more 
+** [changesets] or [patchsets]
 */
 typedef struct sqlite3_changegroup sqlite3_changegroup;
 
 /*
 ** CAPI3REF: Create A New Changegroup Object
+** CONSTRUCTOR: sqlite3_changegroup
 **
 ** An sqlite3_changegroup object is used to combine two or more changesets
 ** (or patchsets) into a single changeset (or patchset). A single changegroup
@@ -9671,6 +9733,7 @@ SQLITE_API int sqlite3changegroup_new(sqlite3_changegroup **pp);
 
 /*
 ** CAPI3REF: Add A Changeset To A Changegroup
+** METHOD: sqlite3_changegroup
 **
 ** Add all changes within the changeset (or patchset) in buffer pData (size
 ** nData bytes) to the changegroup. 
@@ -9748,6 +9811,7 @@ SQLITE_API int sqlite3changegroup_add(sqlite3_changegroup*, int nData, void *pDa
 
 /*
 ** CAPI3REF: Obtain A Composite Changeset From A Changegroup
+** METHOD: sqlite3_changegroup
 **
 ** Obtain a buffer containing a changeset (or patchset) representing the
 ** current contents of the changegroup. If the inputs to the changegroup
@@ -9778,6 +9842,7 @@ SQLITE_API int sqlite3changegroup_output(
 
 /*
 ** CAPI3REF: Delete A Changegroup Object
+** DESTRUCTOR: sqlite3_changegroup
 */
 SQLITE_API void sqlite3changegroup_delete(sqlite3_changegroup*);
 
