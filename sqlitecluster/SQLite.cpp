@@ -223,10 +223,10 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             int walSizeFrames = 0;
             int framesCheckpointed = 0;
             uint64_t start = STimeNow();
-            sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
+            int result = sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
             SINFO("[checkpoint] passive checkpoint complete with " << pageCount
-                  << " pages in WAL file. Frames checkpointed: " << framesCheckpointed << " of " << walSizeFrames
-                  << " in " << ((STimeNow() - start) / 1000) << "ms.");
+                  << " pages in WAL file. Result: " << result << ". Frames checkpointed: "
+                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         }
     } else {
         // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
@@ -273,8 +273,8 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << "ms for pending transactions. Starting complete checkpoint.");
                     int walSizeFrames = 0;
                     int framesCheckpointed = 0;
-                    sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
-                    SINFO("[checkpoint] restart checkpoint complete. Frames checkpointed: "
+                    int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
+                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Frames checkpointed: "
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
