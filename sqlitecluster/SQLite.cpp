@@ -225,7 +225,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             uint64_t start = STimeNow();
             int result = sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
             SINFO("[checkpoint] passive checkpoint complete with " << pageCount
-                  << " pages in WAL file. Result: " << result << ". Frames checkpointed: "
+                  << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
                   << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         }
     } else {
@@ -274,7 +274,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     int walSizeFrames = 0;
                     int framesCheckpointed = 0;
                     int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
-                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Frames checkpointed: "
+                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
