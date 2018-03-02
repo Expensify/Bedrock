@@ -34,7 +34,7 @@ class SQLite {
     //
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
-    SQLite(const string& filename, int cacheSize, int checkpointInterval, int maxJournalSize, int journalTable,
+    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
            int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
@@ -148,11 +148,22 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist;
 
+    // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
+    void waitForCheckpoint();
+
+    // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
+    // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
+    static atomic<int> passiveCheckpointPageMin;
+    static atomic<int> fullCheckpointPageMin;
+    
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     struct SharedData {
+        // Constructor.
+        SharedData();
+
         // This is the last committed hash by *any* thread for this file.
         atomic<string> _lastCommittedHash;
 
@@ -213,6 +224,20 @@ class SQLite {
         // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
         // called to generate a journal row, but have not yet been sent to peers.
         map<uint64_t, pair<string, string>> _inFlightTransactions;
+
+        // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
+        // when required to make sure it can get exclusive use of the DB.
+        mutex blockNewTransactionsMutex;
+
+        // These three varialbes let us notify the checkpoint thread when a tranasction ends (or starts, but it will
+        // have blocked any new ones from starting by locking blockNewTransactionsMutex).
+        mutex notifyWaitMutex;
+        condition_variable blockNewTransactionsCV;
+        atomic<int> currentTransactionCount;
+
+        // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
+        // if the SQLite object that initiated it has been deleted since it started.
+        set<SQLite*> validObjects;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
@@ -226,8 +251,8 @@ class SQLite {
     static recursive_mutex _commitLock;
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
-    // database file. It's a map of canonicalized filename to a reference count and a sharedData object.
-    static map<string, pair<int, SharedData*>> _sharedDataLookupMap; 
+    // database file. It's a map of canonicalized filename to a sharedData object.
+    static map<string, SharedData*> _sharedDataLookupMap; 
 
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
@@ -317,5 +342,6 @@ class SQLite {
     bool _autoRolledBack;
 
     bool _noopUpdateMode;
-    int _checkpointInterval;
+
+    bool _enableFullCheckpoints;
 };

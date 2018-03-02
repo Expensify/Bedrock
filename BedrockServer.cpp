@@ -101,7 +101,7 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // Initialize the DB.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 1024, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
+    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -371,6 +371,9 @@ void BedrockServer::sync(SData& args,
                 // no worker thread can commit in the middle of our transaction. We need our entire transaction to
                 // happen with no other commits to ensure that we can't get a conflict.
                 uint64_t beforeLock = STimeNow();
+
+                // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
+                db.waitForCheckpoint();
                 server._syncThreadCommitMutex.lock();
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
@@ -502,10 +505,7 @@ void BedrockServer::worker(SData& args,
                            int threadCount)
 {
     SInitialize("worker" + to_string(threadId));
-
-    // We pass `0` as the checkpoint size to disable checkpointing from workers. This can be a slow operation, and we
-    // don't want workers to be able to block the sync thread while it happens.
-    SQLite db(args["-db"], args.calc("-cacheSize"), 0, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
+    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
@@ -646,6 +646,9 @@ void BedrockServer::worker(SData& args,
             // iteration.
             bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
             while (retry) {
+                // Block if a checkpoint is happening so we don't interrupt it.
+                db.waitForCheckpoint();
+
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
@@ -1626,12 +1629,13 @@ void BedrockServer::_status(BedrockCommand& command) {
 }
 
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
-    if (SIEquals(command.request.methodLine, "BeginBackup")         ||
-        SIEquals(command.request.methodLine, "SuppressCommandPort") ||
-        SIEquals(command.request.methodLine, "ClearCommandPort")    ||
-        SIEquals(command.request.methodLine, "ClearCrashCommands") ||
-        SIEquals(command.request.methodLine, "Detach")              ||
-        SIEquals(command.request.methodLine, "Attach")
+    if (SIEquals(command.request.methodLine, "BeginBackup")            ||
+        SIEquals(command.request.methodLine, "SuppressCommandPort")    ||
+        SIEquals(command.request.methodLine, "ClearCommandPort")       ||
+        SIEquals(command.request.methodLine, "ClearCrashCommands")     ||
+        SIEquals(command.request.methodLine, "Detach")                 ||
+        SIEquals(command.request.methodLine, "Attach")                 ||
+        SIEquals(command.request.methodLine, "SetCheckpointIntervals")
         ) {
         return true;
     }
@@ -1657,6 +1661,15 @@ void BedrockServer::_control(BedrockCommand& command) {
     } else if (SIEquals(command.request.methodLine, "Attach")) {
         response.methodLine = "204 ATTACHING";
         _detach = false;
+    } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
+        response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
+        response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
+        if (command.request.isSet("passiveCheckpointPageMin")) {
+            SQLite::passiveCheckpointPageMin.store(command.request.calc("passiveCheckpointPageMin"));
+        }
+        if (command.request.isSet("fullCheckpointPageMin")) {
+            SQLite::fullCheckpointPageMin.store(command.request.calc("fullCheckpointPageMin"));
+        }
     }
 }
 
