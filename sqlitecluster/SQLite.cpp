@@ -677,7 +677,9 @@ void SQLite::rollback() {
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
             _autoRolledBack = false;
         } else {
-            SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
+            if (_uncommittedQuery.size()) {
+                SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
+            }
             uint64_t before = STimeNow();
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
@@ -686,8 +688,10 @@ void SQLite::rollback() {
         // Finally done with this.
         _insideTransaction = false;
         _uncommittedHash.clear();
+        if (_uncommittedQuery.size()) {
+            SINFO("Rollback successful.");
+        }
         _uncommittedQuery.clear();
-        SINFO("Rollback successful.");
 
         // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
         // ever having called `prepare`, which would have locked our mutex.

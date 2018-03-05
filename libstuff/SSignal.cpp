@@ -111,7 +111,7 @@ void SInitializeSignals() {
 void _SSignal_signalHandlerThreadFunc() {
     // Initialize logging for this thread.
     SLogSetThreadName("signal");
-    SLogSetThreadPrefix("xxxxx ");
+    SLogSetThreadPrefix("xxxxxx ");
 
     // Make a set of all signals.
     sigset_t signals;
