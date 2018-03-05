@@ -348,6 +348,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
     content.clear();
+    response.clear();
 
     // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
