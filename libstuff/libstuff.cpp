@@ -62,7 +62,7 @@ thread_local string SThreadLogName;
 void SInitialize(string threadName) {
     // Initialize signal handling
     SLogSetThreadName(threadName);
-    SLogSetThreadPrefix("xxxxx ");
+    SLogSetThreadPrefix("xxxxxx ");
     SInitializeSignals();
 }
 

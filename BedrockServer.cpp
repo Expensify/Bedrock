@@ -26,6 +26,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
+        SAUTOPREFIX(command.request["requestID"]);
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
         _commandQueue.push(BedrockCommand(move(command)));
@@ -329,6 +330,7 @@ void BedrockServer::sync(SData& args,
             try {
                 while (true) {
                     BedrockCommand completedCommand = completedCommands.pop();
+                    SAUTOPREFIX(command.request["requestID"]);
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
@@ -352,6 +354,9 @@ void BedrockServer::sync(SData& args,
             }
             // Now we can pull the next command off the queue and start on it.
             command = syncNodeQueuedCommands.pop();
+
+            // We got a command to work on! Set our log prefix to the request ID.
+            SAUTOPREFIX(command.request["requestID"]);
             SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
@@ -361,9 +366,6 @@ void BedrockServer::sync(SData& args,
             SSetSignalHandlerDieFunc([&](){
                 server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
             });
-
-            // We got a command to work on! Set our log prefix to the request ID.
-            SAUTOPREFIX(command.request["requestID"]);
 
             // And now we'll decide how to handle it.
             if (nodeState == SQLiteNode::MASTERING) {
