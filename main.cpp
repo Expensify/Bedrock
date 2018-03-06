@@ -50,6 +50,10 @@ void VacuumDB(const string& db) { RetrySystem("sqlite3 " + db + " 'VACUUM;'"); }
 
 #define BACKUP_DIR "/var/tmp/"
 void BackupDB(const string& dbPath) {
+    // Open database connection to prevent checkpointing
+    SINFO("Opening connection to " << dbPath);
+    SASSERT(sqlite3_open_v2(dbPath, &_db, SQLITE_OPEN_READONLY, NULL));
+
     const string& dbFile = string(basename((char*)dbPath.c_str()));
     SINFO("Starting " << dbFile << " database backup.");
     SASSERT(SFileCopy(dbPath, BACKUP_DIR + dbFile));
@@ -70,6 +74,10 @@ void BackupDB(const string& dbPath) {
         SASSERT(SFileCopy(dbShmPath, BACKUP_DIR + string(basename((char*)dbShmPath.c_str()))));
         SINFO("Finished " << dbFile << "-shm database backup.");
     }
+
+    // Close database connection
+    SINFO("Closing database connection to " << dbPath);
+    SASSERT(!sqlite3_close(_db));
 }
 
 
