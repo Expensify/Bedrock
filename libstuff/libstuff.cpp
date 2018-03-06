@@ -1498,7 +1498,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         string domain;
         uint16_t port = 0;
         if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host");
+            STHROW("invalid host: " + host);
         }
 
         // Is the domain just a raw IP?

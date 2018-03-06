@@ -85,6 +85,13 @@ class BedrockServer : public SQLiteServer {
     // Returns whether or not this server was configured to backup when it completed shutdown.
     bool backupOnShutdown();
 
+    // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
+    // sync node.
+    list<STable> getPeerInfo();
+
+    // Send a command to all of our peers. It will be wrapped appropriately.
+    void broadcastCommand(const SData& message);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -194,7 +201,7 @@ class BedrockServer : public SQLiteServer {
     SQLiteNode* _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
-    mutex _syncMutex;
+    recursive_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(BedrockCommand& command);

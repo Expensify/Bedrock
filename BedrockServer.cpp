@@ -11,7 +11,7 @@ recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
-    if(SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
+    if (SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
         SData request;
         request.deserialize(command.request.content);
 
@@ -26,6 +26,9 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
+        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
+            command.request.deserialize(command.request.content);
+        }
         SAUTOPREFIX(command.request["requestID"]);
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
@@ -364,7 +367,7 @@ void BedrockServer::sync(SData& args,
             // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
             // this, which would probably make this message malformed. This is the best we can do.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
+                server._syncNode->broadcast(_generateCrashMessage(&command));
             });
 
             // And now we'll decide how to handle it.
@@ -524,7 +527,7 @@ void BedrockServer::worker(SData& args,
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
             // signals, like SIGSEGV, this function will be called.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
+                server._syncNode->broadcast(_generateCrashMessage(&command));
             });
 
             // Check if this command would be likely to cause a crash
@@ -1477,6 +1480,18 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
     return false;
 }
 
+list<STable> BedrockServer::getPeerInfo() {
+    SAUTOLOCK(_syncMutex);
+    list<STable> peerData;
+    if (_syncNode) {
+        for (SQLiteNode::Peer* peer : _syncNode->peerList) {
+            peerData.emplace_back(peer->nameValueMap);
+            peerData.back()["host"] = peer->host;
+        }
+    }
+    return peerData;
+}
+
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
@@ -1550,7 +1565,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
-        list<STable> peerData;
+        list<STable> peerData = getPeerInfo();
         list<string> escalated;
         {
             SAUTOLOCK(_syncMutex);
@@ -1561,12 +1576,6 @@ void BedrockServer::_status(BedrockCommand& command) {
                 // Set some information about this node.
                 content["CommitCount"] = to_string(_syncNode->getCommitCount());
                 content["priority"] = to_string(_syncNode->getPriority());
-
-                // Retrieve information about our peers.
-                for (SQLiteNode::Peer* peer : _syncNode->peerList) {
-                    peerData.emplace_back(peer->nameValueMap);
-                    peerData.back()["host"] = peer->host;
-                }
 
                 // Get any escalated commands that are waiting to be processed.
                 escalated = _syncNode->getEscalatedCommandRequestMethodLines();
@@ -1757,6 +1766,15 @@ SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
     return message;
 }
 
+void BedrockServer::broadcastCommand(const SData& cmd) {
+    SData message("BROADCAST_COMMAND");
+    message.content = cmd.serialize();
+    lock_guard<recursive_mutex> lock(_syncMutex);
+    if (_syncNode) {
+        _syncNode->broadcast(message);
+    }
+}
+
 void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
@@ -1769,7 +1787,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             for (const auto& fields : command.nameValueMap) {
                 cmd.crashIdentifyingValues.insert(fields.first);
             }
-            _syncNode->emergencyBroadcast(_generateCrashMessage(&cmd), peer);
+            _syncNode->broadcast(_generateCrashMessage(&cmd), peer);
         }
     }
 }
