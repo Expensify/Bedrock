@@ -93,7 +93,7 @@ void BedrockServer::sync(SData& args,
                          BedrockServer& server)
 {
     // Initialize the thread.
-    SInitialize(_syncThreadName, (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
+    SInitialize(_syncThreadName);
 
     // We currently have no writable commands in progress.
     server._writableCommandsInProgress.store(0);
@@ -513,7 +513,7 @@ void BedrockServer::worker(SData& args,
                            int threadId,
                            int threadCount)
 {
-    SInitialize("worker" + to_string(threadId), (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
+    SInitialize("worker" + to_string(threadId));
     SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
 
