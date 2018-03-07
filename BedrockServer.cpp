@@ -1306,6 +1306,15 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     BedrockCommand command(request);
+
+                    // Get the source ip of the command.
+                    unsigned long ip = ntohl(s->addr.sin_addr.s_addr);
+                    // This number is the unsigned long representation of 127.0.0.1.
+                    if (2130706433 != ip) {
+                        // If the command came from anywhere else than localhost, tag it with a source of 'www'.
+                        command.request["_source"] = "www";
+                    }
+
                     if (command.writeConsistency != SQLiteNode::QUORUM
                         && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
 
@@ -1326,11 +1335,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _status(command);
                         _reply(command);
                     } else if (_isControlCommand(command)) {
-                        // Verify this came from localhost.
-                        unsigned long ip = ntohl(s->addr.sin_addr.s_addr);
-
-                        // This number is the unsigned long representation of 127.0.0.1.
-                        if (2130706433 == ip) {
+                        // Control commands can only come from localhost (and thus have an empty `_source`).
+                        if (command.request["_source"].empty()) {
                             _control(command);
                             _reply(command);
                         } else {
