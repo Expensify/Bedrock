@@ -50,6 +50,10 @@ void VacuumDB(const string& db) { RetrySystem("sqlite3 " + db + " 'VACUUM;'"); }
 
 #define BACKUP_DIR "/var/tmp/"
 void BackupDB(const string& dbPath) {
+
+    // Instantiate SQLite pointer '_db'
+    SQLite* _db = NULL;
+
     // Open database connection to prevent checkpointing
     SINFO("Opening connection to " << dbPath);
     SASSERT(sqlite3_open_v2(dbPath, &_db, SQLITE_OPEN_READONLY, NULL));
