@@ -59,7 +59,12 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
-void SInitialize(string threadName) {
+void SInitialize(string threadName, const char* processName) {
+    // If a specific process name has been supplied, initialize syslog with it.
+    if (processName) {
+        openlog(processName, 0, 0);
+    }
+
     // Initialize signal handling
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxxx ");

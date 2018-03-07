@@ -27,7 +27,11 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
         if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
-            command.request.deserialize(command.request.content);
+            SData newRequest;
+            newRequest.deserialize(command.request.content);
+            command.request = newRequest;
+            command.initiatingClientID = -1;
+            command.initiatingPeerID = 0;
         }
         SAUTOPREFIX(command.request["requestID"]);
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
@@ -89,7 +93,7 @@ void BedrockServer::sync(SData& args,
                          BedrockServer& server)
 {
     // Initialize the thread.
-    SInitialize(_syncThreadName);
+    SInitialize(_syncThreadName, (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
 
     // We currently have no writable commands in progress.
     server._writableCommandsInProgress.store(0);
@@ -509,7 +513,7 @@ void BedrockServer::worker(SData& args,
                            int threadId,
                            int threadCount)
 {
-    SInitialize("worker" + to_string(threadId));
+    SInitialize("worker" + to_string(threadId), (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
     SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
 

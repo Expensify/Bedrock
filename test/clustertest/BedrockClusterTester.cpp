@@ -79,6 +79,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-nodeName",    nodeName},
             {"-peerList",    peerString},
             {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-overrideProcessName", "bedrock" + to_string(nodePort)},
         };
 
         for (auto& a : _args) {
