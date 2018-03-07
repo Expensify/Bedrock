@@ -1308,11 +1308,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     BedrockCommand command(request);
 
                     // Get the source ip of the command.
-                    unsigned long ip = ntohl(s->addr.sin_addr.s_addr);
-                    // This number is the unsigned long representation of 127.0.0.1.
-                    if (2130706433 != ip) {
-                        // If the command came from anywhere else than localhost, tag it with a source of 'www'.
-                        command.request["_source"] = "www";
+                    char *ip = inet_ntoa(s->addr.sin_addr);
+                    if (ip != "127.0.0.1"s) {
+                        // We only add this if it's not localhost because existing code expects commands that come from
+                        // localhost to have it blank.
+                        command.request["_source"] = ip;
                     }
 
                     if (command.writeConsistency != SQLiteNode::QUORUM
