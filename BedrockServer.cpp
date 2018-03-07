@@ -1491,6 +1491,7 @@ list<STable> BedrockServer::getPeerInfo() {
         for (SQLiteNode::Peer* peer : _syncNode->peerList) {
             peerData.emplace_back(peer->nameValueMap);
             peerData.back()["host"] = peer->host;
+            peerData.back()["name"] = peer->name;
         }
     }
     return peerData;
