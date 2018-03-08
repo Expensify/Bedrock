@@ -274,6 +274,9 @@ void BedrockServer::sync(SData& args,
             }
         }
 
+        // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
+        SAUTOPREFIX(command.request["requestID"]);
+
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !syncNode.commitInProgress()) {
