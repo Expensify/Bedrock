@@ -56,7 +56,7 @@ void BackupDB(const string& dbPath) {
 
     // Open database connection to prevent checkpointing
     SINFO("Opening connection to " << dbPath);
-    SASSERT(sqlite3_open_v2(dbPath, &_db, SQLITE_OPEN_READONLY, NULL));
+    SASSERT(sqlite3_open_v2(dbPath.c_str(), &_db, SQLITE_OPEN_READONLY, NULL));
 
     const string& dbFile = string(basename((char*)dbPath.c_str()));
     SINFO("Starting " << dbFile << " database backup.");
