@@ -150,6 +150,10 @@ void BedrockServer::sync(SData& args,
     // the logic of this loop simpler.
     server._syncMutex.lock();
     while (!syncNode.shutdownComplete()) {
+
+        // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
+        SAUTOPREFIX(command.request["requestID"]);
+
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
         // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
@@ -320,6 +324,9 @@ void BedrockServer::sync(SData& args,
                       << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
+
+            // Prevent the requestID from a finished command from being used.
+            command.request.clear();
         }
 
         // We're either mastering, standing down, or slaving. There could be a commit in progress on `command`, but
@@ -330,7 +337,7 @@ void BedrockServer::sync(SData& args,
             try {
                 while (true) {
                     BedrockCommand completedCommand = completedCommands.pop();
-                    SAUTOPREFIX(command.request["requestID"]);
+                    SAUTOPREFIX(completedCommand.request["requestID"]);
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
@@ -443,6 +450,9 @@ void BedrockServer::sync(SData& args,
                 syncNode.escalateCommand(move(command));
             }
         } catch (const out_of_range& e) {
+            // Prevent the requestID from a finished command from being used.
+            command.request.clear();
+
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
