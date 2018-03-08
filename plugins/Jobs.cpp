@@ -879,7 +879,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED") {
-            SWARN("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
+            SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
 
@@ -889,7 +889,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (parentJobID) {
             auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             if (!SIEquals(parentState, "PAUSED")) {
-                SWARN("Trying to finish/retry job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
+                SINFO("Trying to finish/retry job#" << jobID << ", but parent isn't PAUSED (" << parentState << ")");
                 STHROW("405 Can only retry/finish child job when parent is PAUSED");
             }
         }
@@ -1074,7 +1074,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Make sure we're failing a job that's actually running
         if (state != "RUNNING") {
-            SWARN("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
+            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
             STHROW("405 Can only fail RUNNING jobs");
         }
 
