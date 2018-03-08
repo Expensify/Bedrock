@@ -1834,7 +1834,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
     default:
         // Interesting -- reset the socket and hope it clears
         SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                      << ", closing.");
+                      << "), closing.");
         return false; // Socket died
 
     case S_EINTR:

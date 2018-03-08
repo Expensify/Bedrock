@@ -19,7 +19,7 @@ SHTTPSManager::~SHTTPSManager() {
     // Clean up outstanding transactions
     SASSERTWARN(_activeTransactionList.empty());
     while (!_activeTransactionList.empty()) {
-        closeTransaction(_activeTransactionList.front());
+        closeTransaction(_activeTransactionList.begin());
     }
     SASSERTWARN(_completedTransactionList.empty());
     while (!_completedTransactionList.empty()) {
@@ -37,7 +37,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     SAUTOLOCK(_listMutex);
 
     // Clean up the socket and done
-    _activeTransactionList.remove(transaction);
+    _activeTransactionList.erase(transaction);
     _completedTransactionList.remove(transaction);
     if (transaction->s) {
         closeSocket(transaction->s);
@@ -174,6 +174,6 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
+    _activeTransactionList.insert(transaction);
     return transaction;
 }
