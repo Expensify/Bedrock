@@ -27,6 +27,12 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
         SAUTOPREFIX(command.request["requestID"]);
+        if (command.writeConsistency != SQLiteNode::QUORUM
+            && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
+
+            command.writeConsistency = SQLiteNode::QUORUM;
+            SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
+        }
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
         _commandQueue.push(BedrockCommand(move(command)));
