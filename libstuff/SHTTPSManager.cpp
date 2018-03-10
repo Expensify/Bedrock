@@ -19,7 +19,7 @@ SHTTPSManager::~SHTTPSManager() {
     // Clean up outstanding transactions
     SASSERTWARN(_activeTransactionList.empty());
     while (!_activeTransactionList.empty()) {
-        closeTransaction(_activeTransactionList.begin());
+        closeTransaction(_activeTransactionList.front());
     }
     SASSERTWARN(_completedTransactionList.empty());
     while (!_completedTransactionList.empty()) {
@@ -37,7 +37,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     SAUTOLOCK(_listMutex);
 
     // Clean up the socket and done
-    _activeTransactionList.erase(transaction);
+    _activeTransactionList.remove(transaction);
     _completedTransactionList.remove(transaction);
     if (transaction->s) {
         closeSocket(transaction->s);
@@ -119,7 +119,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
                   << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
-            _activeTransactionList.erase(activeIt);
+            _activeTransactionList.remove(activeIt);
             _completedTransactionList.push_back(active);
         }
     }
@@ -174,6 +174,6 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);
-    _activeTransactionList.insert(transaction);
+    _activeTransactionList.push_front(transaction);
     return transaction;
 }
