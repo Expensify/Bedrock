@@ -20,6 +20,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::hasRepeatWithNextRun),
                               TEST(RetryJobTest::hasRepeatWithDelay),
                               TEST(RetryJobTest::hasDelayAndNextRun),
+                              TEST(RetryJobTest::simpleRetryWithHttp),
                               AFTER(RetryJobTest::tearDown),
                               AFTER_CLASS(RetryJobTest::tearDownClass)) { }
 
@@ -137,6 +138,12 @@ struct RetryJobTest : tpunit::TestFixture {
         command["name"] = "child_finished";
         tester->executeWaitVerifyContent(command);
 
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
         // Cancel a child
         // if this goes 2nd this doesn't retry the parent job
         command.clear();
@@ -162,7 +169,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         SQResult result;
-        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + ";", result);
+        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
@@ -483,6 +490,34 @@ struct RetryJobTest : tpunit::TestFixture {
         const string nextRun = getTimeInFuture(10);
         command["nextRun"] = nextRun;
         command["delay"] = "900";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun updated correctly
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], nextRun);
+    }
+
+    // Retry the job with HTTP
+    void simpleRetryWithHttp() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob / HTTP/1.1";
+        command["jobID"] = jobID;
+        const string nextRun = getTimeInFuture(10);
+        command["nextRun"] = nextRun;
         tester->executeWaitVerifyContent(command);
 
         // Confirm nextRun updated correctly

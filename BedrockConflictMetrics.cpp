@@ -83,6 +83,11 @@ bool BedrockConflictMetrics::multiWriteOK(const string& commandName) {
     // And now that we know whether or not we can multi-write this, see if that's different than the last time we
     // checked for this command, so we can do extra logging if so.
     if (result != metric._lastCheckOK) {
+        if (result) {
+            // Give a fresh start on making this OK again, so that we don't fall back into a DENIED state on the next
+            // check.
+            metric._results.reset();
+        }
         SINFO("Multi-write changing to " << resultString << " for command '" << commandName
               << "' recent conflicts: " << conflicts << "/" << min((uint64_t)COMMAND_COUNT, totalAttempts)
               << ", total conflicts: " << metric._totalConflictCount << "/" << totalAttempts << ".");

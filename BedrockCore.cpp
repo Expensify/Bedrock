@@ -2,7 +2,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
-BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : 
+BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) :
 SQLiteCore(db),
 _server(server)
 { }
@@ -23,25 +23,31 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
-        if (!_db.beginConcurrentTransaction()) {
-            STHROW("501 Failed to begin concurrent transaction");
+        bool pluginPeeked = false;
+        try {
+            if (!_db.beginConcurrentTransaction()) {
+                STHROW("501 Failed to begin concurrent transaction");
+            }
+
+            // Make sure no writes happen while in peek command
+            _db.read("PRAGMA query_only = true;");
+
+            // Try each plugin, and go with the first one that says it succeeded.
+            for (auto plugin : _server.plugins) {
+                // Try to peek the command.
+                    if (plugin->peekCommand(_db, command)) {
+                        SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
+                        pluginPeeked = true;
+                        break;
+                    }
+            }
+        } catch (const SQLite::timeout_error& e) {
+            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            STHROW("555 Timeout peeking command");
         }
 
-        // Try each plugin, and go with the first one that says it succeeded.
-        bool pluginPeeked = false;
-        for (auto plugin : _server.plugins) {
-            // Try to peek the command.
-            try {
-                if (plugin->peekCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                    pluginPeeked = true;
-                    break;
-                }
-            } catch (const SQLite::timeout_error& e) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
-                STHROW("555 Timeout peeking command");
-            }
-        }
+        // Peeking is over now, allow writes
+        _db.read("PRAGMA query_only = false;");
 
         // If nobody succeeded in peeking it, then we'll need to process it.
         // TODO: Would be nice to be able to check if a plugin *can* handle a command, so that we can differentiate
@@ -73,7 +79,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
+        _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
+    } catch (...) {
+        _db.read("PRAGMA query_only = false;");
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
     }
 
     // If we get here, it means the command is fully completed.
@@ -112,6 +123,9 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
 
         // Loop across the plugins to see which wants to take this.
         bool pluginProcessed = false;
+
+        // If the command is mocked, turn on UpdateNoopMode.
+        _db.setUpdateNoopMode(command.request.isSet("mockRequest"));
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             try {
@@ -144,9 +158,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
             response.methodLine = "200 OK";
         }
 
-        // Add the commitCount header to the response.
-        response["commitCount"] = to_string(_db.getCommitCount());
-
         // Success, this command will be committed.
         SINFO("Processed '" << response.methodLine << "' for '" << request.methodLine << "'.");
 
@@ -164,7 +175,16 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     } catch (const SException& e) {
         _handleCommandException(command, e);
         _db.rollback();
+        needsCommit = false;
+    } catch(...) {
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        command.response.methodLine = "500 Unhandled Exception";
+        _db.rollback();
+        needsCommit = false;
     }
+
+    // We can turn this back off now, this is a noop if it's not turned on.
+    _db.setUpdateNoopMode(false);
 
     // We can reset the timing info for the next command.
     _db.resetTiming();
@@ -202,4 +222,23 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const SExcept
 
     // Add the commitCount header to the response.
     command.response["commitCount"] = to_string(_db.getCommitCount());
+}
+string BedrockCore::_getExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
 }

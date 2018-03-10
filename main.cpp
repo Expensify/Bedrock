@@ -207,7 +207,7 @@ int main(int argc, char* argv[]) {
         cout << "-nodeHost       <host:port> Listen on this host:port for connections from other nodes" << endl;
         cout << "-peerList       <list>      See below" << endl;
         cout << "-priority       <value>     See '-peerList Details' below (defaults to 100)" << endl;
-        cout << "-plugins        <list>      Enable these plugins (defaults to 'db,jobs,cache')" << endl;
+        cout << "-plugins        <list>      Enable these plugins (defaults to 'db,jobs,cache,mysql')" << endl;
         cout << "-cacheSize      <kb>        number of KB to allocate for a page cache (defaults to 1GB)" << endl;
         cout << "-workerThreads  <#>         Number of worker threads to start (min 1, defaults to # of cores)" << endl;
         cout << "-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to "
@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
-    SETDEFAULT("-plugins", "db,jobs,cache");
+    SETDEFAULT("-plugins", "db,jobs,cache,mysql");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");

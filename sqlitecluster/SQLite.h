@@ -34,18 +34,18 @@ class SQLite {
     //
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
-    SQLite(const string& filename, int cacheSize, int autoCheckpoint, int maxJournalSize, int journalTable,
+    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
            int maxRequiredJournalTableID, const string& synchronous = "");
     ~SQLite();
 
-    // Returns the filename for this database
+    // Returns the canonicalized filename for this database
     string getFilename() { return _filename; }
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
     bool read(const string& query, SQResult& result);
 
-    // Performs a read-only query (eg, SELECT) that returns a single cell.
+    // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
     // Begins a new transaction. Returns true on success.
@@ -64,7 +64,22 @@ class SQLite {
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
     // Returns true  on success.
+    // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
+    // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
+    // known to be repeatable. What counts as repeatable is up to the individual command.
+    bool writeIdempotent(const string& query);
+
+    // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
+    // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added
+    // to the journal *even if they have no effect* on the rest of the database.
+    bool writeUnmodified(const string& query);
+
+    // Enable or disable update-noop mode.
+    void setUpdateNoopMode(bool enabled);
+    bool getUpdateNoopMode();
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
@@ -133,73 +148,115 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist;
 
+    // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
+    void waitForCheckpoint();
+
+    // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
+    // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
+    static atomic<int> passiveCheckpointPageMin;
+    static atomic<int> fullCheckpointPageMin;
+    
   private:
-    // This is the last committed hash by *any* thread.
-    static atomic<string> _lastCommittedHash;
 
-    // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
-    // peers.
-    static set<uint64_t> _committedTransactionIDs;
+    // This structure contains all of the data that's shared between a set of SQLite objects that share the same
+    // underlying database file.
+    struct SharedData {
+        // Constructor.
+        SharedData();
 
-    // You're only supposed to configure SQLite options before initializing the library, but the library provides no
-    // way to check if it's been initialized, so we store our own value here.
-    static atomic_flag _sqliteInitialized;
+        // This is the last committed hash by *any* thread for this file.
+        atomic<string> _lastCommittedHash;
+
+        // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
+        // peers.
+        set<uint64_t> _committedTransactionIDs;
+
+        // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
+        // though this atomic integer. getCommitCount() returns the value of this variable.
+        atomic<uint64_t> _commitCount;
+
+        // Names of journal tables for this database.
+        list<string> _journalNames;
+
+        // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
+        // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
+        // to peers)?
+        // Originally, that had been the idea, but we ran into a problem with the way we send transactions to peers. When
+        // doing parallel writes, we'll always write commits to the database in order. We particularly construct locks
+        // around both `prepare()` and `commit()` in SQLiteNode to handle this (and yes, the fact that I'm discussing
+        // SQLiteNode in SQlite.h is not a sign of great encapsulation). In general then, since rows are always added to
+        // the DB and then committed in order, we could just keep a pointer to the last-sent transaction, and send all
+        // transactions following that one to peers.
+        //
+        // However, this breaks down when we need to do a quorum command. In this case, we perform the following actions
+        // from the sync thread:
+        //
+        // 1) processCommand()
+        // 2) mutex.lock()
+        // 3) sendOutstandingTransactions()
+        // 4) prepare()
+        // 5) commit() <- this is a distributed commit.
+        //
+        // We need to sendOutstandingTransactions() before calling commit(), because this is a distributed commit and if we
+        // don't send any outstanding transactions to peers before sending the current one, then transactions will arrive
+        // at peers out of order. We also need to lock our mutex before calling sendOutstandingTransactions() to prevent
+        // any other threads from making new commits while we're sending them, which would result in the same out-of-order
+        // sending when we completed sendOutstandingTransactions(), but still had (newly committed) transactions to send.
+        //
+        // The problem that requires us to keep lists of outstanding transactions is that when we call processCommand() in
+        // the current thread, sqlite will use a snapshot of the database taken at that point (the point at which we do
+        // `BEGIN CONCURRENT`) until we either commit or rollback the transaction.
+        // That means that if any other thread makes a new commit to the database after we've started process(), but before
+        // we call sendOutstandingTransactions(), we won't see it from the current thread, because we're operating on on
+        // old database snpashot until we either rollback(), which defeats the purpose of committing a new transaction, or
+        // we commit(), which we can't do yet because we need to send outstanding transactions first.
+        //
+        // We could grab out mutex earlier, before calling processCommand(), which would avoid this situation, but it would
+        // cause all other threads to wait for the entire duration of processCommand() in this thread, which is the sort of
+        // performance problem we're trying to avoid in the first place with parallel writes. Instead, when each thread
+        // adds new commits, it makes them available in the following lists, so that we'll have access to them in
+        // sendOutstandingTransactions(), even if the current thread is operating on an old DB snapshot.
+        //
+        // NOTE: Both of the following collections (_inFlightTransactions and _committedtransactionIDs) are shared between
+        // all threads and need to be accessed in a synchronized fashion. They do *NOT* implement their own synchronization
+        // and must be protected by locking `_commitLock`.
+        //
+        // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
+        // called to generate a journal row, but have not yet been sent to peers.
+        map<uint64_t, pair<string, string>> _inFlightTransactions;
+
+        // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
+        // when required to make sure it can get exclusive use of the DB.
+        mutex blockNewTransactionsMutex;
+
+        // These three varialbes let us notify the checkpoint thread when a tranasction ends (or starts, but it will
+        // have blocked any new ones from starting by locking blockNewTransactionsMutex).
+        mutex notifyWaitMutex;
+        condition_variable blockNewTransactionsCV;
+        atomic<int> currentTransactionCount;
+
+        // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
+        // if the SQLite object that initiated it has been deleted since it started.
+        set<SQLite*> validObjects;
+    };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
     // monotonically increasing commit numbers, so we implement a lock around changing that value. This lock is wrapped
-    // and publicly exposed only through 'g_commitLock'.
+    // and publicly exposed only through 'g_commitLock'. This *should* be part of SharedData and specific to each file
+    // we're using, but it isn't because it's externally referenced as a static class member, because we didn't used to
+    // support multiple files here. This will cause a performance bottleneck if using multiple files, as they'll both
+    // unnecessarily compete for the same commit lock. We also use this global lock for inserting and removing items in
+    // _sharedDataLookupMap, and if we were to move this to being per-filename, we'd need a separate lock just for
+    // _sharedDataLookupMap.
     static recursive_mutex _commitLock;
 
-    // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
-    // though this atomic integer. getCommitCount() returns the value of this variable.
-    static atomic<uint64_t> _commitCount;
+    // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
+    // database file. It's a map of canonicalized filename to a sharedData object.
+    static map<string, SharedData*> _sharedDataLookupMap; 
 
-    // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
-    // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
-    // to peers)?
-    // Originally, that had been the idea, but we ran into a problem with the way we send transactions to peers. When
-    // doing parallel writes, we'll always write commits to the database in order. We particularly construct locks
-    // around both `prepare()` and `commit()` in SQLiteNode to handle this (and yes, the fact that I'm discussing
-    // SQLiteNode in SQlite.h is not a sign of great encapsulation). In general then, since rows are always added to
-    // the DB and then committed in order, we could just keep a pointer to the last-sent transaction, and send all
-    // transactions following that one to peers.
-    //
-    // However, this breaks down when we need to do a quorum command. In this case, we perform the following actions
-    // from the sync thread:
-    //
-    // 1) processCommand()
-    // 2) mutex.lock()
-    // 3) sendOutstandingTransactions()
-    // 4) prepare()
-    // 5) commit() <- this is a distributed commit.
-    //
-    // We need to sendOutstandingTransactions() before calling commit(), because this is a distributed commit and if we
-    // don't send any outstanding transactions to peers before sending the current one, then transactions will arrive
-    // at peers out of order. We also need to lock our mutex before calling sendOutstandingTransactions() to prevent
-    // any other threads from making new commits while we're sending them, which would result in the same out-of-order
-    // sending when we completed sendOutstandingTransactions(), but still had (newly committed) transactions to send.
-    //
-    // The problem that requires us to keep lists of outstanding transactions is that when we call processCommand() in
-    // the current thread, sqlite will use a snapshot of the database taken at that point (the point at which we do
-    // `BEGIN CONCURRENT`) until we either commit or rollback the transaction.
-    // That means that if any other thread makes a new commit to the database after we've started process(), but before
-    // we call sendOutstandingTransactions(), we won't see it from the current thread, because we're operating on on
-    // old database snpashot until we either rollback(), which defeats the purpose of committing a new transaction, or
-    // we commit(), which we can't do yet because we need to send outstanding transactions first.
-    //
-    // We could grab out mutex earlier, before calling processCommand(), which would avoid this situation, but it would
-    // cause all other threads to wait for the entire duration of processCommand() in this thread, which is the sort of
-    // performance problem we're trying to avoid in the first place with parallel writes. Instead, when each thread
-    // adds new commits, it makes them available in the following lists, so that we'll have access to them in
-    // sendOutstandingTransactions(), even if the current thread is operating on an old DB snapshot.
-    //
-    // NOTE: Both of the following collections (_inFlightTransactions and _committedtransactionIDs) are shared between
-    // all threads and need to be accessed in a synchronized fashion. They do *NOT* implement their own synchronization
-    // and must be protected by locking `_commitLock`.
-    //
-    // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
-    // called to generate a journal row, but have not yet been sent to peers.
-    static map<uint64_t, pair<string, string>> _inFlightTransactions;
+    // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
+    // to access this memory.
+    SharedData* _sharedData;
 
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
@@ -219,9 +276,6 @@ class SQLite {
     // The name of the journal table, computed from the 'journalTable' parameter passed to our constructor.
     string _journalName;
 
-    // A list of all the journal tables names.
-    list<string> _allJournalNames;
-
     // Timing information.
     uint64_t _beginElapsed;
     uint64_t _readElapsed;
@@ -237,6 +291,8 @@ class SQLite {
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
     // any transactions. Instead of reading from an atomic var, reads directly from the database.
     uint64_t _getCommitCount();
+
+    bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
@@ -262,6 +318,9 @@ class SQLite {
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
 
+    // Handles running checkpointing operations.
+    static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
+
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
     uint64_t _timeoutLimit;
@@ -274,6 +333,15 @@ class SQLite {
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* table, const char* column);
 
-    // Avoid sqlite errors if multiple threads want to use the same DB handle.
-    mutex _readMutex;
+    // It's possible for certain transactions (namely, timing out a write operation, see here:
+    // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
+    // happens, we store a flag internally indicating that we don't need to perform the rollback ourselves. Then when
+    // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
+    // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
+    // failed query, regardless of whether or not it was already rolled back internally.
+    bool _autoRolledBack;
+
+    bool _noopUpdateMode;
+
+    bool _enableFullCheckpoints;
 };

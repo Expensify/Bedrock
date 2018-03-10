@@ -63,7 +63,7 @@ thread_local string SThreadLogName;
 void SInitialize(string threadName) {
     // Initialize signal handling
     SLogSetThreadName(threadName);
-    SLogSetThreadPrefix("xxxxx ");
+    SLogSetThreadPrefix("xxxxxx ");
     SInitializeSignals();
 }
 
@@ -650,6 +650,9 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
         // Found the end of the line; is the line blank?
         if (lineEnd == lineStart) {
             // Blank line -- if we have at least the method, then we're done.  Otherwise, ignore.
+
+            // We want to look this up without inserting it.
+            auto it = nameValueMap.find("Transfer-Encoding");
             if (!methodLine.empty()) {
                 // If we are done processing a chunked body.
                 if (isChunked) {
@@ -664,7 +667,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                 }
 
                 // If not processing a chunked body, then finish up.
-                else if (!SIEquals(nameValueMap["Transfer-Encoding"], "chunked")) {
+                else if (it == nameValueMap.end() || !SIEquals(it->second, "chunked")) {
                     // We have a method -- we're done.  Figure out the end of the message
                     // by consuming up to 2 EOL characters, then return the total length.
                     const char* parseEnd = lineEnd;
@@ -1541,25 +1544,49 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // First, just parse the host
         string domain;
         uint16_t port = 0;
-        if (!SParseHost(host, domain, port))
+        if (!SParseHost(host, domain, port)) {
             STHROW("invalid host");
+        }
 
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
         if (!ip || ip == INADDR_NONE) {
             // Nope -- resolve the domain
-            // NOTE: gethostbyname blocks so set the DNS timeout to 1s in /etc/resolv.conf
             uint64_t start = STimeNow();
-            hostent* hostent = gethostbyname(domain.c_str());
+
+            // Allocate and initialize addrinfo structures.
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof hints);
+            struct addrinfo* resolved = nullptr;
+
+            // Set up the hints.
+            hints.ai_family = AF_INET; // IPv4
+            hints.ai_socktype = SOCK_STREAM;
+
+            // Do the initialization.
+            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+
+            // There was a problem.
+            if (result || !resolved) {
+                freeaddrinfo(resolved);
+                STHROW("can't resolve host");
+            }
+
+            // Note if this seems slow.
             uint64_t elapsed = STimeNow() - start;
             if (elapsed > 100 * STIME_US_PER_MS) {
                 SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
             }
-            if (!hostent || hostent->h_length != 4 || !hostent->h_addr_list || !hostent->h_addr_list[0]) {
-                STHROW("can't resolve host");
-            }
-            in_addr* addr = (in_addr*)hostent->h_addr_list[0];
-            ip = addr->s_addr;
+
+            // Grab the resolved address.
+            sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
+            ip = addr->sin_addr.s_addr;
+            char plainTextIP[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
+            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
+
+            // Done resolving.
+            freeaddrinfo(resolved);
         }
 
         // Open a socket
@@ -1920,7 +1947,7 @@ string SGetPeerName(int s) {
 }
 
 // --------------------------------------------------------------------------
-string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
+string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
     string paddedBuffer = buffer;
@@ -1929,19 +1956,23 @@ string SAESEncrypt(const string& buffer, const string& ivStr, const string& key)
     }
 
     // Encrypt
-    unsigned char iv[SAES_BLOCK_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_BLOCK_SIZE);
     mbedtls_aes_context ctx;
     mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     string encryptedBuffer;
     encryptedBuffer.resize(paddedBuffer.size());
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(),
-                          (unsigned char*)encryptedBuffer.c_str());
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(), (unsigned char*)encryptedBuffer.c_str());
     return encryptedBuffer;
 }
 
+string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    return SAESEncrypt(buffer, iv, key);
+}
+
 // --------------------------------------------------------------------------
-string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // If the message is invalid.
     if (buffer.size() % SAES_BLOCK_SIZE != 0) {
@@ -1949,8 +1980,6 @@ string SAESDecrypt(const string& buffer, const string& ivStr, const string& key)
     }
 
     // Decrypt
-    unsigned char iv[SAES_BLOCK_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_BLOCK_SIZE);
     mbedtls_aes_context ctx;
     string decryptedBuffer;
     decryptedBuffer.resize(buffer.size());
@@ -1964,6 +1993,13 @@ string SAESDecrypt(const string& buffer, const string& ivStr, const string& key)
         decryptedBuffer.resize(size);
     }
     return decryptedBuffer;
+}
+
+string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    return SAESDecrypt(buffer, iv, key);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2149,29 +2185,37 @@ string SHashSHA256(const string& buffer) {
 
 // --------------------------------------------------------------------------
 
-string SEncodeBase64(const string& buffer) {
+string SEncodeBase64(const unsigned char* buffer, int size) {
     // First, get the required buffer size
     size_t olen = 0;
-    mbedtls_base64_encode(0, 0, &olen, (unsigned char*)buffer.c_str(), buffer.size());
+    mbedtls_base64_encode(0, 0, &olen, buffer, size);
 
     // Next, do the encode
     string out;
     out.resize(olen - 1); // -1 because trailing 0 is implied
-    mbedtls_base64_encode((unsigned char*)&out[0], olen, &olen, (unsigned char*)buffer.c_str(), buffer.size());
+    mbedtls_base64_encode((unsigned char*)&out[0], olen, &olen, buffer, size);
     return out;
 }
 
+string SEncodeBase64(const string& bufferString) {
+    return SEncodeBase64((unsigned char*)bufferString.c_str(), bufferString.size());
+}
+
 // --------------------------------------------------------------------------
-string SDecodeBase64(const string& buffer) {
+string SDecodeBase64(const unsigned char* buffer, int size) {
     // First, get the required buffer size
     size_t olen = 0;
-    mbedtls_base64_decode(0, 0, &olen, (unsigned char*)buffer.c_str(), buffer.size());
+    mbedtls_base64_decode(0, 0, &olen, buffer, size);
 
     // Next, do the decode
     string out;
     out.resize(olen);
-    mbedtls_base64_decode((unsigned char*)&out[0], olen, &olen, (unsigned char*)buffer.c_str(), buffer.size());
+    mbedtls_base64_decode((unsigned char*)&out[0], olen, &olen, buffer, size);
     return out;
+}
+
+string SDecodeBase64(const string& bufferString) {
+    return SDecodeBase64((unsigned char*)bufferString.c_str(), bufferString.size());
 }
 
 // --------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+.DS_Store
 test/test
 test/clustertest/clustertest
 test/clustertest/testplugin/testplugin.so

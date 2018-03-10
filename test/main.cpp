@@ -67,6 +67,12 @@ int main(int argc, char* argv[]) {
         exclude.insert("Perf");
     }
 
+    if (args.isSet("-duplicateRequests")) {
+        // Duplicate every request N times.
+        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
+        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
+    }
+
     // Set the defaults for the servers that each BedrockTester will start.
     BedrockTester::defaultDBFile = BedrockTester::getTempFileName();
     cout << "Temp file for this run: " << BedrockTester::defaultDBFile << endl;

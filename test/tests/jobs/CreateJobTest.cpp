@@ -6,6 +6,7 @@ struct CreateJobTest : tpunit::TestFixture {
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
                               TEST(CreateJobTest::create),
+                              TEST(CreateJobTest::createWithHttp),
                               TEST(CreateJobTest::createWithPriority),
                               TEST(CreateJobTest::createWithData),
                               TEST(CreateJobTest::createWithRepeat),
@@ -37,6 +38,29 @@ struct CreateJobTest : tpunit::TestFixture {
 
     void create() {
         SData command("CreateJob");
+        string jobName = "testCreate";
+        command["name"] = jobName;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+
+        SQResult originalJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        ASSERT_EQUAL(originalJob.size(), 1);
+        // Assert the values are what we expect
+        ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
+        ASSERT_EQUAL(originalJob[0][2], "QUEUED");
+        ASSERT_EQUAL(originalJob[0][3], jobName);
+        // nextRun should equal created
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
+        ASSERT_EQUAL(originalJob[0][5], "");
+        ASSERT_EQUAL(originalJob[0][6], "");
+        ASSERT_EQUAL(originalJob[0][7], "{}");
+        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
+        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+    }
+
+    void createWithHttp() {
+        SData command("CreateJob / HTTP/1.1");
         string jobName = "testCreate";
         command["name"] = jobName;
         STable response = tester->executeWaitVerifyContentTable(command);
@@ -149,12 +173,12 @@ struct CreateJobTest : tpunit::TestFixture {
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
 
-        // Try to recreate the job with new data
+        // Try to recreate the job with the same data.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
+
+        // Try to recreate the job with new data, it should get updated.
         string data = "{\"blabla\":\"test\"}";
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = jobName;
-        command["unique"] = "true";
         command["data"] = data;
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(SToInt(response["jobID"]), jobID);

@@ -1,17 +1,11 @@
 #include "libstuff.h"
 
-SHTTPSManager::SHTTPSManager() :
-    // Generate an x509 certificate.
-    _x509(SX509Open())
-{
-    SASSERT(_x509);
-}
+SHTTPSManager::SHTTPSManager()
+{ }
 
-SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt) {
-    // Generate an x509 certificate.
-    _x509 = SX509Open(pem, srvCrt, caCrt);
-    SASSERT(_x509);
-}
+SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt)
+  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt)
+{ }
 
 SHTTPSManager::~SHTTPSManager() {
     SAUTOLOCK(_listMutex);
@@ -25,9 +19,6 @@ SHTTPSManager::~SHTTPSManager() {
     while (!_completedTransactionList.empty()) {
         closeTransaction(_completedTransactionList.front());
     }
-
-    // Clean up certificate.
-    SX509Close(_x509);
 }
 
 void SHTTPSManager::closeTransaction(Transaction* transaction) {
@@ -65,6 +56,11 @@ void SHTTPSManager::prePoll(fd_map& fdm) {
 }
 
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    list<SHTTPSManager::Transaction*> completedRequests;
+    postPoll(fdm, nextActivity, completedRequests);
+}
+
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -99,11 +95,11 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
                 active->response = 500;
             }
-        } else if (active->s->state > Socket::CONNECTED || elapsed > TIMEOUT) {
+        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > TIMEOUT) {
             // Net problem. Did this transaction end in an inconsistent state?
             SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after "
                   << elapsed / STIME_US_PER_MS << "ms");
-            active->response = active->s->sendBuffer.empty() ? 501 : 500;
+            active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
                 // This is pretty serious. Let us know.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
@@ -121,6 +117,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                   << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
             _activeTransactionList.remove(activeIt);
             _completedTransactionList.push_back(active);
+            completedRequests.push_back(active);
         }
     }
 }
@@ -159,7 +156,10 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     if (!SContains(host, ":")) {
         host += ":443";
     }
-    Socket* s = openSocket(host, SStartsWith(url, "https://") ? _x509 : 0);
+
+    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+    Socket* s = openSocket(host, x509);
     if (!s) {
         return _createErrorTransaction();
     }
@@ -170,7 +170,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     transaction->fullRequest = request;
 
     // Ship it.
-    transaction->s->sendBuffer = request.serialize();
+    transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);

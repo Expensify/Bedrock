@@ -44,6 +44,8 @@ using namespace std;
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "");
 
+void SSetSignalHandlerDieFunc(function<void()>&& func);
+
 // --------------------------------------------------------------------------
 // Assertion stuff
 // --------------------------------------------------------------------------
@@ -246,27 +248,27 @@ timeval SToTimeval(uint64_t when);
 // Helpful class for timing
 struct SStopwatch {
     // Attributes
-    uint64_t startTime;
-    uint64_t alarmDuration;
+    atomic<uint64_t> startTime;
+    atomic<uint64_t> alarmDuration;
 
     // Constructors -- If constructed with an alarm, starts out in the
     // ringing state.  If constructed without an alarm, starts out timing
     // from construction.
     SStopwatch() {
         start();
-        alarmDuration = 0;
+        alarmDuration.store(0);
     }
     SStopwatch(uint64_t alarm) {
-        startTime = 0;
-        alarmDuration = alarm;
+        startTime.store(0);
+        alarmDuration.store(alarm);
     }
 
     // Accessors
-    uint64_t elapsed() { return STimeNow() - startTime; }
-    uint64_t ringing() { return alarmDuration && (elapsed() > alarmDuration); }
+    uint64_t elapsed() { return STimeNow() - startTime.load(); }
+    uint64_t ringing() { return alarmDuration.load() && (elapsed() > alarmDuration.load()); }
 
     // Mutators
-    void start() { startTime = STimeNow(); }
+    void start() { startTime.store(STimeNow()); }
     bool ding() {
         if (!ringing())
             return false;
@@ -687,10 +689,6 @@ inline string S_recv(int s) {
     return buf;
 }
 bool S_sendconsume(int s, string& sendBuffer);
-inline bool S_send(int s, string sendBuffer) {
-    S_sendconsume(s, sendBuffer);
-    return sendBuffer.empty();
-}
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
@@ -717,7 +715,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
+string SEncodeBase64(const unsigned char* buffer, const int size);
 string SEncodeBase64(const string& buffer);
+string SDecodeBase64(const unsigned char* buffer, const int size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
@@ -726,8 +726,11 @@ string SHMACSHA256(const string& key, const string& buffer);
 
 // Encryption/Decryption
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
+#define SAES_IV_SIZE 16
 #define SAES_BLOCK_SIZE 16
+string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESEncrypt(const string& buffer, const string& iv, const string& key);
+string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
 
 // --------------------------------------------------------------------------
@@ -757,8 +760,8 @@ void SQueryLogClose();
 
 // Returns an SQLite result code.
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
-           int64_t warnThreshold = 1000 * STIME_US_PER_MS);
-inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 1000 * STIME_US_PER_MS) {
+           int64_t warnThreshold = 2000 * STIME_US_PER_MS);
+inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS) {
     SQResult ignore;
     return SQuery(db, e, sql, ignore, warnThreshold);
 }

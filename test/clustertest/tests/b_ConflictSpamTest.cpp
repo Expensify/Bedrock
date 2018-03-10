@@ -18,12 +18,27 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void setup() {
         cmdID.store(0);
+
+        // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
+        // happen as expected.
+        tester = BedrockClusterTester::testers.front();
+        for (int i = 0; i < 3; i++) {
+            BedrockTester* node = tester->getBedrockTester(i);
+            SData controlCommand("SetCheckpointIntervals");
+            controlCommand["passiveCheckpointPageMin"] = to_string(3);
+            controlCommand["fullCheckpointPageMin"] = to_string(10);
+            vector<SData> results = node->executeWaitMultipleData({controlCommand}, 1, true);
+
+            // Verify we got a reasonable result.
+            ASSERT_EQUAL(results.size(), 1);
+            ASSERT_EQUAL(results[0].methodLine, "200 OK");
+            ASSERT_EQUAL(results[0]["fullCheckpointPageMin"], to_string(25000));
+            ASSERT_EQUAL(results[0]["passiveCheckpointPageMin"], to_string(2500));
+        }
     }
 
     void slow()
     {
-        tester = BedrockClusterTester::testers.front();
-
         // Send some write commands to each node in the cluster.
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
@@ -250,13 +265,6 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         }
         threads.clear();
 
-        /*
-        for (auto i : {0, 1, 2}) {
-            cout << "TEST Table, Node " << i << endl;
-            cout << allResults[0] << endl << endl;
-        }
-        */
-
         // Verify the actual table contains the right number of rows.
         allResults.clear();
         allResults.resize(3);
@@ -289,9 +297,8 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         // And that they're all 66.
         list<string> resultCount = SParseList(allResults[0], '\n');
         resultCount.pop_front();
-        int rows = SToInt(resultCount.front());
-        cout << "Rows in test: " << rows << endl;
-        ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
+        // The "+1" is because the `synchronizing` test in `a_masteringTest` inserts one row in this table.
+        ASSERT_EQUAL(cmdID.load() + 1, SToInt(resultCount.front()));
 
         int fail = totalRequestFailures.load();
         if (fail > 0) {

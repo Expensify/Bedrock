@@ -5,7 +5,7 @@ class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
   public:
-    const uint64_t DEFAULT_TIMEOUT = 60'000'000; // one minute.
+    const uint64_t DEFAULT_TIMEOUT = 30'000'000; // 30 seconds.
     BedrockCore(SQLite& db, const BedrockServer& server);
 
     // Automatic timing class that records an entry corresponding to its lifespan.
@@ -44,6 +44,8 @@ class BedrockCore : public SQLiteCore {
     bool processCommand(BedrockCommand& command);
 
   private:
+    // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
+    string _getExceptionName();
     void _handleCommandException(BedrockCommand& command, const SException& e);
     const BedrockServer& _server;
 };

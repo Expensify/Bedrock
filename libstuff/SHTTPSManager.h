@@ -26,6 +26,7 @@ class SHTTPSManager : public STCPManager {
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests);
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 
@@ -33,6 +34,12 @@ class SHTTPSManager : public STCPManager {
     void closeTransaction(Transaction* transaction);
 
   protected: // Child API
+
+    // Used to create the signing certificate.
+    const string _pem;
+    const string _srvCrt;
+    const string _caCrt;
+
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();

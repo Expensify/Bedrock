@@ -18,6 +18,7 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::hasDelay),
                               TEST(FinishJobTest::hasRepeatWithNextRun),
                               TEST(FinishJobTest::hasNextRun),
+                              TEST(FinishJobTest::simpleFinishJobWithHttp),
                               AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass)) { }
 
@@ -142,6 +143,12 @@ struct FinishJobTest : tpunit::TestFixture {
         command["jobID"] = cancelledChildID;
         tester->executeWaitVerifyContent(command);
 
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
         // Finish a child
         command.clear();
         command.methodLine = "FinishJob";
@@ -164,7 +171,7 @@ struct FinishJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
-        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + ";", result);
+        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
@@ -227,15 +234,23 @@ struct FinishJobTest : tpunit::TestFixture {
         string cancelledChildID = response["jobID"];
         command.clear();
 
+        // The parent may have other children from mock requests, delete them.
+        command.clear();
+        command.methodLine = "Query";
+        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        tester->executeWaitVerifyContent(command);
+
         // Finish the parent
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
 
-        // Confirm that the parent is in the PAUSED state and the chilrden are in the QUEUED state
+        // Confirm that the parent is in the PAUSED state and the children are in the QUEUED state
         SQResult result;
-        tester->readDB("SELECT jobID, state FROM jobs;", result);
+        list<string> ids = {parentID, finishedChildID, cancelledChildID};
+        tester->readDB("SELECT jobID, state FROM jobs WHERE jobID IN(" + SComposeList(ids) + ") ORDER BY jobID;", result);
+        ASSERT_EQUAL(result.rows.size(), 3);
         ASSERT_EQUAL(result[0][0], parentID);
         ASSERT_EQUAL(result[0][1], "PAUSED");
         ASSERT_EQUAL(result[1][0], finishedChildID);
@@ -502,6 +517,31 @@ struct FinishJobTest : tpunit::TestFixture {
 
 
         // Confirm the job was deleted instead of being rescheduled
+        SQResult result;
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_TRUE(result.empty());
+    }
+
+    void simpleFinishJobWithHttp() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        command.clear();
+        command.methodLine = "FinishJob / HTTP/1.1";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the job was deleted
         SQResult result;
         tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_TRUE(result.empty());

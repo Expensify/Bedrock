@@ -17,6 +17,8 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
 }
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    // Always blacklist on userID.
+    command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequest);
     if (command.request.methodLine == "testcommand") {
@@ -29,9 +31,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             return false;
         }
         SData request("GET / HTTP/1.1");
-        request["Host"] = "www.expensify.com";
+        request["Host"] = "www.google.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
-        command.httpsRequest = httpsManager.send("https://www.expensify.com/", request);
+        command.httpsRequest = httpsManager.send("https://www.google.com/", request);
         return false; // Not complete.
     } else if (command.request.methodLine == "slowquery") {
         int size = 100000000;
@@ -48,6 +50,23 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             db.read(query, result);
         }
         return true;
+    } else if (command.request.methodLine == "httpstimeout") {
+        // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
+        // when there's a blocking command and master needs to stand down, to verify the timeout for that works.
+        // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
+        // up correctly on the former master.
+        SData request("GET / HTTP/1.1");
+        request["Host"] = "www.google.com";
+        command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
+        auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
+        command.httpsRequest = transaction;
+        thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
+    } else if (command.request.methodLine == "dieinpeek") {
+        throw 1;
+    } else if (command.request.methodLine == "generatesegfaultpeek") {
+        int* i = 0;
+        int x = *i;
+        command.response["invalid"] = to_string(x);
     }
 
     return false;
@@ -86,7 +105,12 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
         return true;
     } else if (command.request.methodLine == "slowprocessquery") {
-        int size = 100000000;
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+
+        int size = 1;
         int count = 1;
         if (command.request.isSet("size")) {
             size = SToInt(command.request["size"]);
@@ -94,11 +118,28 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         if (command.request.isSet("count")) {
             count = SToInt(command.request["count"]);
         }
+
         for (int i = 0; i < count; i++) {
-            string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
-            SQResult result;
+            string query = "INSERT INTO test (id, value) VALUES ";
+            for (int j = 0; j < size; j++) {
+                if (j) {
+                    query += ", ";
+                }
+                query += "(" + to_string(nextID) + ", " + to_string(nextID) + ")";
+                nextID++;
+            }
+            query += ";";
             db.read(query, result);
         }
+    } else if (command.request.methodLine == "dieinprocess") {
+        throw 2;
+    } else if (command.request.methodLine == "generatesegfaultprocess") {
+        int* i = 0;
+        int x = *i;
+        command.response["invalid"] = to_string(x);
+    } else if (command.request.methodLine == "ineffectiveUpdate") {
+        // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
+        return true;
     }
     return false;
 }
@@ -135,4 +176,37 @@ TestHTTPSMananager::~TestHTTPSMananager() {
 
 TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
     return _httpsSend(url, request);
+}
+
+SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url, const SData& request) {
+    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
+    // completed transaction with an error response.
+    string host, path;
+    if (!SParseURI(url, host, path)) {
+        return _createErrorTransaction();
+    }
+    if (!SContains(host, ":")) {
+        host += ":443";
+    }
+
+    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+    Socket* s = openSocket(host, x509);
+    if (!s) {
+        return _createErrorTransaction();
+    }
+
+    // Wrap in a transaction
+    Transaction* transaction = new Transaction(*this);
+    transaction->s = s;
+    transaction->fullRequest = request;
+
+    // Ship it.
+    // DOESN'T actually send
+    //transaction->s->send(request.serialize());
+
+    // Keep track of the transaction.
+    SAUTOLOCK(_listMutex);
+    _activeTransactionList.push_front(transaction);
+    return transaction;
 }

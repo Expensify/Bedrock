@@ -36,7 +36,7 @@ if [ -n "$OTHERNODES" ]; then
     FLAGS="-peerList $OTHERNODES"
 fi
 
-DAEMON_OPTS="-fork -nodeName $THISNODE -db $BEDROCK_DB_PATH -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIORITY -pidfile $PIDFILE -quorumCheckpoint 100 -readThreads 4 -plugins status,db,jobs,cache,mysql $FLAGS"
+DAEMON_OPTS="-fork -nodeName $THISNODE -db $BEDROCK_DB_PATH -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIORITY -pidfile $PIDFILE $FLAGS"
 
 if ! [[ -x $BIN ]]; then echo "$1: Job failed! Missing or broken binary file: $BIN" && exit 2; fi
 set -e
@@ -56,7 +56,7 @@ case "$1" in
     fi
     if [ ! -f $BEDROCK_DB_PATH ]; then
         log_daemon_msg "No db found, creating db."
-        if ! touch $BEDROCK_DB_PATH; then 
+        if ! touch $BEDROCK_DB_PATH; then
             log_end_msg 1
         else
             log_end_msg 0

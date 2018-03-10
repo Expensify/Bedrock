@@ -31,13 +31,14 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
 }
 
 BedrockCommand::BedrockCommand(BedrockCommand&& from) :
-    SQLiteCommand(std::move(from)),
+    SQLiteCommand(move(from)),
     httpsRequest(from.httpsRequest),
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
+    crashIdentifyingValues(move(from.crashIdentifyingValues)),
     _inProgressTiming(from._inProgressTiming)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
@@ -85,6 +86,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         priority = from.priority;
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
+        crashIdentifyingValues = move(from.crashIdentifyingValues);
         _inProgressTiming = from._inProgressTiming;
 
         // And call the base class's move constructor as well.
@@ -172,27 +174,22 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
-                                            queueWorkerTotal + queueSyncTotal);
-
-    // Log all this info.
-    SINFO("command '" << request.methodLine << "' timing info (us): "
-          << peekTotal << " (" << peekCount << "), "
-          << processTotal << " (" << processCount << "), "
-          << commitWorkerTotal << ", "
-          << commitSyncTotal << ", "
-          << queueWorkerTotal << ", "
-          << queueSyncTotal << ", "
-          << totalTime << ", "
-          << unaccountedTime << "."
-    );
+                                            escalationTimeUS + queueWorkerTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
-        {"peekTime",       peekTotal},
-        {"processTime",    processTotal},
-        {"totalTime",      totalTime},
-        {"escalationTime", escalationTimeUS},
+        {"peekTime",        peekTotal},
+        {"processTime",     processTotal},
+        {"totalTime",       totalTime},
+        {"escalationTime",  escalationTimeUS},
+        {"unaccountedTime", unaccountedTime},
     };
+
+    // We also want to know what master did if we're on a slave.
+    uint64_t upstreamPeekTime = 0;
+    uint64_t upstreamProcessTime = 0;
+    uint64_t upstreamUnaccountedTime = 0;
+    uint64_t upstreamTotalTime = 0;
 
     // Now promote any existing values that were set upstream. This prepends `upstream` and makes the first existing
     // character of the name uppercase, (i.e. myValue -> upstreamMyValue), letting us keep anything that was set by the
@@ -203,8 +200,39 @@ void BedrockCommand::finalizeTimingInfo() {
             string temp = it->second;
             response.nameValueMap.erase(it);
             response.nameValueMap[string("upstream") + (char)toupper(p.first[0]) + (p.first.substr(1))] = temp;
+
+            // Note the upstream times for our logline.
+            if (p.first == "peekTime") {
+                upstreamPeekTime = SToUInt64(temp);
+            }
+            else if (p.first == "processTime") {
+                upstreamProcessTime = SToUInt64(temp);
+            }
+            else if (p.first == "unaccountedTime") {
+                upstreamUnaccountedTime = SToUInt64(temp);
+            }
+            else if (p.first == "totalTime") {
+                upstreamTotalTime = SToUInt64(temp);
+            }
         }
     }
+
+    // Log all this info.
+    SINFO("command '" << request.methodLine << "' timing info (us): "
+          << peekTotal << " (" << peekCount << "), "
+          << processTotal << " (" << processCount << "), "
+          << commitWorkerTotal << ", "
+          << commitSyncTotal << ", "
+          << queueWorkerTotal << ", "
+          << queueSyncTotal << ", "
+          << totalTime << ", "
+          << unaccountedTime << ", "
+          << escalationTimeUS << ". Upstream: "
+          << upstreamPeekTime << ", "
+          << upstreamProcessTime << ", "
+          << upstreamTotalTime << ", "
+          << upstreamUnaccountedTime << "."
+    );
 
     // And here's where we set our own values.
     for (const auto& p : valuePairs) {
@@ -228,10 +256,11 @@ BedrockCommand SSynchronizedQueue<BedrockCommand>::pop() {
 }
 
 template<>
-void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& rhs) {
+void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& cmd) {
     SAUTOLOCK(_queueMutex);
+    SINFO("Enqueuing command '" << cmd.request.methodLine << "', with " << _queue.size() << " commands already queued.");
     // Just add to the queue
-    _queue.push_back(move(rhs));
+    _queue.push_back(move(cmd));
     _queue.back().startTiming(BedrockCommand::QUEUE_SYNC);
 
     // Write arbitrary buffer to the pipe so any subscribers will be awoken.
