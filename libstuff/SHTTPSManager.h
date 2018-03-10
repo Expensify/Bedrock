@@ -48,9 +48,6 @@ class SHTTPSManager : public STCPManager {
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
 
-  private: // Internal API
-
-
     // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
     // multiple threads can add/remove from them.
     recursive_mutex _listMutex;

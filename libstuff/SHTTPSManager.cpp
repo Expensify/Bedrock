@@ -115,7 +115,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
                   << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
-            _activeTransactionList.remove(activeIt);
+            _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
             completedRequests.push_back(active);
         }
