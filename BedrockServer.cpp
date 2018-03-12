@@ -1117,7 +1117,7 @@ bool BedrockServer::shutdownComplete() {
             break;
     }
     logLine += " Shutdown State: " + stateString + ".";
-    SWARN(logLine);
+    SHMMM(logLine);
 
     return false;
 }
