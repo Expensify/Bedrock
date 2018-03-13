@@ -543,6 +543,11 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
 
+            // If we dequeue a status or control command, handle it immediately.
+            if (server._handleIfStatusOrControlCommand(command)) {
+                continue;
+            }
+
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
             // signals, like SIGSEGV, this function will be called.
@@ -880,6 +885,26 @@ void BedrockServer::worker(SData& args,
             break;
         }
     }
+}
+
+bool BedrockServer::_handleIfStatusOrControlCommand(BedrockCommand& command) {
+    if (_isStatusCommand(command)) {
+        _status(command);
+        _reply(command);
+        return true;
+    } else if (_isControlCommand(command)) {
+        // Control commands can only come from localhost (and thus have an empty `_source`).
+        if (command.request["_source"].empty()) {
+            _control(command);
+        } else {
+            SWARN("Got control command " << command.request.methodLine << " on non-localhost socket ("
+                  << command.request["_source"] << "). Ignoring.");
+            command.response.methodLine = "401 Unauthorized";
+        }
+        _reply(command);
+        return true;
+    }
+    return false;
 }
 
 bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
@@ -1353,24 +1378,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // if we received connection:forget in which case we don't respond later
                     command.initiatingClientID = SIEquals(request["Connection"], "forget") ? -1 : s->id;
 
-                    // Status and control requests are handled specially.
-                    if (_isStatusCommand(command)) {
-                        _status(command);
-                        _reply(command);
-                    } else if (_isControlCommand(command)) {
-                        // Control commands can only come from localhost (and thus have an empty `_source`).
-                        if (command.request["_source"].empty()) {
-                            _control(command);
-                            _reply(command);
-                        } else {
-                            char str[INET_ADDRSTRLEN];
-                            inet_ntop(AF_INET, &(s->addr.sin_addr), str, INET_ADDRSTRLEN);
-                            SWARN("Got control command " << command.request.methodLine
-                                  << " on non-localhost socket (" << str << "). Ignoring.");
-                            command.response.methodLine = "401 Unauthorized";
-                            _reply(command);
-                        }
-                    } else if (_shutdownState < PORTS_CLOSED) {
+                    // If it's a status or control command, we handle it specially there. If not, we'll queue it for
+                    // later processing.
+                    if (!_handleIfStatusOrControlCommand(command) && _shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
                         SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
                               << _commandQueue.size() << " commands already queued.");
@@ -1469,10 +1479,10 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
     // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
-    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
     if (_suppressCommandPortManualOverride && !manualOverride) {
         return;
     }
+    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
 
     // Save the state of manual override. Note that it's set to *suppress* on purpose.
     if (manualOverride) {

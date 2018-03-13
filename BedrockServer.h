@@ -271,6 +271,10 @@ class BedrockServer : public SQLiteServer {
     // particular command for it count as a match likely to cause a crash.
     map<string, set<STable>> _crashCommands;
 
+    // Returns whether or not the command was a status or control command. If it was, it will have already been handled
+    // and responded to upon return
+    bool _handleIfStatusOrControlCommand(BedrockCommand& command);
+
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
 
