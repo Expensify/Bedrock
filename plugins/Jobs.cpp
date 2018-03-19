@@ -35,7 +35,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "data        TEXT NOT NULL, "
                                    "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                    "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter  TEXT NOT NULL DEFAULT \"\" )",
+                                   "retryAfter  TEXT NOT NULL DEFAULT \"\")",
                                ignore));
 
     }
@@ -359,6 +359,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
+    if (!lastJobID) {
+        SQResult nextIDResult;
+        db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
+        lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
+        SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
+    }
+
+
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
     content.clear();
@@ -568,13 +576,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                SQResult nextIDResult;
-                db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-                const int64_t nextID = (nextIDResult.empty() ? 0 : SToInt64(nextIDResult[0][0])) + 1;
-                SINFO( "Next jobID returned " << nextID);
+                lastJobID++;
+                SINFO("Next jobID to be used" << lastJobID);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
-                            SQ(nextID) + ", " +
+                            SQ(lastJobID) + ", " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
@@ -589,21 +595,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     STHROW("502 insert query failed");
                 }
 
-                // Return the new jobID
-                const int64_t lastInsertRowID = db.getLastInsertRowID();
-                const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
-                if (lastInsertRowID != maxJobID) {
-                    SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
-                                                                             << " lastInsertRowID=" << lastInsertRowID);
-                }
-
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(lastInsertRowID);
+                    content["jobID"] = SToStr(lastJobID);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(lastInsertRowID));
+                jobIDs.push_back(SToStr(lastJobID));
             }
         }
 

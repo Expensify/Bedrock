@@ -11,6 +11,8 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
   private:
+    int64_t lastJobID;
+
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
     bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
