@@ -207,7 +207,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
-    SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
+    SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {

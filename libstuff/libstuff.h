@@ -312,6 +312,10 @@ inline void SLogLevel(int level) {
 // Stack trace logging
 void SLogStackTrace();
 
+#define SWHEREAMI                                                                                                      \
+    SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName \
+                   + "] "
+
 // Simply logs a stream to the debugger
 // **NOTE: rsyslog max line size is 2048 bytes.  We split on 1500 byte bounderies in order to fit the
 //         syslog line prefix and the expanded \r\n to #015#012
@@ -323,24 +327,20 @@ void SLogStackTrace();
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
             for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
-                syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                              \
+                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());                        \
         }                                                                                                              \
     } while (false)
 
-#define SWHEREAMI                                                                                                      \
-    SThreadLogPrefix << "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__ << " [" << SThreadLogName \
-                   << "] "
-
 #define SLOGPREFIX ""
-#define SLOG(_MSG_) SSYSLOG(LOG_DEBUG, SWHEREAMI << SLOGPREFIX << _MSG_)
-#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, SWHEREAMI << "[dbug] " << SLOGPREFIX << _MSG_)
-#define SINFO(_MSG_) SSYSLOG(LOG_INFO, SWHEREAMI << "[info] " << SLOGPREFIX << _MSG_)
-#define SHMMM(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[hmmm] " << SLOGPREFIX << _MSG_)
-#define SWARN(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[warn] " << SLOGPREFIX << _MSG_)
-#define SALERT(_MSG_) SSYSLOG(LOG_WARNING, SWHEREAMI << "[alrt] " << SLOGPREFIX << _MSG_)
+#define SLOG(_MSG_) SSYSLOG(LOG_DEBUG, SLOGPREFIX << _MSG_)
+#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
+#define SINFO(_MSG_) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
+#define SHMMM(_MSG_) SSYSLOG(LOG_WARNING, "[hmmm] " << SLOGPREFIX << _MSG_)
+#define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
+#define SALERT(_MSG_) SSYSLOG(LOG_WARNING, "[alrt] " << SLOGPREFIX << _MSG_)
 #define SERROR(_MSG_)                                                                                                  \
     do {                                                                                                               \
-        SSYSLOG(LOG_ERR, SWHEREAMI << "[eror] " << SLOGPREFIX << _MSG_);                                               \
+        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
         SLogStackTrace();                                                                                              \
         fflush(stdout);                                                                                                \
         exit(1);                                                                                                       \
@@ -788,7 +788,7 @@ SData SParseCommandLine(int argc, char* argv[]);
     do {                                                                                                               \
         cout << _MSG_ << endl;                                                                                         \
         cout.flush();                                                                                                  \
-        SSYSLOG(LOG_DEBUG, SWHEREAMI << "[test] " << SLOGPREFIX << _MSG_);                                             \
+        SSYSLOG(LOG_DEBUG, "[test] " << SLOGPREFIX << _MSG_);                                                          \
     } while (false)
 #define STESTASSERT(_COND_)                                                                                            \
     do {                                                                                                               \
