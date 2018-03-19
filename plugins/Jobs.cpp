@@ -23,7 +23,21 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                    "retryAfter  TEXT NOT NULL DEFAULT \"\" )",
                         ignore))
     {
-        SASSERT(db.write("ALTER TABLE jobs ADD COLUMN retryAfter TEXT NOT NULL DEFAULT \"\";"));
+        SASSERT(db.verifyTable("jobs",
+                               "CREATE TABLE jobs ( "
+                                   "created     TIMESTAMP NOT NULL, "
+                                   "jobID       INTEGER NOT NULL PRIMARY KEY, "
+                                   "state       TEXT NOT NULL, "
+                                   "name        TEXT NOT NULL, "
+                                   "nextRun     TIMESTAMP NOT NULL, "
+                                   "lastRun     TIMESTAMP, "
+                                   "repeat      TEXT NOT NULL, "
+                                   "data        TEXT NOT NULL, "
+                                   "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                                   "parentJobID INTEGER NOT NULL DEFAULT 0, "
+                                   "retryAfter  TEXT NOT NULL DEFAULT \"\" )",
+                               ignore));
+
     }
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
@@ -553,9 +567,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
-                // Create this new job
-                if (!db.writeIdempotent("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                // Create this new job with a new generated ID
+                SQResult nextIDResult;
+                db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
+                const int64_t nextID = (nextIDResult.empty() ? 0 : SToInt64(nextIDResult[0][0])) + 1;
+                SINFO( "Next jobID returned " << nextID);
+                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
+                            SQ(nextID) + ", " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
