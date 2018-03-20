@@ -44,7 +44,7 @@ struct LibStuff : tpunit::TestFixture {
     }
 
     void testJSONDecode() {
-        const string& sampleJson = SFileLoad("sample_data/lottoNumbers.json");
+        const string& sampleJson = SFileLoad(BedrockTester::testDataLocation + "sample_data/lottoNumbers.json");
         ASSERT_FALSE(sampleJson.empty());
 
         STable obj = SParseJSONObject(sampleJson);

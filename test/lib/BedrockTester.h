@@ -17,6 +17,10 @@ class BedrockTester {
     // Search paths for `getServerName()`. Allowed to be modified before startup by implementer.
     static list<string> locations;
 
+    // Locations that we store data or plugins in
+    static string testDataLocation;
+    static string testPluginLocation;
+
     // Default values for the location of the DB file and the server to talk to.
     // These can be over-ridden when instantiating a tester.
     // Typically, these values will be set in main().
@@ -34,7 +38,7 @@ class BedrockTester {
 
     // Constructor/destructor
     BedrockTester(const map<string, string>& args = {},
-                  const list<string>& queries = {}, 
+                  const list<string>& queries = {},
                   bool startImmediately = true,
                   bool keepFilesWhenFinished = false);
     ~BedrockTester();

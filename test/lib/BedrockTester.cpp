@@ -8,9 +8,12 @@ SData BedrockTester::globalArgs;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
+    "bedrock",
     "../bedrock",
-    "../../bedrock"
+    "../../bedrock",
 };
+string BedrockTester::testDataLocation = "/vagrant/bedrock/test/";
+string BedrockTester::testPluginLocation = "/vagrant/bedrock/test/clustertest/testplugin/";
 
 // Set to 2 or more for duplicated requests.
 int BedrockTester::mockRequestMode = 0;
@@ -25,12 +28,24 @@ string BedrockTester::getTempFileName(string prefix) {
 }
 
 string BedrockTester::getServerName() {
+    // Try to find bedrock according to the system
+    string location;
+    if (SExecuteSystemCmd("which bedrock", location)) {
+        // Trim the newline off the location from running `which`
+        location.pop_back();
+        return location;
+    }
+
+    // Otherwise check our static locations
     for (auto location : locations) {
         if (SFileExists(location)) {
             return location;
         }
     }
-    return "";
+
+    // If we can't find bedrock in either place, throw.
+    cout << "Could not find bedrock." << endl;
+    return location;
 }
 
 void BedrockTester::stopAll() {
@@ -85,7 +100,7 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
-    
+
     _controlAddr = _args["-controlPort"];
 
     // If the DB file doesn't exist, create it.

@@ -706,6 +706,7 @@ bool SFileSave(const string& path, const string& buffer);
 bool SFileDelete(const string& path);
 bool SFileCopy(const string& fromPath, const string& toPath);
 uint64_t SFileSize(const string& path);
+bool SExecuteSystemCmd(const char* cmd, string& out);
 
 // --------------------------------------------------------------------------
 // Crypto stuff

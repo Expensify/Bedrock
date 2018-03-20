@@ -2116,6 +2116,26 @@ uint64_t SFileSize(const string& path) {
     return out.st_size;
 }
 
+bool SExecuteSystemCmd(const char* cmd, string& out) {
+    // Clear our output buffer
+    out.clear();
+    char buffer[128];
+
+    // Run our command
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) {
+        SALERT("Failed to run command " << cmd);
+        return false;
+    }
+    while (!feof(pipe)) {
+        if (fgets(buffer, 128, pipe) != nullptr) {
+            out += buffer;
+        }
+    }
+    pclose(pipe);
+    return true;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Cryptography stuff
 /////////////////////////////////////////////////////////////////////////////
