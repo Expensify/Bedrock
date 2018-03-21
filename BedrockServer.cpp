@@ -1295,6 +1295,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
+                    SAUTOPREFIX(request["requestID"]);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
