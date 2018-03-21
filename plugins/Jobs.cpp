@@ -51,6 +51,13 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // This index is used to optimize the Bedrock::Jobs::GetJob call.
     SASSERT(db.write(
         "CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
+
+    if (!lastJobID) {
+        SQResult nextIDResult;
+        db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
+        lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
+        SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
+    }
 }
 
 // ==========================================================================
@@ -357,14 +364,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     SData& response = command.response;
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
-
-    if (!lastJobID) {
-        SQResult nextIDResult;
-        db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-        lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
-        SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
-    }
-
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
