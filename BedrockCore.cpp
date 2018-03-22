@@ -24,6 +24,10 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
         bool pluginPeeked = false;
+
+        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+        bool shouldSuppressTimeoutWarnings = false;
+
         try {
             if (!_db.beginConcurrentTransaction()) {
                 STHROW("501 Failed to begin concurrent transaction");
@@ -34,6 +38,8 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
             // Try each plugin, and go with the first one that says it succeeded.
             for (auto plugin : _server.plugins) {
+                shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
+
                 // Try to peek the command.
                     if (plugin->peekCommand(_db, command)) {
                         SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
@@ -42,7 +48,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                     }
             }
         } catch (const SQLite::timeout_error& e) {
-            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            if (!shouldSuppressTimeoutWarnings) {
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            }
             STHROW("555 Timeout peeking command");
         }
 
