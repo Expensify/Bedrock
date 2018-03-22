@@ -170,7 +170,7 @@ int main(int argc, char* argv[]) {
 
     // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
     // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
-    SInitialize("main");
+    SInitialize("main", (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
     SLogLevel(LOG_INFO);
 
     if (args.isSet("-version")) {

@@ -85,6 +85,13 @@ class BedrockServer : public SQLiteServer {
     // Returns whether or not this server was configured to backup when it completed shutdown.
     bool backupOnShutdown();
 
+    // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
+    // sync node.
+    list<STable> getPeerInfo();
+
+    // Send a command to all of our peers. It will be wrapped appropriately.
+    void broadcastCommand(const SData& message);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -194,7 +201,7 @@ class BedrockServer : public SQLiteServer {
     SQLiteNode* _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
-    mutex _syncMutex;
+    recursive_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(BedrockCommand& command);
@@ -266,6 +273,10 @@ class BedrockServer : public SQLiteServer {
     // Definitions of crash-causing commands. This is a map of methodLine to name/value pairs required to match a
     // particular command for it count as a match likely to cause a crash.
     map<string, set<STable>> _crashCommands;
+
+    // Returns whether or not the command was a status or control command. If it was, it will have already been handled
+    // and responded to upon return
+    bool _handleIfStatusOrControlCommand(BedrockCommand& command);
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
