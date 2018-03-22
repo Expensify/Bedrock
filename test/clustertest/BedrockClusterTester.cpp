@@ -58,7 +58,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-priority",    priority},
             {"-nodeName",    nodeName},
             {"-peerList",    peerString},
-            {"-plugins",     "db,cache," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-plugins",     "db,cache,jobs," + string(cwd) + "/testplugin/testplugin.so"},
         };
         _cluster.emplace_back(args, queries, false);
     }
