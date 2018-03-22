@@ -31,6 +31,9 @@ struct k_JobIDTest : tpunit::TestFixture {
         getCmd["name"] = "*";
         slave->executeWaitVerifyContentTable(getCmd, "200");
         slave->executeWaitVerifyContentTable(getCmd, "200");
+
+        // Restart master so rest of tests can use it.
+        tester->startNode(0);
     }
 
 } __k_JobIDTest;
