@@ -59,7 +59,12 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
-void SInitialize(string threadName) {
+void SInitialize(string threadName, const char* processName) {
+    // If a specific process name has been supplied, initialize syslog with it.
+    if (processName) {
+        openlog(processName, 0, 0);
+    }
+
     // Initialize signal handling
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxxx ");
@@ -1498,7 +1503,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         string domain;
         uint16_t port = 0;
         if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host");
+            STHROW("invalid host: " + host);
         }
 
         // Is the domain just a raw IP?

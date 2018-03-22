@@ -2,20 +2,32 @@
 
 list<BedrockClusterTester*> BedrockClusterTester::testers;
 
-BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries)
+BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts)
 : _size(size)
 {
     cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
 
-    int nodePortBase = 9500;
-    // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
+    // Each node gets three + uniquePorts ports. The lowest port we'll use is 11111. To make sure each thread gets it's
+    // own port space, we'll add enough to this base port.
+    int portCount = 3 + uniquePorts.size();
+    int nodePortBase = 11111 + (threadID * portCount * size);
 
+    // Each node gets three ports.
+    vector<vector<int>> ports;
+    for (int i = 0; i < size; i++) {
+        // This node gets three consecutive ports.
+        vector<int> nodePorts = {nodePortBase + (i * portCount), nodePortBase + (i * portCount) + 1, nodePortBase + (i * portCount) + 2};
+        ports.push_back(nodePorts);
+    }
+
+
+    // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
     // We'll use this to create the 'peerList' argument for each node.
     vector<string> peers;
     for (size_t i = 0; i < size; i++) {
-        int nodePort = nodePortBase + i;
+        int nodePort = nodePortBase + 1;
         peers.push_back("127.0.0.1:" + to_string(nodePort));
     }
 
@@ -23,26 +35,34 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
 
     for (size_t i = 0; i < size; i++) {
 
+        int portOffset = 3;
+        for (auto& up : uniquePorts) {
+            _args[up] = "127.0.0.1:" + to_string(nodePortBase + (i * portCount) + portOffset);
+            portOffset++;
+        }
+
         // We need each node to listen on a different port which is sort of inconvenient, but since they're all running
         // on the same machine, they can't share a port.
-        int serverPort = 9000 + i;
-        int nodePort = nodePortBase + i;
-        int controlPort = 19999 + i;
+        int nodePort = ports[i][0];
+        int serverPort = ports[i][1];
+        int controlPort = ports[i][2];
 
         // Construct all the arguments for each server.
         string serverHost  = "127.0.0.1:" + to_string(serverPort);
         string nodeHost    = "127.0.0.1:" + to_string(nodePort);
         string controlHost = "127.0.0.1:" + to_string(controlPort);
-        string db          = BedrockTester::getTempFileName("cluster_node_" + to_string(i) + "_");
+        string db          = BedrockTester::getTempFileName("cluster_node_" + to_string(nodePort));
         string priority    = to_string(100 - (i * 10));
         string nodeName    = nodeNamePrefix + to_string(i);
 
         // Construct our list of peers.
+        int j = 0;
         list<string> peerList;
-        for (size_t j = 0; j < peers.size(); j++) {
-            if (j != i) {
-                peerList.push_back(peers[j] + "?nodeName=" + nodeNamePrefix + to_string(j));
+        for (auto p : ports) {
+            if (p[0] != nodePort) {
+                peerList.push_back("127.0.0.1:"s + to_string(p[0]) + "?nodeName=" + nodeNamePrefix + to_string(j));
             }
+            j++;
         }
         string peerString = SComposeList(peerList, ",");
 
@@ -59,7 +79,12 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-nodeName",    nodeName},
             {"-peerList",    peerString},
             {"-plugins",     "db,cache,jobs," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-overrideProcessName", "bedrock" + to_string(nodePort)},
         };
+
+        for (auto& a : _args) {
+            args[a.first] = a.second;
+        }
         _cluster.emplace_back(args, queries, false);
     }
     list<thread> threads;

@@ -42,7 +42,7 @@ using namespace std;
 #include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 // Initialize libstuff on every thread before calling any of its functions
-void SInitialize(string threadName = "");
+void SInitialize(string threadName = "", const char* processName = 0);
 
 void SSetSignalHandlerDieFunc(function<void()>&& func);
 

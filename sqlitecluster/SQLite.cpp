@@ -705,7 +705,7 @@ void SQLite::rollback() {
         }
         _sharedData->blockNewTransactionsCV.notify_one();
     } else {
-        SWARN("Rolling back but not inside transaction, ignoring.");
+        SINFO("Rolling back but not inside transaction, ignoring.");
     }
 }
 

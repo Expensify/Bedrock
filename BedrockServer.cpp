@@ -11,7 +11,7 @@ recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
-    if(SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
+    if (SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
         SData request;
         request.deserialize(command.request.content);
 
@@ -26,6 +26,13 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
+        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
+            SData newRequest;
+            newRequest.deserialize(command.request.content);
+            command.request = newRequest;
+            command.initiatingClientID = -1;
+            command.initiatingPeerID = 0;
+        }
         SAUTOPREFIX(command.request["requestID"]);
         if (command.writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
@@ -377,7 +384,7 @@ void BedrockServer::sync(SData& args,
             // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
             // this, which would probably make this message malformed. This is the best we can do.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
+                server._syncNode->broadcast(_generateCrashMessage(&command));
             });
 
             // And now we'll decide how to handle it.
@@ -536,11 +543,16 @@ void BedrockServer::worker(SData& args,
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
 
+            // If we dequeue a status or control command, handle it immediately.
+            if (server._handleIfStatusOrControlCommand(command)) {
+                continue;
+            }
+
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
             // signals, like SIGSEGV, this function will be called.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->emergencyBroadcast(_generateCrashMessage(&command));
+                server._syncNode->broadcast(_generateCrashMessage(&command));
             });
 
             // Check if this command would be likely to cause a crash
@@ -873,6 +885,26 @@ void BedrockServer::worker(SData& args,
             break;
         }
     }
+}
+
+bool BedrockServer::_handleIfStatusOrControlCommand(BedrockCommand& command) {
+    if (_isStatusCommand(command)) {
+        _status(command);
+        _reply(command);
+        return true;
+    } else if (_isControlCommand(command)) {
+        // Control commands can only come from localhost (and thus have an empty `_source`).
+        if (command.request["_source"].empty()) {
+            _control(command);
+        } else {
+            SWARN("Got control command " << command.request.methodLine << " on non-localhost socket ("
+                  << command.request["_source"] << "). Ignoring.");
+            command.response.methodLine = "401 Unauthorized";
+        }
+        _reply(command);
+        return true;
+    }
+    return false;
 }
 
 bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
@@ -1295,6 +1327,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
+                    SAUTOPREFIX(request["requestID"]);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
@@ -1346,24 +1379,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // if we received connection:forget in which case we don't respond later
                     command.initiatingClientID = SIEquals(request["Connection"], "forget") ? -1 : s->id;
 
-                    // Status and control requests are handled specially.
-                    if (_isStatusCommand(command)) {
-                        _status(command);
-                        _reply(command);
-                    } else if (_isControlCommand(command)) {
-                        // Control commands can only come from localhost (and thus have an empty `_source`).
-                        if (command.request["_source"].empty()) {
-                            _control(command);
-                            _reply(command);
-                        } else {
-                            char str[INET_ADDRSTRLEN];
-                            inet_ntop(AF_INET, &(s->addr.sin_addr), str, INET_ADDRSTRLEN);
-                            SWARN("Got control command " << command.request.methodLine
-                                  << " on non-localhost socket (" << str << "). Ignoring.");
-                            command.response.methodLine = "401 Unauthorized";
-                            _reply(command);
-                        }
-                    } else if (_shutdownState < PORTS_CLOSED) {
+                    // If it's a status or control command, we handle it specially there. If not, we'll queue it for
+                    // later processing.
+                    if (!_handleIfStatusOrControlCommand(command) && _shutdownState < PORTS_CLOSED) {
                         // Otherwise we queue it for later processing.
                         SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
                               << _commandQueue.size() << " commands already queued.");
@@ -1462,10 +1480,10 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
     // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
-    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
     if (_suppressCommandPortManualOverride && !manualOverride) {
         return;
     }
+    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
 
     // Save the state of manual override. Note that it's set to *suppress* on purpose.
     if (manualOverride) {
@@ -1497,6 +1515,19 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
         return true;
     }
     return false;
+}
+
+list<STable> BedrockServer::getPeerInfo() {
+    SAUTOLOCK(_syncMutex);
+    list<STable> peerData;
+    if (_syncNode) {
+        for (SQLiteNode::Peer* peer : _syncNode->peerList) {
+            peerData.emplace_back(peer->nameValueMap);
+            peerData.back()["host"] = peer->host;
+            peerData.back()["name"] = peer->name;
+        }
+    }
+    return peerData;
 }
 
 void BedrockServer::_status(BedrockCommand& command) {
@@ -1572,7 +1603,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
-        list<STable> peerData;
+        list<STable> peerData = getPeerInfo();
         list<string> escalated;
         {
             SAUTOLOCK(_syncMutex);
@@ -1583,12 +1614,6 @@ void BedrockServer::_status(BedrockCommand& command) {
                 // Set some information about this node.
                 content["CommitCount"] = to_string(_syncNode->getCommitCount());
                 content["priority"] = to_string(_syncNode->getPriority());
-
-                // Retrieve information about our peers.
-                for (SQLiteNode::Peer* peer : _syncNode->peerList) {
-                    peerData.emplace_back(peer->nameValueMap);
-                    peerData.back()["host"] = peer->host;
-                }
 
                 // Get any escalated commands that are waiting to be processed.
                 escalated = _syncNode->getEscalatedCommandRequestMethodLines();
@@ -1779,6 +1804,15 @@ SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
     return message;
 }
 
+void BedrockServer::broadcastCommand(const SData& cmd) {
+    SData message("BROADCAST_COMMAND");
+    message.content = cmd.serialize();
+    lock_guard<recursive_mutex> lock(_syncMutex);
+    if (_syncNode) {
+        _syncNode->broadcast(message);
+    }
+}
+
 void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
@@ -1791,7 +1825,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             for (const auto& fields : command.nameValueMap) {
                 cmd.crashIdentifyingValues.insert(fields.first);
             }
-            _syncNode->emergencyBroadcast(_generateCrashMessage(&cmd), peer);
+            _syncNode->broadcast(_generateCrashMessage(&cmd), peer);
         }
     }
 }
