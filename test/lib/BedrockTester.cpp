@@ -244,6 +244,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
             // Create a socket.
             int socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+
             while (true) {
                 size_t myIndex = 0;
                 SData myRequest;
@@ -267,6 +268,15 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 for (size_t mockCount = 0; mockCount < count; mockCount++) {
                     if (mockCount) {
                         myRequest["mockRequest"] = "true";
+                    }
+
+                    // If we never got a socket, record an error and return.
+                    if (socket == -1) {
+                        SData responseData("001 No Socket");
+                        if (!mockCount) {
+                            results[myIndex] = move(responseData);
+                        }
+                        continue;
                     }
 
                     // We've released our lock so other threads can dequeue stuff now.
