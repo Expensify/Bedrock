@@ -17,6 +17,9 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
 }
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    if (command.request.calc("PeekSleep")) {
+        usleep(command.request.calc("PeekSleep") * 1000);
+    }
     // Always blacklist on userID.
     command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
@@ -73,6 +76,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
 }
 
 bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& command) {
+    if (command.request.calc("ProcessSleep")) {
+        usleep(command.request.calc("ProcessSleep") * 1000);
+    }
     if (command.request.methodLine == "sendrequest") {
         if (command.httpsRequest) {
             // If we're calling `process` on a command with a https request, it had better be finished.
