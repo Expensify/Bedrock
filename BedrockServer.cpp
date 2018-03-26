@@ -853,7 +853,9 @@ void BedrockServer::worker(SData& args,
 
         // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
         // inform the sync thread that we're done with this queue.
-        if (server._shutdownState.load() == PORTS_CLOSED) {
+        // TODO: make sure we progress through the shutdown states if we're timing out, regardless of whether things
+        // have finished.
+        if (server._shutdownState.load() == CONNECTIONS_CLOSED) {
             // We can only do this if we're done with HTTPS commands as well.
             {
                 lock_guard<mutex> lock(server._httpsCommandMutex);
@@ -1160,6 +1162,25 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    // If we've begun shutting down, then we can mark ports as closed here, and we'll dequeue any last new connections
+    // in this iteration of this function.
+    if (_shutdownState.load() == START_SHUTDOWN) {
+        _shutdownState.store(PORTS_CLOSED);
+        SINFO("PORTS_CLOSED. All ports closed.");
+    }
+
+    // What's the implication of the above? We can read new commands on any existing socket, so we need to figure out
+    // when those are done. Now, if we close them after sending responses, then they're done. I think after we close
+    // the command port, we need to wait until there are no sockets left in this list. This will wait for the sync
+    // thread to have responded to everything. Then we can tell it to shutdown, which should be fine.
+    //
+    // New propsoed flow:
+    // beginShutdown:
+    // Closes ports and sets START_SHUTDOWN.
+    // postPoll: calls final accept()s and then sets PORTS_CLOSED
+    // If socketIDMap is empty, set CONNECTIONS_CLOSED and tell the sync node to shut down.
+    // When we reply to commands we close 
+
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
@@ -1414,11 +1435,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we started shutting down, we can now finish that process.
-    if (_shutdownState.load() == START_SHUTDOWN) {
-        _shutdownState.store(PORTS_CLOSED);
-        SINFO("PORTS_CLOSED. All ports closed.");
+    if (_shutdownState.load() == PORTS_CLOSED && _socketIDMap.empty()) {
+        _shutdownState.store(CONNECTIONS_CLOSED);
+        SINFO("CONNECTIONS_CLOSED. All ports closed.");
     }
+
 }
 
 void BedrockServer::_reply(BedrockCommand& command) {
@@ -1454,8 +1475,9 @@ void BedrockServer::_reply(BedrockCommand& command) {
             socketIt->second->send(command.response.serialize());
         }
 
-        // If `Connection: close` was set, shut down the socket.
-        if (SIEquals(command.request["Connection"], "close")) {
+        // If `Connection: close` was set, shut down the socket, do the same if we're shutting down - we don't want to
+        // receive any more commands on these sockets.
+        if (SIEquals(command.request["Connection"], "close") || _shutdownState>= PORTS_CLOSED) {
             shutdownSocket(socketIt->second, SHUT_RD);
         }
 

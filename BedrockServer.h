@@ -22,6 +22,10 @@ class BedrockServer : public SQLiteServer {
         // and queued for processing, and close the listening ports, then set this state.
         PORTS_CLOSED,
 
+        // Once the ports are closed, we won't get any new connections, but we need to wait for the existing ones to
+        // finish as well.
+        CONNECTIONS_CLOSED,
+
         // We let the workers run trough commands until their queue is empty. When that happens, we set this state,
         // indicating that everything that might need to be escalated to the sync thread has been escalated.
         QUEUE_PROCESSED,
