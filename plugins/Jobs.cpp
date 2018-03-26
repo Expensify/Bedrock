@@ -84,13 +84,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         // Get the list
         SQResult result;
         const string& name = request["name"];
-        string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
                      "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                     "  AND name GLOB " + SQ(name) + " "
-                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                     "  AND name GLOB " + SQ(name) + " " +
+                     string(!command.request.isSet("mockRequest") ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                      "LIMIT 1;",
                      result)) {
             STHROW("502 Query failed");
