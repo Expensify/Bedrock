@@ -1,9 +1,9 @@
 #include "../BedrockClusterTester.h"
 
-struct k_GracefulFailoverTest : tpunit::TestFixture {
-    k_GracefulFailoverTest()
-        : tpunit::TestFixture("k_GracefulFailover",
-                              TEST(k_GracefulFailoverTest::test)
+struct l_GracefulFailoverTest : tpunit::TestFixture {
+    l_GracefulFailoverTest()
+        : tpunit::TestFixture("l_GracefulFailover",
+                              TEST(l_GracefulFailoverTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -125,7 +125,7 @@ struct k_GracefulFailoverTest : tpunit::TestFixture {
 
         for (auto& results : allresults) {
             for (auto &r : results) {
-                bool valid = r.methodLine == "200 OK" || r.methodLine == "001 No Socket";
+                bool valid = r.methodLine == "200 OK" || r.methodLine == "002 Socket Failed";
                 if (!valid) {
                     cout << r.methodLine << endl;
                 }
@@ -134,4 +134,4 @@ struct k_GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-} __k_GracefulFailoverTest;
+} __l_GracefulFailoverTest;

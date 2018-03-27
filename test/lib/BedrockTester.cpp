@@ -277,15 +277,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         myRequest["mockRequest"] = "true";
                     }
 
-                    // If we never got a socket, record an error and return.
-                    if (socket == -1) {
-                        SData responseData("001 No Socket");
-                        if (!mockCount) {
-                            results[myIndex] = move(responseData);
-                        }
-                        continue;
-                    }
-
                     // We've released our lock so other threads can dequeue stuff now.
                     // Send some stuff on our socket.
                     string sendBuffer = myRequest.serialize();
