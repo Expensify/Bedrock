@@ -60,7 +60,9 @@ bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
 bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
-
+bool BedrockPlugin::shouldSuppressTimeoutWarnings() {
+    return false;
+}
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}

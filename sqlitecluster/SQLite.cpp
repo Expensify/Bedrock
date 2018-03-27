@@ -410,7 +410,7 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
             return true;
         } else {
             // Not right -- need to upgrade?
-            SHMMM("'" << tableName << "' has incorrect schema, need to upgrade? Is '" << collapsedResult << "'");
+            SHMMM("'" << tableName << "' has incorrect schema, need to upgrade? Is '" << collapsedResult << "' expected  '" << collapsedSQL << "'");
             return false;
         }
     }
