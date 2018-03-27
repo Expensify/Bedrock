@@ -860,7 +860,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest') "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -875,9 +875,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& lastRun = result[0][2];
         string repeat = result[0][3];
         int64_t parentJobID = SToInt(result[0][4]);
+        bool mockRequest = result[0][5] == "1";
 
         // Make sure we're finishing a job that's actually running
-        if (state != "RUNNING" && state != "RUNQUEUED") {
+        if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
             SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
