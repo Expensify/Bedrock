@@ -110,10 +110,10 @@ void STCPManager::postPoll(fd_map& fdm) {
                 //
                 // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
                 //         in a row it might just be filling an internal buffer (and not due to some busy loop)
-                SDEBUG("sslState=" << SSSLGetState(socket->ssl) << ", canrecv=" << SFDAnySet(fdm, socket->s, SREADEVTS)
-                                   << ", recvsize=" << socket->recvBuffer.size()
-                                   << ", cansend=" << SFDAnySet(fdm, socket->s, SWRITEEVTS)
-                                   << ", sendsize=" << socket->sendBufferCopy().size());
+                // SDEBUG("sslState=" << SSSLGetState(socket->ssl) << ", canrecv=" << SFDAnySet(fdm, socket->s, SREADEVTS)
+                //                    << ", recvsize=" << socket->recvBuffer.size()
+                //                    << ", cansend=" << SFDAnySet(fdm, socket->s, SWRITEEVTS)
+                //                    << ", sendsize=" << socket->sendBufferCopy().size());
                 if (SFDAnySet(fdm, socket->s, SREADEVTS | SWRITEEVTS)) {
                     // Do both
                     aliveAfterRecv = socket->recv();
