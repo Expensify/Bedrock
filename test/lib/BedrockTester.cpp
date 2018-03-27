@@ -184,15 +184,14 @@ string BedrockTester::startServer(bool dontWait) {
             }
 
             // We've successfully opened a socket, so let's try and send a command.
-            try {
-                SData status("Status");
-                auto result = executeWaitMultipleData({status}, 10, dontWait);
+            SData status("Status");
+            auto result = executeWaitMultipleData({status}, 1, dontWait);
+            if (result[0].methodLine == "200 OK") {
                 return result[0].content;
-            } catch (...) {
-                // This will happen if the server's not up yet. We'll just try again.
-                usleep(100000); // 0.1 seconds.
-                continue;
             }
+            // This will happen if the server's not up yet. We'll just try again.
+            usleep(100000); // 0.1 seconds.
+            continue;
         }
     }
     return "";
@@ -263,6 +262,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 size_t count = 1;
                 if (mockRequestMode > 1) {
                     count = mockRequestMode;
+                }
+
+                // If the socket failed to open, don't bother trying with it.
+                if (socket == -1) {
+                    SAUTOLOCK(listLock);
+                    SData responseData("002 Socket Failed");
+                    results[myIndex] = move(responseData);
+                    continue;
                 }
 
                 for (size_t mockCount = 0; mockCount < count; mockCount++) {

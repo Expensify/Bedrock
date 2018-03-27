@@ -19,12 +19,14 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     port.host = host;
     port.s = S_socket(host, true, true, false);
     SASSERT(port.s >= 0);
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     list<Port>::iterator portIt = portList.insert(portList.end(), port);
     return &*portIt;
 }
 
 void STCPServer::closePorts(list<Port*> except) {
     // Are there any ports to close?
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     if (!portList.empty()) {
         // Loop across and close all ports not excepted.
         auto it = portList.begin();
@@ -50,6 +52,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
     Socket* socket = nullptr;
 
     // See if we can accept on any port
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     for (Port& port : portList) {
         // Try to accept on the port and wrap in a socket
         sockaddr_in addr;
@@ -77,6 +80,7 @@ void STCPServer::prePoll(fd_map& fdm) {
     STCPManager::prePoll(fdm);
 
     // Add the ports
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     for (Port& port : portList) {
         SFDset(fdm, port.s, SREADEVTS);
     }

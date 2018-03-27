@@ -5,6 +5,7 @@ struct LibStuff : tpunit::TestFixture {
     LibStuff() : tpunit::TestFixture("LibStuff",
                                     TEST(LibStuff::testEncryptDecrpyt),
                                     TEST(LibStuff::testSHMACSHA1),
+                                    TEST(LibStuff::testSHMACSHA256),
                                     TEST(LibStuff::testJSONDecode),
                                     TEST(LibStuff::testJSON),
                                     TEST(LibStuff::testEscapeUnescape),
@@ -41,6 +42,11 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SToHex(SHMACSHA1("", "")), "FBDB1D1B18AA6C08324B7D64B71FB76370690E1D");
         ASSERT_EQUAL(SToHex(SHMACSHA1("key", "The quick brown fox jumps over the lazy dog")),
                      "DE7C9B85B8B78AA6BC8A7A36F70A90701C9DB4D9");
+    }
+
+    void testSHMACSHA256() {
+        ASSERT_EQUAL(SToHex(SHMACSHA256("", "")), "B613679A0814D9EC772F95D778C35FC5FF1697C493715653C6C712144292C5AD");
+        ASSERT_EQUAL(SToHex(SHMACSHA256("key", "Only a Sith deals in absolutes")), "524C9B1C0B6E9F47F10041A429FCB2C880129F940DC9E41F31267E0909D46845");
     }
 
     void testJSONDecode() {

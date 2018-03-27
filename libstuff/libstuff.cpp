@@ -8,6 +8,7 @@
 #include <mbedtls/aes.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/sha1.h>
+#include <mbedtls/sha256.h>
 
 // Additional headers
 #include <netdb.h>
@@ -2133,6 +2134,13 @@ string SHashSHA1(const string& buffer) {
     return result;
 }
 
+string SHashSHA256(const string& buffer) {
+    string result;
+    result.resize(32);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
+    return result;
+}
+
 // --------------------------------------------------------------------------
 
 string SEncodeBase64(const unsigned char* buffer, int size) {
@@ -2184,6 +2192,19 @@ string SHMACSHA1(const string& key, const string& buffer) {
     // Then use it to make the hashes
     const string& innerHash = SHashSHA1(ipadSecret + buffer);
     const string& outerHash = SHashSHA1(opadSecret + innerHash);
+    return outerHash;
+}
+
+string SHMACSHA256(const string& key, const string& buffer) {
+    int BLOCK_SIZE = 64;
+    string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
+    for (int c = 0; c < (int)key.size(); ++c) {
+        ipadSecret[c] ^= key[c];
+        opadSecret[c] ^= key[c];
+    }
+
+    const string& innerHash = SHashSHA256(ipadSecret + buffer);
+    const string& outerHash = SHashSHA256(opadSecret + innerHash);
     return outerHash;
 }
 
