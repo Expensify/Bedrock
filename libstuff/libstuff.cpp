@@ -1798,9 +1798,10 @@ bool S_sendconsume(int s, string& sendBuffer) {
         // This means we sent an amount less than the size of the buffer, generally
         // this happens when the client on the other end dies unexpectedly in the
         // middle of send, causing send() to return how much it sent. This normally
-        // will result in an S_EINTR, but there are edge cases around large payloads
-        // that will cause no error. Since this normally causes S_EINTR, we'll return
-        // here like we do below for that case.
+        // will result in an S_EINTR and a return of -1, but there are edge cases
+        // around large payloads that will cause no error and a return of the amount
+        // send. Since this normally causes S_EINTR, we'll return  here like we do
+        // below for that case.
         return true;
     }
 
