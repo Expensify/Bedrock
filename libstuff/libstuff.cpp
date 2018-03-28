@@ -1792,19 +1792,8 @@ bool S_sendconsume(int s, string& sendBuffer) {
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
-    if (numSent > 0 && numSent == (int)sendBuffer.size()) {
+    if (numSent > 0)
         SConsumeFront(sendBuffer, numSent);
-    } else if (numSent > 0) {
-        // This means we sent an amount less than the size of the buffer, generally
-        // this happens when the client on the other end dies unexpectedly in the
-        // middle of send, causing send() to return how much it sent. This normally
-        // will result in an S_EINTR and a return of -1, but there are edge cases
-        // around large payloads that will cause no error and a return of the amount
-        // send. Since the socket is dead if we hit this edge case, we'll return
-        // false here.
-        return false;
-    }
-
 
     // Exit if no error
     if (numSent >= 0)
