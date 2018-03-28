@@ -525,7 +525,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 
 // --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
-    SASSERT((int)lhs.size() >= num);
     // If nothing, early out
     if (!num)
         return;
@@ -1793,10 +1792,20 @@ bool S_sendconsume(int s, string& sendBuffer) {
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
-    if (numSent > 0)
+    if (numSent > 0 && numSent == (int)sendBuffer.size()) {
         SConsumeFront(sendBuffer, numSent);
+    } else if (numSent > 0) {
+        // This means we sent an amount less than the size of the buffer, generally
+        // this happens when the client on the other end dies unexpectedly in the
+        // middle of send, causing send() to return how much it sent. This normally
+        // will result in an S_EINTR, but there are edge cases around large payloads
+        // that will cause no error. Since this normally causes S_EINTR, we'll return
+        // here like we do below for that case.
+        return true;
+    }
 
-    // Exit of no error
+
+    // Exit if no error
     if (numSent >= 0)
         return true; // No error; still alive
 
