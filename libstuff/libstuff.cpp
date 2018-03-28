@@ -1800,9 +1800,9 @@ bool S_sendconsume(int s, string& sendBuffer) {
         // middle of send, causing send() to return how much it sent. This normally
         // will result in an S_EINTR and a return of -1, but there are edge cases
         // around large payloads that will cause no error and a return of the amount
-        // send. Since this normally causes S_EINTR, we'll return  here like we do
-        // below for that case.
-        return true;
+        // send. Since the socket is dead if we hit this edge case, we'll return
+        // false here.
+        return false;
     }
 
 
