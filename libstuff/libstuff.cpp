@@ -525,7 +525,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 
 // --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
-    SASSERT((int)lhs.size() >= num);
     // If nothing, early out
     if (!num)
         return;
@@ -1796,7 +1795,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
     if (numSent > 0)
         SConsumeFront(sendBuffer, numSent);
 
-    // Exit of no error
+    // Exit if no error
     if (numSent >= 0)
         return true; // No error; still alive
 
