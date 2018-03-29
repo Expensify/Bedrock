@@ -883,15 +883,14 @@ void BedrockServer::worker(SData& args,
             SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
         }
 
-        /*
-        if (!server.socketList.empty()) {
-            //cout << "Still have sockets left at shutdown. Letting them close." << endl;
-            continue;
-        }
-        */
-
         // If the sync thread is finished, and the worker queue is empty, then we're really done.
         if (server._shutdownState.load() == SYNC_SHUTDOWN) {
+       
+            if (!server.socketList.empty()) {
+                cout << "Still have sockets left at shutdown. Letting them close." << endl;
+                continue;
+            }
+       
             SINFO("Shutdown state is SYNC_SHUTDOWN, and queue empty. Worker" << to_string(threadId) << " exiting.");
             cout << "TYLER shutdownState DONE" << endl;
             server._shutdownState.store(DONE);
@@ -1347,7 +1346,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
                     // TODO: If we're shutting down and don't have a command for this socket, then let's close it here.
-                    if (_shutdownState.load() != RUNNING && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                    if (_shutdownState.load() == DONE && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                         cout << "Closing socket " << s->id << " with no data because shutting down (why does this exist?)" << endl;
                         socketsToClose.push_back(s);
                     } else {
@@ -1521,7 +1520,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
             // Otherwise we send the standard response.
             if (_shutdownState.load() >= PORTS_CLOSED) {
                 // If we're shutting down, tell the caller to close the connection.
-                SINFO("TYLER setting connection closed.");
+                cout << "Bedrock setting connection closed. " << command.request.serialize();
                 command.response["Connection"] = "close";
             }
             socketIt->second->send(command.response.serialize());

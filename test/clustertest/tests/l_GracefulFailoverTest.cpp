@@ -73,11 +73,15 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             query["peekSleep"] = "20";
                             query["processSleep"] = "20";
                             query["response"] = "756";
+                            query["senttonode"] = to_string(currentNodeIndex);
+                            query["clientID"] = to_string(i);
                             requests.push_back(query);
                         } else {
                             SData query("testcommand");
                             query["peekSleep"] = "20";
                             query["response"] = "756";
+                            query["senttonode"] = to_string(currentNodeIndex);
+                            query["clientID"] = to_string(i);
                             requests.push_back(query);
                         }
                     }
@@ -101,12 +105,8 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                         }
                     }
                     cout << "Completed " << completed << " commands of "  << numCommands << " on client " << i << " and node " << currentNodeIndex << endl;
-
-                    if (completed != numCommands) {
-                        cout << "Disconnected, trying next node." << endl;
-                        currentNodeIndex++;
-                        currentNodeIndex %= 3;
-                    }
+                    currentNodeIndex++;
+                    currentNodeIndex %= 3;
                 }
             });
         }
