@@ -68,11 +68,11 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
         {"-controlPort",      "localhost:19999"},
         {"-priority",         "200"},
         {"-plugins",          "db"},
-        {"-readThreads",      "8"},
+        {"-workerThreads",    "8"},
         {"-maxJournalSize",   "25000"},
         {"-v",                ""},
         {"-quorumCheckpoint", "50"},
-        {"-parallelCommands", "Query,idcollision"},
+        {"-enableMultiWrite", "true"},
         {"-cacheSize",        "1000"},
     };
 
@@ -223,7 +223,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -242,9 +242,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
         threads.emplace_back([&, i](){
 
             // Create a socket.
-            int socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+            int socket = 0;
 
+            int socketSendCount = 0;
             while (true) {
+                if (socket <= 0) {
+                    socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+                    socketSendCount = 0;
+                }
                 size_t myIndex = 0;
                 SData myRequest;
                 {
@@ -269,6 +274,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     SAUTOLOCK(listLock);
                     SData responseData("002 Socket Failed");
                     results[myIndex] = move(responseData);
+                    if (returnOnDisconnect) {
+                        cout << "Disconnected, returning early." << endl;
+                        return;
+                    }
                     continue;
                 }
 
@@ -283,6 +292,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // Send our data.
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
+                        socketSendCount++;
                         if (!result) {
                             break;
                         }
@@ -305,6 +315,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
+                                
+                                sockaddr_in addr;
+                                socklen_t size;
+                                getsockname(socket, (sockaddr*)&addr, &size);
+
+                                cout << "Disconnected after sending (command " << socketSendCount << ") but with no response. Sent: " << myRequest.serialize() << " to " << (control ? _controlAddr : _serverAddr) << ", sent on port: " << addr.sin_port << endl;
+                                close(socket);
+                                socket = -1;
                                 break;
                             }
                         } else {
@@ -333,8 +351,16 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             responseData.nameValueMap = headers;
                             responseData.methodLine = methodLine;
                             responseData.content = content;
+
                             if (!mockCount) {
                                 results[myIndex] = move(responseData);
+                            }
+
+                            if (headers["Connection"] == "close") {
+                                cout << "connection should close." << endl;
+                                close(socket);
+                                socket = 0;
+                                break;
                             }
                         }
                     }

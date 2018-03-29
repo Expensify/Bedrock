@@ -40,9 +40,13 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
             command.writeConsistency = SQLiteNode::QUORUM;
             SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
         }
-        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
-              << " commands already queued.");
-        _commandQueue.push(BedrockCommand(move(command)));
+        if (_shutdownState.load() == RUNNING) {
+            SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
+                  << " commands already queued.");
+            _commandQueue.push(BedrockCommand(move(command)));
+        } else {
+            cout << "Dropping escalated command while shutting down" << endl;
+        }
     }
 }
 
@@ -74,7 +78,8 @@ void BedrockServer::syncWrapper(SData& args,
         if (server._detach) {
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
             SINFO("Bedrock server entering detached state.");
-            server._shutdownState = RUNNING;
+            server._shutdownState.store(RUNNING);
+            SINFO("TYLER shutdownState RUNNING");
             while (server._detach) {
                 // Just wait until we're attached.
                 SINFO("Bedrock server sleeping in detached state.");
@@ -162,7 +167,7 @@ void BedrockServer::sync(SData& args,
     // are not that many status commands coming in, and they can wait for a fraction of a second, which lets us keep
     // the logic of this loop simpler.
     server._syncMutex.lock();
-    while (!syncNode.shutdownComplete()) {
+    do {
 
         // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
         SAUTOPREFIX(command.request["requestID"]);
@@ -191,7 +196,7 @@ void BedrockServer::sync(SData& args,
         }
 
         // If we're in a state where we can initialize shutdown, then go ahead and do so.
-        if (server._shutdownState.load() == QUEUE_PROCESSED && syncNodeQueuedCommands.empty()) {
+        if (server._shutdownState.load() >= QUEUE_PROCESSED && syncNodeQueuedCommands.empty()) {
             SINFO("Beginning sync node shutdown.");
             syncNode.beginShutdown();
         }
@@ -469,7 +474,9 @@ void BedrockServer::sync(SData& args,
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    }
+    } while (!syncNode.shutdownComplete());
+
+    cout << "Sync node shutdown is complete. syncNodeQueuedCommands: " << syncNodeQueuedCommands.size() << ", completedCommands: " << completedCommands.size() << endl;
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
@@ -485,6 +492,7 @@ void BedrockServer::sync(SData& args,
 
     // We've finished shutting down the sync node, tell the workers that it's finished.
     server._shutdownState.store(SYNC_SHUTDOWN);
+    SINFO("TYLER shutdownState SYNC_SHUTDOWN");
     SINFO("SYNC_SHUTDOWN. Sync thread finished with commands.");
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
@@ -589,7 +597,7 @@ void BedrockServer::worker(SData& args,
                     replicationState.load() != SQLiteNode::STANDINGDOWN)
             ) {
                 // Make sure that the node isn't shutting down, leaving us in an endless loop.
-                if (server._shutdownState == SYNC_SHUTDOWN) {
+                if (server._shutdownState.load() == SYNC_SHUTDOWN) {
                     SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
                           << command.request.methodLine << "'.");
                     return;
@@ -871,12 +879,21 @@ void BedrockServer::worker(SData& args,
             }
 
             server._shutdownState.store(QUEUE_PROCESSED);
+            SINFO("TYLER shutdownState QUEUE_PROCESSED");
             SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
         }
+
+        /*
+        if (!server.socketList.empty()) {
+            //cout << "Still have sockets left at shutdown. Letting them close." << endl;
+            continue;
+        }
+        */
 
         // If the sync thread is finished, and the worker queue is empty, then we're really done.
         if (server._shutdownState.load() == SYNC_SHUTDOWN) {
             SINFO("Shutdown state is SYNC_SHUTDOWN, and queue empty. Worker" << to_string(threadId) << " exiting.");
+            cout << "TYLER shutdownState DONE" << endl;
             server._shutdownState.store(DONE);
             break;
         }
@@ -1039,9 +1056,6 @@ BedrockServer::BedrockServer(const SData& args)
 }
 
 BedrockServer::~BedrockServer() {
-    // Just warn if we have outstanding requests
-    SASSERTWARN(_requestCountSocketMap.empty());
-
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
     _syncThread.join();
@@ -1049,9 +1063,20 @@ BedrockServer::~BedrockServer() {
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
     // finished, it may keep writing to these sockets.
+
+    if (_socketIDMap.size()) {
+        cout << "Still have " << _socketIDMap.size() << " entries in _socketIDMap." << endl;
+    }
+
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
+
+        sockaddr_in addr;
+        socklen_t size;
+        getpeername(s->s, (sockaddr*)&addr, &size);
+
+        cout << "Closing socket in destructor (remote port: " << addr.sin_port << ")." << endl;
         closeSocket(s);
     }
     SINFO("Sockets closed.");
@@ -1069,6 +1094,7 @@ bool BedrockServer::shutdownComplete() {
 
     // If we're totally done, we can return true.
     if (_shutdownState.load() == DONE) {
+        cout << "Shutdown state is DONE, we can return." << endl;
         return true;
     }
 
@@ -1162,11 +1188,15 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    if (_shutdownState.load() == SYNC_SHUTDOWN) {
+        cout << "postPoll in SYNC_SHUTDOWN state." << endl;
+    }
     // If we've begun shutting down, then we can mark ports as closed here, and we'll dequeue any last new connections
     // in this iteration of this function.
     if (_shutdownState.load() == START_SHUTDOWN) {
         _shutdownState.store(PORTS_CLOSED);
-        SINFO("PORTS_CLOSED. All ports closed.");
+        SINFO("TYLER PORTS_CLOSED. All ports closed.");
+        SINFO("TYLER shutdownState PORTS_CLOSED");
     }
 
     // What's the implication of the above? We can read new commands on any existing socket, so we need to figure out
@@ -1288,7 +1318,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             SASSERT(!s->data);
             s->data = plugin;
         }
-    }
+     }
+     if (_shutdownState.load() == PORTS_CLOSED) {
+        cout << "Accepted " << acceptedSockets << " new sockets after ports closed." << endl;
+     }
 
     // Time the end of the accept section.
     uint64_t acceptEndTime = STimeNow();
@@ -1313,7 +1346,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
-                    break;
+                    // TODO: If we're shutting down and don't have a command for this socket, then let's close it here.
+                    if (_shutdownState.load() != RUNNING && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        socketsToClose.push_back(s);
+                    } else {
+                        break;
+                    }
                 } else {
                     // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
                     // pipelining requests well. We process commands in no particular order, so we can't dequeue two
@@ -1435,11 +1473,18 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    if (_shutdownState.load() == PORTS_CLOSED && _socketIDMap.empty()) {
-        _shutdownState.store(CONNECTIONS_CLOSED);
-        SINFO("CONNECTIONS_CLOSED. All ports closed.");
+    if (_shutdownState.load() == PORTS_CLOSED) {
+        if (_gracefulShutdownTimeout.ringing()) {
+            cout << "Timeout hit, progressing to CONNECTIONS_CLOSED regardless of leftover sockets." << endl;
+            _shutdownState.store(CONNECTIONS_CLOSED);
+        } else if (socketList.empty()) {
+            _shutdownState.store(CONNECTIONS_CLOSED);
+            SINFO("TYLER shutdownState CONNECTIONS_CLOSED");
+            cout << "CONNECTIONS_CLOSED. All ports closed." << endl;
+        } else if (_shutdownState.load() == PORTS_CLOSED) {
+            cout << "Ports closed, still have " << socketList.size() << " sockets on " << _args["-nodeName"] << endl;
+        }
     }
-
 }
 
 void BedrockServer::_reply(BedrockCommand& command) {
@@ -1472,13 +1517,18 @@ void BedrockServer::_reply(BedrockCommand& command) {
             }
         } else {
             // Otherwise we send the standard response.
+            if (_shutdownState.load() >= PORTS_CLOSED) {
+                // If we're shutting down, tell the caller to close the connection.
+                SINFO("TYLER setting connection closed.");
+                command.response["Connection"] = "close";
+            }
             socketIt->second->send(command.response.serialize());
         }
 
         // If `Connection: close` was set, shut down the socket, do the same if we're shutting down - we don't want to
         // receive any more commands on these sockets.
-        if (SIEquals(command.request["Connection"], "close") || _shutdownState>= PORTS_CLOSED) {
-            shutdownSocket(socketIt->second, SHUT_RD);
+        if (SIEquals(command.request["Connection"], "close") || _shutdownState.load() >= PORTS_CLOSED) {
+            shutdownSocket(socketIt->second, SHUT_RDWR);
         }
 
         // We only keep track of sockets with pending commands.
@@ -1794,7 +1844,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _portPluginMap.clear();
         _commandPort = nullptr;
         _shutdownState.store(START_SHUTDOWN);
-        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read.");
+        SINFO("TYLER shutdownState START_SHUTDOWN");
+        SINFO("TYLER START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
     }
 }
 

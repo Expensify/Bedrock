@@ -64,6 +64,8 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
+    bool shuttingDown() { return _shutdownState.load() != RUNNING; }
+
     // Exposes the replication state to plugins.
     SQLiteNode::State getState() const { return _replicationState.load(); }
 
@@ -109,12 +111,9 @@ class BedrockServer : public SQLiteServer {
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
 
-    // We keep a map of requests to socket. We should never have more than one request per socket at a given time, or
-    // we could deliver responses in the wrong order.
-    map<uint64_t, Socket*> _requestCountSocketMap;
-
-    // Each time we connect a new socket, we give it an ID, and we insert it in this set. When a socket disconnects, we
-    // remove that ID from this set.
+    // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
+    // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
+    // open.
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.

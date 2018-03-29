@@ -25,7 +25,11 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequest);
     if (command.request.methodLine == "testcommand") {
-        command.response.methodLine = "200 OK";
+        if (!command.request["response"].empty()) {
+            command.response.methodLine = command.request["response"];
+        } else {
+            command.response.methodLine = "200 OK";
+        }
         command.response.content = "this is a test response";
         return true;
     } else if (command.request.methodLine == "sendrequest") {
@@ -109,6 +113,13 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         SASSERT(result.size());
         int nextID = SToInt(result[0][0]) + 1;
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+
+        if (!command.request["response"].empty()) {
+            command.response.methodLine = command.request["response"];
+        } else {
+            command.response.methodLine = "200 OK";
+        }
+
         return true;
     } else if (command.request.methodLine == "slowprocessquery") {
         SQResult result;

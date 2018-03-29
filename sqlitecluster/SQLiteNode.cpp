@@ -1610,12 +1610,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!message.isSet("ID")) {
             STHROW("missing ID");
         }
-        if (_state != MASTERING) {
+        if (_state != MASTERING || _server.shuttingDown()) {
             // Reject escalation because we're no longer mastering
-            PWARN("Received ESCALATE but not MASTERING, aborting.");
             SData aborted("ESCALATE_ABORTED");
             aborted["ID"] = message["ID"];
-            aborted["Reason"] = "not mastering";
+            aborted["Reason"] = (_state == MASTERING) ? "not mastering" : "shutting down";
             _sendToPeer(peer, aborted);
         } else {
             // We're mastering, make sure the rest checks out
