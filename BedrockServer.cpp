@@ -1348,6 +1348,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (s->recvBuffer.empty()) {
                     // TODO: If we're shutting down and don't have a command for this socket, then let's close it here.
                     if (_shutdownState.load() != RUNNING && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        cout << "Closing socket " << s->id << " with no data because shutting down (why does this exist?)" << endl;
                         socketsToClose.push_back(s);
                     } else {
                         break;
@@ -1360,6 +1361,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SAUTOLOCK(_socketIDMutex);
                     auto socketIt = _socketIDMap.find(s->id);
                     if (socketIt != _socketIDMap.end()) {
+                        cout << "Already have a command for this socket." << endl;
                         break;
                     }
                 }
@@ -1528,7 +1530,9 @@ void BedrockServer::_reply(BedrockCommand& command) {
         // If `Connection: close` was set, shut down the socket, do the same if we're shutting down - we don't want to
         // receive any more commands on these sockets.
         if (SIEquals(command.request["Connection"], "close") || _shutdownState.load() >= PORTS_CLOSED) {
+            // TODO: Verify this gets dropped from `socketList`
             shutdownSocket(socketIt->second, SHUT_RDWR);
+            cout << "Shutting down socket: " << socketIt->second->id << endl;
         }
 
         // We only keep track of sockets with pending commands.

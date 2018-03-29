@@ -179,7 +179,8 @@ string BedrockTester::startServer(bool dontWait) {
                     usleep(100000); // 0.1 seconds.
                     continue;
                 }
-                close(socket);
+                ::shutdown(socket, SHUT_RDWR);
+                ::close(socket);
                 needSocket = false;
             }
 
@@ -294,6 +295,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         bool result = S_sendconsume(socket, sendBuffer);
                         socketSendCount++;
                         if (!result) {
+                            cout << "Failed to send! Probably disconnected." << endl;
                             break;
                         }
                     }
@@ -321,7 +323,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 getsockname(socket, (sockaddr*)&addr, &size);
 
                                 cout << "Disconnected after sending (command " << socketSendCount << ") but with no response. Sent: " << myRequest.serialize() << " to " << (control ? _controlAddr : _serverAddr) << ", sent on port: " << addr.sin_port << endl;
-                                close(socket);
+                                ::shutdown(socket, SHUT_RDWR);
+                                ::close(socket);
                                 socket = -1;
                                 break;
                             }
@@ -358,7 +361,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                             if (headers["Connection"] == "close") {
                                 cout << "connection should close." << endl;
-                                close(socket);
+                                ::shutdown(socket, SHUT_RDWR);
+                                ::close(socket);
                                 socket = 0;
                                 break;
                             }
@@ -366,7 +370,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
                 }
             }
-            close(socket);
+            ::shutdown(socket, SHUT_RDWR);
+            ::close(socket);
         });
     }
 

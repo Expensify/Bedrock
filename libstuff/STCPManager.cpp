@@ -16,7 +16,7 @@ void STCPManager::prePoll(fd_map& fdm) {
                 SWARN("Invalid FD number("
                       << socket->s << "), we're probably about to corrupt stack memory. FD_SETSIZE=" << FD_SETSIZE);
             }
-            // Add this socket.  First, we always want to read, and we always want to learn of exceptions.
+            // Add this socket. First, we always want to read, and we always want to learn of exceptions.
             SFDset(fdm, socket->s, SREADEVTS);
 
             // However, we only want to write in some states. No matter what, we want to send if we're not yet
@@ -79,6 +79,12 @@ void STCPManager::postPoll(fd_map& fdm) {
             if (!SFDAnySet(fdm, socket->s, SWRITEEVTS | POLLHUP | POLLERR)) {
                 // Keep waiting for asynchronous connect result
                 break;
+            }
+
+            if (SFDAnySet(fdm, socket->s, POLLHUP)) {
+                //cout << "Other side hung up!" << endl;
+                socket->state.store(Socket::CLOSED);
+                ::shutdown(socket->s, SHUT_RDWR);
             }
 
             // Tagged as writeable; check SO_ERROR to see if the connect failed
@@ -205,6 +211,7 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
+    //cout << "Closing socket: " << socket->id << endl;
     socketList.remove(socket);
 
     delete socket;
