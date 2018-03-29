@@ -70,15 +70,15 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                         if (i % 2) {
                             SData query("idcollision");
                             query["writeConsistency"] = "ASYNC";
-                            query["peekSleep"] = "20";
-                            query["processSleep"] = "20";
+                            query["peekSleep"] = "5";
+                            query["processSleep"] = "5";
                             query["response"] = "756";
                             query["senttonode"] = to_string(currentNodeIndex);
                             query["clientID"] = to_string(i);
                             requests.push_back(query);
                         } else {
                             SData query("testcommand");
-                            query["peekSleep"] = "20";
+                            query["peekSleep"] = "10";
                             query["response"] = "756";
                             query["senttonode"] = to_string(currentNodeIndex);
                             query["clientID"] = to_string(i);
