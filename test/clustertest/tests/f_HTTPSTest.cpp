@@ -35,8 +35,6 @@ struct f_HTTPSTest : tpunit::TestFixture {
 
         // Now we spam a bunch of commands at the cluster, with one of them being an HTTPS reqeust command, and attempt
         // to cause a conflict.
-        atomic<int> cmdID;
-        cmdID.store(1700);
         mutex m;
 
         // Every 10th request on master is an HTTP request.
@@ -46,22 +44,18 @@ struct f_HTTPSTest : tpunit::TestFixture {
         list<thread> threads;
         vector<vector<SData>> responses(3);
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, nthHasRequest, &cmdID, &responses, &m](){
+            threads.emplace_back([this, i, nthHasRequest, &responses, &m](){
                 BedrockTester* brtester = tester->getBedrockTester(i);
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
                     if (i == 0 && (j % nthHasRequest == 0)) {
                         // They should throw all sorts of errors if they repeat HTTPS requests.
                         SData request("sendrequest");
-                        int cmdNum = cmdID.fetch_add(1);
                         request["writeConsistency"] = "ASYNC";
-                        request["Query"] = "INSERT INTO test VALUES(" + SQ(cmdNum) + ", " + SQ("HTTPS_TEST") + ");";
                         requests.push_back(request);
                     } else {
-                        SData request("Query");
+                        SData request("idcollision");
                         request["writeConsistency"] = "ASYNC";
-                        int cmdNum = cmdID.fetch_add(1);
-                        request["query"] = "INSERT INTO test VALUES ( " + SQ(cmdNum) + ", " + SQ("dummy") + ");";
                         requests.push_back(request);
                     }
                 }
@@ -77,21 +71,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         }
         threads.clear();
 
-        // Ok, hopefully that caused a conflict, but everything succeeded. Let's see.
-        // First, do we have all the rows we wanted?
-        SData cmd("Query");
-        cmd["Query"] = "SELECT COUNT(*) FROM test WHERE id >= 699 AND id <= " + SQ(cmdID.load())+ ";";
-
-        // We should have received 600 new rows.
-        string response = brtester->executeWaitVerifyContent(cmd); 
-
-        // Discard the header and parse the first line.
-        list<string> lines;
-        SParseList(response, lines, '\n');
-        lines.pop_front();
-        ASSERT_EQUAL(SToInt(lines.front()), 600);
-
-        // And look at all the responses from master, to make sure they're all 200s, and either had a body or did not,
+        // Look at all the responses from master, to make sure they're all 200s, and either had a body or did not,
         // according with what sort of command they were.
         for (size_t i = 0; i < responses[0].size(); i++) {
             string code = responses[0][i].methodLine;
@@ -100,6 +80,9 @@ struct f_HTTPSTest : tpunit::TestFixture {
                 ASSERT_TRUE(body.size() > 10);
             } else {
                 ASSERT_EQUAL(body.size(), 0);
+            }
+            if (SToInt(code) != 200) {
+                cout << "Bad code: " << code << endl;
             }
             ASSERT_EQUAL(SToInt(code), 200);
         }

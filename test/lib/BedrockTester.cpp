@@ -318,8 +318,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
                                 
-                                sockaddr_in addr;
-                                socklen_t size;
+                                sockaddr_in addr = {0};
+                                socklen_t size = 0;
                                 getsockname(socket, (sockaddr*)&addr, &size);
 
                                 cout << "Disconnected after sending (command " << socketSendCount << ") but with no response. Sent: " << myRequest.serialize() << " to " << (control ? _controlAddr : _serverAddr) << ", sent on port: " << addr.sin_port << endl;
@@ -370,8 +370,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
                 }
             }
-            ::shutdown(socket, SHUT_RDWR);
-            ::close(socket);
+            if (socket != -1) {
+                ::shutdown(socket, SHUT_RDWR);
+                ::close(socket);
+            }
         });
     }
 

@@ -55,10 +55,10 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         atomic<bool> done;
         done.store(false);
         mutex m;
-        vector<list<SData>> allresults(50);
+        vector<list<SData>> allresults(60);
 
-        // Ok, start up 50 clients.
-        for (int i = 0; i < 50; i++) {
+        // Ok, start up 60 clients.
+        for (int i = 0; i < 60; i++) {
             // Start a thread.
             threads.emplace_back([tester, i, &m, &done, &allresults]() {
                 int currentNodeIndex = i % 3;
@@ -67,7 +67,18 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     vector<SData> requests;
                     size_t numCommands = 50;
                     for (size_t j = 0; j < numCommands; j++) {
-                        if (i % 2) {
+                        // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
+                        /*if (i % 10 == 0) {
+                            if (j % 5 == 0) {
+                                SData query("sendrequest");
+                                query["writeConsistency"] = "ASYNC";
+                                query["senttonode"] = to_string(currentNodeIndex);
+                                query["clientID"] = to_string(i);
+                                query["response"] = "756";
+                                requests.push_back(query);
+                            }
+                        } else */if (i % 2 == 0) {
+                            // Every remaining even client makes write requests.
                             SData query("idcollision");
                             query["writeConsistency"] = "ASYNC";
                             query["peekSleep"] = "5";
@@ -77,6 +88,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             query["clientID"] = to_string(i);
                             requests.push_back(query);
                         } else {
+                            // Any other client makes read requests.
                             SData query("testcommand");
                             query["peekSleep"] = "10";
                             query["response"] = "756";
@@ -87,7 +99,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     }
 
                     // Ok, send them all!
-                    cout << "Client " << i << " sending " << numCommands << " to node " << currentNodeIndex << endl;
+                    cout << "Client " << i << " sending " << requests.size() << " to node " << currentNodeIndex << endl;
                     BedrockTester* node = tester->getBedrockTester(currentNodeIndex);
                     auto results = node->executeWaitMultipleData(requests, 1, false, true);
                     size_t completed = 0;
@@ -104,7 +116,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             break;
                         }
                     }
-                    cout << "Completed " << completed << " commands of "  << numCommands << " on client " << i << " and node " << currentNodeIndex << endl;
+                    cout << "Completed " << completed << " commands of "  << requests.size() << " on client " << i << " and node " << currentNodeIndex << endl;
                     currentNodeIndex++;
                     currentNodeIndex %= 3;
                 }

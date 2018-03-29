@@ -493,7 +493,7 @@ void BedrockServer::sync(SData& args,
     // We've finished shutting down the sync node, tell the workers that it's finished.
     server._shutdownState.store(SYNC_SHUTDOWN);
     SINFO("TYLER shutdownState SYNC_SHUTDOWN");
-    SINFO("SYNC_SHUTDOWN. Sync thread finished with commands.");
+    SINFO("SYNC_SHUTDOWN. Sync thread finished with commands. HTTPS outstanding? " << server._outstandingHTTPSRequests.size());
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
@@ -1071,8 +1071,8 @@ BedrockServer::~BedrockServer() {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
 
-        sockaddr_in addr;
-        socklen_t size;
+        sockaddr_in addr = {0};
+        socklen_t size = 0;
         getpeername(s->s, (sockaddr*)&addr, &size);
 
         cout << "Closing socket in destructor (remote port: " << addr.sin_port << ")." << endl;

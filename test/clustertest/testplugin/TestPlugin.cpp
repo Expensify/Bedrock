@@ -86,7 +86,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
     if (command.request.methodLine == "sendrequest") {
         if (command.httpsRequest) {
             // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(command.httpsRequest->finished);
+            SASSERT(command.httpsRequest->response);
             command.response.methodLine = to_string(command.httpsRequest->response);
             // return the number of times we made an HTTPS request on this command.
             int tries = SToInt(command.request["httpsRequests"]);
@@ -96,14 +96,17 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             command.response.content = " " + command.httpsRequest->fullResponse.content;
 
             // Update the DB so we can test conflicts.
-            if (!command.request["Query"].empty()) {
-                if (!db.write(command.request["Query"])) {
-                    STHROW("502 Query failed.");
-                }
-            }
+            SQResult result;
+            db.read("SELECT MAX(id) FROM test", result);
+            SASSERT(result.size());
+            int nextID = SToInt(result[0][0]) + 1;
+            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
         } else {
             // Shouldn't get here.
             SASSERT(false);
+        }
+        if (!command.request["response"].empty()) {
+            command.response.methodLine = command.request["response"];
         }
         return true;
     }
