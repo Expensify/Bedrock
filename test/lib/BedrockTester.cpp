@@ -305,6 +305,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     string methodLine, content;
                     STable headers;
                     int timeouts = 0;
+                    int count = 0;
                     while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                         // Poll the socket, so we get a timeout.
                         pollfd readSock;
@@ -314,6 +315,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                         // wait for a second...
                         poll(&readSock, 1, 1000);
+                        count++;
+                        if (count > 5) {
+                            cout << "Stuck for " << count << " seconds: " << myRequest.serialize() << endl;
+                        }
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {

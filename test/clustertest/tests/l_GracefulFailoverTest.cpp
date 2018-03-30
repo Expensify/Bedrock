@@ -57,10 +57,12 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         mutex m;
         vector<list<SData>> allresults(60);
 
+        map<string, int> counts;
+
         // Ok, start up 60 clients.
         for (int i = 0; i < 60; i++) {
             // Start a thread.
-            threads.emplace_back([tester, i, &m, &done, &allresults]() {
+            threads.emplace_back([tester, i, &m, &done, &allresults, &counts]() {
                 int currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
@@ -109,8 +111,11 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             if (r.methodLine != "756") {
                                 cout << "Client "<< i << " expected 756, got: '" << r.methodLine <<  "', had completed: " << completed << endl;
                             }
-                            // We manage to run out of memory doing this.
-                            //allresults[i].push_back(r);
+                            if (counts.find(r.methodLine) != counts.end()) {
+                                counts[r.methodLine]++;
+                            } else {
+                                counts[r.methodLine] = 1;
+                            }
                             completed++;
                         } else {
                             // Got a disconnection. try on the next node.
@@ -189,28 +194,10 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
             // TODO: Verify the results of our spamming.
         }
 
-        map<string, int> counts;
-        for (auto& results : allresults) {
-            for (auto &r : results) {
-                if (counts.find(r.methodLine) != counts.end()) {
-                    counts[r.methodLine]++;
-                } else {
-                    counts[r.methodLine] = 1;
-                }
-            }
-        }
         for (auto& p : counts) {
             cout << "method: " << p.first << ", count: " << p.second << endl;
         }
-        for (auto& results : allresults) {
-            for (auto &r : results) {
-                bool valid = r.methodLine == "756";
-                if (!valid) {
-                    cout << "invalid: " << r.methodLine << endl;
-                }
-                ASSERT_TRUE(valid);
-            }
-        }
+        ASSERT_EQUAL(counts.size(), 1);
     }
 
     // At this point, let's kill -9 the master and see if the slave takes over gracefully.
