@@ -45,7 +45,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
                   << " commands already queued.");
             _commandQueue.push(BedrockCommand(move(command)));
         } else {
-            cout << "Dropping escalated command while shutting down" << endl;
+            cout << "WARN Dropping escalated command while shutting down" << endl;
         }
     }
 }
@@ -57,8 +57,7 @@ void BedrockServer::cancelCommand(const string& commandID) {
 bool BedrockServer::canStandDown() {
     size_t httpsCommands = 0;
     {
-        lock_guard<mutex> lock(_httpsCommandMutex);
-        httpsCommands = _outstandingHTTPSRequests.size();
+        httpsCommands = _httpsCommandsInProgress.load();
     }
     if (httpsCommands) {
         SINFO("Can't stand down yet, " << httpsCommands << " HTTPS commands in progress.");
@@ -87,6 +86,7 @@ void BedrockServer::syncWrapper(SData& args,
             }
             SINFO("Bedrock server entering attached state.");
         }
+        cout << "NEW SERVER" << endl;
         sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -103,6 +103,7 @@ void BedrockServer::sync(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
+    try {
     // Initialize the thread.
     SInitialize(_syncThreadName);
 
@@ -142,18 +143,19 @@ void BedrockServer::sync(SData& args,
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
     SINFO("Starting " << workerThreads << " worker threads.");
-    list<thread> workerThreadList;
+    // List blew up for no fucking reason.
+    thread* workerThreadList[workerThreads];
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(worker,
-                                      ref(args),
-                                      ref(replicationState),
-                                      ref(upgradeInProgress),
-                                      ref(masterVersion),
-                                      ref(syncNodeQueuedCommands),
-                                      ref(completedCommands),
-                                      ref(server),
-                                      threadId,
-                                      workerThreads);
+        workerThreadList[threadId] = new thread(worker,
+                                                ref(args),
+                                                ref(replicationState),
+                                                ref(upgradeInProgress),
+                                                ref(masterVersion),
+                                                ref(syncNodeQueuedCommands),
+                                                ref(completedCommands),
+                                                ref(server),
+                                                threadId,
+                                                workerThreads);
     }
 
     // Now we jump into our main command processing loop.
@@ -196,8 +198,9 @@ void BedrockServer::sync(SData& args,
         }
 
         // If we're in a state where we can initialize shutdown, then go ahead and do so.
-        if (server._shutdownState.load() >= QUEUE_PROCESSED && syncNodeQueuedCommands.empty()) {
+        if (server._shutdownState.load() == QUEUE_PROCESSED) {
             SINFO("Beginning sync node shutdown.");
+            server._shutdownState.store(SYNC_SHUTDOWN);
             syncNode.beginShutdown();
         }
 
@@ -324,8 +327,7 @@ void BedrockServer::sync(SData& args,
                 command.complete = true;
                 if (command.initiatingPeerID) {
                     // This is a command that came from a peer. Have the sync node send the response back to the peer.
-                    command.finalizeTimingInfo();
-                    syncNode.sendResponse(command);
+                    server._finishPeerCommand(command);
                 } else {
                     // The only other option is this came from a client, so respond via the server.
                     server._reply(command);
@@ -359,8 +361,7 @@ void BedrockServer::sync(SData& args,
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
-                    completedCommand.finalizeTimingInfo();
-                    syncNode.sendResponse(completedCommand);
+                    server._finishPeerCommand(completedCommand);
                 }
             } catch (const out_of_range& e) {
                 // when completedCommands.pop() throws for running out of commands, we fall out of the loop.
@@ -371,13 +372,9 @@ void BedrockServer::sync(SData& args,
                 continue;
             }
 
-            // If we're STANDINGDOWN, we don't want to start on any new commands. We'll just start our next loop
-            // iteration without doing anything here, and maybe we'll be either MASTERING or SLAVING on the next
-            // iteration.
-            if (nodeState == SQLiteNode::STANDINGDOWN) {
-                continue;
-            }
             // Now we can pull the next command off the queue and start on it.
+            // We used to not do this if we were STANDINGDOWN, but now we do because we can have pending https commands
+            // that need to get finished before we can really be done.
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
@@ -415,6 +412,7 @@ void BedrockServer::sync(SData& args,
                 // re-verify that any checks made in peek are still valid in process.
                 if (!command.httpsRequest) {
                     if (core.peekCommand(command)) {
+
                         // Finished with this.
                         server._syncThreadCommitMutex.unlock();
 
@@ -422,11 +420,22 @@ void BedrockServer::sync(SData& args,
                         // back to the sync thread.
                         SASSERT(command.complete);
                         if (command.initiatingPeerID) {
-                            command.finalizeTimingInfo();
-                            syncNode.sendResponse(command);
+                            server._finishPeerCommand(command);
                         } else {
                             server._reply(command);
                         }
+                        continue;
+                    }
+
+                    // If we just started a new HTTPS request, save it for later.
+                    if (command.httpsRequest) {
+                        server._httpsCommandsInProgress++;
+
+                        // Save this in our https commads queue.
+                        lock_guard<mutex> lock(server._httpsCommandMutex);
+                        server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+
+                        // Move on to the next command until this one finishes.
                         continue;
                     }
                 }
@@ -455,8 +464,7 @@ void BedrockServer::sync(SData& args,
                     // to do). We'll just respond.
                     server._syncThreadCommitMutex.unlock();
                     if (command.initiatingPeerID) {
-                        command.finalizeTimingInfo();
-                        syncNode.sendResponse(command);
+                        server._finishPeerCommand(command);
                     } else {
                         server._reply(command);
                     }
@@ -476,6 +484,8 @@ void BedrockServer::sync(SData& args,
         }
     } while (!syncNode.shutdownComplete());
 
+    SSetSignalHandlerDieFunc([](){cout << "Empty die." << endl;});
+
     cout << "Sync node shutdown is complete. syncNodeQueuedCommands: " << syncNodeQueuedCommands.size() << ", completedCommands: " << completedCommands.size() << endl;
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
@@ -491,9 +501,8 @@ void BedrockServer::sync(SData& args,
     server._syncMutex.unlock();
 
     // We've finished shutting down the sync node, tell the workers that it's finished.
-    server._shutdownState.store(SYNC_SHUTDOWN);
-    SINFO("TYLER shutdownState SYNC_SHUTDOWN");
-    SINFO("SYNC_SHUTDOWN. Sync thread finished with commands. HTTPS outstanding? " << server._outstandingHTTPSRequests.size());
+    server._shutdownState.store(DONE);
+    SINFO("SYNC_SHUTDOWN. Sync thread finished with commands. HTTPS outstanding? " << server._httpsCommandsInProgress.load());
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
@@ -513,7 +522,11 @@ void BedrockServer::sync(SData& args,
     for (auto& workerThread : workerThreadList) {
         SINFO("Joining worker thread '" << "worker" << threadId << "'");
         threadId++;
-        workerThread.join();
+        workerThread->join();
+    }
+
+    for (int i = 0; i < workerThreads; i++) {
+        delete workerThreadList[i];
     }
 
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
@@ -525,6 +538,27 @@ void BedrockServer::sync(SData& args,
 
     // This is getting destroyed, make sure nothing will dereference it.
     server._syncNode = nullptr;
+
+    } catch (...) {
+        // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+        // exception name.
+        int status = 0;
+        size_t length = 1000;
+        char buffer[length] = {0};
+
+        // Demangle the name of the current exception.
+        // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+        string exceptionName = buffer;
+
+        // If it failed, use the original name instead.
+        if (status) {
+            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        }
+
+        SWARN("Caught unknown exception in sync. Will die: " << exceptionName);
+        throw;
+    }
 }
 
 void BedrockServer::worker(SData& args,
@@ -537,6 +571,7 @@ void BedrockServer::worker(SData& args,
                            int threadId,
                            int threadCount)
 {
+    try {
     SInitialize("worker" + to_string(threadId));
     SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
@@ -550,6 +585,10 @@ void BedrockServer::worker(SData& args,
         try {
             // If we can't find any work to do, this will throw.
             command = server._commandQueue.get(1000000);
+
+            if (command.httpsRequest) {
+                cout << "Worker dequeued command with https request." << endl;
+            }
 
             // If we dequeue a status or control command, handle it immediately.
             if (server._handleIfStatusOrControlCommand(command)) {
@@ -597,7 +636,7 @@ void BedrockServer::worker(SData& args,
                     replicationState.load() != SQLiteNode::STANDINGDOWN)
             ) {
                 // Make sure that the node isn't shutting down, leaving us in an endless loop.
-                if (server._shutdownState.load() == SYNC_SHUTDOWN) {
+                if (server._shutdownState.load() != RUNNING) {
                     SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
                           << command.request.methodLine << "'.");
                     return;
@@ -695,6 +734,14 @@ void BedrockServer::worker(SData& args,
                 if (!command.httpsRequest) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
+                    // If we opened an HTTPS request, record that.
+                    if (command.httpsRequest) {
+                        // If we're standing down right now, we run the risk of never delivering this. Worse than that,
+                        // really, we run the risk of trying to call `process` on this on a slave after we finish
+                        // standing down. Actually, the real risk here is confusing.
+                        server._httpsCommandsInProgress++;
+                    }
+
                 }
 
                 if (!calledPeek || !peekResult) {
@@ -859,6 +906,11 @@ void BedrockServer::worker(SData& args,
             // No commands to process after 1 second.
         }
 
+        if  (server._shutdownState.load() == DONE) {
+            break;
+        }
+
+/*
         // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
         // inform the sync thread that we're done with this queue.
         // TODO: make sure we progress through the shutdown states if we're timing out, regardless of whether things
@@ -902,6 +954,27 @@ void BedrockServer::worker(SData& args,
             SINFO("Shutdown state is DONE. Worker" << to_string(threadId) << " exiting.");
             break;
         }
+*/
+    }
+    } catch (...) {
+        // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+        // exception name.
+        int status = 0;
+        size_t length = 1000;
+        char buffer[length] = {0};
+
+        // Demangle the name of the current exception.
+        // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+        string exceptionName = buffer;
+
+        // If it failed, use the original name instead.
+        if (status) {
+            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        }
+
+        SWARN("Caught unknown exception in worker. Will die: " << exceptionName);
+        throw;
     }
 }
 
@@ -977,7 +1050,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
-    _controlPort(nullptr), _commandPort(nullptr)
+    _controlPort(nullptr), _commandPort(nullptr), _httpsCommandsInProgress(0)
 {
     _version = SVERSION;
 
@@ -1045,7 +1118,7 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = thread(syncWrapper,
+    _syncThread = new thread(syncWrapper,
                          ref(_args),
                          ref(_replicationState),
                          ref(_upgradeInProgress),
@@ -1057,7 +1130,8 @@ BedrockServer::BedrockServer(const SData& args)
 BedrockServer::~BedrockServer() {
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
-    _syncThread.join();
+    _syncThread->join();
+    delete _syncThread;
     SINFO("Threads closed.");
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
@@ -1101,7 +1175,7 @@ bool BedrockServer::shutdownComplete() {
     size_t httpsCommands = 0;
     {
         lock_guard<mutex> lock(_httpsCommandMutex);
-        httpsCommands = _outstandingHTTPSRequests.size();
+        httpsCommands = _httpsCommandsInProgress.load();
     }
 
     // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
@@ -1159,9 +1233,11 @@ bool BedrockServer::shutdownComplete() {
         case START_SHUTDOWN:
             stateString = "START_SHUTDOWN";
             break;
+        /*
         case PORTS_CLOSED:
             stateString = "PORTS_CLOSED";
             break;
+            */
         case QUEUE_PROCESSED:
             stateString = "QUEUE_PROCESSED";
             break;
@@ -1187,17 +1263,6 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    if (_shutdownState.load() == SYNC_SHUTDOWN) {
-        cout << "postPoll in SYNC_SHUTDOWN state." << endl;
-    }
-    // If we've begun shutting down, then we can mark ports as closed here, and we'll dequeue any last new connections
-    // in this iteration of this function.
-    if (_shutdownState.load() == START_SHUTDOWN) {
-        _shutdownState.store(PORTS_CLOSED);
-        SINFO("TYLER PORTS_CLOSED. All ports closed.");
-        SINFO("TYLER shutdownState PORTS_CLOSED");
-    }
-
     // What's the implication of the above? We can read new commands on any existing socket, so we need to figure out
     // when those are done. Now, if we close them after sending responses, then they're done. I think after we close
     // the command port, we need to wait until there are no sockets left in this list. This will wait for the sync
@@ -1317,9 +1382,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             SASSERT(!s->data);
             s->data = plugin;
         }
-     }
-     if (_shutdownState.load() == PORTS_CLOSED) {
-        cout << "Accepted " << acceptedSockets << " new sockets after ports closed." << endl;
      }
 
     // Time the end of the accept section.
@@ -1474,16 +1536,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    if (_shutdownState.load() == PORTS_CLOSED) {
+    if (_shutdownState.load() == START_SHUTDOWN) {
         if (_gracefulShutdownTimeout.ringing()) {
-            cout << "Timeout hit, progressing to CONNECTIONS_CLOSED regardless of leftover sockets." << endl;
-            _shutdownState.store(CONNECTIONS_CLOSED);
-        } else if (socketList.empty()) {
-            _shutdownState.store(CONNECTIONS_CLOSED);
-            SINFO("TYLER shutdownState CONNECTIONS_CLOSED");
-            cout << "CONNECTIONS_CLOSED. All ports closed." << endl;
-        } else if (_shutdownState.load() == PORTS_CLOSED) {
-            cout << "Ports closed, still have " << socketList.size() << " sockets on " << _args["-nodeName"] << endl;
+            _shutdownState.store(QUEUE_PROCESSED);
+            cout << "Setting QUEUE_PROCESSED because of timeout." << endl;
+        }
+        else if (socketList.empty()) {
+            cout << "Setting QUEUE_PROCESSED because all clients finished." << endl;
+            _shutdownState.store(QUEUE_PROCESSED);
+        } else {
+            cout << "Not setting QUEUE_PROCESSED with " << socketList.size() << " remaining clients." << endl;
         }
     }
 }
@@ -1493,6 +1555,10 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command.finalizeTimingInfo();
+
+    if (command.httpsRequest) {
+        _httpsCommandsInProgress--;
+    }
 
     // Don't reply to commands with pseudo-clients (i.e., commands that we generated by other commands).
     if (command.initiatingClientID < 0) {
@@ -1518,7 +1584,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            if (_shutdownState.load() >= PORTS_CLOSED) {
+            if (_shutdownState.load() != RUNNING) {
                 // If we're shutting down, tell the caller to close the connection.
                 cout << "Bedrock setting connection closed. " << command.request.serialize();
                 command.response["Connection"] = "close";
@@ -1528,7 +1594,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // If `Connection: close` was set, shut down the socket, do the same if we're shutting down - we don't want to
         // receive any more commands on these sockets.
-        if (SIEquals(command.request["Connection"], "close") || _shutdownState.load() >= PORTS_CLOSED) {
+        if (SIEquals(command.request["Connection"], "close") || _shutdownState.load() != RUNNING) {
             // TODO: Verify this gets dropped from `socketList`
             shutdownSocket(socketIt->second, SHUT_RDWR);
             cout << "Shutting down socket: " << socketIt->second->id << endl;
@@ -1836,6 +1902,25 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
         _gracefulShutdownTimeout.start();
 
+        // Accept any new connections before closing.
+        Socket* s = nullptr;
+        Port* acceptPort = nullptr;
+        while ((s = acceptSocket(acceptPort))) {
+            // Accepted a new socket
+            // NOTE: BedrockServer doesn't need to keep a new list; there's already STCPManager::socketList.
+            // Look up the plugin that owns this port (if any).
+            if (SContains(_portPluginMap, acceptPort)) {
+                BedrockPlugin* plugin = _portPluginMap[acceptPort];
+                // Allow the plugin to process this
+                SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
+                plugin->onPortAccept(s);
+
+                // Remember that this socket is owned by this plugin.
+                SASSERT(!s->data);
+                s->data = plugin;
+            }
+        }
+
         // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
         // detaching. It needs to keep listening.
         if (_detach) {
@@ -1892,5 +1977,15 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             }
             _syncNode->broadcast(_generateCrashMessage(&cmd), peer);
         }
+    }
+}
+
+void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
+    command.finalizeTimingInfo();
+    if (_syncNode) {
+        _syncNode->sendResponse(command);
+    }
+    if (command.httpsRequest) {
+        _httpsCommandsInProgress--;
     }
 }

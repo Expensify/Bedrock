@@ -68,7 +68,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     size_t numCommands = 50;
                     for (size_t j = 0; j < numCommands; j++) {
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
-                        /*if (i % 10 == 0) {
+                        if (i % 10 == 0) {
                             if (j % 5 == 0) {
                                 SData query("sendrequest");
                                 query["writeConsistency"] = "ASYNC";
@@ -77,7 +77,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                                 query["response"] = "756";
                                 requests.push_back(query);
                             }
-                        } else */if (i % 2 == 0) {
+                        } else if (i % 2 == 0) {
                             // Every remaining even client makes write requests.
                             SData query("idcollision");
                             query["writeConsistency"] = "ASYNC";
@@ -109,7 +109,8 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             if (r.methodLine != "756") {
                                 cout << "Client "<< i << " expected 756, got: '" << r.methodLine <<  "', had completed: " << completed << endl;
                             }
-                            allresults[i].push_back(r);
+                            // We manage to run out of memory doing this.
+                            //allresults[i].push_back(r);
                             completed++;
                         } else {
                             // Got a disconnection. try on the next node.
@@ -181,7 +182,9 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         // Great, it came back up.
         done.store(true);
 
+        int i = 0;
         for (auto& t : threads) {
+            cout << "joining " << (i++) << endl;
             t.join();
             // TODO: Verify the results of our spamming.
         }

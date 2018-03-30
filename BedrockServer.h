@@ -10,6 +10,7 @@ class BedrockServer : public SQLiteServer {
 
     // Shutting down a bedrock server correctly is a multi-step process that ensures we will still respond to any
     // requests we received right up until we are about to shut down.
+    /*
     enum SHUTDOWN_STATE {
         // This is the state until we begin shutting down.
         RUNNING,
@@ -36,6 +37,23 @@ class BedrockServer : public SQLiteServer {
 
         // Finally, when the worker's queue is empty again (the sync thread can add items to it via escalation
         // responses), we're actually done, and we can finish shutting everything down.
+        DONE
+    };
+*/
+
+    // Simplified shutdown states. When we get a signal indicating we should shut down, we close listening ports and
+    // start refusing escalated commands. This is where we switch to START_SHUTDOWN.
+    //
+    // We move to `QUEUE_PROCESSED` when there are no outstanding sockets in socketList (this means all responses to
+    // clients have been delivered).
+    // Once we're in QUEUE_PROCESSED we can tell the sync node to shut down.
+    // When it says it's shut down, we switch to SYNC_SHUTDOWN.
+    // When the sync thread sees that there are no main 
+    enum SHUTDOWN_STATE {
+        RUNNING,
+        START_SHUTDOWN,
+        QUEUE_PROCESSED,
+        SYNC_SHUTDOWN,
         DONE
     };
 
@@ -146,7 +164,7 @@ class BedrockServer : public SQLiteServer {
     string _version;
 
     // The actual thread object for the sync thread.
-    thread _syncThread;
+    thread* _syncThread;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes master. It will return true if the DB has changed and needs to be committed.
@@ -211,6 +229,10 @@ class BedrockServer : public SQLiteServer {
     void _status(BedrockCommand& command);
     bool _isControlCommand(BedrockCommand& command);
     void _control(BedrockCommand& command);
+
+    // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
+    // those ports.
+    void _acceptSockets();
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
@@ -288,4 +310,8 @@ class BedrockServer : public SQLiteServer {
     // their https requests finish and move them back to the main queue.
     mutex _httpsCommandMutex;
     map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+
+    atomic<int> _httpsCommandsInProgress;
+
+    void _finishPeerCommand(BedrockCommand& command);
 };

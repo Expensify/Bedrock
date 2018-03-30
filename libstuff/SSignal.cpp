@@ -95,7 +95,7 @@ void SInitializeSignals() {
 
     // And set the handlers for the few signals we care about in each thread.
     sigaction(SIGSEGV, &newAction, 0);
-    sigaction(SIGABRT, &newAction, 0);
+    //sigaction(SIGABRT, &newAction, 0);
     sigaction(SIGFPE, &newAction, 0);
     sigaction(SIGILL, &newAction, 0);
     sigaction(SIGBUS, &newAction, 0);
