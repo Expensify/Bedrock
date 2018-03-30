@@ -213,4 +213,6 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
+    // At this point, let's kill -9 the master and see if the slave takes over gracefully.
+
 } __l_GracefulFailoverTest;

@@ -374,7 +374,13 @@ void BedrockServer::sync(SData& args,
 
             // Now we can pull the next command off the queue and start on it.
             // We used to not do this if we were STANDINGDOWN, but now we do because we can have pending https commands
-            // that need to get finished before we can really be done.
+            // that need to get finished before we can really be done. If we're standing down because we're shutting
+            // down, this is straightforward - we'll close all our ports and eventually run out of commands, but f
+            // we're standing down because another master is standing up, this is less deterministic. I haven't figured
+            // out how to confirm we aren't in the middle of any https commands as we do this. We'll stop getting
+            // escalated requests, because that happens as we stand down, but nothing prevents up getting local
+            // requests. We could close the command port as we stand down, or only process requests already created
+            // (though that has effectively the same result).
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
