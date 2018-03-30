@@ -103,7 +103,6 @@ void BedrockServer::sync(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
-    try {
     // Initialize the thread.
     SInitialize(_syncThreadName);
 
@@ -397,14 +396,29 @@ void BedrockServer::sync(SData& args,
 
             // And now we'll decide how to handle it.
             if (nodeState == SQLiteNode::MASTERING) {
+
+                try {
+                try {
                 // We need to grab this before peekCommand (or wherever our transaction is started), to verify that
                 // no worker thread can commit in the middle of our transaction. We need our entire transaction to
                 // happen with no other commits to ensure that we can't get a conflict.
                 uint64_t beforeLock = STimeNow();
 
                 // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
+                try {
                 db.waitForCheckpoint();
+                } catch (const system_error& e) {
+                    cout << "SYSTEM ERROR WAIT CHECKPOINT" << endl;
+                    throw;
+                }
+                try {
+                // WTF,why does this explode?
+                // Update: It happens twice in a row.
                 server._syncThreadCommitMutex.lock();
+                } catch (const system_error& e) {
+                    cout << "SYSTEM ERROR LOCK" << endl;
+                    throw;
+                }
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
                 // explicit logging for it to check.
@@ -416,6 +430,11 @@ void BedrockServer::sync(SData& args,
                 // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
+                } catch (const system_error& e) {
+                    cout << "SYSTEM ERROR PRE-PEEK" << endl;
+                    throw;
+                }
+                try {
                 if (!command.httpsRequest) {
                     if (core.peekCommand(command)) {
 
@@ -442,11 +461,19 @@ void BedrockServer::sync(SData& args,
                         server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
 
                         // Move on to the next command until this one finishes.
+                        // OMFG.
+                        core.rollback();
+                        server._syncThreadCommitMutex.unlock();
                         continue;
                     }
                 }
+                } catch (const system_error& e) {
+                    cout << "SYSTEM ERROR HTTPS" << endl;
+                    throw;
+                }
 
                 if (core.processCommand(command)) {
+                    try {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);
@@ -465,7 +492,12 @@ void BedrockServer::sync(SData& args,
 
                     // Don't unlock _syncThreadCommitMutex here, we'll hold the lock till the commit completes.
                     continue;
+                    } catch (const system_error& e) {
+                        cout << "SYSTEM ERROR PROCESS" << endl;
+                        throw;
+                    }
                 } else {
+                    try {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
                     server._syncThreadCommitMutex.unlock();
@@ -474,6 +506,14 @@ void BedrockServer::sync(SData& args,
                     } else {
                         server._reply(command);
                     }
+                    } catch (const system_error& e) {
+                        cout << "SYSTEM ERROR NOT PROCESS" << endl;
+                        throw;
+                    }
+                }
+                } catch (const system_error& e) {
+                    cout << "SYSTEM ERROR MASTERING" << endl;
+                    throw;
                 }
             } else if (nodeState == SQLiteNode::SLAVING) {
                 // If we're slaving, we just escalate directly to master without peeking. We can only get an incomplete
@@ -487,6 +527,9 @@ void BedrockServer::sync(SData& args,
 
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
+        } catch (const system_error& e) {
+            cout << "System error sync" << endl;
+            throw;
         }
     } while (!syncNode.shutdownComplete());
 
@@ -544,27 +587,6 @@ void BedrockServer::sync(SData& args,
 
     // This is getting destroyed, make sure nothing will dereference it.
     server._syncNode = nullptr;
-
-    } catch (...) {
-        // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
-        // exception name.
-        int status = 0;
-        size_t length = 1000;
-        char buffer[length] = {0};
-
-        // Demangle the name of the current exception.
-        // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
-        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
-        string exceptionName = buffer;
-
-        // If it failed, use the original name instead.
-        if (status) {
-            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
-        }
-
-        SWARN("Caught unknown exception in sync. Will die: " << exceptionName);
-        throw;
-    }
 }
 
 void BedrockServer::worker(SData& args,
@@ -577,7 +599,6 @@ void BedrockServer::worker(SData& args,
                            int threadId,
                            int threadCount)
 {
-    try {
     SInitialize("worker" + to_string(threadId));
     SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
     BedrockCore core(db, server);
@@ -910,6 +931,9 @@ void BedrockServer::worker(SData& args,
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
+        } catch (const system_error& e) {
+            cout << "System error worker" << endl;
+            throw;
         }
 
         if  (server._shutdownState.load() == DONE) {
@@ -962,26 +986,7 @@ void BedrockServer::worker(SData& args,
         }
 */
     }
-    } catch (...) {
-        // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
-        // exception name.
-        int status = 0;
-        size_t length = 1000;
-        char buffer[length] = {0};
 
-        // Demangle the name of the current exception.
-        // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
-        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
-        string exceptionName = buffer;
-
-        // If it failed, use the original name instead.
-        if (status) {
-            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
-        }
-
-        SWARN("Caught unknown exception in worker. Will die: " << exceptionName);
-        throw;
-    }
 }
 
 bool BedrockServer::_handleIfStatusOrControlCommand(BedrockCommand& command) {

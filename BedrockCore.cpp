@@ -107,6 +107,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 }
 
 bool BedrockCore::processCommand(BedrockCommand& command) {
+try {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
@@ -200,6 +201,10 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     // Done, return whether or not we need the parent to commit our transaction.
     command.complete = !needsCommit;
     return needsCommit;
+} catch (const system_error& e) {
+    cout << "SYSTEM ERROR PROCESS" << endl;
+    throw;
+}
 }
 
 void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
