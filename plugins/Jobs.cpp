@@ -45,6 +45,8 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsNextRun  ON jobs ( nextRun  );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsLastRun  ON jobs ( lastRun  );"));
+    SASSERT(db.write("CREATE INDEX jobsStateNextRunName ON jobs ( state, nextRun, name );"));
+    SASSERT(db.write("CREATE INDEX jobsStateNamePrefixNextRun ON jobs ( state, SUBSTR(name, 1, INSTR(name, '/')), nextRun );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsPriority ON jobs ( priority );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state );"));
 
