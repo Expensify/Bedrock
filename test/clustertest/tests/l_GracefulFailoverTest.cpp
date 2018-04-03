@@ -57,22 +57,25 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         mutex m;
         vector<list<SData>> allresults(60);
 
+        atomic<int> commandID(10000);
+
         map<string, int> counts;
 
         // Ok, start up 60 clients.
         for (int i = 0; i < 60; i++) {
             // Start a thread.
-            threads.emplace_back([tester, i, &m, &done, &allresults, &counts]() {
+            threads.emplace_back([tester, i, &m, &done, &allresults, &counts, &commandID]() {
                 int currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
                     vector<SData> requests;
                     size_t numCommands = 50;
                     for (size_t j = 0; j < numCommands; j++) {
+                        string randCommand = " r_" + to_string(commandID.fetch_add(1)) + "_r";
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
                         if (i % 10 == 0) {
                             if (j % 5 == 0) {
-                                SData query("sendrequest");
+                                SData query("sendrequest" + randCommand);
                                 query["writeConsistency"] = "ASYNC";
                                 query["senttonode"] = to_string(currentNodeIndex);
                                 query["clientID"] = to_string(i);
@@ -81,7 +84,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             }
                         } else if (i % 2 == 0) {
                             // Every remaining even client makes write requests.
-                            SData query("idcollision");
+                            SData query("idcollision" + randCommand);
                             query["writeConsistency"] = "ASYNC";
                             query["peekSleep"] = "5";
                             query["processSleep"] = "5";
@@ -91,7 +94,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             requests.push_back(query);
                         } else {
                             // Any other client makes read requests.
-                            SData query("testcommand");
+                            SData query("testcommand" + randCommand);
                             query["peekSleep"] = "10";
                             query["response"] = "756";
                             query["senttonode"] = to_string(currentNodeIndex);

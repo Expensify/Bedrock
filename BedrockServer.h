@@ -314,4 +314,6 @@ class BedrockServer : public SQLiteServer {
     atomic<int> _httpsCommandsInProgress;
 
     void _finishPeerCommand(BedrockCommand& command);
+
+    shared_timed_mutex _blockNewCommandsAtStandDown;
 };

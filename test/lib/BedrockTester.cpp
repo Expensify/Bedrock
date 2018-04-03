@@ -310,7 +310,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         // Poll the socket, so we get a timeout.
                         pollfd readSock;
                         readSock.fd = socket;
-                        readSock.events = POLLIN;
+                        readSock.events = POLLIN | POLLHUP;
                         readSock.revents = 0;
 
                         // wait for a second...
@@ -333,6 +333,12 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 socket = -1;
                                 break;
                             }
+                        } else if (readSock.revents & POLLHUP) {
+                            cout << "Remote socket hung up on: " << myRequest.methodLine << endl;
+                            ::shutdown(socket, SHUT_RDWR);
+                            ::close(socket);
+                            socket = -1;
+                            break;
                         } else {
                             timeouts++;
                             if (timeouts == 600) {

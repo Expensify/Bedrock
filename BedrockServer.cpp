@@ -244,6 +244,20 @@ void BedrockServer::sync(SData& args,
         replicationState.store(nodeState);
         masterVersion.store(syncNode.getMasterVersion());
 
+        // Block new commands while we stand down, except in the case that we're shutting down.
+        if (preUpdateState != SQLiteNode::STANDINGDOWN && nodeState == SQLiteNode::STANDINGDOWN) {
+            SINFO("Switched to STANDINGDOWN, blocking starting new commands.");
+            if (server._shutdownState == RUNNING) {
+                server._blockNewCommandsAtStandDown.lock();
+            }
+        } else if(preUpdateState == SQLiteNode::STANDINGDOWN && nodeState != SQLiteNode::STANDINGDOWN) {
+            SINFO("Switched to " << SQLiteNode::stateNames[nodeState] << ", unblocking starting new commands.");
+            // This is going to break if we time out, or shut down.
+            server._blockNewCommandsAtStandDown.unlock();
+        } else if (preUpdateState != nodeState) {
+            SINFO("Switched from "  << SQLiteNode::stateNames[preUpdateState] << " to " << SQLiteNode::stateNames[nodeState] << ", not changing blocking starting new commands.");
+        }
+
         // If we're not mastering, we turn off multi-write until we've finished upgrading the DB. This persists until
         // after we're mastering  again.
         if (nodeState != SQLiteNode::MASTERING) {
@@ -302,7 +316,9 @@ void BedrockServer::sync(SData& args,
         // stick it back in the appropriate queue.
         if (committingCommand && !syncNode.commitInProgress()) {
             // It should be impossible to get here if we're not mastering or standing down.
-            SASSERT(nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN);
+            if (nodeState != SQLiteNode::MASTERING && nodeState != SQLiteNode::STANDINGDOWN) {
+                SERROR("Committing command but node state is " << SQLiteNode::stateNames[nodeState]);
+            }
 
             // Record the time spent.
             command.stopTiming(BedrockCommand::COMMIT_SYNC);
@@ -395,7 +411,7 @@ void BedrockServer::sync(SData& args,
             });
 
             // And now we'll decide how to handle it.
-            if (nodeState == SQLiteNode::MASTERING) {
+            if (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN) {
 
                 try {
                 try {
@@ -455,6 +471,8 @@ void BedrockServer::sync(SData& args,
                     // If we just started a new HTTPS request, save it for later.
                     if (command.httpsRequest) {
                         server._httpsCommandsInProgress++;
+
+                        SINFO("Command started httpsRquest, queueing for later: " << command.request.methodLine);
 
                         // Save this in our https commads queue.
                         lock_guard<mutex> lock(server._httpsCommandMutex);
@@ -611,7 +629,10 @@ void BedrockServer::worker(SData& args,
     while (true) {
         try {
             // If we can't find any work to do, this will throw.
-            command = server._commandQueue.get(1000000);
+            {
+                shared_lock<shared_timed_mutex> lock(server._blockNewCommandsAtStandDown);
+                command = server._commandQueue.get(1000000);
+            }
 
             if (command.httpsRequest) {
                 cout << "Worker dequeued command with https request." << endl;
@@ -759,6 +780,7 @@ void BedrockServer::worker(SData& args,
                 bool calledPeek = false;
                 bool peekResult = false;
                 if (!command.httpsRequest) {
+                    // TODO: It's possible to be mid-transaction here.
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                     // If we opened an HTTPS request, record that.
@@ -783,9 +805,15 @@ void BedrockServer::worker(SData& args,
                         // node, not the one we saved in `state`. We could potentially mitigate this by only ever
                         // peeking certain commands on the sync thread, but even still, we could lose HTTP responses
                         // due to a crash or network event, so we don't try to hard to be perfect here.
-                        if (state != SQLiteNode::MASTERING) {
-                            SWARN("Not mastering but have outstanding HTTPS command: " << command.request.methodLine
-                                  << ", it's being discarded.");
+                        if (state != SQLiteNode::MASTERING && state != SQLiteNode::STANDINGDOWN) {
+                            server._httpsCommandsInProgress--;
+                            command.response.methodLine = "500 STANDDOWN TIMEOUT";
+                            server._reply(command);
+                            // What we really need to do here is figure out a way to make sure these all get timed out
+                            // before we give up on standing down.
+                            SALERT("Not mastering or standing down (" << SQLiteNode::stateNames[state] << ") but have outstanding HTTPS command: "
+                                  << command.request.methodLine << ", it's being discarded.");
+                            core.rollback();
                             break;
                         }
 
@@ -1507,6 +1535,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     if (!_handleIfStatusOrControlCommand(command)) {
                         SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
                               << _commandQueue.size() << " commands already queued.");
+
+                        // TODO: If we're standing down, put this in a different queue so that the sync thread can run
+                        // through all pending commands, and then move these back to the main queue.
                         _commandQueue.push(move(command));
                     }
                 }
@@ -1563,6 +1594,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
 void BedrockServer::_reply(BedrockCommand& command) {
     SAUTOLOCK(_socketIDMutex);
+
+    SINFO("Replying to command " << command.request.methodLine);
 
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command.finalizeTimingInfo();
