@@ -187,13 +187,15 @@ void BedrockServer::sync(SData& args,
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
         // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
         // iteration.
+        // We also move all commands back to the main queue here if we're shutting down, just to make sure they don't
+        // end up lost in the ether.
         {
             SAUTOLOCK(server._futureCommitCommandMutex);
             if (!server._futureCommitCommands.empty()) {
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
                 auto& eraseTo = it;
-                while (it != server._futureCommitCommands.end() && it->first <= commitCount) {
+                while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState != RUNNING)) {
                     SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
@@ -1494,6 +1496,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         SINFO("Firing and forgetting '" << request.methodLine << "'");
                         SData response("202 Successfully queued");
                         s->send(response.serialize());
+
+                        // If we're shutting down, discard this command, we won't wait for the future.
+                        if (_shutdownState != RUNNING) {
+                            SINFO("Not queuing future command '" << request.methodLine << "' while shutting down.");
+                            break;
+                        }
                     } else {
                         SINFO("Waiting for '" << request.methodLine << "' to complete.");
                         SAUTOLOCK(_socketIDMutex);
@@ -1534,9 +1542,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         } else {
                             SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
                                   << _commandQueue.size() << " commands already queued.");
-
-                            // TODO: If we're standing down, put this in a different queue so that the sync thread can run
-                            // through all pending commands, and then move these back to the main queue.
                             _commandQueue.push(move(command));
                         }
                     }
@@ -1923,7 +1928,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
             if (_shutdownState.load() != RUNNING || (_syncNode && _syncNode->getState() == SQLiteNode::STANDINGDOWN)) {
                 // We need to get everything done quick, time everyone out in 5s.
                 SINFO("Shortening timeout to 5 seconds.");
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5);
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5000);
             } else {
                 // use the default.
                 SINFO("Not shortening timeout, state is : " << (_syncNode ? SQLiteNode::stateNames[_syncNode->getState()] : "UNK") << " shutdown state is: " << _shutdownState.load());
@@ -1954,6 +1959,10 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
               << "', closing command port on '" << _args["-serverHost"] << "'");
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
         _gracefulShutdownTimeout.start();
+
+        // Delete any commands scheduled in the future. (we also want to discard any new commands that come in
+        // scheduled for future execution).
+        _commandQueue.abandonFutureCommands(5000);
 
         // Accept any new connections before closing.
         Socket* s = nullptr;

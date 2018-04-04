@@ -27,7 +27,7 @@ class SHTTPSManager : public STCPManager {
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
     // Default timeout is 5 min.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, uint64_t timeoutSecs = 300);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, uint64_t timeoutMS = 300000);
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 

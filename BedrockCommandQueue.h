@@ -34,6 +34,9 @@ class BedrockCommandQueue {
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
 
+    // Discards all commands more than msInFuture milliseconds after right now.
+    void abandonFutureCommands(int msInFuture);
+
   private:
     // Removes and returns the first workable command in the queue. A command is workable if it's executeTimestamp is
     // not in the future.

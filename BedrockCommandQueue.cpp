@@ -102,10 +102,34 @@ bool BedrockCommandQueue::removeByID(const string& id) {
                 queue.second.erase(it);
                 return true;
             }
+            it++;
         }
     }
     SWARN("Attempted to remove command '" << id << "' but not found.");
     return false;
+}
+
+void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
+{
+    uint64_t timeLimit = STimeNow() + (msInFuture * 1000);
+    SAUTOLOCK(_queueMutex);
+    int erasedCount = 0;
+    for (auto& queue : _commandQueue) {
+        auto it = queue.second.begin();
+        while (it != queue.second.end()) {
+            // Get an iterator to the next object, since we may delete this one, which invalidates our iterator to it.
+            auto next = it;
+            next++;
+            if (SToUInt64(it->second.request["commandExecuteTime"]) > timeLimit) {
+                queue.second.erase(it);
+                erasedCount++;
+            }
+            it = next;
+        }
+    }
+    if (erasedCount) {
+        SINFO("Erased " << erasedCount << " scheduled more than " << msInFuture << "ms in the future.");
+    }
 }
 
 BedrockCommand BedrockCommandQueue::_dequeue() {

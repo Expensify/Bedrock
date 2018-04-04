@@ -203,6 +203,16 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_EQUAL(counts.size(), 1);
     }
 
-    // At this point, let's kill -9 the master and see if the slave takes over gracefully.
+    // At this point, let's kill -9 the master and see if the slave takes over gracefully. We can't expect that no
+    // commands fail in this case.
+    //
+    // Other things to check: Do timeouts on https requests actually work?
+    //
+    // The following cases have code added (but have not been tested) to support them:
+    // We should discard commands scheduled for future execution when shutting down (but not when standing down).
+    // Commands dependent on a future commit are weird. These should only be able to exist while slaving. What do we do
+    // if we shut down? Requeue them? Probably.
+    //
+    // It would be nice to set up clustertest to run in parallel, which should be possible now.
 
 } __l_GracefulFailoverTest;

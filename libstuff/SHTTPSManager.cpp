@@ -60,7 +60,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     postPoll(fdm, nextActivity, completedRequests);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, uint64_t timeoutSecs) {
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -69,7 +69,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     // Update each of the active requests
     uint64_t now = STimeNow();
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
-    if ( timeoutSecs!= 300) {
+    if ( timeoutMS!= 300000) {
         SINFO("Non default timeout with " << _activeTransactionList.size() << " transactions.");
     }
     while (nextIt != _activeTransactionList.end()) {
@@ -77,9 +77,9 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
         uint64_t elapsed = now - active->created;
-        const uint64_t TIMEOUT = STIME_US_PER_S * timeoutSecs;
-        if (timeoutSecs != 300) {
-            SINFO("Setting HTTPS timeout to " << timeoutSecs << " seconds.");
+        const uint64_t TIMEOUT = timeoutMS * 1000;
+        if (timeoutMS != 300000) {
+            SINFO("Setting HTTPS timeout to " << timeoutMS << " seconds.");
         }
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
