@@ -1495,6 +1495,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         // map as we don't care about the answer.
                         SINFO("Firing and forgetting '" << request.methodLine << "'");
                         SData response("202 Successfully queued");
+                        if (_shutdownState.load() != RUNNING) {
+                            response["Connection"] = "close";
+                        }
                         s->send(response.serialize());
 
                         // If we're shutting down, discard this command, we won't wait for the future.
@@ -1927,7 +1930,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
             if (_shutdownState.load() != RUNNING || (_syncNode && _syncNode->getState() == SQLiteNode::STANDINGDOWN)) {
                 // We need to get everything done quick, time everyone out in 5s.
-                SINFO("Shortening timeout to 5 seconds.");
+                SINFO("Shortening timeout to 5s.");
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5000);
             } else {
                 // use the default.
@@ -1960,8 +1963,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
         _gracefulShutdownTimeout.start();
 
-        // Delete any commands scheduled in the future. (we also want to discard any new commands that come in
-        // scheduled for future execution).
+        // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);
 
         // Accept any new connections before closing.

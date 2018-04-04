@@ -95,6 +95,10 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                         } else {
                             // Any other client makes read requests.
                             SData query("testcommand" + randCommand);
+                            // A few of them will get scheduled in the future to make sure they don't block shutdown.
+                            if (j % 50 == 15) {
+                                query["commandExecuteTime"] = to_string(STimeNow() + 1000000 * 60);
+                            }
                             query["peekSleep"] = "10";
                             query["response"] = "756";
                             query["senttonode"] = to_string(currentNodeIndex);
@@ -111,8 +115,11 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     for (auto& r : results) {
                         lock_guard<mutex> lock(m);
                         if (r.methodLine != "002 Socket Failed") {
-                            if (r.methodLine != "756") {
+                            if (r.methodLine != "756" && !SStartsWith(r.methodLine, "202")) {
                                 cout << "Client "<< i << " expected 756, got: '" << r.methodLine <<  "', had completed: " << completed << endl;
+                            }
+                            if (SStartsWith(r.methodLine, "202")) {
+                                cout << "Got 202, continuing" << endl;
                             }
                             if (counts.find(r.methodLine) != counts.end()) {
                                 counts[r.methodLine]++;
@@ -200,7 +207,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         for (auto& p : counts) {
             cout << "method: " << p.first << ", count: " << p.second << endl;
         }
-        ASSERT_EQUAL(counts.size(), 1);
+        ASSERT_EQUAL(counts.size(), 2);
     }
 
     // At this point, let's kill -9 the master and see if the slave takes over gracefully. We can't expect that no

@@ -111,24 +111,35 @@ bool BedrockCommandQueue::removeByID(const string& id) {
 
 void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
 {
-    uint64_t timeLimit = STimeNow() + (msInFuture * 1000);
-    SAUTOLOCK(_queueMutex);
-    int erasedCount = 0;
-    for (auto& queue : _commandQueue) {
-        auto it = queue.second.begin();
-        while (it != queue.second.end()) {
-            // Get an iterator to the next object, since we may delete this one, which invalidates our iterator to it.
-            auto next = it;
-            next++;
-            if (SToUInt64(it->second.request["commandExecuteTime"]) > timeLimit) {
-                queue.second.erase(it);
-                erasedCount++;
-            }
-            it = next;
+    // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
+    uint64_t now = STimeNow();
+
+    // Look at each priority queue
+    list<decltype(_commandQueue)::iterator> toDelete;
+    for (decltype(_commandQueue)::iterator queueMapIt = _commandQueue.begin(); queueMapIt != _commandQueue.end(); ++queueMapIt) {
+        
+        // Starting from the first item, skip any items that have a valid scheduled time.
+        auto commandMapIt = queueMapIt->second.begin();
+        while (commandMapIt != queueMapIt->second.end() && commandMapIt->first < now + msInFuture * 1000) {
+            commandMapIt++;
+        }
+
+        size_t numberToErase = distance(commandMapIt, queueMapIt->second.end());
+        if (numberToErase) {
+            queueMapIt->second.erase(commandMapIt, queueMapIt->second.end());
+        }
+
+        if (queueMapIt->second.empty()) {
+            toDelete.push_back(queueMapIt);
+        }
+
+        if (numberToErase) {
+            SINFO("Erased " << numberToErase << " commands scheduled more than " << msInFuture << "ms in the future.");
         }
     }
-    if (erasedCount) {
-        SINFO("Erased " << erasedCount << " scheduled more than " << msInFuture << "ms in the future.");
+
+    for (auto& it : toDelete) {
+        _commandQueue.erase(it);
     }
 }
 

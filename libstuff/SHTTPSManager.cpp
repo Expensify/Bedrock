@@ -102,15 +102,16 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             }
         } else if (active->s->state.load() > Socket::CONNECTED || elapsed > TIMEOUT) {
             // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after "
-                  << elapsed / STIME_US_PER_MS << "ms");
+            SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
-                // This is pretty serious. Let us know.
+                // Timed out. Kill the socket.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
-                      << "' sent with no response. We don't know if they processed it!");
-            } else {
-                SINFO("Looks like this transaction timed out. (timeout)");
+                      << "' timed out receiving response in " << (elapsed / STIME_US_PER_MS) << "ms.");
+                _activeTransactionList.erase(activeIt);
+                _completedTransactionList.push_back(active);
+                completedRequests.push_back(active);
+                continue;
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.

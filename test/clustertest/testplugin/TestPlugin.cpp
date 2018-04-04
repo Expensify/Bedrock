@@ -40,8 +40,10 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         }
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
+        //request["Host"] = "www.expensify.com.dev";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         command.httpsRequest = httpsManager.send("https://www.google.com/", request);
+        //command.httpsRequest = httpsManager.send("https://www.expensify.com.dev/test.php", request);
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
         int size = 100000000;
@@ -107,7 +109,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             SINFO ("Calling process with no https request: " << command.request.methodLine);
             SASSERT(false);
         }
-        if (!command.request["response"].empty()) {
+        if (!command.request["response"].empty() && command.httpsRequest->response < 400) {
             command.response.methodLine = command.request["response"];
         }
         return true;
