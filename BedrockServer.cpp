@@ -61,6 +61,16 @@ bool BedrockServer::canStandDown() {
     }
     if (httpsCommands) {
         SINFO("Can't stand down yet, " << httpsCommands << " HTTPS commands in progress.");
+
+        // We are losing these somewhere. The above is being true long after there's nothing left in the map below.
+        // We still find the commands eventually, once we fall back to slaving, because we log "Not mastering or standing down"
+        // Where are they in the meantime?
+        // Maybe they get sent back to the main command queue but we've stopped processing anything there while we
+        // stand down?
+        SINFO("Outstanding request count: " << _outstandingHTTPSRequests.size());
+        for (auto& p : _outstandingHTTPSRequests) {
+            SINFO("HTTPS Command in progress: " << p.second.request.methodLine);
+        }
     }
     return _writableCommandsInProgress.load() == 0 && httpsCommands == 0;
 }
@@ -244,18 +254,11 @@ void BedrockServer::sync(SData& args,
         replicationState.store(nodeState);
         masterVersion.store(syncNode.getMasterVersion());
 
-        // Block new commands while we stand down, except in the case that we're shutting down.
-        if (preUpdateState != SQLiteNode::STANDINGDOWN && nodeState == SQLiteNode::STANDINGDOWN) {
-            SINFO("Switched to STANDINGDOWN, blocking starting new commands.");
-            if (server._shutdownState == RUNNING) {
-                server._blockNewCommandsAtStandDown.lock();
+        // If anything was in the stand down queue, move it back to the main queue.
+        if (nodeState != SQLiteNode::STANDINGDOWN) {
+            while (server._standDownQueue.size()) {
+                server._commandQueue.push(server._standDownQueue.pop());
             }
-        } else if(preUpdateState == SQLiteNode::STANDINGDOWN && nodeState != SQLiteNode::STANDINGDOWN) {
-            SINFO("Switched to " << SQLiteNode::stateNames[nodeState] << ", unblocking starting new commands.");
-            // This is going to break if we time out, or shut down.
-            server._blockNewCommandsAtStandDown.unlock();
-        } else if (preUpdateState != nodeState) {
-            SINFO("Switched from "  << SQLiteNode::stateNames[preUpdateState] << " to " << SQLiteNode::stateNames[nodeState] << ", not changing blocking starting new commands.");
         }
 
         // If we're not mastering, we turn off multi-write until we've finished upgrading the DB. This persists until
@@ -629,14 +632,7 @@ void BedrockServer::worker(SData& args,
     while (true) {
         try {
             // If we can't find any work to do, this will throw.
-            {
-                shared_lock<shared_timed_mutex> lock(server._blockNewCommandsAtStandDown);
-                command = server._commandQueue.get(1000000);
-            }
-
-            if (command.httpsRequest) {
-                cout << "Worker dequeued command with https request." << endl;
-            }
+            command = server._commandQueue.get(1000000);
 
             // If we dequeue a status or control command, handle it immediately.
             if (server._handleIfStatusOrControlCommand(command)) {
@@ -1533,12 +1529,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                     // later processing.
                     if (!_handleIfStatusOrControlCommand(command)) {
-                        SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
-                              << _commandQueue.size() << " commands already queued.");
+                        if (_syncNode && _syncNode->getState() == SQLiteNode::STANDINGDOWN) {
+                            _standDownQueue.push(move(command));
+                        } else {
+                            SINFO("Queued new '" << command.request.methodLine << "' command from local client, with "
+                                  << _commandQueue.size() << " commands already queued.");
 
-                        // TODO: If we're standing down, put this in a different queue so that the sync thread can run
-                        // through all pending commands, and then move these back to the main queue.
-                        _commandQueue.push(move(command));
+                            // TODO: If we're standing down, put this in a different queue so that the sync thread can run
+                            // through all pending commands, and then move these back to the main queue.
+                            _commandQueue.push(move(command));
+                        }
                     }
                 }
             }
@@ -1920,13 +1920,22 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
-            manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
+            if (_shutdownState.load() != RUNNING || (_syncNode && _syncNode->getState() == SQLiteNode::STANDINGDOWN)) {
+                // We need to get everything done quick, time everyone out in 5s.
+                SINFO("Shortening timeout to 5 seconds.");
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5);
+            } else {
+                // use the default.
+                SINFO("Not shortening timeout, state is : " << (_syncNode ? SQLiteNode::stateNames[_syncNode->getState()] : "UNK") << " shutdown state is: " << _shutdownState.load());
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
+            }
 
             // Move these back to the main queue to finish.
             lock_guard<mutex> lock(_httpsCommandMutex);
             for (auto request : completedHTTPSRequests) {
                 auto pairIt = _outstandingHTTPSRequests.find(request);
                 if (pairIt != _outstandingHTTPSRequests.end()) {
+                    // This requires we keep processing things in workers while we're standing down.
                     _commandQueue.push(move(pairIt->second));
                     _outstandingHTTPSRequests.erase(pairIt);
                 } else {

@@ -315,5 +315,8 @@ class BedrockServer : public SQLiteServer {
 
     void _finishPeerCommand(BedrockCommand& command);
 
-    shared_timed_mutex _blockNewCommandsAtStandDown;
+    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
+    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
+    // endless loop of always having new unfinished commands.
+    CommandQueue _standDownQueue;
 };

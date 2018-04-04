@@ -60,7 +60,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     postPoll(fdm, nextActivity, completedRequests);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, uint64_t timeoutSecs) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -69,12 +69,18 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     // Update each of the active requests
     uint64_t now = STimeNow();
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
+    if ( timeoutSecs!= 300) {
+        SINFO("Non default timeout with " << _activeTransactionList.size() << " transactions.");
+    }
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
         uint64_t elapsed = now - active->created;
-        const uint64_t TIMEOUT = STIME_US_PER_S * 300;
+        const uint64_t TIMEOUT = STIME_US_PER_S * timeoutSecs;
+        if (timeoutSecs != 300) {
+            SINFO("Setting HTTPS timeout to " << timeoutSecs << " seconds.");
+        }
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
             // Consume how much we read.
@@ -103,6 +109,8 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                 // This is pretty serious. Let us know.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
                       << "' sent with no response. We don't know if they processed it!");
+            } else {
+                SINFO("Looks like this transaction timed out. (timeout)");
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.

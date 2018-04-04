@@ -26,7 +26,8 @@ class SHTTPSManager : public STCPManager {
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests);
+    // Default timeout is 5 min.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, uint64_t timeoutSecs = 300);
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 
