@@ -94,23 +94,28 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
 
 bool BedrockCommandQueue::removeByID(const string& id) {
     SAUTOLOCK(_queueMutex);
-    for (auto& queue : _commandQueue) {
-        auto it = queue.second.begin();
-        while (it != queue.second.end()) {
+    bool retVal = false;
+    for (auto queueIt = _commandQueue.begin(); queueIt != _commandQueue.end(); queueIt++) {
+        auto& queue = queueIt->second;
+        auto it = queue.begin();
+        while (it != queue.end()) {
             if (it->second.id == id) {
                 // Found it!
-                queue.second.erase(it);
-                return true;
+                queue.erase(it);
+                retVal = true;
+                break;
             }
             it++;
         }
+        if (retVal) {
+            _commandQueue.erase(queueIt);
+            break;
+        }
     }
-    SWARN("Attempted to remove command '" << id << "' but not found.");
-    return false;
+    return retVal;
 }
 
-void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
-{
+void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
     // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 

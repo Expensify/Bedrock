@@ -8,47 +8,12 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // Shutting down a bedrock server correctly is a multi-step process that ensures we will still respond to any
-    // requests we received right up until we are about to shut down.
-    /*
-    enum SHUTDOWN_STATE {
-        // This is the state until we begin shutting down.
-        RUNNING,
-
-        // In postPoll, this will be set if we received a SIGTERM or SIGINT since the last poll iteration. This will
-        // happen as soon as we've begun the shutdown process.
-        START_SHUTDOWN,
-
-        // postPoll will run through the remaining listening sockets, make sure everything's been read, deserialized,
-        // and queued for processing, and close the listening ports, then set this state.
-        PORTS_CLOSED,
-
-        // Once the ports are closed, we won't get any new connections, but we need to wait for the existing ones to
-        // finish as well.
-        CONNECTIONS_CLOSED,
-
-        // We let the workers run trough commands until their queue is empty. When that happens, we set this state,
-        // indicating that everything that might need to be escalated to the sync thread has been escalated.
-        QUEUE_PROCESSED,
-
-        // Once QUEUE_PROCESSED is set, the sync thread can process commands until it's queue is empty, and then we can
-        // set this flag, indicating the sync thread is done.
-        SYNC_SHUTDOWN,
-
-        // Finally, when the worker's queue is empty again (the sync thread can add items to it via escalation
-        // responses), we're actually done, and we can finish shutting everything down.
-        DONE
-    };
-*/
-
-    // Simplified shutdown states. When we get a signal indicating we should shut down, we close listening ports and
+    // Shutdown states. When we get a signal indicating we should shut down, we close listening ports and
     // start refusing escalated commands. This is where we switch to START_SHUTDOWN.
-    //
-    // We move to `QUEUE_PROCESSED` when there are no outstanding sockets in socketList (this means all responses to
-    // clients have been delivered).
-    // Once we're in QUEUE_PROCESSED we can tell the sync node to shut down.
-    // When it says it's shut down, we switch to SYNC_SHUTDOWN.
-    // When the sync thread sees that there are no main 
+    // When we've read everything remaining off our connected sockets, we'll switch to QUEUE_PROCESSED.
+    // The next iteration of the sync thread's update() loop will move us to SYNC_SHUTDOWN.
+    // When the sync thread has finished shutting down, it will switch to DONE.
+    // Then the worker threads can be joined.
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,

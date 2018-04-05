@@ -69,18 +69,12 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     // Update each of the active requests
     uint64_t now = STimeNow();
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
-    if ( timeoutMS!= 300000) {
-        SINFO("Non default timeout with " << _activeTransactionList.size() << " transactions.");
-    }
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
         uint64_t elapsed = now - active->created;
         const uint64_t TIMEOUT = timeoutMS * 1000;
-        if (timeoutMS != 300000) {
-            SINFO("Setting HTTPS timeout to " << timeoutMS << " seconds.");
-        }
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
             // Consume how much we read.
@@ -105,13 +99,8 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
-                // Timed out. Kill the socket.
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
                       << "' timed out receiving response in " << (elapsed / STIME_US_PER_MS) << "ms.");
-                _activeTransactionList.erase(activeIt);
-                _completedTransactionList.push_back(active);
-                completedRequests.push_back(active);
-                continue;
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.

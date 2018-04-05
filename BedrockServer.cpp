@@ -965,54 +965,7 @@ void BedrockServer::worker(SData& args,
         if  (server._shutdownState.load() == DONE) {
             break;
         }
-
-/*
-        // If the server's not accepting new connections, and we don't have anything in the queue to process, we can
-        // inform the sync thread that we're done with this queue.
-        // TODO: make sure we progress through the shutdown states if we're timing out, regardless of whether things
-        // have finished.
-        if (server._shutdownState.load() == CONNECTIONS_CLOSED) {
-            // We can only do this if we're done with HTTPS commands as well.
-            {
-                lock_guard<mutex> lock(server._httpsCommandMutex);
-                if (!server._outstandingHTTPSRequests.empty()) {
-                    if (server._gracefulShutdownTimeout.ringing()) {
-                        SINFO("Shutdown timed out waiting on HTTPS requests.");
-                    } else {
-                        SINFO("Outstanding HTTPS requests blocking shutdown ("
-                              << server._outstandingHTTPSRequests.size() << ").");
-                        continue;
-                    }
-                }
-            }
-
-            server._shutdownState.store(QUEUE_PROCESSED);
-            SINFO("TYLER shutdownState QUEUE_PROCESSED");
-            SINFO("QUEUE_PROCESSED, waiting for sync thread to finish.");
-        }
-
-        // If the sync thread is finished, and the worker queue is empty, then we're really done.
-        if (server._shutdownState.load() == SYNC_SHUTDOWN) {
-       
-            if (!server.socketList.empty()) {
-                cout << "Still have sockets left at shutdown. Letting them close." << endl;
-                continue;
-            }
-       
-            SINFO("Shutdown state is SYNC_SHUTDOWN, and queue empty. Worker" << to_string(threadId) << " exiting.");
-            cout << "TYLER shutdownState DONE" << endl;
-            server._shutdownState.store(DONE);
-            break;
-        }
-
-        // If another worker marked us done, we can exit as well.
-        if (server._shutdownState.load() == DONE) {
-            SINFO("Shutdown state is DONE. Worker" << to_string(threadId) << " exiting.");
-            break;
-        }
-*/
     }
-
 }
 
 bool BedrockServer::_handleIfStatusOrControlCommand(BedrockCommand& command) {
