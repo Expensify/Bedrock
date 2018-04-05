@@ -45,7 +45,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command) {
                   << " commands already queued.");
             _commandQueue.push(BedrockCommand(move(command)));
         } else {
-            cout << "WARN Dropping escalated command while shutting down" << endl;
+            SWARN("Dropping escalated command while shutting down");
         }
     }
 }
@@ -96,7 +96,6 @@ void BedrockServer::syncWrapper(SData& args,
             }
             SINFO("Bedrock server entering attached state.");
         }
-        cout << "NEW SERVER" << endl;
         sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -418,28 +417,14 @@ void BedrockServer::sync(SData& args,
             // And now we'll decide how to handle it.
             if (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::STANDINGDOWN) {
 
-                try {
-                try {
                 // We need to grab this before peekCommand (or wherever our transaction is started), to verify that
                 // no worker thread can commit in the middle of our transaction. We need our entire transaction to
                 // happen with no other commits to ensure that we can't get a conflict.
                 uint64_t beforeLock = STimeNow();
 
                 // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
-                try {
                 db.waitForCheckpoint();
-                } catch (const system_error& e) {
-                    cout << "SYSTEM ERROR WAIT CHECKPOINT" << endl;
-                    throw;
-                }
-                try {
-                // WTF,why does this explode?
-                // Update: It happens twice in a row.
                 server._syncThreadCommitMutex.lock();
-                } catch (const system_error& e) {
-                    cout << "SYSTEM ERROR LOCK" << endl;
-                    throw;
-                }
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
                 // explicit logging for it to check.
@@ -451,11 +436,6 @@ void BedrockServer::sync(SData& args,
                 // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
-                } catch (const system_error& e) {
-                    cout << "SYSTEM ERROR PRE-PEEK" << endl;
-                    throw;
-                }
-                try {
                 if (!command.httpsRequest) {
                     if (core.peekCommand(command)) {
 
@@ -490,13 +470,8 @@ void BedrockServer::sync(SData& args,
                         continue;
                     }
                 }
-                } catch (const system_error& e) {
-                    cout << "SYSTEM ERROR HTTPS" << endl;
-                    throw;
-                }
 
                 if (core.processCommand(command)) {
-                    try {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command.request.methodLine);
@@ -515,12 +490,7 @@ void BedrockServer::sync(SData& args,
 
                     // Don't unlock _syncThreadCommitMutex here, we'll hold the lock till the commit completes.
                     continue;
-                    } catch (const system_error& e) {
-                        cout << "SYSTEM ERROR PROCESS" << endl;
-                        throw;
-                    }
                 } else {
-                    try {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
                     server._syncThreadCommitMutex.unlock();
@@ -529,14 +499,6 @@ void BedrockServer::sync(SData& args,
                     } else {
                         server._reply(command);
                     }
-                    } catch (const system_error& e) {
-                        cout << "SYSTEM ERROR NOT PROCESS" << endl;
-                        throw;
-                    }
-                }
-                } catch (const system_error& e) {
-                    cout << "SYSTEM ERROR MASTERING" << endl;
-                    throw;
                 }
             } else if (nodeState == SQLiteNode::SLAVING) {
                 // If we're slaving, we just escalate directly to master without peeking. We can only get an incomplete
@@ -550,15 +512,10 @@ void BedrockServer::sync(SData& args,
 
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
-        } catch (const system_error& e) {
-            cout << "System error sync" << endl;
-            throw;
         }
     } while (!syncNode.shutdownComplete());
 
-    SSetSignalHandlerDieFunc([](){cout << "Empty die." << endl;});
-
-    cout << "Sync node shutdown is complete. syncNodeQueuedCommands: " << syncNodeQueuedCommands.size() << ", completedCommands: " << completedCommands.size() << endl;
+    SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
@@ -957,11 +914,9 @@ void BedrockServer::worker(SData& args,
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
-        } catch (const system_error& e) {
-            cout << "System error worker" << endl;
-            throw;
         }
 
+        // Finished with the entire thread.
         if  (server._shutdownState.load() == DONE) {
             break;
         }
@@ -1149,7 +1104,6 @@ bool BedrockServer::shutdownComplete() {
 
     // If we're totally done, we can return true.
     if (_shutdownState.load() == DONE) {
-        cout << "Shutdown state is DONE, we can return." << endl;
         return true;
     }
 
