@@ -933,7 +933,6 @@ bool SQLiteNode::update() {
             // See if we're done
             // We can only switch to SEARCHING if the server has no outstanding write work to do.
             if (_standDownTimeOut.ringing()) {
-                // This can cause a crash currently, as we will then try and finish a commit.
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
             } else if (!_server.canStandDown()) {
                 // Try again.

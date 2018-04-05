@@ -22,6 +22,7 @@ class SQLiteServer : public STCPServer {
     // When a node connects to the cluster, this function will be called on the sync thread.
     virtual void onNodeLogin(SQLiteNode::Peer* peer) = 0;
 
+    // Indicates whether the server is trying to shut down.
     virtual bool shuttingDown() = 0;
     
 };

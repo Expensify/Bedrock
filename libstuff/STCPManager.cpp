@@ -81,13 +81,13 @@ void STCPManager::postPoll(fd_map& fdm) {
                 break;
             }
 
+            // Mark any sockets that the other end disconnected as closed.
             if (SFDAnySet(fdm, socket->s, POLLHUP)) {
-                //cout << "Other side hung up!" << endl;
                 socket->state.store(Socket::CLOSED);
                 ::shutdown(socket->s, SHUT_RDWR);
             }
 
-            // Tagged as writeable; check SO_ERROR to see if the connect failed
+            // Tagged as writable; check SO_ERROR to see if the connect failed
             int result = 0;
             socklen_t size = sizeof(result);
             SASSERTWARN(!getsockopt(socket->s, SOL_SOCKET, SO_ERROR, &result, &size));
@@ -211,7 +211,6 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
-    //cout << "Closing socket: " << socket->id << endl;
     socketList.remove(socket);
 
     delete socket;

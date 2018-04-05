@@ -129,7 +129,7 @@ class BedrockServer : public SQLiteServer {
     string _version;
 
     // The actual thread object for the sync thread.
-    thread* _syncThread;
+    thread _syncThread;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes master. It will return true if the DB has changed and needs to be committed.

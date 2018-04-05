@@ -1108,38 +1108,30 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = new thread(syncWrapper,
-                         ref(_args),
-                         ref(_replicationState),
-                         ref(_upgradeInProgress),
-                         ref(_masterVersion),
-                         ref(_syncNodeQueuedCommands),
-                         ref(*this));
+    _syncThread = thread(syncWrapper,
+                     ref(_args),
+                     ref(_replicationState),
+                     ref(_upgradeInProgress),
+                     ref(_masterVersion),
+                     ref(_syncNodeQueuedCommands),
+                     ref(*this));
 }
 
 BedrockServer::~BedrockServer() {
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
-    _syncThread->join();
-    delete _syncThread;
+    _syncThread.join();
     SINFO("Threads closed.");
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
     // finished, it may keep writing to these sockets.
-
     if (_socketIDMap.size()) {
-        cout << "Still have " << _socketIDMap.size() << " entries in _socketIDMap." << endl;
+        SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
 
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
-
-        sockaddr_in addr = {0};
-        socklen_t size = 0;
-        getpeername(s->s, (sockaddr*)&addr, &size);
-
-        cout << "Closing socket in destructor (remote port: " << addr.sin_port << ")." << endl;
         closeSocket(s);
     }
     SINFO("Sockets closed.");
@@ -1223,11 +1215,6 @@ bool BedrockServer::shutdownComplete() {
         case START_SHUTDOWN:
             stateString = "START_SHUTDOWN";
             break;
-        /*
-        case PORTS_CLOSED:
-            stateString = "PORTS_CLOSED";
-            break;
-            */
         case QUEUE_PROCESSED:
             stateString = "QUEUE_PROCESSED";
             break;
@@ -1253,18 +1240,6 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    // What's the implication of the above? We can read new commands on any existing socket, so we need to figure out
-    // when those are done. Now, if we close them after sending responses, then they're done. I think after we close
-    // the command port, we need to wait until there are no sockets left in this list. This will wait for the sync
-    // thread to have responded to everything. Then we can tell it to shutdown, which should be fine.
-    //
-    // New propsoed flow:
-    // beginShutdown:
-    // Closes ports and sets START_SHUTDOWN.
-    // postPoll: calls final accept()s and then sets PORTS_CLOSED
-    // If socketIDMap is empty, set CONNECTIONS_CLOSED and tell the sync node to shut down.
-    // When we reply to commands we close 
-
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
@@ -1372,7 +1347,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             SASSERT(!s->data);
             s->data = plugin;
         }
-     }
+    }
 
     // Time the end of the accept section.
     uint64_t acceptEndTime = STimeNow();
@@ -1397,9 +1372,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
-                    // TODO: If we're shutting down and don't have a command for this socket, then let's close it here.
                     if (_shutdownState.load() == DONE && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                        cout << "Closing socket " << s->id << " with no data because shutting down (why does this exist?)" << endl;
+                        SWARN("Closing socket " << s->id << " with no data because shutting down.");
                         socketsToClose.push_back(s);
                     } else {
                         break;
@@ -1412,7 +1386,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SAUTOLOCK(_socketIDMutex);
                     auto socketIt = _socketIDMap.find(s->id);
                     if (socketIt != _socketIDMap.end()) {
-                        cout << "Already have a command for this socket." << endl;
                         break;
                     }
                 }
@@ -1540,15 +1513,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     if (_shutdownState.load() == START_SHUTDOWN) {
-        if (_gracefulShutdownTimeout.ringing()) {
+        if (_gracefulShutdownTimeout.ringing() || socketList.empty()) {
             _shutdownState.store(QUEUE_PROCESSED);
-            cout << "Setting QUEUE_PROCESSED because of timeout." << endl;
-        }
-        else if (socketList.empty()) {
-            cout << "Setting QUEUE_PROCESSED because all clients finished." << endl;
-            _shutdownState.store(QUEUE_PROCESSED);
-        } else {
-            cout << "Not setting QUEUE_PROCESSED with " << socketList.size() << " remaining clients." << endl;
         }
     }
 }
@@ -1556,11 +1522,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 void BedrockServer::_reply(BedrockCommand& command) {
     SAUTOLOCK(_socketIDMutex);
 
-    SINFO("Replying to command " << command.request.methodLine);
-
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command.finalizeTimingInfo();
 
+    // If this command had an https request, it's done now.
     if (command.httpsRequest) {
         _httpsCommandsInProgress--;
     }
@@ -1577,6 +1542,12 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];
+
+        // If we're shutting down, tell the caller to close the connection.
+        if (_shutdownState.load() != RUNNING) {
+            command.response["Connection"] = "close";
+        }
+
         if (!pluginName.empty()) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command.response.methodLine
@@ -1589,20 +1560,12 @@ void BedrockServer::_reply(BedrockCommand& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            if (_shutdownState.load() != RUNNING) {
-                // If we're shutting down, tell the caller to close the connection.
-                cout << "Bedrock setting connection closed. " << command.request.serialize();
-                command.response["Connection"] = "close";
-            }
             socketIt->second->send(command.response.serialize());
         }
 
-        // If `Connection: close` was set, shut down the socket, do the same if we're shutting down - we don't want to
-        // receive any more commands on these sockets.
+        // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
         if (SIEquals(command.request["Connection"], "close") || _shutdownState.load() != RUNNING) {
-            // TODO: Verify this gets dropped from `socketList`
             shutdownSocket(socketIt->second, SHUT_RDWR);
-            cout << "Shutting down socket: " << socketIt->second->id << endl;
         }
 
         // We only keep track of sockets with pending commands.
@@ -1882,12 +1845,10 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
         for (auto manager : plugin->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
             if (_shutdownState.load() != RUNNING || (_syncNode && _syncNode->getState() == SQLiteNode::STANDINGDOWN)) {
-                // We need to get everything done quick, time everyone out in 5s.
-                SINFO("Shortening timeout to 5s.");
+                // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5000);
             } else {
-                // use the default.
-                SINFO("Not shortening timeout, state is : " << (_syncNode ? SQLiteNode::stateNames[_syncNode->getState()] : "UNK") << " shutdown state is: " << _shutdownState.load());
+                // Otherwise, use the default timeout.
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
             }
 
@@ -1896,7 +1857,6 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
             for (auto request : completedHTTPSRequests) {
                 auto pairIt = _outstandingHTTPSRequests.find(request);
                 if (pairIt != _outstandingHTTPSRequests.end()) {
-                    // This requires we keep processing things in workers while we're standing down.
                     _commandQueue.push(move(pairIt->second));
                     _outstandingHTTPSRequests.erase(pairIt);
                 } else {
@@ -1919,13 +1879,12 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);
 
-        // Accept any new connections before closing.
+        // Accept any new connections before closing, this avoids leaving clients who had connected to in a weird
+        // state.
         Socket* s = nullptr;
         Port* acceptPort = nullptr;
         while ((s = acceptSocket(acceptPort))) {
-            // Accepted a new socket
-            // NOTE: BedrockServer doesn't need to keep a new list; there's already STCPManager::socketList.
-            // Look up the plugin that owns this port (if any).
+            // TODO: DRY with the other place that calls this. We added _acceptSockets in the header for this.
             if (SContains(_portPluginMap, acceptPort)) {
                 BedrockPlugin* plugin = _portPluginMap[acceptPort];
                 // Allow the plugin to process this
@@ -1949,8 +1908,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _portPluginMap.clear();
         _commandPort = nullptr;
         _shutdownState.store(START_SHUTDOWN);
-        SINFO("TYLER shutdownState START_SHUTDOWN");
-        SINFO("TYLER START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
+        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
     }
 }
 
