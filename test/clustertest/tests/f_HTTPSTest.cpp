@@ -54,7 +54,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
                         request["writeConsistency"] = "ASYNC";
                         requests.push_back(request);
                     } else {
-                        SData request("idcollision");
+                        SData request("idcollision f");
                         request["writeConsistency"] = "ASYNC";
                         requests.push_back(request);
                     }

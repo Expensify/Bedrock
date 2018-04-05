@@ -8,17 +8,48 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // Shutdown states. When we get a signal indicating we should shut down, we close listening ports and
-    // start refusing escalated commands. This is where we switch to START_SHUTDOWN.
-    // When we've read everything remaining off our connected sockets, we'll switch to QUEUE_PROCESSED.
-    // The next iteration of the sync thread's update() loop will move us to SYNC_SHUTDOWN.
-    // When the sync thread has finished shutting down, it will switch to DONE.
-    // Then the worker threads can be joined.
+    // There are two interesting cases for "shutting down" a BedrockServer. One is actually turning it off and the
+    // other is standing it down from master to slave. These have different control flows, but are both discussed here
+    // as they relate to one another.
+    //
+    // Let's start with actually shutting a server down. When a server comes up, it will be in a RUNNING state. This is
+    // the normal operating state and everything proceeds as normal. When we ask it to shutdown (typically by sending
+    // it a SIGINT), it will close it's command port, and set the shutdown state to START_SHUTDOWN.
+    // At this point, every time it replies to a command, it will add `Connection: close` to the response headers, and
+    // close the socket to the client after this response. Since it's no longer accepting new sockets on the command
+    // port, it will eventually close all client sockets as all pending commands are responded to. If the server is
+    // MASTER, it will start to reject escalated commands in this state as well, so as to eventually be able to empty
+    // all of it's queues. Those commands will be re-escalated to a new master once this one finishes shutting down.
+    // When `postPoll` runs after checking for network activity, if there are no client sockets left, and we are in
+    // the START_SHUTDOWN state, we will increment to CLIENTS_RESPONDED.
+    // The next `update` loop of the sync thread will notice we're at the CLIENTS_RESPONDED state, and it will begin
+    // shutting down the sync node itself. If it's mastering, it will stand down and allow another node to stand up.
+    // When the sync node finishes shutting down, it will set the state to DONE. Worker threads will notice this and
+    // return, and the sync thread will join them and the entire BedrockServer at that point is complete and can be
+    // destructed.
+    //
+    // Standing down is the other interesting case. Standing down only occurs if we were first mastering, and when
+    // shutting down, happens in between the CLIENTS_RESPONDED and DONE states. Standing down when shutting down is
+    // actually pretty straightforward, as we've already completed all outstanding commands and are rejecting any new
+    // ones, so there are no strange edge cases to handle.
+    // However, we stand down without shutting down when another, higher-priority master stands up, and we need to
+    // become a slave to it. In this case, we need to finish any commands that need to be run on master, but we don't
+    // need to finish *all* commands, we can process any commands that can run on a slave after we're done.
+    // Which commands need to be run on master? Any command that will do `processCommand`, including HTTPS commands.
+    // Also, any command that was escalated from another node to this one (because we don't do chained escalations).
+    //
+    // When the syncNode informs us that we're standing down (it will be the object that notices another master wants
+    // to stand up), it will start rejecting escalated commands. We will also start putting new commands from local
+    // clients in to a temporary "stand down queue" of commands that won't be run until after we've stood down. These
+    // two changes limit us to running through the existing queue of commands to shut down. We need to run through this
+    // entire queue, because many of the commands in the queue will be empty.
+    // We then block standing down via the `canStandDown()` until our queues (except the "stand down queue") are empty,
+    // and no commands are in progress. A command is "in progress" from when it's removed from the queue until its
+    // response is sent. Commands escalated from workers to the sync thread are "in progress" until they complete.
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
-        QUEUE_PROCESSED,
-        SYNC_SHUTDOWN,
+        CLIENTS_RESPONDED,
         DONE
     };
 
@@ -38,7 +69,9 @@ class BedrockServer : public SQLiteServer {
 
     // Accept an incoming command from an SQLiteNode.
     // SQLiteNode API.
-    void acceptCommand(SQLiteCommand&& command);
+    // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
+    // being returned to the command queue.
+    void acceptCommand(SQLiteCommand&& command, bool isNew);
 
     // Cancel a command.
     // SQLiteNode API.
@@ -202,10 +235,9 @@ class BedrockServer : public SQLiteServer {
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
-    // This counts the number of commands that are being processed that might be able to write to the database. We
-    // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
-    // it's 0.
-    atomic<int> _writableCommandsInProgress;
+    // This counts the number of commands currently being processed (which might not be in any of our queues). We use
+    // this value to prevent us from standing down until this value is 0 and our main queue is empty.
+    atomic<int> _commandsInProgress;
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node

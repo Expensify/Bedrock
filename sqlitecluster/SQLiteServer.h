@@ -9,7 +9,9 @@ class SQLiteServer : public STCPServer {
     SQLiteServer(const string& host) : STCPServer(host) { }
 
     // An SQLiteNode will call this to pass a newly escalated command to a server for processing.
-    virtual void acceptCommand(SQLiteCommand&& command) = 0;
+    // the reEscalatedWithoutCompletion flag will be set to true if this is a command that was lost in transit, and
+    // never finished, but we think the server can try it again.
+    virtual void acceptCommand(SQLiteCommand&& command, bool isNew) = 0;
 
     // An SQLiteNode will call this to cancel a command that a peer has escalated but no longer wants a response to.
     // The command may or may not be canceled, depending on whether it's already been processed.
