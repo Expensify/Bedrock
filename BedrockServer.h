@@ -276,8 +276,6 @@ class BedrockServer : public SQLiteServer {
     mutex _httpsCommandMutex;
     map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
 
-    atomic<int> _httpsCommandsInProgress;
-
     void _finishPeerCommand(BedrockCommand& command);
 
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
