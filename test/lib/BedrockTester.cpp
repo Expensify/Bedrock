@@ -199,10 +199,12 @@ string BedrockTester::startServer(bool dontWait) {
 }
 
 void BedrockTester::stopServer(int signal) {
-    kill(_serverPID, signal);
-    int status;
-    waitpid(_serverPID, &status, 0);
-    _serverPID = 0;
+    if (_serverPID) {
+        kill(_serverPID, signal);
+        int status;
+        waitpid(_serverPID, &status, 0);
+        _serverPID = 0;
+    }
 }
 
 string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
