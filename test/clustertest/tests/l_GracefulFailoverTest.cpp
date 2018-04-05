@@ -213,6 +213,29 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         // make sure it actually succeeded.
         ASSERT_TRUE(success);
 
+        // Now bring master back up. We do this so we can watch at shutdown and see that everything shuts
+        // down gracefully and nothing was left in any weird state after being disconnected.
+        sleep(2);
+        tester->startNode(0);
+
+        count = 0;
+        success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = master->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
+
+        // make sure it actually succeeded.
+        ASSERT_TRUE(success);
+
         // We're done, let everything finish.
         done.store(true);
         for (auto& t : threads) {
