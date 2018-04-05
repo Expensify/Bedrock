@@ -41,7 +41,6 @@ struct k_JobIDTest : tpunit::TestFixture {
         // make sure it actually succeeded.
         ASSERT_TRUE(success);
 
-
         // Create a job in the slave and check the ID returned is the next one
         response = slave->executeWaitVerifyContentTable(createCmd, "200");
         ASSERT_EQUAL(jobID + 1, SToInt(response["jobID"]));

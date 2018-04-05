@@ -23,6 +23,8 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     for (size_t j = 0; j < numCommands; j++) {
                         string randCommand = " r_" + to_string(commandID.fetch_add(1)) + "_r";
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
+                        // We ask for `756` responses to verify we don't accidentally get back something besides what
+                        // we expect (some default value).
                         if (i % 10 == 0) {
                             if (j % 5 == 0) {
                                 SData query("sendrequest" + randCommand);
@@ -102,25 +104,6 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
             // Give it another second...
             sleep(1);
         }
-
-        // So here, we start with node 0 mastering.
-        // We then spin up a few threads that continually spam all three nodes with both read and write commands.
-        // These should complete locally or escalate to master as appropriate.
-        // We then shut down node 0. Node 1 will take over as master.
-        // All commands sent to Node 0 after this point should result in a "connection refused" error. This is fine.
-        // We verify that node 1 comes up as master.
-        // We then continue spamming for a few seconds and make sure every command returns either success, or
-        // connection refused.
-        // Then we bring Node 0 back up, and verify that it takes over as master. Send a few more commands.
-        //
-        // We should have sent hundreds of commands, and they all should have either succeeded, or been "connection
-        // refused".
-        //
-        // Thus concludes our test:
-        // TODO:
-        // https commands.
-        // Commands scheduled in the future, or waiting on future commits.
-        //
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread> threads;

@@ -59,7 +59,7 @@ bool BedrockServer::canStandDown() {
     int count = _commandsInProgress.load();
     int size = _commandQueue.size();
     if (count || size) {
-        SINFO("TYLER Can't stand down with " << count << " commands in progress and " << size << " commands queued.");
+        SINFO("Can't stand down with " << count << " commands in progress and " << size << " commands queued.");
         return false;
     } else {
         return true;
@@ -1232,28 +1232,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Timing variables.
     int deserializationAttempts = 0;
     int deserializedRequests = 0;
-    int acceptedSockets = 0;
-    uint64_t startTime = STimeNow();
 
     // Accept any new connections
-    Socket* s = nullptr;
-    Port* acceptPort = nullptr;
-    while ((s = acceptSocket(acceptPort))) {
-        acceptedSockets++;
-        // Accepted a new socket
-        // NOTE: BedrockServer doesn't need to keep a new list; there's already STCPManager::socketList.
-        // Look up the plugin that owns this port (if any).
-        if (SContains(_portPluginMap, acceptPort)) {
-            BedrockPlugin* plugin = _portPluginMap[acceptPort];
-            // Allow the plugin to process this
-            SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
-            plugin->onPortAccept(s);
-
-            // Remember that this socket is owned by this plugin.
-            SASSERT(!s->data);
-            s->data = plugin;
-        }
-    }
+    _acceptSockets();
 
     // Time the end of the accept section.
     uint64_t acceptEndTime = STimeNow();
@@ -1399,11 +1380,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Log the timing of this loop.
-    uint64_t acceptElapsedMS = (acceptEndTime - startTime) / 1000;
     uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / 1000;
-    SINFO("Accepted " << acceptedSockets << " new sockets in " << acceptElapsedMS << "ms. Read from " << socketList.size()
-          << " sockets, attempted to deserialize " << deserializationAttempts << " commands, " << deserializedRequests
-          << " were complete and deserialized in " << readElapsedMS << "ms.");
+    SINFO("Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
+          << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
@@ -1789,21 +1768,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
         // Accept any new connections before closing, this avoids leaving clients who had connected to in a weird
         // state.
-        Socket* s = nullptr;
-        Port* acceptPort = nullptr;
-        while ((s = acceptSocket(acceptPort))) {
-            // TODO: DRY with the other place that calls this. We added _acceptSockets in the header for this.
-            if (SContains(_portPluginMap, acceptPort)) {
-                BedrockPlugin* plugin = _portPluginMap[acceptPort];
-                // Allow the plugin to process this
-                SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
-                plugin->onPortAccept(s);
-
-                // Remember that this socket is owned by this plugin.
-                SASSERT(!s->data);
-                s->data = plugin;
-            }
-        }
+        _acceptSockets();
 
         // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
         // detaching. It needs to keep listening.
@@ -1875,3 +1840,21 @@ void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
     }
     _commandsInProgress--;
 }
+
+void BedrockServer::_acceptSockets() {
+    Socket* s = nullptr;
+    Port* acceptPort = nullptr;
+    while ((s = acceptSocket(acceptPort))) {
+        if (SContains(_portPluginMap, acceptPort)) {
+            BedrockPlugin* plugin = _portPluginMap[acceptPort];
+            // Allow the plugin to process this
+            SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
+            plugin->onPortAccept(s);
+
+            // Remember that this socket is owned by this plugin.
+            SASSERT(!s->data);
+            s->data = plugin;
+        }
+    }
+}
+

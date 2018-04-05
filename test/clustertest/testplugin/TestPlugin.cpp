@@ -33,17 +33,15 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.response.content = "this is a test response";
         return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        // THIS STANDINGDOWN change is important and probably needs to go in AUth.
+        // This STANDINGDOWN change is important and probably needs to go in Auth.
         if (_server->getState() != SQLiteNode::MASTERING && _server->getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on master, otherwise, we'll escalate.
             return false;
         }
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
-        //request["Host"] = "www.expensify.com.dev";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         command.httpsRequest = httpsManager.send("https://www.google.com/", request);
-        //command.httpsRequest = httpsManager.send("https://www.expensify.com.dev/test.php", request);
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
         int size = 100000000;
