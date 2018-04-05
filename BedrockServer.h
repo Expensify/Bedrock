@@ -182,9 +182,9 @@ class BedrockServer : public SQLiteServer {
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
     // until all references to it go out of scope. Since an STCPNode never deletes `Peer` objects until it's being
-    // destroyed, we are also guaranteed that all peers are accesible as long as we hold a shared pointer to this
+    // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
-    SQLiteNode* _syncNode;
+    shared_ptr<SQLiteNode> _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
     recursive_mutex _syncMutex;
