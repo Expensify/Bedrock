@@ -42,7 +42,7 @@ class BedrockTester {
     // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
     // the cmmand port, is ready.
     string startServer(bool dontWait = false);
-    void stopServer();
+    void stopServer(int signal = SIGINT);
 
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.

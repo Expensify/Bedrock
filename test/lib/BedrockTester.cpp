@@ -198,8 +198,8 @@ string BedrockTester::startServer(bool dontWait) {
     return "";
 }
 
-void BedrockTester::stopServer() {
-    kill(_serverPID, SIGINT);
+void BedrockTester::stopServer(int signal) {
+    kill(_serverPID, signal);
     int status;
     waitpid(_serverPID, &status, 0);
     _serverPID = 0;
@@ -276,7 +276,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     SData responseData("002 Socket Failed");
                     results[myIndex] = move(responseData);
                     if (returnOnDisconnect) {
-                        cout << "Disconnected, returning early." << endl;
                         return;
                     }
                     continue;
@@ -287,10 +286,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         myRequest["mockRequest"] = "true";
                     }
 
-                    // We've released our lock so other threads can dequeue stuff now.
                     // Send some stuff on our socket.
                     string sendBuffer = myRequest.serialize();
-                    // Send our data.
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
                         socketSendCount++;
@@ -316,25 +313,18 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         // wait for a second...
                         poll(&readSock, 1, 1000);
                         count++;
-                        if (count > 5) {
-                            cout << "Stuck for " << count << " seconds: " << myRequest.serialize() << endl;
-                        }
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
-                                
                                 sockaddr_in addr = {0};
                                 socklen_t size = 0;
                                 getsockname(socket, (sockaddr*)&addr, &size);
-
-                                cout << "Disconnected after sending (command " << socketSendCount << ") but with no response. Sent: " << myRequest.serialize() << " to " << (control ? _controlAddr : _serverAddr) << ", sent on port: " << addr.sin_port << endl;
                                 ::shutdown(socket, SHUT_RDWR);
                                 ::close(socket);
                                 socket = -1;
                                 break;
                             }
                         } else if (readSock.revents & POLLHUP) {
-                            cout << "Remote socket hung up on: " << myRequest.methodLine << endl;
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
@@ -342,7 +332,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         } else {
                             timeouts++;
                             if (timeouts == 600) {
-                                cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest.methodLine << endl;
                                 break;
                             }
                         }
@@ -371,7 +360,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             }
 
                             if (headers["Connection"] == "close") {
-                                cout << "connection should close." << endl;
                                 ::shutdown(socket, SHUT_RDWR);
                                 ::close(socket);
                                 socket = 0;

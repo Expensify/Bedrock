@@ -8,63 +8,13 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
     BedrockClusterTester* tester;
 
-    void test()
-    {
-        // Verify the existing master is up.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
-        BedrockTester* master = tester->getBedrockTester(0);
-
-        int count = 0;
-        bool success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
-
-            // Give it another second...
-            sleep(1);
-        }
-
-        cout << "======================================== node 0 is mastering." << endl;
-
-        // So here, we start with node 0 mastering.
-        // We then spin up a few threads that continually spam all three nodes with both read and write commands.
-        // These should complete locally or escalate to master as appropriate.
-        // We then shut down node 0. Node 1 will take over as master.
-        // All commands sent to Node 0 after this point should result in a "connection refused" error. This is fine.
-        // We verify that node 1 comes up as master.
-        // We then continue spamming for a few seconds and make sure every command returns either success, or
-        // connection refused.
-        // Then we bring Node 0 back up, and verify that it takes over as master. Send a few more commands.
-        //
-        // We should have sent hundreds of commands, and they all should have either succeeded, or been "connection
-        // refused".
-        //
-        // Thus concludes our test:
-        // TODO:
-        // https commands.
-        // Commands scheduled in the future, or waiting on future commits.
-        //
-
-        // Step 1: everything is already up and running. Let's start spamming.
-        list<thread> threads;
-        atomic<bool> done;
-        done.store(false);
-        mutex m;
-        vector<list<SData>> allresults(60);
-
-        atomic<int> commandID(10000);
-
-        map<string, int> counts;
-
-        // Ok, start up 60 clients.
-        for (int i = 0; i < 60; i++) {
+    void startClientThreads(list<thread>& threads, atomic<bool>& done, map<string, int>& counts,
+                            atomic<int>& commandID, mutex& mu, vector<list<SData>>& allresults) {
+        // Ok, start up some clients.
+        for (size_t i = 0; i < allresults.size(); i++) {
             // Start a thread.
-            threads.emplace_back([tester, i, &m, &done, &allresults, &counts, &commandID]() {
+            BedrockClusterTester* localTester = tester;
+            threads.emplace_back([localTester, i, &mu, &done, &allresults, &counts, &commandID]() {
                 int currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
@@ -108,19 +58,12 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                     }
 
                     // Ok, send them all!
-                    cout << "Client " << i << " sending " << requests.size() << " to node " << currentNodeIndex << endl;
-                    BedrockTester* node = tester->getBedrockTester(currentNodeIndex);
+                    BedrockTester* node = localTester->getBedrockTester(currentNodeIndex);
                     auto results = node->executeWaitMultipleData(requests, 1, false, true);
                     size_t completed = 0;
                     for (auto& r : results) {
-                        lock_guard<mutex> lock(m);
+                        lock_guard<mutex> lock(mu);
                         if (r.methodLine != "002 Socket Failed") {
-                            if (r.methodLine != "756" && !SStartsWith(r.methodLine, "202")) {
-                                cout << "Client "<< i << " expected 756, got: '" << r.methodLine <<  "', had completed: " << completed << endl;
-                            }
-                            if (SStartsWith(r.methodLine, "202")) {
-                                cout << "Got 202, continuing" << endl;
-                            }
                             if (counts.find(r.methodLine) != counts.end()) {
                                 counts[r.methodLine]++;
                             } else {
@@ -132,18 +75,68 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             break;
                         }
                     }
-                    cout << "Completed " << completed << " commands of "  << requests.size() << " on client " << i << " and node " << currentNodeIndex << endl;
                     currentNodeIndex++;
                     currentNodeIndex %= 3;
                 }
             });
         }
+    }
 
-        // Let the clients get started.
+    void test()
+    {
+        // Verify the existing master is up.
+        tester = BedrockClusterTester::testers.front();
+        BedrockTester* master = tester->getBedrockTester(0);
+
+        int count = 0;
+        bool success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = master->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
+
+        // So here, we start with node 0 mastering.
+        // We then spin up a few threads that continually spam all three nodes with both read and write commands.
+        // These should complete locally or escalate to master as appropriate.
+        // We then shut down node 0. Node 1 will take over as master.
+        // All commands sent to Node 0 after this point should result in a "connection refused" error. This is fine.
+        // We verify that node 1 comes up as master.
+        // We then continue spamming for a few seconds and make sure every command returns either success, or
+        // connection refused.
+        // Then we bring Node 0 back up, and verify that it takes over as master. Send a few more commands.
+        //
+        // We should have sent hundreds of commands, and they all should have either succeeded, or been "connection
+        // refused".
+        //
+        // Thus concludes our test:
+        // TODO:
+        // https commands.
+        // Commands scheduled in the future, or waiting on future commits.
+        //
+
+        // Step 1: everything is already up and running. Let's start spamming.
+        list<thread> threads;
+        atomic<bool> done;
+        done.store(false);
+        map<string, int> counts;
+
+        atomic<int> commandID(10000);
+        mutex mu;
+        vector<list<SData>> allresults(60);
+        startClientThreads(threads, done, counts, commandID, mu, allresults);
+
+        // Let the clients get some activity going, we want everything to be busy.
         sleep(2);
 
         // Now our clients are spamming all our nodes. Shut down master.
-        cout << "======================================== node 0 is stopping." << endl;
         tester->stopNode(0);
 
         // Wait for node 1 to be master.
@@ -165,13 +158,11 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // make sure it actually succeeded.
         ASSERT_TRUE(success);
-        cout << "======================================== node 1 is mastering." << endl;
 
         // Let the spammers spam.
         sleep(3);
 
         // Bring master back up.
-        cout << "======================================== node 0 is starting." << endl;
         tester->startNode(0);
 
         count = 0;
@@ -189,37 +180,66 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
             sleep(1);
         }
 
-        cout << "======================================== node 0 is mastering." << endl;
+        // make sure it actually succeeded.
+        ASSERT_TRUE(success);
+
+        // We're done, let everything finish.
+        done.store(true);
+        for (auto& t : threads) {
+            t.join();
+        }
+        threads.clear();
+        counts.clear();
+        allresults.clear();
+        allresults.resize(60);
+        done.store(false);
+
+        // Verify everything was either a 202 or a 756.
+        for (auto& p : counts) {
+            ASSERT_TRUE(p.first == "202" || p.first == "756");
+            cout << "method: " << p.first << ", count: " << p.second << endl;
+        }
+        
+        // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
+        startClientThreads(threads, done, counts, commandID, mu, allresults);
+
+        // Wait for them to be busy.
+        sleep(2);
+
+        // Blow up master.
+        master = tester->getBedrockTester(0);
+        master->stopServer(SIGKILL);
+
+        // Wait for node 1 to be master.
+        newMaster = tester->getBedrockTester(1);
+        count = 0;
+        success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = newMaster->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
 
         // make sure it actually succeeded.
         ASSERT_TRUE(success);
 
-        // Great, it came back up.
+        // We're done, let everything finish.
         done.store(true);
-
-        int i = 0;
         for (auto& t : threads) {
-            cout << "joining " << (i++) << endl;
             t.join();
-            // TODO: Verify the results of our spamming.
         }
-
-        for (auto& p : counts) {
-            cout << "method: " << p.first << ", count: " << p.second << endl;
-        }
-        ASSERT_EQUAL(counts.size(), 2);
+        threads.clear();
+        counts.clear();
+        allresults.clear();
+        allresults.resize(60);
+        done.store(false);
     }
-
-    // At this point, let's kill -9 the master and see if the slave takes over gracefully. We can't expect that no
-    // commands fail in this case.
-    //
-    // Other things to check: Do timeouts on https requests actually work?
-    //
-    // The following cases have code added (but have not been tested) to support them:
-    // We should discard commands scheduled for future execution when shutting down (but not when standing down).
-    // Commands dependent on a future commit are weird. These should only be able to exist while slaving. What do we do
-    // if we shut down? Requeue them? Probably.
-    //
-    // It would be nice to set up clustertest to run in parallel, which should be possible now.
 
 } __l_GracefulFailoverTest;
