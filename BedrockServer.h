@@ -85,6 +85,12 @@ class BedrockServer : public SQLiteServer {
     // make sure any command that has ever been started gets completed before we finish standing down. Unfortunately,
     // once a command has been added to the main queue, there's no way of knowing whether it's ever been started
     // without inspecting every command in the queue, hence the `_standDownQueue`.
+    //
+    // NOTE: in both cases of shutting down or standing down, we discard any commands in the main queue that are
+    // scheduled to happen more than 5 seconds in the future. In the case that we're shutting down, there's nothing we
+    // can do about these, except not shut down. If we're standing down, we could keep them, but they break our
+    // checking against whether the main command queue is empty, and fall into the same category of us being unable to
+    // distinguish them from commands that may have already started.
 
     // Shutdown states.
     enum SHUTDOWN_STATE {
