@@ -198,6 +198,10 @@ void BedrockServer::sync(SData& args,
         }
 
         // If we're in a state where we can initialize shutdown, then go ahead and do so.
+        // Having responded to all clients means there are no *local* clients, but it doesn't mean there are no
+        // escalated commands. This is fine though - if we're slaving, there can't be any escalated commands, and if
+        // we're mastering, then the next update() loop will set us to standing down, and then we won't accept any new
+        // commands, and we'll shortly run through the existing queue.
         if (server._shutdownState.load() == CLIENTS_RESPONDED) {
             server._syncNode->beginShutdown();
         }

@@ -22,7 +22,6 @@ class TestServer : public SQLiteServer {
     virtual void acceptCommand(SQLiteCommand&& command, bool isNew) { }
     virtual void cancelCommand(const string& commandID) { }
     virtual bool canStandDown() { return true; }
-    virtual bool shuttingDown() { return false; }
     virtual void onNodeLogin(SQLiteNode::Peer* peer) { }
 };
 

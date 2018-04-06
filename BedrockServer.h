@@ -80,8 +80,6 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
-    bool shuttingDown() { return _shutdownState.load() != RUNNING; }
-
     // Exposes the replication state to plugins.
     SQLiteNode::State getState() const { return _replicationState.load(); }
 
