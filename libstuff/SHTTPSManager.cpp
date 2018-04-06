@@ -68,13 +68,13 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
 
     // Update each of the active requests
     uint64_t now = STimeNow();
+    uint64_t timeout = timeoutMS * 1000;
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
         uint64_t elapsed = now - active->created;
-        const uint64_t TIMEOUT = timeoutMS * 1000;
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
             // Consume how much we read.
@@ -94,9 +94,9 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
                 active->response = 500;
             }
-        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > TIMEOUT) {
+        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout) {
             // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > TIMEOUT ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
+            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
@@ -104,7 +104,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
-            nextActivity = min(nextActivity, active->created + TIMEOUT);
+            nextActivity = min(nextActivity, active->created + timeout);
         }
 
         // If we're done, remove from the active and add to completed

@@ -8,44 +8,85 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // There are two interesting cases for "shutting down" a BedrockServer. One is actually turning it off and the
-    // other is standing it down from master to slave. These have different control flows, but are both discussed here
-    // as they relate to one another.
+    // Shutting Down and Standing Down a BedrockServer. 
     //
-    // Let's start with actually shutting a server down. When a server comes up, it will be in a RUNNING state. This is
-    // the normal operating state and everything proceeds as normal. When we ask it to shutdown (typically by sending
-    // it a SIGINT), it will close it's command port, and set the shutdown state to START_SHUTDOWN.
-    // At this point, every time it replies to a command, it will add `Connection: close` to the response headers, and
-    // close the socket to the client after this response. Since it's no longer accepting new sockets on the command
-    // port, it will eventually close all client sockets as all pending commands are responded to. If the server is
-    // MASTER, it will start to reject escalated commands in this state as well, so as to eventually be able to empty
-    // all of it's queues. Those commands will be re-escalated to a new master once this one finishes shutting down.
-    // When `postPoll` runs after checking for network activity, if there are no client sockets left, and we are in
-    // the START_SHUTDOWN state, we will increment to CLIENTS_RESPONDED.
-    // The next `update` loop of the sync thread will notice we're at the CLIENTS_RESPONDED state, and it will begin
-    // shutting down the sync node itself. If it's mastering, it will stand down and allow another node to stand up.
-    // When the sync node finishes shutting down, it will set the state to DONE. Worker threads will notice this and
-    // return, and the sync thread will join them and the entire BedrockServer at that point is complete and can be
-    // destructed.
+    // # What's the difference between these two things?
+    // 
+    // Shutting down is pretty obvious - when we want to turn a server off, we shut it down. The shut down process
+    // tries to do this without interrupting any client requests.
+    // Standing down is a little less obvious. If we're the master node in a cluster, there are two ways to stand down.
+    // The first is that we are shutting down, in which case we'll need to let the rest of the cluster know that it
+    // will need to pick a new master. The other is if a higher-priority master asks to stand up in our place. In this
+    // second case, we'll stand down without shutting down.
     //
-    // Standing down is the other interesting case. Standing down only occurs if we were first mastering, and when
-    // shutting down, happens in between the CLIENTS_RESPONDED and DONE states. Standing down when shutting down is
-    // actually pretty straightforward, as we've already completed all outstanding commands and are rejecting any new
-    // ones, so there are no strange edge cases to handle.
-    // However, we stand down without shutting down when another, higher-priority master stands up, and we need to
-    // become a slave to it. In this case, we need to finish any commands that need to be run on master, but we don't
-    // need to finish *all* commands, we can process any commands that can run on a slave after we're done.
-    // Which commands need to be run on master? Any command that will do `processCommand`, including HTTPS commands.
-    // Also, any command that was escalated from another node to this one (because we don't do chained escalations).
     //
-    // When the syncNode informs us that we're standing down (it will be the object that notices another master wants
-    // to stand up), it will start rejecting escalated commands. We will also start putting new commands from local
-    // clients in to a temporary "stand down queue" of commands that won't be run until after we've stood down. These
-    // two changes limit us to running through the existing queue of commands to shut down. We need to run through this
-    // entire queue, because many of the commands in the queue will be empty.
-    // We then block standing down via the `canStandDown()` until our queues (except the "stand down queue") are empty,
-    // and no commands are in progress. A command is "in progress" from when it's removed from the queue until its
-    // response is sent. Commands escalated from workers to the sync thread are "in progress" until they complete.
+    // # Shutting Down
+    // Let's start with shutting down. Standing down is a subset of shutting down (when we start out mastering), and
+    // we'll get to that later.
+    //
+    // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
+    // server receives a SIGINT, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
+    // 
+    // 1. The command port is closed, and no new connections are accepted from clients.
+    // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
+    //    response is sent.
+    // 3. We set timeouts for any HTTPS commands to five seconds. Note that if we are slaving, this has no effect on
+    //    commands that were escalated to master, we continue waiting for those commands.
+    //
+    // The server then continues operating as normal until there are no client connections left (because we've stopped
+    // accepting them, and closed any connections as we responded to their commands), at which point it switches to
+    // CLIENTS_RESPONDED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
+    // was mastering, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
+    // next section.
+    //
+    // The sync node will continue STANDINGDOWN until two conditions are true:
+    // 
+    // 1. There are no commands in progress.
+    // 2. There are no outstanding queued commands.
+    //
+    // A "command in progress" is essentially any command that we have not completed but is not in our main command
+    // queue. We increment the count of these commands when we dequeue a command from the main queue, and decrememnt it
+    // when we respond to the command (and also in a few other exception cases where the command is abandoned or does
+    // not require a response). This means that if a command has been moved to the queue of outstanding HTTPS commands,
+    // or the sync thread queue, or is currently being handled by a worker, or escalated to master, it's "in progress".
+    //
+    // If we were not mastering, there is no STANDINGDOWN state to wait through - all of a slaves commands come from
+    // local clients, and once those connections are all closed, then that means every command has been responded to,
+    // implying that there are neither queued commands nor commands in progress.
+    //
+    // The sync node then finishes standing down, informing the other nodes in the cluster that it is now in the
+    // searching STATE. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
+    // The worker threads, when they find the main command queue empty, will check for the DONE state, and return. The
+    // sync thread can then complete and the server is shut down.
+    //
+    //
+    // # Standing Down
+    // Standing down when shutting down is covered in the above section, but there's an additional bit of work to do of
+    // we're standing down without shutting down. The main difference is that we are not waiting on all existing
+    // clients to be disconnected while we stand down - we will be able to service these same clients as a slave as
+    // soon as we finish this operation. However, we still have the same criteria for STANDINGDOWN as listed above, no
+    // commands in progress, and an empty command queue.
+    //
+    // When a node switches to STANDINGDOWN, it starts rejecting escalated commands from peers. This allows it to run
+    // through its current list of pending escalated commands and finish them all (this is true whether we're shutting
+    // down or not, and it's why shutting down is able to complete the entire queue of commands without it potentially
+    // adding new commands that keep it from ever emptying). However, this doesn't keep new commands that arrive
+    // locally from being added to main queue. This could potentially keep us from ever finishing the queue. So, when
+    // we are in a STANDINGDOWN state, any new commands from local clients are inserted into a temporary
+    // `_standDownQueue` instead of the main queue. As soon as STANDINGDOWN completes, these commands will be moved
+    // back to the main queue.
+    //
+    // The reason we have to wait for the main queue to be empty *and* no commands to be in progress when standing
+    // down, is because of the way certain commands can move between queues. For instance, a command that has a pending
+    // HTTPS transaction is "in progress" until the transaction completes, butt hen re-queued for processing by a
+    // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
+    // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
+    // down, then we'd try and run processCommand() while slaving, which would be invalid. For this reason, we need to
+    // make sure any command that has ever been started gets completed before we finish standing down. Unfortunately,
+    // once a command has been added to the main queue, there's no way of knowing whether it's ever been started
+    // without inspecting every command in the queue, hence the `_standDownQueue`.
+
+    // Shutdown states.
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
@@ -68,14 +109,22 @@ class BedrockServer : public SQLiteServer {
     virtual ~BedrockServer();
 
     // Accept an incoming command from an SQLiteNode.
-    // SQLiteNode API.
     // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
-    // being returned to the command queue.
-    void acceptCommand(SQLiteCommand&& command, bool isNew);
+    // being returned to the command queue (such as one that was previously escalated).
+    // SQLiteNode API.
+    void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
     // Cancel a command.
     // SQLiteNode API.
     void cancelCommand(const string& commandID);
+
+    // Flush the send buffers
+    // STCPNode API.
+    void prePoll(fd_map& fdm);
+
+    // Accept connections and dispatch requests
+    // STCPNode API.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
@@ -83,16 +132,8 @@ class BedrockServer : public SQLiteServer {
     // Exposes the replication state to plugins.
     SQLiteNode::State getState() const { return _replicationState.load(); }
 
-    // Flush the send buffers
-    // STCPNode API.
-    void prePoll(fd_map& fdm);
-
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
-
-    // Accept connections and dispatch requests
-    // STCPNode API.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
     // in which case the `suppress` setting will be forced.
@@ -127,7 +168,7 @@ class BedrockServer : public SQLiteServer {
 
     // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
     // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
-    // open.
+    // open. It will be re-inserted in this set when another command is read from it.
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
@@ -274,9 +315,22 @@ class BedrockServer : public SQLiteServer {
     bool _backupOnShutdown;
     bool _detach;
 
-    // Pointer to the control port, so we know which port not to shut down when we close the command ports.
+    // Pointers to the ports on which we accept commands.
     Port* _controlPort;
     Port* _commandPort;
+
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their HTTPS requests finish and move them back to the main queue.
+    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+    mutex _httpsCommandMutex;
+
+    // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
+    void _finishPeerCommand(BedrockCommand& command);
+
+    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
+    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
+    // endless loop of always having new unfinished commands.
+    CommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
@@ -300,16 +354,4 @@ class BedrockServer : public SQLiteServer {
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
-
-    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
-    // their https requests finish and move them back to the main queue.
-    mutex _httpsCommandMutex;
-    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
-
-    void _finishPeerCommand(BedrockCommand& command);
-
-    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
-    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
-    // endless loop of always having new unfinished commands.
-    CommandQueue _standDownQueue;
 };

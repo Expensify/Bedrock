@@ -1263,8 +1263,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 // If nothing's been received, break early.
                 if (s->recvBuffer.empty()) {
-                    if (_shutdownState.load() == DONE && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                        SWARN("Closing socket " << s->id << " with no data because shutting down.");
+                    if (_shutdownState.load() != RUNNING && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
                         socketsToClose.push_back(s);
                     } else {
                         break;

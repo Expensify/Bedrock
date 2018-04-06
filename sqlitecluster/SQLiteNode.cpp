@@ -1612,9 +1612,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         if (_state != MASTERING) {
             // Reject escalation because we're no longer mastering
+            if (_state != STANDINGDOWN) {
+                // Don't warn if we're standing down, this is expected.
+                PWARN("Received ESCALATE but not MASTERING or STANDINGDOWN, aborting.");
+            }
             SData aborted("ESCALATE_ABORTED");
             aborted["ID"] = message["ID"];
-            aborted["Reason"] = (_state == MASTERING) ? "not mastering" : "shutting down";
+            aborted["Reason"] = "not mastering";
             _sendToPeer(peer, aborted);
         } else {
             // We're mastering, make sure the rest checks out

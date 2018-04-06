@@ -34,7 +34,7 @@ class BedrockCommandQueue {
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
 
-    // Discards all commands more than msInFuture milliseconds after right now.
+    // Discards all commands scheduled more than msInFuture milliseconds after right now.
     void abandonFutureCommands(int msInFuture);
 
   private:

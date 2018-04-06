@@ -92,6 +92,8 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     _queueCondition.notify_one();
 }
 
+// This function currently never gets called. It's actually completely untested, so if you ever make any changes that
+// cause it to actually get called, you'll want to do that testing.
 bool BedrockCommandQueue::removeByID(const string& id) {
     SAUTOLOCK(_queueMutex);
     bool retVal = false;
