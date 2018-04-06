@@ -84,19 +84,18 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-    void test()
-    {
-        // Verify the existing master is up.
-        tester = BedrockClusterTester::testers.front();
-        BedrockTester* master = tester->getBedrockTester(0);
-
+    bool waitFor(bool start, int nodeNumber, string state) {
+        BedrockTester* node = tester->getBedrockTester(nodeNumber);
+        if (start) {
+            tester->startNode(nodeNumber);
+        }
         int count = 0;
-        bool success = false;
+        int success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
+            string response = node->executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
+            if (json["state"] == state) {
                 success = true;
                 break;
             }
@@ -104,6 +103,29 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
             // Give it another second...
             sleep(1);
         }
+        return success;
+    }
+
+    string getProp(int nodeNumber, string propName) {
+        BedrockTester* node = tester->getBedrockTester(nodeNumber);
+        int count = 0;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = node->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            return json[propName];
+
+            // Give it another second...
+            sleep(1);
+        }
+        return "";
+    }
+
+    void test() {
+        // Verify the existing master is up.
+        tester = BedrockClusterTester::testers.front();
+
+        ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread> threads;
@@ -123,50 +145,38 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         tester->stopNode(0);
 
         // Wait for node 1 to be master.
-        BedrockTester* newMaster = tester->getBedrockTester(1);
-        count = 0;
-        success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response = newMaster->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
+        ASSERT_TRUE(waitFor(false, 1, "MASTERING"));
 
-            // Give it another second...
-            sleep(1);
-        }
-
-        // make sure it actually succeeded.
-        ASSERT_TRUE(success);
-
-        // Let the spammers spam.
+        // Let the spammers keep spamming on the new master.
         sleep(3);
 
         // Bring master back up.
-        tester->startNode(0);
+        ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
 
-        count = 0;
-        success = false;
+        // Now let's  stop a slave and make sure everything keeps working.
+        tester->stopNode(2);
+
+        // Wait for master to think the slave is down.
+        int count = 0;
+        bool success = false;
         while (count++ < 50) {
-            SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
+            string peerList = getProp(0, "peerList");
+            list<string> peers = SParseJSONArray(peerList);
+            for (auto& peer : peers) {
+                STable peerInfo = SParseJSONObject(peer);
+                if (peerInfo["name"] == "brcluster_node_2" && peerInfo["State"] == "") {
+                    // It's off. We can start it back up.
+                    success = true;
+                    break;
+                }
             }
-
-            // Give it another second...
-            sleep(1);
         }
-
-        // make sure it actually succeeded.
         ASSERT_TRUE(success);
 
-        // We're done, let everything finish.
+        // And bring it back up.
+        ASSERT_TRUE(waitFor(true, 2, "SLAVING"));
+
+        // We're done, let spammers finish.
         done.store(true);
         for (auto& t : threads) {
             t.join();
@@ -190,53 +200,24 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up master.
-        master = tester->getBedrockTester(0);
-        master->stopServer(SIGKILL);
+        tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be master.
-        newMaster = tester->getBedrockTester(1);
-        count = 0;
-        success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response = newMaster->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
+        ASSERT_TRUE(waitFor(false, 1, "MASTERING"));
 
-            // Give it another second...
-            sleep(1);
-        }
-
-        // make sure it actually succeeded.
-        ASSERT_TRUE(success);
-
-        // Now bring master back up. We do this so we can watch at shutdown and see that everything shuts
-        // down gracefully and nothing was left in any weird state after being disconnected.
+        // Now bring master back up.
         sleep(2);
-        tester->startNode(0);
+        ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
 
-        count = 0;
-        success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
+        // Blow up a slave.
+        sleep(2);
+        tester->getBedrockTester(2)->stopServer(SIGKILL);
 
-            // Give it another second...
-            sleep(1);
-        }
+        // And bring it back up.
+        sleep(2);
+        ASSERT_TRUE(waitFor(false, 2, "SLAVING"));
 
-        // make sure it actually succeeded.
-        ASSERT_TRUE(success);
-
-        // We're done, let everything finish.
+        // We're really done, let everything finish a last time.
         done.store(true);
         for (auto& t : threads) {
             t.join();
