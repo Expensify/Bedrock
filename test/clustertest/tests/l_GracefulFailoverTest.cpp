@@ -215,7 +215,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // And bring it back up.
         sleep(2);
-        ASSERT_TRUE(waitFor(false, 2, "SLAVING"));
+        ASSERT_TRUE(waitFor(true, 2, "SLAVING"));
 
         // We're really done, let everything finish a last time.
         done.store(true);
