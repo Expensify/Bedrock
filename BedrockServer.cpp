@@ -1247,6 +1247,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
 
+    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
+    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
+    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
+    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
+    static uint64_t lastChance = 0;
     for (auto s : socketList) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
@@ -1261,14 +1266,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case STCPManager::Socket::CONNECTED:
             {
-                // If nothing's been received, break early.
-                if (s->recvBuffer.empty()) {
-                    if (_shutdownState.load() != RUNNING && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                        socketsToClose.push_back(s);
-                    } else {
-                        break;
-                    }
+                // If we're shutting down and past our lastChance timeout, we start killing these.
+                if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                    SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                    socketsToClose.push_back(s);
+                } else if (s->recvBuffer.empty()) {
+                    // If nothing's been received, break early.
+                    break;
                 } else {
                     // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
                     // pipelining requests well. We process commands in no particular order, so we can't dequeue two
@@ -1402,10 +1406,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we've begun shutting down, and we either hit the timeout, or we have no clients left, then we can increment
-    // our shutdown state.
-    if (_shutdownState.load() == START_SHUTDOWN && (_gracefulShutdownTimeout.ringing() || socketList.empty())) {
-        _shutdownState.store(CLIENTS_RESPONDED);
+    // If we've been told to start down, we'll set the lastChance timer.
+    if (_shutdownState.load() == START_SHUTDOWN) {
+        if (!lastChance) {
+            lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
+        }
+        // If we've run out of sockets or hit a timeout, we'll increment _shutdownState.
+        if ((lastChance && lastChance < STimeNow()) || _gracefulShutdownTimeout.ringing() || socketList.empty()) {
+            lastChance = 0;
+            _shutdownState.store(CLIENTS_RESPONDED);
+        }
     }
 }
 
