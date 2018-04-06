@@ -182,7 +182,7 @@ void BedrockServer::sync(SData& args,
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
                 auto& eraseTo = it;
-                while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState != RUNNING)) {
+                while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState.load() != RUNNING)) {
                     SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
@@ -1322,7 +1322,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         s->send(response.serialize());
 
                         // If we're shutting down, discard this command, we won't wait for the future.
-                        if (_shutdownState != RUNNING) {
+                        if (_shutdownState.load() != RUNNING) {
                             SINFO("Not queuing future command '" << request.methodLine << "' while shutting down.");
                             break;
                         }
