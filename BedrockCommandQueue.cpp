@@ -22,6 +22,11 @@ size_t BedrockCommandQueue::size()  {
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
+    atomic<int> temp;
+    return getSynchronized(timeoutUS, temp);
+}
+
+BedrockCommand BedrockCommandQueue::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -36,7 +41,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 
     // If there's already work in the queue, just return some.
     try {
-        return _dequeue();
+        return _dequeue(incrementBeforeDequeue);
     } catch (const out_of_range& e) {
         // Nothing available.
     }
@@ -50,7 +55,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
             
             // If we got any work, return it.
             try {
-                return _dequeue();
+                return _dequeue(incrementBeforeDequeue);
             } catch (const out_of_range& e) {
                 // Still nothing available.
             }
@@ -65,7 +70,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
         while (true) {
             _queueCondition.wait(queueLock);
             try {
-                return _dequeue();
+                return _dequeue(incrementBeforeDequeue);
             } catch (const out_of_range& e) {
                 // Nothing yet, loop again.
             }
@@ -155,7 +160,7 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
     }
 }
 
-BedrockCommand BedrockCommandQueue::_dequeue() {
+BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue) {
     // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).
@@ -172,6 +177,10 @@ BedrockCommand BedrockCommandQueue::_dequeue() {
         if (commandMapIt->first <= now) {
             // Pull out the command we want to return.
             BedrockCommand command = move(commandMapIt->second);
+
+            // Make sure we increment this counter before we actually dequeue, so this commands will never be not in
+            // the queue and also not counted by the counter.
+            incrementBeforeDequeue++;
 
             // And delete the entry in the queue.
             queueMapIt->second.erase(commandMapIt);

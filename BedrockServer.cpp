@@ -576,10 +576,11 @@ void BedrockServer::worker(SData& args,
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
         try {
-            // If we can't find any work to do, this will throw.
-            command = server._commandQueue.get(1000000);
-            // TODO: Race condition here.
-            server._commandsInProgress++;
+            // If we can't find any work to do, this will throw. If we can, this will increment _commandsInProgress for
+            // us before returning the command that it is dequeuing. We don't update _commandsInProgress before calling
+            // this, as it can spend up to a second finding out that there is no command to dequeue, which makes our
+            // count wrong while we wait.
+            command = server._commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
             // If we dequeue a status or control command, handle it immediately.
             if (server._handleIfStatusOrControlCommand(command)) {
