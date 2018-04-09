@@ -33,7 +33,7 @@ class SHTTPSManager : public STCPManager {
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
 
-    int getHTTPResponseCode(const string& methodLine);
+    static int getHTTPResponseCode(const string& methodLine);
 
   protected: // Child API
 
