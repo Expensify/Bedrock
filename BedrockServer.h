@@ -325,10 +325,21 @@ class BedrockServer : public SQLiteServer {
     Port* _controlPort;
     Port* _commandPort;
 
-    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
-    // their HTTPS requests finish and move them back to the main queue.
-    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+    // This is a map of all of our outstanding HTTPS requests to their commands, which are stored in the next list.
+    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
+
+    // This contains all of the command that the previous list points at. This allows us to keep only a single copy of
+    // each command, even if it has multiple requests.
+    set<BedrockCommand*> _outstandingHTTPSCommands;
     mutex _httpsCommandMutex;
+
+    // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
+    // requests are complete.
+    void waitForHTTPS(BedrockCommand&& command);
+
+    // Takes a list of completed HTTPS requests, and move those commands back to the main queue (as long as they don't
+    // have any other incomplete requests).
+    int finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests);
 
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
     void _finishPeerCommand(BedrockCommand& command);

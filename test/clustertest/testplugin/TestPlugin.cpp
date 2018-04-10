@@ -23,7 +23,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
     // Always blacklist on userID.
     command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
-    SASSERT(!command.httpsRequest);
+    SASSERT(!command.httpsRequests.size());
     if (SStartsWith(command.request.methodLine,"testcommand")) {
         if (!command.request["response"].empty()) {
             command.response.methodLine = command.request["response"];
@@ -40,7 +40,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
-        command.httpsRequest = httpsManager.send("https://www.google.com/", request);
+        command.httpsRequests.push_back(httpsManager.send("https://www.google.com/", request));
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
         int size = 100000000;
@@ -66,7 +66,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         request["Host"] = "www.google.com";
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
-        command.httpsRequest = transaction;
+        command.httpsRequests.push_back(transaction);
         thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
     } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
         throw 1;
@@ -84,16 +84,16 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         usleep(command.request.calc("ProcessSleep") * 1000);
     }
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (command.httpsRequest) {
+        if (command.httpsRequests.size()) {
             // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(command.httpsRequest->response);
-            command.response.methodLine = to_string(command.httpsRequest->response);
+            SASSERT(command.httpsRequests.front()->response);
+            command.response.methodLine = to_string(command.httpsRequests.front()->response);
             // return the number of times we made an HTTPS request on this command.
             int tries = SToInt(command.request["httpsRequests"]);
             if (tries != 1) {
                 STHROW("500 Retried HTTPS request!");
             }
-            command.response.content = " " + command.httpsRequest->fullResponse.content;
+            command.response.content = " " + command.httpsRequests.front()->fullResponse.content;
 
             // Update the DB so we can test conflicts.
             SQResult result;
@@ -106,7 +106,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             SINFO ("Calling process with no https request: " << command.request.methodLine);
             SASSERT(false);
         }
-        if (!command.request["response"].empty() && command.httpsRequest->response < 400) {
+        if (!command.request["response"].empty() && command.httpsRequests.front()->response < 400) {
             command.response.methodLine = command.request["response"];
         }
         return true;

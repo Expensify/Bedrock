@@ -29,7 +29,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
         // Send one request to verify that it works.
         BedrockTester* brtester = tester->getBedrockTester(0);
 
-        SData request("sendrequest");
+        SData request("sendrequest a");
         auto result = brtester->executeWaitVerifyContent(request);
         ASSERT_TRUE(result.size() > 10);
 
@@ -50,7 +50,7 @@ struct f_HTTPSTest : tpunit::TestFixture {
                 for (int j = 0; j < 200; j++) {
                     if (i == 0 && (j % nthHasRequest == 0)) {
                         // They should throw all sorts of errors if they repeat HTTPS requests.
-                        SData request("sendrequest");
+                        SData request("sendrequest b");
                         request["writeConsistency"] = "ASYNC";
                         requests.push_back(request);
                     } else {

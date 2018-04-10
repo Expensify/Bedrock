@@ -428,7 +428,7 @@ void BedrockServer::sync(SData& args,
                 // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
-                if (!command.httpsRequest) {
+                if (!command.httpsRequests.size()) {
                     if (core.peekCommand(command)) {
 
                         // Finished with this.
@@ -446,10 +446,8 @@ void BedrockServer::sync(SData& args,
                     }
 
                     // If we just started a new HTTPS request, save it for later.
-                    if (command.httpsRequest) {
-                        // Save this in our https commads queue.
-                        lock_guard<mutex> lock(server._httpsCommandMutex);
-                        server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+                    if (command.httpsRequests.size()) {
+                        server.waitForHTTPS(move(command));
 
                         // Move on to the next command until this one finishes.
                         core.rollback();
@@ -726,7 +724,7 @@ void BedrockServer::worker(SData& args,
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
                 bool peekResult = false;
-                if (!command.httpsRequest) {
+                if (!command.httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
@@ -735,7 +733,7 @@ void BedrockServer::worker(SData& args,
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
-                    if (command.httpsRequest) {
+                    if (command.httpsRequests.size()) {
                         // This *should* be impossible, but previous bugs have existed where it's feasible that we call
                         // `peekCommand` while mastering, and by the time we're done, we're SLAVING, so we check just
                         // in case we ever introduce another similar bug.
@@ -750,20 +748,14 @@ void BedrockServer::worker(SData& args,
                         }
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
-                        if (!command.httpsRequest->response) {
+                        if (!command.httpsRequestsAreComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
                             }
 
-                            // We're not handling a writable command anymore (at the moment). We need to make sure we
-                            // don't shut down without checking for outstanding HTTPS commands.
-                            lock_guard<mutex> lock(server._httpsCommandMutex);
-                            SINFO("[performance] Waiting on HTTPS response " << command.request.methodLine
-                                  << ", " << server._outstandingHTTPSRequests.size() << " queued HTTPS commands.");
-
-                            // Save this in our https commads queue.
-                            server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+                            // We'll save this command until any HTTPS requests finish.
+                            server.waitForHTTPS(move(command));
 
                             // Move on to the next command until this one finishes.
                             break;
@@ -1753,18 +1745,9 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
             }
 
-            // Move these back to the main queue to finish.
-            lock_guard<mutex> lock(_httpsCommandMutex);
-            for (auto request : completedHTTPSRequests) {
-                auto pairIt = _outstandingHTTPSRequests.find(request);
-                if (pairIt != _outstandingHTTPSRequests.end()) {
-                    _commandQueue.push(move(pairIt->second));
-                    _commandsInProgress--;
-                    _outstandingHTTPSRequests.erase(pairIt);
-                } else {
-                    SWARN("HTTPS request said it completed, but we can't find it.");
-                }
-            }
+            // Move any fully completed commands back to the main queue, and decrement the number of commands in
+            // progress to match.
+            _commandsInProgress.fetch_sub(finishWaitingForHTTPS(completedHTTPSRequests));
         }
     }
 }
@@ -1873,3 +1856,46 @@ void BedrockServer::_acceptSockets() {
     }
 }
 
+void BedrockServer::waitForHTTPS(BedrockCommand&& command) {
+    lock_guard<mutex> lock(_httpsCommandMutex);
+
+    // Create a new BedrockCommand on the head via moving from our existing command. This is the one we'll store.
+    BedrockCommand* commandPtr = new BedrockCommand(move(command));
+
+    // And we keep it in a set of all commands with outstanding HTTPS requests.
+    _outstandingHTTPSCommands.insert(commandPtr);
+
+    // Insert each request pointing at the given object.
+    for (auto request : commandPtr->httpsRequests) {
+        _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+    }
+}
+
+int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests) {
+    lock_guard<mutex> lock(_httpsCommandMutex);
+    int commandsCompleted = 0;
+    for (auto transaction : completedHTTPSRequests) {
+        // We assume this is found, we should never be looking for a transaction in this list that isn't there.
+        auto transactionIt = _outstandingHTTPSRequests.find(transaction);
+        auto commandPtr = transactionIt->second;
+
+        // It's possible that we've already completed this command (imagine if completedHTTPSRequests contained more
+        // than one request for the same command, the first one we looked at will have finished the command), so if we
+        // can't find it in _outstandingHTTPSCommands, it must be done.
+        auto commandPtrIt = _outstandingHTTPSCommands.find(commandPtr);
+        if (commandPtrIt != _outstandingHTTPSCommands.end()) {
+            // I guess it's still here! Is it done?
+            if (commandPtr->httpsRequestsAreComplete()) {
+                // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
+                _commandQueue.push(move(*commandPtr));
+                _outstandingHTTPSCommands.erase(commandPtrIt);
+                delete commandPtr;
+                commandsCompleted++;
+            }
+        }
+        
+        // Now we can erase the transaction, as it's no longer outstanding.
+        _outstandingHTTPSRequests.erase(transactionIt);
+    }
+    return commandsCompleted;
+}
