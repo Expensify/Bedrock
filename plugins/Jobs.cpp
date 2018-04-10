@@ -216,7 +216,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         for (auto& job : jsonJobs) {
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -372,7 +372,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -381,7 +381,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - data  - A JSON object describing work to be done (optional)
         //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //     - repeat - A description of how to repeat (optional)
-        //     - priority - High priorities go first (optional, default 500)
+        //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
         //     - parentJobID - The ID of the parent job (optional)
@@ -400,7 +400,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //          - data  - A JSON object describing work to be done (optional)
         //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //          - repeat - A description of how to repeat (optional)
-        //          - priority - High priorities go first (optional, default 500)
+        //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
         //          - parentJobID - The ID of the parent job (optional)
@@ -502,7 +502,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to

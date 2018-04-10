@@ -13,7 +13,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "'");
+    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
     command.peekCount++;
     uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
