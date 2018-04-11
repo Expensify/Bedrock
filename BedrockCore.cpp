@@ -13,7 +13,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "'");
+    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
     command.peekCount++;
     uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
@@ -24,6 +24,10 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
         bool pluginPeeked = false;
+
+        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+        bool shouldSuppressTimeoutWarnings = false;
+
         try {
             if (!_db.beginConcurrentTransaction()) {
                 STHROW("501 Failed to begin concurrent transaction");
@@ -34,6 +38,8 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
             // Try each plugin, and go with the first one that says it succeeded.
             for (auto plugin : _server.plugins) {
+                shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
+
                 // Try to peek the command.
                     if (plugin->peekCommand(_db, command)) {
                         SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
@@ -42,7 +48,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                     }
             }
         } catch (const SQLite::timeout_error& e) {
-            SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            if (!shouldSuppressTimeoutWarnings) {
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+            }
             STHROW("555 Timeout peeking command");
         }
 
@@ -83,7 +91,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         _handleCommandException(command, e);
     } catch (...) {
         _db.read("PRAGMA query_only = false;");
-        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << request.methodLine);
         command.response.methodLine = "500 Unhandled Exception";
     }
 
@@ -177,7 +185,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         _db.rollback();
         needsCommit = false;
     } catch(...) {
-        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << request.methodLine);
         command.response.methodLine = "500 Unhandled Exception";
         _db.rollback();
         needsCommit = false;
@@ -195,8 +203,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
 }
 
 void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
-    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
-                        command.request.serialize();
+    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring.";
     if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);
     } else if (SContains(e.what(), "_WARN_")) {

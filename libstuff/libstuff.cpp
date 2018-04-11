@@ -2206,7 +2206,10 @@ string SHashSHA1(const string& buffer) {
 }
 
 string SHashSHA256(const string& buffer) {
+<<<<<<< HEAD
     // Just add and return
+=======
+>>>>>>> 26cdd2af509dcec6f5e054499cec4be6774e3c17
     string result;
     result.resize(32);
     mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);

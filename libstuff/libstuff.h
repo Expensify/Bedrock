@@ -667,7 +667,7 @@ inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << 
 
 // map of FDs to pollfds
 typedef map<int, pollfd> fd_map;
-#define SREADEVTS (POLLIN | POLLPRI)
+#define SREADEVTS (POLLIN | POLLPRI | POLLHUP)
 #define SWRITEEVTS (POLLOUT)
 
 // This will add the events specified in `evts` to the events we'll listen for for this socket,

@@ -9,22 +9,20 @@
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
-    if (!db.verifyTable("jobs", "CREATE TABLE jobs ( "
-                                   "created     TIMESTAMP NOT NULL, "
-                                   "jobID       INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
-                                   "state       TEXT NOT NULL, "
-                                   "name        TEXT NOT NULL, "
-                                   "nextRun     TIMESTAMP NOT NULL, "
-                                   "lastRun     TIMESTAMP, "
-                                   "repeat      TEXT NOT NULL, "
-                                   "data        TEXT NOT NULL, "
-                                   "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
-                                   "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter  TEXT NOT NULL DEFAULT \"\" )",
-                        ignore))
-    {
-        SASSERT(db.write("ALTER TABLE jobs ADD COLUMN retryAfter TEXT NOT NULL DEFAULT \"\";"));
-    }
+    SASSERT(db.verifyTable("jobs",
+                           "CREATE TABLE jobs ( "
+                               "created     TIMESTAMP NOT NULL, "
+                               "jobID       INTEGER NOT NULL PRIMARY KEY, "
+                               "state       TEXT NOT NULL, "
+                               "name        TEXT NOT NULL, "
+                               "nextRun     TIMESTAMP NOT NULL, "
+                               "lastRun     TIMESTAMP, "
+                               "repeat      TEXT NOT NULL, "
+                               "data        TEXT NOT NULL, "
+                               "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                               "parentJobID INTEGER NOT NULL DEFAULT 0, "
+                               "retryAfter  TEXT NOT NULL DEFAULT \"\")",
+                           ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
@@ -38,6 +36,13 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // This index is used to optimize the Bedrock::Jobs::GetJob call.
     SASSERT(db.write(
         "CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
+
+    if (!lastJobID) {
+        SQResult nextIDResult;
+        db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
+        lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
+        SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
+    }
 }
 
 // ==========================================================================
@@ -196,7 +201,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         for (auto& job : jsonJobs) {
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -352,7 +357,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -361,7 +366,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - data  - A JSON object describing work to be done (optional)
         //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //     - repeat - A description of how to repeat (optional)
-        //     - priority - High priorities go first (optional, default 500)
+        //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
         //     - parentJobID - The ID of the parent job (optional)
@@ -380,7 +385,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //          - data  - A JSON object describing work to be done (optional)
         //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //          - repeat - A description of how to repeat (optional)
-        //          - priority - High priorities go first (optional, default 500)
+        //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
         //          - parentJobID - The ID of the parent job (optional)
@@ -482,7 +487,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -553,9 +558,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
-                // Create this new job
-                if (!db.writeIdempotent("INSERT INTO jobs ( created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                // Create this new job with a new generated ID
+                const int jobIDToUse = ++lastJobID;
+                SINFO("Next jobID to be used" << jobIDToUse);
+                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
+                            SQ(jobIDToUse) + ", " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
@@ -570,21 +578,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     STHROW("502 insert query failed");
                 }
 
-                // Return the new jobID
-                const int64_t lastInsertRowID = db.getLastInsertRowID();
-                const int64_t maxJobID = SToInt64(db.read("SELECT MAX(jobID) FROM jobs;"));
-                if (lastInsertRowID != maxJobID) {
-                    SALERT("We might be returning the wrong jobID maxJobID=" << maxJobID
-                                                                             << " lastInsertRowID=" << lastInsertRowID);
-                }
-
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(lastInsertRowID);
+                    content["jobID"] = SToStr(jobIDToUse);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(lastInsertRowID));
+                jobIDs.push_back(SToStr(jobIDToUse));
             }
         }
 
