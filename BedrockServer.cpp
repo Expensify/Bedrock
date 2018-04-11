@@ -576,17 +576,20 @@ void BedrockServer::worker(SData& args,
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
         try {
+            // Set a signal handler function that we can call even if we die early with no command.
+            SSetSignalHandlerDieFunc([&](){
+                SWARN("Die function called early with no command, probably died in `getSynchronized`.");
+            });
+
             // If we can't find any work to do, this will throw. If we can, this will increment _commandsInProgress for
             // us before returning the command that it is dequeuing. We don't update _commandsInProgress before calling
             // this, as it can spend up to a second finding out that there is no command to dequeue, which makes our
             // count wrong while we wait.
             command = server._commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
-            // If we dequeue a status or control command, handle it immediately.
-            if (server._handleIfStatusOrControlCommand(command)) {
-                server._commandsInProgress--;
-                continue;
-            }
+            SAUTOPREFIX(command.request["requestID"]);
+            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
+                  << server._commandQueue.size() << " commands in queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -594,6 +597,12 @@ void BedrockServer::worker(SData& args,
             SSetSignalHandlerDieFunc([&](){
                 server._syncNode->broadcast(_generateCrashMessage(&command));
             });
+
+            // If we dequeue a status or control command, handle it immediately.
+            if (server._handleIfStatusOrControlCommand(command)) {
+                server._commandsInProgress--;
+                continue;
+            }
 
             // Check if this command would be likely to cause a crash
             if (server._wouldCrash(command)) {
@@ -617,10 +626,6 @@ void BedrockServer::worker(SData& args,
                 // Move on to the next command.
                 continue;
             }
-
-            SAUTOPREFIX(command.request["requestID"]);
-            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
-                  << server._commandQueue.size() << " commands in queue.");
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (upgradeInProgress.load() ||
