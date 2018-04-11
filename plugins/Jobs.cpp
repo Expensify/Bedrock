@@ -574,11 +574,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                lastJobID++;
-                SINFO("Next jobID to be used" << lastJobID);
+                const int jobIDToUse = ++lastJobID;
+                SINFO("Next jobID to be used" << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
-                            SQ(lastJobID) + ", " +
+                            SQ(jobIDToUse) + ", " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
@@ -594,12 +594,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(lastJobID);
+                    content["jobID"] = SToStr(jobIDToUse);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(lastJobID));
+                jobIDs.push_back(SToStr(jobIDToUse));
             }
         }
 
