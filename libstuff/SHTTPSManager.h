@@ -49,7 +49,6 @@ class SHTTPSManager : public STCPManager {
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction) = 0;
 
-    SX509* _x509;
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
 
