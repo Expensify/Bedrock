@@ -68,11 +68,11 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
         {"-controlPort",      "localhost:19999"},
         {"-priority",         "200"},
         {"-plugins",          "db"},
-        {"-readThreads",      "8"},
+        {"-workerThreads",    "8"},
         {"-maxJournalSize",   "25000"},
         {"-v",                ""},
         {"-quorumCheckpoint", "50"},
-        {"-parallelCommands", "Query,idcollision"},
+        {"-enableMultiWrite", "true"},
         {"-cacheSize",        "1000"},
     };
 
@@ -179,7 +179,8 @@ string BedrockTester::startServer(bool dontWait) {
                     usleep(100000); // 0.1 seconds.
                     continue;
                 }
-                close(socket);
+                ::shutdown(socket, SHUT_RDWR);
+                ::close(socket);
                 needSocket = false;
             }
 
@@ -197,11 +198,13 @@ string BedrockTester::startServer(bool dontWait) {
     return "";
 }
 
-void BedrockTester::stopServer() {
-    kill(_serverPID, SIGINT);
-    int status;
-    waitpid(_serverPID, &status, 0);
-    _serverPID = 0;
+void BedrockTester::stopServer(int signal) {
+    if (_serverPID) {
+        kill(_serverPID, signal);
+        int status;
+        waitpid(_serverPID, &status, 0);
+        _serverPID = 0;
+    }
 }
 
 string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
@@ -223,7 +226,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -242,8 +245,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
         threads.emplace_back([&, i](){
 
             // Create a socket.
-            int socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+            int socket = 0;
+
+            int socketSendCount = 0;
             while (true) {
+                if (socket <= 0) {
+                    socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+                    socketSendCount = 0;
+                }
                 size_t myIndex = 0;
                 SData myRequest;
                 {
@@ -268,6 +277,9 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     SAUTOLOCK(listLock);
                     SData responseData("002 Socket Failed");
                     results[myIndex] = move(responseData);
+                    if (returnOnDisconnect) {
+                        return;
+                    }
                     continue;
                 }
 
@@ -276,13 +288,13 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         myRequest["mockRequest"] = "true";
                     }
 
-                    // We've released our lock so other threads can dequeue stuff now.
                     // Send some stuff on our socket.
                     string sendBuffer = myRequest.serialize();
-                    // Send our data.
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
+                        socketSendCount++;
                         if (!result) {
+                            cout << "Failed to send! Probably disconnected." << endl;
                             break;
                         }
                     }
@@ -292,24 +304,36 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     string methodLine, content;
                     STable headers;
                     int timeouts = 0;
+                    int count = 0;
                     while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                         // Poll the socket, so we get a timeout.
                         pollfd readSock;
                         readSock.fd = socket;
-                        readSock.events = POLLIN;
+                        readSock.events = POLLIN | POLLHUP;
                         readSock.revents = 0;
 
                         // wait for a second...
                         poll(&readSock, 1, 1000);
+                        count++;
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
+                                sockaddr_in addr = {0};
+                                socklen_t size = 0;
+                                getsockname(socket, (sockaddr*)&addr, &size);
+                                ::shutdown(socket, SHUT_RDWR);
+                                ::close(socket);
+                                socket = -1;
                                 break;
                             }
+                        } else if (readSock.revents & POLLHUP) {
+                            ::shutdown(socket, SHUT_RDWR);
+                            ::close(socket);
+                            socket = -1;
+                            break;
                         } else {
                             timeouts++;
                             if (timeouts == 600) {
-                                cout << "Thread " << i << ". Too many timeouts! Giving up on: " << myRequest.methodLine << endl;
                                 break;
                             }
                         }
@@ -332,14 +356,25 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             responseData.nameValueMap = headers;
                             responseData.methodLine = methodLine;
                             responseData.content = content;
+
                             if (!mockCount) {
                                 results[myIndex] = move(responseData);
+                            }
+
+                            if (headers["Connection"] == "close") {
+                                ::shutdown(socket, SHUT_RDWR);
+                                ::close(socket);
+                                socket = 0;
+                                break;
                             }
                         }
                     }
                 }
             }
-            close(socket);
+            if (socket != -1) {
+                ::shutdown(socket, SHUT_RDWR);
+                ::close(socket);
+            }
         });
     }
 

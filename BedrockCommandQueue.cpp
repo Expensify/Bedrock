@@ -22,6 +22,11 @@ size_t BedrockCommandQueue::size()  {
 }
 
 BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
+    atomic<int> temp;
+    return getSynchronized(timeoutUS, temp);
+}
+
+BedrockCommand BedrockCommandQueue::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -36,7 +41,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
 
     // If there's already work in the queue, just return some.
     try {
-        return _dequeue();
+        return _dequeue(incrementBeforeDequeue);
     } catch (const out_of_range& e) {
         // Nothing available.
     }
@@ -50,7 +55,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
             
             // If we got any work, return it.
             try {
-                return _dequeue();
+                return _dequeue(incrementBeforeDequeue);
             } catch (const out_of_range& e) {
                 // Still nothing available.
             }
@@ -65,7 +70,7 @@ BedrockCommand BedrockCommandQueue::get(uint64_t timeoutUS) {
         while (true) {
             _queueCondition.wait(queueLock);
             try {
-                return _dequeue();
+                return _dequeue(incrementBeforeDequeue);
             } catch (const out_of_range& e) {
                 // Nothing yet, loop again.
             }
@@ -92,23 +97,70 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     _queueCondition.notify_one();
 }
 
+// This function currently never gets called. It's actually completely untested, so if you ever make any changes that
+// cause it to actually get called, you'll want to do that testing.
 bool BedrockCommandQueue::removeByID(const string& id) {
     SAUTOLOCK(_queueMutex);
-    for (auto& queue : _commandQueue) {
-        auto it = queue.second.begin();
-        while (it != queue.second.end()) {
+    bool retVal = false;
+    for (auto queueIt = _commandQueue.begin(); queueIt != _commandQueue.end(); queueIt++) {
+        auto& queue = queueIt->second;
+        auto it = queue.begin();
+        while (it != queue.end()) {
             if (it->second.id == id) {
                 // Found it!
-                queue.second.erase(it);
-                return true;
+                queue.erase(it);
+                retVal = true;
+                break;
             }
+            it++;
+        }
+        if (retVal) {
+            _commandQueue.erase(queueIt);
+            break;
         }
     }
-    SWARN("Attempted to remove command '" << id << "' but not found.");
-    return false;
+    return retVal;
 }
 
-BedrockCommand BedrockCommandQueue::_dequeue() {
+void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
+    // We're going to delete every command scehduled after this timestamp.
+    uint64_t timeLimit = STimeNow() + msInFuture * 1000;
+
+    // We're going to look at each queue by priority. It's possible we'll end up removing *everything* from multiple
+    // queues. In that case, we need to remove the queues themselves, so we keep a list of queues to delete when we're
+    // done operating on each of them (so that we don't delete them while iterating over them).
+    list<decltype(_commandQueue)::iterator> toDelete;
+    for (decltype(_commandQueue)::iterator queueMapIt = _commandQueue.begin(); queueMapIt != _commandQueue.end(); ++queueMapIt) {
+        // Starting from the first item, skip any items that have a valid scheduled time.
+        auto commandMapIt = queueMapIt->second.begin();
+        while (commandMapIt != queueMapIt->second.end() && commandMapIt->first < timeLimit) {
+            commandMapIt++;
+        }
+
+        // Whatever's left in the queue is scheduled in the future and can be erased.
+        size_t numberToErase = distance(commandMapIt, queueMapIt->second.end());
+        if (numberToErase) {
+            queueMapIt->second.erase(commandMapIt, queueMapIt->second.end());
+        }
+
+        // If the whole queue is empty, save it for deletion.
+        if (queueMapIt->second.empty()) {
+            toDelete.push_back(queueMapIt);
+        }
+
+        // If we deleted any commands, log that.
+        if (numberToErase) {
+            SINFO("Erased " << numberToErase << " commands scheduled more than " << msInFuture << "ms in the future.");
+        }
+    }
+
+    // Delete any empty queues.
+    for (auto& it : toDelete) {
+        _commandQueue.erase(it);
+    }
+}
+
+BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue) {
     // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).
@@ -125,6 +177,10 @@ BedrockCommand BedrockCommandQueue::_dequeue() {
         if (commandMapIt->first <= now) {
             // Pull out the command we want to return.
             BedrockCommand command = move(commandMapIt->second);
+
+            // Make sure we increment this counter before we actually dequeue, so this commands will never be not in
+            // the queue and also not counted by the counter.
+            incrementBeforeDequeue++;
 
             // And delete the entry in the queue.
             queueMapIt->second.erase(commandMapIt);

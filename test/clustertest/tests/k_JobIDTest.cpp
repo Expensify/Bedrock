@@ -23,12 +23,45 @@ struct k_JobIDTest : tpunit::TestFixture {
         // Stop master
         tester->stopNode(0);
 
+        int count = 0;
+        bool success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = slave->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
+
+        // make sure it actually succeeded.
+        ASSERT_TRUE(success);
+
         // Create a job in the slave and check the ID returned is the next one
         response = slave->executeWaitVerifyContentTable(createCmd, "200");
         ASSERT_EQUAL(jobID + 1, SToInt(response["jobID"]));
 
         // Restart master
         tester->startNode(0);
+
+        count = 0;
+        success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = master->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+
+            // Give it another second...
+            sleep(1);
+        }
 
         // Create a new job in master and check the ID is the next one
         response = master->executeWaitVerifyContentTable(createCmd);

@@ -42,12 +42,12 @@ class BedrockTester {
     // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
     // the cmmand port, is ready.
     string startServer(bool dontWait = false);
-    void stopServer();
+    void stopServer(int signal = SIGINT);
 
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false);
+    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
