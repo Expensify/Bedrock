@@ -25,7 +25,7 @@ class BedrockServer : public SQLiteServer {
     // we'll get to that later.
     //
     // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
-    // server receives a SIGINT, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
+    // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
     // 
     // 1. The command port is closed, and no new connections are accepted from clients.
     // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
@@ -55,7 +55,7 @@ class BedrockServer : public SQLiteServer {
     // implying that there are neither queued commands nor commands in progress.
     //
     // The sync node then finishes standing down, informing the other nodes in the cluster that it is now in the
-    // searching STATE. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
+    // SEARCHING state. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
     // The worker threads, when they find the main command queue empty, will check for the DONE state, and return. The
     // sync thread can then complete and the server is shut down.
     //
@@ -78,7 +78,7 @@ class BedrockServer : public SQLiteServer {
     //
     // The reason we have to wait for the main queue to be empty *and* no commands to be in progress when standing
     // down, is because of the way certain commands can move between queues. For instance, a command that has a pending
-    // HTTPS transaction is "in progress" until the transaction completes, butt hen re-queued for processing by a
+    // HTTPS transaction is "in progress" until the transaction completes, but then re-queued for processing by a
     // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
     // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
     // down, then we'd try and run processCommand() while slaving, which would be invalid. For this reason, we need to

@@ -1407,7 +1407,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we've been told to start down, we'll set the lastChance timer.
+    // If we've been told to start shutting down, we'll set the lastChance timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
         if (!lastChance) {
             lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
