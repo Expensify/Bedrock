@@ -76,7 +76,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //     Atomically dequeues one or more jobs, if available.
         //
         //     Parameters:
-        //     - name - name pattern of jobs to match
+        //     - name - list of name pattern of jobs to match
         //     - numResults - maximum number of jobs to dequeue
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
@@ -103,14 +103,14 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         // Get the list
         SQResult result;
-        const string& name = request["name"];
+        const list<string> nameList = SParseList(request["name"]);
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                     "  AND name GLOB " + SQ(name) + " "
-                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")": "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                      "LIMIT 1;",
                      result)) {
             STHROW("502 Query failed");
@@ -127,7 +127,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 SINFO("No results found and 'Connection: wait'; placing request on hold until we get a new job "
                       "matching name '"
                       << request["name"] << "'");
-                request["HeldBy"] = "Jobs:" + name;
+                request["HeldBy"] = "Jobs:" + request["name"];
                 response.clear(); // Clear default response so we don't accidentally think we're done
                 return false;     // Not processed
             } else {
@@ -622,8 +622,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
         // works!
         SQResult result;
-        const string& name = request["name"];
-
+        const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         string selectQuery =
@@ -632,10 +631,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=1000"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=1000 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")": "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
@@ -643,10 +642,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=500"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=500 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")": "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
@@ -654,10 +653,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=0"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=0 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")": "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             ") "
