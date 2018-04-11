@@ -959,7 +959,7 @@ BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;
@@ -1036,6 +1036,11 @@ BedrockServer::BedrockServer(const SData& args)
     SINFO("Opening control port on '" << _args["-controlPort"] << "'");
     _controlPort = openPort(_args["-controlPort"]);
 
+    // If we're bootstraping this node we need to go into detached mode here.
+    if (_detach) {
+        SWARN("Bootstrap flag detected, starting sync node in detach mode.");
+    }
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(syncWrapper,
@@ -1045,12 +1050,6 @@ BedrockServer::BedrockServer(const SData& args)
                          ref(_masterVersion),
                          ref(_syncNodeQueuedCommands),
                          ref(*this));
-
-    // If we're bootstraping this node we need to go into detached mode here.
-    if (args.isSet("-bootstrap")) {
-        SWARN("Bootstrap flag detected, going into detach mode.");
-        _beginShutdown("Bootstrap flag", true);
-    }
 
 }
 

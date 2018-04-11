@@ -283,6 +283,9 @@ int main(int argc, char* argv[]) {
         SDEBUG("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
+    } else if (args.isSet("-bootstrap")) {
+        // Allow for bootstraping a node with no database file in place.
+        SWARN("Loading in bootstrap mode, skipping check for database existance.");
     } else {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");

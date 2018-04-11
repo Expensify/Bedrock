@@ -71,7 +71,7 @@ void SInitializeSignals() {
     sigset_t signals;
     sigfillset(&signals);
     sigdelset(&signals, SIGSEGV);
-    sigdelset(&signals, SIGABRT);
+//    sigdelset(&signals, SIGABRT);
     sigdelset(&signals, SIGFPE);
     sigdelset(&signals, SIGILL);
     sigdelset(&signals, SIGBUS);
@@ -95,7 +95,7 @@ void SInitializeSignals() {
 
     // And set the handlers for the few signals we care about in each thread.
     sigaction(SIGSEGV, &newAction, 0);
-    sigaction(SIGABRT, &newAction, 0);
+//    sigaction(SIGABRT, &newAction, 0);
     sigaction(SIGFPE, &newAction, 0);
     sigaction(SIGILL, &newAction, 0);
     sigaction(SIGBUS, &newAction, 0);
@@ -103,8 +103,8 @@ void SInitializeSignals() {
     // If we haven't started the signal handler thread, start it now.
     bool threadAlreadyStarted = _SSignal_threadInitialized.test_and_set();
     if (!threadAlreadyStarted) {
-        _SSignal_signalThread = thread(_SSignal_signalHandlerThreadFunc);
-        _SSignal_signalThread.detach();
+//        _SSignal_signalThread = thread(_SSignal_signalHandlerThreadFunc);
+//        _SSignal_signalThread.detach();
     }
 }
 

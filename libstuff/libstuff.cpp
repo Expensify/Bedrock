@@ -1969,6 +1969,31 @@ string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
     return encryptedBuffer;
 }
 
+string SAESEncrypt(char* buffer, const int bufferSize, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+
+    // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
+    if (bufferSize % SAES_BLOCK_SIZE != 0) {
+        int appendAmount = SAES_BLOCK_SIZE - (((int)bufferSize) % SAES_BLOCK_SIZE);
+        while(appendAmount > 0) {
+            buffer[bufferSize] += '\0';
+            appendAmount--;
+        }
+    }
+
+    // Encrypt
+    mbedtls_aes_context ctx;
+    mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
+    string encryptedBuffer;
+    encryptedBuffer.resize(bufferSize);
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, ((int)bufferSize), iv, (unsigned char*)buffer,
+                          (unsigned char*)encryptedBuffer.c_str());
+
+    return encryptedBuffer;
+}
+
 string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
     SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];

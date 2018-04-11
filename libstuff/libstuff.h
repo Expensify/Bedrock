@@ -729,6 +729,7 @@ string SHMACSHA256(const string& key, const string& buffer);
 #define SAES_IV_SIZE 16
 #define SAES_BLOCK_SIZE 16
 string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key);
+string SAESEncrypt(char* buffer, const int bufferSize, const string& iv, const string& key);
 string SAESEncrypt(const string& buffer, const string& iv, const string& key);
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
