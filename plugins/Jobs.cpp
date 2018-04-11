@@ -574,7 +574,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int jobIDToUse = lastJobID++;
+                const int jobIDToUse = ++lastJobID;
                 SINFO("Next jobID to be used" << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
