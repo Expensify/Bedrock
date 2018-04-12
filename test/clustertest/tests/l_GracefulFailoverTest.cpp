@@ -28,6 +28,11 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                         if (i % 10 == 0) {
                             if (j % 5 == 0) {
                                 SData query("sendrequest" + randCommand);
+                                if (j % 15 == 0) {
+                                    // In this case, let's make them `Connection: forget` to make sure they're
+                                    // forgotten.
+                                    query["Connection"] = "forget";
+                                }
                                 query["writeConsistency"] = "ASYNC";
                                 query["senttonode"] = to_string(currentNodeIndex);
                                 query["clientID"] = to_string(i);
