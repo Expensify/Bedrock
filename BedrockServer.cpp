@@ -540,9 +540,6 @@ void BedrockServer::sync(SData& args,
         workerThread.join();
     }
 
-    // At this point, everything is done.
-    server._shutdownState.store(DONE);
-
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
     if (server._commandQueue.size()) {
         SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
@@ -890,11 +887,22 @@ void BedrockServer::worker(SData& args,
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
+
+            // If the sync node has shut down, we can return now, there will be no more work to do.
+            if  (server._shutdownState.load() == DONE) {
+                break;
+            }
         }
 
-        // If the sync node has shut down, we can return now, there will be no more work to do.
-        if  (server._shutdownState.load() == DONE) {
-            break;
+        // Even if the sync thread is shut down, we still have work to do here, so we'll try another loop until we
+        // don't find any commands to process, or we hit the timeout.
+        if (server._shutdownState.load() == DONE) {
+            if (server._gracefulShutdownTimeout.ringing()) {
+                SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
+                return;
+            } else {
+                SINFO("_shutdownState is DONE, but still have work, waiting for timeout.");
+            }
         }
     }
 }
