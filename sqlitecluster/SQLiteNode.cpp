@@ -231,7 +231,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
     unsentTransactions.store(false);
 }
 
-void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
+void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     // If the master is currently standing down, we won't escalate, we'll give the command back to the caller.
     if((*_masterPeer)["State"] == "STANDINGDOWN") {
         SINFO("Asked to escalate command but master standing down, letting server retry.");
@@ -251,9 +251,13 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     escalate["ID"] = command.id;
     escalate.content = command.request.serialize();
 
-    // Store the command as escalated.
-    command.escalationTimeUS = STimeNow();
-    _escalatedCommandMap.emplace(command.id, move(command));
+    // Store the command as escalated, unless we intend to forget about it anyway.
+    if (forget) {
+        SINFO("Firing and forgetting command '" << command.request.methodLine << "' to master.");
+    } else {
+        command.escalationTimeUS = STimeNow();
+        _escalatedCommandMap.emplace(command.id, move(command));
+    }
 
     // And send to master.
     _sendToPeer(_masterPeer, escalate);

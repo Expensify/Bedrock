@@ -490,7 +490,13 @@ void BedrockServer::sync(SData& args,
                 // If we're slaving, we just escalate directly to master without peeking. We can only get an incomplete
                 // command on the slave sync thread if a slave worker thread peeked it unsuccessfully, so we don't
                 // bother peeking it again.
-                server._syncNode->escalateCommand(move(command));
+                auto it = command.request.nameValueMap.find("Connection");
+                bool forget = it != command.request.nameValueMap.end() && SIEquals(it->second, "forget");
+                server._syncNode->escalateCommand(move(command), forget);
+                if (forget) {
+                    // Command is no longer in progress.
+                    server._commandsInProgress--;
+                }
             }
         } catch (const out_of_range& e) {
             // Prevent the requestID from a finished command from being used.
@@ -1861,10 +1867,17 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
 }
 
 void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
+    // See if we're supposed to forget this command (because the slave is not listening for a response).
+    auto it = command.request.nameValueMap.find("Connection");
+    bool forget = it != command.request.nameValueMap.end() && SIEquals(it->second, "forget");
     command.finalizeTimingInfo();
-    auto _syncNodeCopy = _syncNode;
-    if (_syncNodeCopy) {
-        _syncNodeCopy->sendResponse(command);
+    if (forget) {
+        SINFO("Not responding to 'forget' command '" << command.request.methodLine << "' to slave.");
+    } else {
+        auto _syncNodeCopy = _syncNode;
+        if (_syncNodeCopy) {
+            _syncNodeCopy->sendResponse(command);
+        }
     }
     _commandsInProgress--;
 }
