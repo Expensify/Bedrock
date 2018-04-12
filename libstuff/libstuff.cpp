@@ -2369,3 +2369,31 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
 }
+
+string SGetCurrentExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
+}
+
+void STerminateHandler(void) {
+    // Alert.
+    SALERT("Terminating with uncaught exception '" << SGetCurrentExceptionName() << "'.");
+
+    // And we're out.
+    abort();
+}
