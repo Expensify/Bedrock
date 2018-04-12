@@ -142,6 +142,8 @@ bool SQLiteNode::shutdownComplete() {
     if (_gracefulShutdownTimeout.ringing()) {
         // Timing out
         SWARN("Graceful shutdown timed out, killing non gracefully.");
+        // Force this.
+        _changeState(SEARCHING);
         return true;
     }
 
