@@ -299,6 +299,10 @@ string SGetSignalDescription();
 // Clear all outstanding signals.
 void SClearSignals();
 
+// And also exception stuff.
+string SGetCurrentExceptionName();
+void STerminateHandler(void);
+
 // --------------------------------------------------------------------------
 // Log stuff
 // --------------------------------------------------------------------------
