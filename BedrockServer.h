@@ -8,30 +8,95 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // Shutting down a bedrock server correctly is a multi-step process that ensures we will still respond to any
-    // requests we received right up until we are about to shut down.
+    // Shutting Down and Standing Down a BedrockServer. 
+    //
+    // # What's the difference between these two things?
+    // 
+    // Shutting down is pretty obvious - when we want to turn a server off, we shut it down. The shut down process
+    // tries to do this without interrupting any client requests.
+    // Standing down is a little less obvious. If we're the master node in a cluster, there are two ways to stand down.
+    // The first is that we are shutting down, in which case we'll need to let the rest of the cluster know that it
+    // will need to pick a new master. The other is if a higher-priority master asks to stand up in our place. In this
+    // second case, we'll stand down without shutting down.
+    //
+    //
+    // # Shutting Down
+    // Let's start with shutting down. Standing down is a subset of shutting down (when we start out mastering), and
+    // we'll get to that later.
+    //
+    // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
+    // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
+    // 
+    // 1. The command port is closed, and no new connections are accepted from clients.
+    // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
+    //    response is sent.
+    // 3. We set timeouts for any HTTPS commands to five seconds. Note that if we are slaving, this has no effect on
+    //    commands that were escalated to master, we continue waiting for those commands.
+    //
+    // The server then continues operating as normal until there are no client connections left (because we've stopped
+    // accepting them, and closed any connections as we responded to their commands), at which point it switches to
+    // CLIENTS_RESPONDED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
+    // was mastering, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
+    // next section.
+    //
+    // The sync node will continue STANDINGDOWN until two conditions are true:
+    // 
+    // 1. There are no commands in progress.
+    // 2. There are no outstanding queued commands.
+    //
+    // A "command in progress" is essentially any command that we have not completed but is not in our main command
+    // queue. We increment the count of these commands when we dequeue a command from the main queue, and decrememnt it
+    // when we respond to the command (and also in a few other exception cases where the command is abandoned or does
+    // not require a response). This means that if a command has been moved to the queue of outstanding HTTPS commands,
+    // or the sync thread queue, or is currently being handled by a worker, or escalated to master, it's "in progress".
+    //
+    // If we were not mastering, there is no STANDINGDOWN state to wait through - all of a slaves commands come from
+    // local clients, and once those connections are all closed, then that means every command has been responded to,
+    // implying that there are neither queued commands nor commands in progress.
+    //
+    // The sync node then finishes standing down, informing the other nodes in the cluster that it is now in the
+    // SEARCHING state. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
+    // The worker threads, when they find the main command queue empty, will check for the DONE state, and return. The
+    // sync thread can then complete and the server is shut down.
+    //
+    //
+    // # Standing Down
+    // Standing down when shutting down is covered in the above section, but there's an additional bit of work to do of
+    // we're standing down without shutting down. The main difference is that we are not waiting on all existing
+    // clients to be disconnected while we stand down - we will be able to service these same clients as a slave as
+    // soon as we finish this operation. However, we still have the same criteria for STANDINGDOWN as listed above, no
+    // commands in progress, and an empty command queue.
+    //
+    // When a node switches to STANDINGDOWN, it starts rejecting escalated commands from peers. This allows it to run
+    // through its current list of pending escalated commands and finish them all (this is true whether we're shutting
+    // down or not, and it's why shutting down is able to complete the entire queue of commands without it potentially
+    // adding new commands that keep it from ever emptying). However, this doesn't keep new commands that arrive
+    // locally from being added to main queue. This could potentially keep us from ever finishing the queue. So, when
+    // we are in a STANDINGDOWN state, any new commands from local clients are inserted into a temporary
+    // `_standDownQueue` instead of the main queue. As soon as STANDINGDOWN completes, these commands will be moved
+    // back to the main queue.
+    //
+    // The reason we have to wait for the main queue to be empty *and* no commands to be in progress when standing
+    // down, is because of the way certain commands can move between queues. For instance, a command that has a pending
+    // HTTPS transaction is "in progress" until the transaction completes, but then re-queued for processing by a
+    // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
+    // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
+    // down, then we'd try and run processCommand() while slaving, which would be invalid. For this reason, we need to
+    // make sure any command that has ever been started gets completed before we finish standing down. Unfortunately,
+    // once a command has been added to the main queue, there's no way of knowing whether it's ever been started
+    // without inspecting every command in the queue, hence the `_standDownQueue`.
+    //
+    // NOTE: in both cases of shutting down or standing down, we discard any commands in the main queue that are
+    // scheduled to happen more than 5 seconds in the future. In the case that we're shutting down, there's nothing we
+    // can do about these, except not shut down. If we're standing down, we could keep them, but they break our
+    // checking against whether the main command queue is empty, and fall into the same category of us being unable to
+    // distinguish them from commands that may have already started.
+
+    // Shutdown states.
     enum SHUTDOWN_STATE {
-        // This is the state until we begin shutting down.
         RUNNING,
-
-        // In postPoll, this will be set if we received a SIGTERM or SIGINT since the last poll iteration. This will
-        // happen as soon as we've begun the shutdown process.
         START_SHUTDOWN,
-
-        // postPoll will run through the remaining listening sockets, make sure everything's been read, deserialized,
-        // and queued for processing, and close the listening ports, then set this state.
-        PORTS_CLOSED,
-
-        // We let the workers run trough commands until their queue is empty. When that happens, we set this state,
-        // indicating that everything that might need to be escalated to the sync thread has been escalated.
-        QUEUE_PROCESSED,
-
-        // Once QUEUE_PROCESSED is set, the sync thread can process commands until it's queue is empty, and then we can
-        // set this flag, indicating the sync thread is done.
-        SYNC_SHUTDOWN,
-
-        // Finally, when the worker's queue is empty again (the sync thread can add items to it via escalation
-        // responses), we're actually done, and we can finish shutting everything down.
+        CLIENTS_RESPONDED,
         DONE
     };
 
@@ -50,12 +115,22 @@ class BedrockServer : public SQLiteServer {
     virtual ~BedrockServer();
 
     // Accept an incoming command from an SQLiteNode.
+    // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
+    // being returned to the command queue (such as one that was previously escalated).
     // SQLiteNode API.
-    void acceptCommand(SQLiteCommand&& command);
+    void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
     // Cancel a command.
     // SQLiteNode API.
     void cancelCommand(const string& commandID);
+
+    // Flush the send buffers
+    // STCPNode API.
+    void prePoll(fd_map& fdm);
+
+    // Accept connections and dispatch requests
+    // STCPNode API.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
@@ -63,16 +138,8 @@ class BedrockServer : public SQLiteServer {
     // Exposes the replication state to plugins.
     SQLiteNode::State getState() const { return _replicationState.load(); }
 
-    // Flush the send buffers
-    // STCPNode API.
-    void prePoll(fd_map& fdm);
-
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
-
-    // Accept connections and dispatch requests
-    // STCPNode API.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
     // in which case the `suppress` setting will be forced.
@@ -105,12 +172,9 @@ class BedrockServer : public SQLiteServer {
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
 
-    // We keep a map of requests to socket. We should never have more than one request per socket at a given time, or
-    // we could deliver responses in the wrong order.
-    map<uint64_t, Socket*> _requestCountSocketMap;
-
-    // Each time we connect a new socket, we give it an ID, and we insert it in this set. When a socket disconnects, we
-    // remove that ID from this set.
+    // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
+    // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
+    // open. It will be re-inserted in this set when another command is read from it.
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
@@ -196,9 +260,9 @@ class BedrockServer : public SQLiteServer {
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
     // until all references to it go out of scope. Since an STCPNode never deletes `Peer` objects until it's being
-    // destroyed, we are also guaranteed that all peers are accesible as long as we hold a shared pointer to this
+    // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
-    SQLiteNode* _syncNode;
+    shared_ptr<SQLiteNode> _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
     recursive_mutex _syncMutex;
@@ -209,13 +273,16 @@ class BedrockServer : public SQLiteServer {
     bool _isControlCommand(BedrockCommand& command);
     void _control(BedrockCommand& command);
 
+    // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
+    // those ports.
+    void _acceptSockets();
+
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
-    // This counts the number of commands that are being processed that might be able to write to the database. We
-    // won't start any of these unless we're mastering, and we won't allow SQLiteNode to drop out of STANDINGDOWN until
-    // it's 0.
-    atomic<int> _writableCommandsInProgress;
+    // This counts the number of commands currently being processed (which might not be in any of our queues). We use
+    // this value to prevent us from standing down until this value is 0 and our main queue is empty.
+    atomic<int> _commandsInProgress;
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
@@ -254,9 +321,22 @@ class BedrockServer : public SQLiteServer {
     bool _backupOnShutdown;
     bool _detach;
 
-    // Pointer to the control port, so we know which port not to shut down when we close the command ports.
+    // Pointers to the ports on which we accept commands.
     Port* _controlPort;
     Port* _commandPort;
+
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their HTTPS requests finish and move them back to the main queue.
+    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+    mutex _httpsCommandMutex;
+
+    // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
+    void _finishPeerCommand(BedrockCommand& command);
+
+    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
+    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
+    // endless loop of always having new unfinished commands.
+    CommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
@@ -280,9 +360,4 @@ class BedrockServer : public SQLiteServer {
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
-
-    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
-    // their https requests finish and move them back to the main queue.
-    mutex _httpsCommandMutex;
-    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
 };

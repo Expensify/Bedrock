@@ -15,7 +15,7 @@ struct h_timingTest : tpunit::TestFixture {
             BedrockTester* brtester = tester->getBedrockTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
-            SData query("idcollision");
+            SData query("idcollision h");
             query["writeConsistency"] = "ASYNC";
             query["value"] = "default";
             auto results = brtester->executeWaitMultipleData({query});

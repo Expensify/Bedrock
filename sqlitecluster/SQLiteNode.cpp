@@ -233,7 +233,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     // If the master is currently standing down, we won't escalate, we'll give the command back to the caller.
     if((*_masterPeer)["State"] == "STANDINGDOWN") {
         SINFO("Asked to escalate command but master standing down, letting server retry.");
-        _server.acceptCommand(move(command));
+        _server.acceptCommand(move(command), false);
         return;
     }
 
@@ -999,7 +999,7 @@ bool SQLiteNode::update() {
 
             // If there were escalated commands, give them back to the server to retry.
             for (auto& cmd : _escalatedCommandMap) {
-                _server.acceptCommand(move(cmd.second));
+                _server.acceptCommand(move(cmd.second), false);
             }
             _escalatedCommandMap.clear();
 
@@ -1287,7 +1287,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             command.request["state"] = to_string(_state);
             command.request["name"] = name;
             command.request["peerName"] = peer->name;
-            _server.acceptCommand(move(command));
+            _server.acceptCommand(move(command), true);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
             // stood up.
@@ -1612,7 +1612,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         if (_state != MASTERING) {
             // Reject escalation because we're no longer mastering
-            PWARN("Received ESCALATE but not MASTERING, aborting.");
+            if (_state != STANDINGDOWN) {
+                // Don't warn if we're standing down, this is expected.
+                PWARN("Received ESCALATE but not MASTERING or STANDINGDOWN, aborting.");
+            }
             SData aborted("ESCALATE_ABORTED");
             aborted["ID"] = message["ID"];
             aborted["Reason"] = "not mastering";
@@ -1635,7 +1638,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SQLiteCommand command(move(request));
             command.initiatingPeerID = peer->id;
             command.id = message["ID"];
-            _server.acceptCommand(move(command));
+            _server.acceptCommand(move(command), true);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
         // ESCALATE_CANCEL: Sent to the master by a slave. Indicates that the slave would like to cancel the escalated
@@ -1694,7 +1697,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
             command.response = response;
             command.complete = true;
-            _server.acceptCommand(move(command));
+            _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
             SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
@@ -1716,7 +1719,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SQLiteCommand& command = commandIt->second;
             PINFO("Re-queueing command '" << message["ID"] << "' (" << command.request.methodLine << ") ("
                   << command.id << ")");
-            _server.acceptCommand(move(command));
+            _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else
             SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
@@ -1724,7 +1727,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Create a new Command and send to the server.
         SData messageCopy = message;
         PINFO("Received " << message.methodLine << " command, forwarding to server.");
-        _server.acceptCommand(SQLiteCommand(move(messageCopy)));
+        _server.acceptCommand(SQLiteCommand(move(messageCopy)), true);
     } else {
         STHROW("unrecognized message");
     }
@@ -1792,7 +1795,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 cmd.second.complete = true;
                 cmd.second.response.methodLine = "500 Aborted";
             }
-            _server.acceptCommand(move(cmd.second));
+            _server.acceptCommand(move(cmd.second), false);
         }
         _escalatedCommandMap.clear();
         _changeState(SEARCHING);

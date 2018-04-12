@@ -23,6 +23,9 @@ class BedrockCommandQueue {
     // If timeout is non-zero, an exception will be thrown after timeoutUS microseconds, if no work was available.
     BedrockCommand get(uint64_t timeoutUS = 0);
 
+    // Get a command from the queue, and pass it a counter to be incremented just before dequeuing a found command.
+    BedrockCommand getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue);
+
     // Returns a list of all the method lines for all the requests currently queued. This function exists for state
     // reporting, and is called by BedrockServer when we receive a `Status` command.
     list<string> getRequestMethodLines();
@@ -34,6 +37,9 @@ class BedrockCommandQueue {
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
 
+    // Discards all commands scheduled more than msInFuture milliseconds after right now.
+    void abandonFutureCommands(int msInFuture);
+
   private:
     // Removes and returns the first workable command in the queue. A command is workable if it's executeTimestamp is
     // not in the future.
@@ -42,7 +48,7 @@ class BedrockCommandQueue {
     //                command *in that priority queue* - i.e., priority trumps timestamp.
     //
     // This function throws an exception if no workable commands are available.
-    BedrockCommand _dequeue();
+    BedrockCommand _dequeue(atomic<int>& incrementBeforeDequeue);
 
     // Synchronization primitives for managing access to the queue.
     mutex _queueMutex;

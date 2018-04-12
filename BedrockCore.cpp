@@ -13,7 +13,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "'");
+    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
     command.peekCount++;
     uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
@@ -91,7 +91,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         _handleCommandException(command, e);
     } catch (...) {
         _db.read("PRAGMA query_only = false;");
-        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << request.methodLine);
         command.response.methodLine = "500 Unhandled Exception";
     }
 
@@ -185,7 +185,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         _db.rollback();
         needsCommit = false;
     } catch(...) {
-        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << command.request.serialize());
+        SALERT("Unhandled exception typename: " << _getExceptionName() << ", command: " << request.methodLine);
         command.response.methodLine = "500 Unhandled Exception";
         _db.rollback();
         needsCommit = false;
@@ -203,8 +203,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
 }
 
 void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
-    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring: " +
-                        command.request.serialize();
+    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring.";
     if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);
     } else if (SContains(e.what(), "_WARN_")) {

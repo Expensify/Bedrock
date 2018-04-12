@@ -9,35 +9,20 @@
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
     bool ignore;
-    if (!db.verifyTable("jobs", "CREATE TABLE jobs ( "
-                                   "created     TIMESTAMP NOT NULL, "
-                                   "jobID       INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
-                                   "state       TEXT NOT NULL, "
-                                   "name        TEXT NOT NULL, "
-                                   "nextRun     TIMESTAMP NOT NULL, "
-                                   "lastRun     TIMESTAMP, "
-                                   "repeat      TEXT NOT NULL, "
-                                   "data        TEXT NOT NULL, "
-                                   "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
-                                   "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter  TEXT NOT NULL DEFAULT \"\" )",
-                        ignore))
-    {
-        SASSERT(db.verifyTable("jobs",
-                               "CREATE TABLE jobs ( "
-                                   "created     TIMESTAMP NOT NULL, "
-                                   "jobID       INTEGER NOT NULL PRIMARY KEY, "
-                                   "state       TEXT NOT NULL, "
-                                   "name        TEXT NOT NULL, "
-                                   "nextRun     TIMESTAMP NOT NULL, "
-                                   "lastRun     TIMESTAMP, "
-                                   "repeat      TEXT NOT NULL, "
-                                   "data        TEXT NOT NULL, "
-                                   "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
-                                   "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                                   "retryAfter  TEXT NOT NULL DEFAULT \"\")",
-                               ignore));
-    }
+    SASSERT(db.verifyTable("jobs",
+                           "CREATE TABLE jobs ( "
+                               "created     TIMESTAMP NOT NULL, "
+                               "jobID       INTEGER NOT NULL PRIMARY KEY, "
+                               "state       TEXT NOT NULL, "
+                               "name        TEXT NOT NULL, "
+                               "nextRun     TIMESTAMP NOT NULL, "
+                               "lastRun     TIMESTAMP, "
+                               "repeat      TEXT NOT NULL, "
+                               "data        TEXT NOT NULL, "
+                               "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                               "parentJobID INTEGER NOT NULL DEFAULT 0, "
+                               "retryAfter  TEXT NOT NULL DEFAULT \"\")",
+                           ignore));
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
@@ -69,7 +54,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //     Atomically dequeues one or more jobs, if available.
         //
         //     Parameters:
-        //     - name - name pattern of jobs to match
+        //     - name - list of name patterns of jobs to match. If only one name is passed, you can use '*' to match any job.
         //     - numResults - maximum number of jobs to dequeue
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
@@ -96,15 +81,15 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         // Get the list
         SQResult result;
-        const string& name = request["name"];
+        const list<string> nameList = SParseList(request["name"]);
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                     "  AND priority IN (0, 500, 1000) "
-                     "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                     "  AND name GLOB " + SQ(name) + " "
-                     "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority IN (0, 500, 1000) "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                      "LIMIT 1;",
                      result)) {
             STHROW("502 Query failed");
@@ -121,7 +106,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 SINFO("No results found and 'Connection: wait'; placing request on hold until we get a new job "
                       "matching name '"
                       << request["name"] << "'");
-                request["HeldBy"] = "Jobs:" + name;
+                request["HeldBy"] = "Jobs:" + request["name"];
                 response.clear(); // Clear default response so we don't accidentally think we're done
                 return false;     // Not processed
             } else {
@@ -210,7 +195,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         for (auto& job : jsonJobs) {
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -366,7 +351,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [priority], [unique], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -375,7 +360,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - data  - A JSON object describing work to be done (optional)
         //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //     - repeat - A description of how to repeat (optional)
-        //     - priority - High priorities go first (optional, default 500)
+        //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
         //     - parentJobID - The ID of the parent job (optional)
@@ -394,7 +379,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //          - data  - A JSON object describing work to be done (optional)
         //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
         //          - repeat - A description of how to repeat (optional)
-        //          - priority - High priorities go first (optional, default 500)
+        //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
         //          - parentJobID - The ID of the parent job (optional)
@@ -496,7 +481,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // If no priority set, set it
-            int64_t priority = SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -568,11 +553,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                lastJobID++;
-                SINFO("Next jobID to be used" << lastJobID);
+                const int jobIDToUse = ++lastJobID;
+                SINFO("Next jobID to be used" << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
-                            SQ(lastJobID) + ", " +
+                            SQ(jobIDToUse) + ", " +
                             SCURRENT_TIMESTAMP() + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
@@ -588,12 +573,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(lastJobID);
+                    content["jobID"] = SToStr(jobIDToUse);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(lastJobID));
+                jobIDs.push_back(SToStr(jobIDToUse));
             }
         }
 
@@ -616,8 +601,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
         // works!
         SQResult result;
-        const string& name = request["name"];
-
+        const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
         string selectQuery =
@@ -626,10 +610,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=1000"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=1000 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
@@ -637,10 +621,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=500"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=500 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             "UNION ALL "
@@ -648,10 +632,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "SELECT jobID, name, data, priority, parentJobID, retryAfter, created "
                     "FROM jobs "
                     "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                    "  AND priority=0"
-                    "  AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "  AND name GLOB " + SQ(name) + " "
-                    "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
+                        "AND priority=0 "
+                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " "
+                        "AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL "
                     "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
             ") "
