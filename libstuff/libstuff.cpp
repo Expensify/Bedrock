@@ -2390,7 +2390,6 @@ string SGetCurrentExceptionName()
     return exceptionName;
 }
 
-
 void STerminateHandler(void) {
     // Alert.
     SALERT("Terminating with uncaught exception '" << SGetCurrentExceptionName() << "'.");
