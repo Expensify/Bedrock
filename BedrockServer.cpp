@@ -1872,7 +1872,7 @@ void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
     bool forget = it != command.request.nameValueMap.end() && SIEquals(it->second, "forget");
     command.finalizeTimingInfo();
     if (forget) {
-        SINFO("Not responding to 'forget' command '" << command.request.methodLine << "' to slave.");
+        SINFO("Not responding to 'forget' command '" << command.request.methodLine << "' from slave.");
     } else {
         auto _syncNodeCopy = _syncNode;
         if (_syncNodeCopy) {
