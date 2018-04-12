@@ -1815,7 +1815,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         case S_EHOSTUNREACH:
         case S_EINVAL:
         default:
-            SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << ", closing.");
+            SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), closing.");
             return false; // Socket died
 
         // These are only interesting enough for an info line.
@@ -1823,7 +1823,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         case S_ECONNRESET:
         case S_ETIMEDOUT:
         case S_ENOTCONN:
-            SINFO("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << ", closing.");
+            SINFO("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), closing.");
             return false; // Socket died
 
         // And these aren't interesting enough to say anything about at all (and aren't fatal).
