@@ -1823,7 +1823,6 @@ bool S_sendconsume(int s, string& sendBuffer) {
         case S_ECONNRESET:
         case S_ETIMEDOUT:
         case S_ENOTCONN:
-        default:
             SINFO("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << ", closing.");
             return false; // Socket died
 
