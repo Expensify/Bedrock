@@ -74,6 +74,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);
+    } else if (SStartsWith(command.request.methodLine, "generateassertpeek")) {
+        SASSERT(0);
+        command.response["invalid"] = "nope";
     }
 
     return false;

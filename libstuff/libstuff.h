@@ -54,7 +54,6 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
     do {                                                                                                               \
         if (!(_LHS_)) {                                                                                                \
             SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
-            abort();                                                                                                   \
         }                                                                                                              \
     } while (false)
 #define SASSERTEQUALS(_LHS_, _RHS_)                                                                                    \
@@ -347,7 +346,7 @@ void SLogStackTrace();
         SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
         SLogStackTrace();                                                                                              \
         fflush(stdout);                                                                                                \
-        exit(1);                                                                                                       \
+        abort();                                                                                                       \
     } while (false)
 #define STRACE() SLOG("[trac] " << __FILE__ << "(" << __LINE__ << ") :" << __FUNCTION__)
 
