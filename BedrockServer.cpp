@@ -203,7 +203,11 @@ void BedrockServer::sync(SData& args,
         // we're mastering, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (server._shutdownState.load() == CLIENTS_RESPONDED) {
-            server._syncNode->beginShutdown();
+            // The total time we'll wait for the sync node is whatever we haven't already waited from the original
+            // timeout, minus 5 seconds to allow to clean up afterward.
+            int64_t timeAllowed = server._gracefulShutdownTimeout.alarmDuration.load() - server._gracefulShutdownTimeout.elapsed();
+            timeAllowed -= 5'000'000;
+            server._syncNode->beginShutdown(max(timeAllowed, 1l));
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -505,7 +509,7 @@ void BedrockServer::sync(SData& args,
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    } while (!server._syncNode->shutdownComplete());
+    } while (!server._syncNode->shutdownComplete() && !server._gracefulShutdownTimeout.ringing());
 
     SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
 
@@ -556,6 +560,9 @@ void BedrockServer::sync(SData& args,
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     server._syncNode = nullptr;
+
+    // We're really done, store our flag so main() can be aware.
+    server._syncThreadComplete.store(true);
 }
 
 void BedrockServer::worker(SData& args,
@@ -893,22 +900,18 @@ void BedrockServer::worker(SData& args,
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
-
             // If the sync node has shut down, we can return now, there will be no more work to do.
             if  (server._shutdownState.load() == DONE) {
-                break;
+                SINFO("No commands found in queue and DONE.");
+                return;
             }
         }
 
         // Even if the sync thread is shut down, we still have work to do here, so we'll try another loop until we
         // don't find any commands to process, or we hit the timeout.
-        if (server._shutdownState.load() == DONE) {
-            if (server._gracefulShutdownTimeout.ringing()) {
-                SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
-                return;
-            } else {
-                SINFO("_shutdownState is DONE, but still have work, waiting for timeout.");
-            }
+        if (server._gracefulShutdownTimeout.ringing()) {
+            SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
+            return;
         }
     }
 }
@@ -985,7 +988,7 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
+    _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
     _controlPort(nullptr), _commandPort(nullptr)
 {
@@ -1089,18 +1092,14 @@ bool BedrockServer::shutdownComplete() {
         // We don't want main() to stop calling `poll` for us, we are listening on the control port.
         return false;
     }
-    // If nobody's asked us to shut down, we're not done.
-    if (_shutdownState.load() == RUNNING) {
-        return false;
-    }
 
-    // If we're totally done, we can return true.
-    if (_shutdownState.load() == DONE) {
+    // If the sync thread is finished, we're finished.
+    if (_syncThreadComplete) {
         return true;
     }
 
-    // At least one of our required criteria has failed. Let's see if our timeout has elapsed. If so, we'll log and
-    // return true anyway.
+    // We have hit our timeout. This will force the sync thread to exit, so we should hit the above criteria
+    // (_syncThreadComplete) in the next loop or two.
     if (_gracefulShutdownTimeout.ringing()) {
         // Timing out. Log some info and return true.
         map<string, int> commandsInQueue;
@@ -1122,45 +1121,9 @@ bool BedrockServer::shutdownComplete() {
               << "Command queue size: " << _commandQueue.size() << ". "
               << "Commands in progress: " << _commandsInProgress.load() << ". "
               << "Command Counts: " << commandCounts << "killing non gracefully.");
-        return true;
     }
 
-    // At this point, we've got something blocking shutdown, and our timeout hasn't passed, so we'll log and return
-    // false, and allow the caller to wait a bit longer.
-    string logLine = "Conditions that failed and are blocking shutdown:";
-    if (_replicationState.load() > SQLiteNode::WAITING) {
-        logLine += " Replication State: " + SQLiteNode::stateNames[_replicationState.load()] + " > SQLC_WAITING.";
-    }
-    if (!_commandQueue.empty()) {
-        logLine += " Command queue not empty. Size: " + to_string(_commandQueue.size()) + ".";
-    }
-    if (_commandsInProgress.load()) {
-        logLine += " Commands in progress: " + to_string(_commandsInProgress.load()) + ".";
-    }
-
-    // Also log the shutdown state.
-    SHUTDOWN_STATE state = _shutdownState.load();
-    string stateString;
-    switch (state) {
-        case RUNNING:
-            stateString = "RUNNING";
-            break;
-        case START_SHUTDOWN:
-            stateString = "START_SHUTDOWN";
-            break;
-        case CLIENTS_RESPONDED:
-            stateString = "CLIENTS_RESPONDED";
-            break;
-        case DONE:
-            stateString = "DONE";
-            break;
-        default:
-            stateString = "UNKNOWN";
-            break;
-    }
-    logLine += " Shutdown State: " + stateString + ".";
-    SHMMM(logLine);
-
+    // We wait until the sync thread returns.
     return false;
 }
 
@@ -1794,7 +1757,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason
               << "', closing command port on '" << _args["-serverHost"] << "'");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
         _gracefulShutdownTimeout.start();
 
         // Delete any commands scheduled in the future.

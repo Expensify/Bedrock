@@ -105,12 +105,12 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     _sendToPeer(peer, escalate);
 }
 
-void SQLiteNode::beginShutdown() {
+void SQLiteNode::beginShutdown(uint64_t usToWait) {
     // Ignore redundant
     if (!gracefulShutdown()) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+        _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
     }
 }
@@ -140,9 +140,16 @@ bool SQLiteNode::shutdownComplete() {
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_gracefulShutdownTimeout.ringing()) {
-        // Timing out
         SWARN("Graceful shutdown timed out, killing non gracefully.");
-        // Force this.
+        if (_escalatedCommandMap.size()) {
+            SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
+            for (auto& commandPair : _escalatedCommandMap) {
+                commandPair.second.response.methodLine = "500 Abandoned";
+                commandPair.second.complete = true;
+                _server.acceptCommand(move(commandPair.second), false);
+            }
+            _escalatedCommandMap.clear();
+        }
         _changeState(SEARCHING);
         return true;
     }
