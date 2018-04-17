@@ -186,9 +186,12 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 } catch (const SException& e) {
-                    // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
-                                                       << "), reconnecting:" << message.serialize());
+                    // Warn if the message is set. Otherwise, the error is that we got no message (we timed out), just
+                    // reconnect without complaining about it.
+                    if (message.methodLine.size()) {
+                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
+                                                           << "), reconnecting:" << message.serialize());
+                    }
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
                     peer->s->send(reconnect.serialize());
