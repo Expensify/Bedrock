@@ -46,6 +46,11 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
+    // Reset the content object. It could have been written by a previous call to this function that conflicted in
+    // multi-write.
+    content.clear();
+    response.clear();
+
     // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // - GetJob( name )
