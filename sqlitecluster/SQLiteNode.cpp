@@ -942,7 +942,7 @@ bool SQLiteNode::update() {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
             } else if (!_server.canStandDown()) {
                 // Try again.
-                SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
+                SINFO("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return false;
             }
             // Standdown complete
