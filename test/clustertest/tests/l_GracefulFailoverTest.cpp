@@ -135,7 +135,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
-        list<thread> threads;
+        list<thread>* threads = new list<thread>();
         atomic<bool> done;
         done.store(false);
         map<string, int>* counts = new map<string, int>();
@@ -143,7 +143,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         atomic<int> commandID(10000);
         mutex mu;
         vector<list<SData>>* allresults = new vector<list<SData>>(60);
-        startClientThreads(threads, done, *counts, commandID, mu, *allresults);
+        startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
         // Let the clients get some activity going, we want everything to be busy.
         sleep(2);
@@ -186,10 +186,10 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // We're done, let spammers finish.
         done.store(true);
-        for (auto& t : threads) {
+        for (auto& t : *threads) {
             t.join();
         }
-        threads.clear();
+        threads->clear();
         counts->clear();
         allresults->clear();
         allresults->resize(60);
@@ -202,7 +202,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         }
         
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
-        startClientThreads(threads, done, *counts, commandID, mu, *allresults);
+        startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
         // Wait for them to be busy.
         sleep(2);
@@ -227,16 +227,17 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // We're really done, let everything finish a last time.
         done.store(true);
-        for (auto& t : threads) {
+        for (auto& t : *threads) {
             t.join();
         }
-        threads.clear();
+        threads->clear();
         counts->clear();
         allresults->clear();
         allresults->resize(60);
         done.store(false);
 
         delete counts;
+        delete threads;
         delete allresults;
     }
 

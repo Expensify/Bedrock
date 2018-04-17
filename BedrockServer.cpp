@@ -1394,8 +1394,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         if (!lastChance) {
             lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
-        // If we've run out of sockets or hit a timeout, we'll increment _shutdownState.
-        if ((lastChance && lastChance < STimeNow()) || _gracefulShutdownTimeout.ringing() || socketList.empty()) {
+        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
+        if (socketList.empty() || _gracefulShutdownTimeout.ringing()) {
             lastChance = 0;
             _shutdownState.store(CLIENTS_RESPONDED);
         }
