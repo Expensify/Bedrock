@@ -100,11 +100,15 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         int success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = node->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == state) {
-                success = true;
-                break;
+            try {
+                string response = node->executeWaitVerifyContent(cmd);
+                STable json = SParseJSONObject(response);
+                if (json["state"] == state) {
+                    success = true;
+                    break;
+                }
+            } catch (const SException& e) {
+                // Just try again.
             }
 
             // Give it another second...
@@ -117,11 +121,14 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         BedrockTester* node = tester->getBedrockTester(nodeNumber);
         int count = 0;
         while (count++ < 50) {
-            SData cmd("Status");
-            string response = node->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            return json[propName];
-
+            try {
+                SData cmd("Status");
+                string response = node->executeWaitVerifyContent(cmd);
+                STable json = SParseJSONObject(response);
+                return json[propName];
+            } catch (const SException& e) {
+                // Just try again.
+            }
             // Give it another second...
             sleep(1);
         }
