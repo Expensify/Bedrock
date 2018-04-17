@@ -146,7 +146,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
                     if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
-                        SWARN("Connection with peer '" << peer->name << "' timed out.");
+                        SHMMM("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
