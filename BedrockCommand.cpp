@@ -218,20 +218,20 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     // Log all this info.
-    SINFO("command '" << request.methodLine << "' timing info (us): "
-          << peekTotal << " (" << peekCount << "), "
-          << processTotal << " (" << processCount << "), "
-          << commitWorkerTotal << ", "
-          << commitSyncTotal << ", "
-          << queueWorkerTotal << ", "
-          << queueSyncTotal << ", "
-          << totalTime << ", "
-          << unaccountedTime << ", "
-          << escalationTimeUS << ". Upstream: "
-          << upstreamPeekTime << ", "
-          << upstreamProcessTime << ", "
-          << upstreamTotalTime << ", "
-          << upstreamUnaccountedTime << "."
+    SINFO("command '" << request.methodLine << "' timing info (ms): "
+          << peekTotal/STIME_US_PER_MS << " (" << peekCount << "), "
+          << processTotal/STIME_US_PER_MS << " (" << processCount << "), "
+          << commitWorkerTotal/STIME_US_PER_MS << ", "
+          << commitSyncTotal/STIME_US_PER_MS << ", "
+          << queueWorkerTotal/STIME_US_PER_MS << ", "
+          << queueSyncTotal/STIME_US_PER_MS << ", "
+          << totalTime/STIME_US_PER_MS << ", "
+          << unaccountedTime/STIME_US_PER_MS << ", "
+          << escalationTimeUS/STIME_US_PER_MS << ". Upstream: "
+          << upstreamPeekTime/STIME_US_PER_MS << ", "
+          << upstreamProcessTime/STIME_US_PER_MS << ", "
+          << upstreamTotalTime/STIME_US_PER_MS << ", "
+          << upstreamUnaccountedTime/STIME_US_PER_MS << "."
     );
 
     // And here's where we set our own values.

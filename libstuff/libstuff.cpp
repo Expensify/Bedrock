@@ -1870,7 +1870,7 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
     }
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
-    int timeoutVal = int(timeout / 1000);
+    int timeoutVal = int(timeout / STIME_US_PER_MS);
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.

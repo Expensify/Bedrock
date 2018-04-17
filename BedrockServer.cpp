@@ -420,7 +420,7 @@ void BedrockServer::sync(SData& args,
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
                 // explicit logging for it to check.
-                SINFO("[performance] Waited " << (STimeNow() - beforeLock) << "us for _syncThreadCommitMutex.");
+                SINFO("[performance] Waited " << (STimeNow() - beforeLock)/STIME_US_PER_MS << "ms for _syncThreadCommitMutex.");
 
                 // We peek commands here in the sync thread to be able to run peek and process as part of the same
                 // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
@@ -826,7 +826,7 @@ void BedrockServer::worker(SData& args,
                                 uint64_t preLockTime = STimeNow();
                                 shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
                                 SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
-                                      << ((STimeNow() - preLockTime)/1000.0) << "ms.");
+                                      << ((STimeNow() - preLockTime)/STIME_US_PER_MS) << "ms.");
 
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
@@ -1408,7 +1408,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Log the timing of this loop.
-    uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / 1000;
+    uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / STIME_US_PER_MS;
     SINFO("Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
           << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
 

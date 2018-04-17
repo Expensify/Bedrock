@@ -226,7 +226,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             int result = sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
             SINFO("[checkpoint] passive checkpoint complete with " << pageCount
                   << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
-                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / STIME_US_PER_MS) << "ms.");
         }
     } else {
         // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
@@ -269,14 +269,14 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
-                    SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
+                    SINFO("[checkpoint] Waited " << ((checkpointStart - start) / STIME_US_PER_MS)
                           << "ms for pending transactions. Starting complete checkpoint.");
                     int walSizeFrames = 0;
                     int framesCheckpointed = 0;
                     int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
                     SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
                           << framesCheckpointed << " of " << walSizeFrames
-                          << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
+                          << " in " << ((STimeNow() - checkpointStart) / STIME_US_PER_MS) << "ms.");
 
                     // We're done. Unlock and anyone can start a new transaction.
                     object->_sharedData->blockNewTransactionsMutex.unlock();
@@ -602,7 +602,7 @@ int SQLite::commit() {
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
-    SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
+    SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/STIME_US_PER_MS) << "ms.");
 
     // And record pages after the commit.
     int endPages;

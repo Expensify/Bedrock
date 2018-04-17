@@ -179,7 +179,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
                             // peers.
                             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
-                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
+                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/STIME_US_PER_MS << "ms latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
                             _onMESSAGE(peer, message);

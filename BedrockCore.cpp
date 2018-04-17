@@ -49,7 +49,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         } catch (const SQLite::timeout_error& e) {
             if (!shouldSuppressTimeoutWarnings) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time()/STIME_US_PER_MS << "ms.");
             }
             STHROW("555 Timeout peeking command");
         }
@@ -143,7 +143,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time() << "us.");
+                SALERT("Command " << command.request.methodLine << " timed out after " << e.time()/STIME_US_PER_MS << "ms.");
                 STHROW("555 Timeout processing command");
             }
         }

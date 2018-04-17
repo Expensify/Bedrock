@@ -766,7 +766,7 @@ bool SQLiteNode::update() {
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
                 uint64_t beforeCommit = STimeNow();
                 int result = _db.commit();
-                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
+                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/STIME_US_PER_MS) << "ms.");
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
@@ -885,7 +885,7 @@ bool SQLiteNode::update() {
             // And send it to everyone who's subscribed.
             uint64_t beforeSend = STimeNow();
             _sendToAllPeers(transaction, true);
-            SINFO("SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/1000) << "ms.");
+            SINFO("SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/STIME_US_PER_MS) << "ms.");
 
             // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
             // asynchronous.
@@ -1699,7 +1699,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (command.escalationTimeUS) {
                 command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
                 SINFO("[performance] Total escalation time for command " << command.request.methodLine << " was "
-                      << command.escalationTimeUS << "us.");
+                      << command.escalationTimeUS/STIME_US_PER_MS << "ms.");
             }
             command.response = response;
             command.complete = true;
@@ -2150,13 +2150,13 @@ void SQLiteNode::_updateSyncPeer()
         string from, to;
         if (_syncPeer) {
             from = _syncPeer->name + " (commit count=" + (*_syncPeer)["CommitCount"] + "), latency="
-                                   + to_string(_syncPeer->latency) + "us";
+                                   + to_string(_syncPeer->latency/STIME_US_PER_MS) + "ms";
         } else {
             from = "(NONE)";
         }
         if (newSyncPeer) {
             to = newSyncPeer->name + " (commit count=" + (*newSyncPeer)["CommitCount"] + "), latency="
-                                   + to_string(newSyncPeer->latency) + "us";
+                                   + to_string(newSyncPeer->latency/STIME_US_PER_MS) + "ms";
         } else {
             to = "(NONE)";
         }
@@ -2172,7 +2172,7 @@ void SQLiteNode::_updateSyncPeer()
             } else if (peer->calcU64("CommitCount") <= commitCount) {
                 nonChosenPeers.push_back(peer->name + ":commit=" + (*peer)["CommitCount"]);
             } else {
-                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency) + "us");
+                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/STIME_US_PER_MS) + "ms");
             }
         }
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));
