@@ -71,8 +71,7 @@ class SQLiteNode : public STCPNode {
     bool commitSucceeded() { return _commitState == CommitState::SUCCESS; }
 
     // Call this if you want to shut down the node.
-    // Default timeout is 30 seconds.
-    void beginShutdown(uint64_t usToWait = 30'000'000);
+    void beginShutdown(uint64_t usToWait);
 
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();

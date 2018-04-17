@@ -907,8 +907,7 @@ void BedrockServer::worker(SData& args,
             }
         }
 
-        // Even if the sync thread is shut down, we still have work to do here, so we'll try another loop until we
-        // don't find any commands to process, or we hit the timeout.
+        // If we hit the timeout, doesn't matter if we've got work to do. Exit.
         if (server._gracefulShutdownTimeout.ringing()) {
             SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
             return;

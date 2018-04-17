@@ -94,9 +94,10 @@ class BedrockServer : public SQLiteServer {
     //
     // Notes on timing out a shutdown.
     // Here's how timing out a shutdown works:
-    // 1. When beginShutdown() is called, it sets a one minute timer. It proceeds to shut down the node as normal.
+    // 1. When _beginShutdown() is called, it sets a one minute timer. It proceeds to shut down the node as normal.
     // 2. When shutdown progresses far enough that we can shut down the sync node, we set the timeout for the sync node
-    // to whatever portion of our minute is remaining (minus 5 seconds, to allow for final cleanup afterward).
+    // to whatever portion of our minute is remaining (minus 5 seconds, to allow for final cleanup afterward - also, we
+    // make sure this value stays positive, so will always be at least 1us).
     // 3. The sync node should finish with at least 5 seconds left, and we should finish any final cleanup or responses
     // and shut down cleanly.
     //
