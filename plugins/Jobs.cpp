@@ -195,7 +195,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         for (auto& job : jsonJobs) {
             // If no priority set, set it
-            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
+            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : JOBS_DEFAULT_PRIORITY;
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
