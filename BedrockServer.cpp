@@ -1488,7 +1488,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
         _socketIDMap.erase(socketIt);
     }
     else if (!SIEquals(command.request["Connection"], "forget")) {
-        SWARN("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
+        SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
     }
     _commandsInProgress--;
 }
