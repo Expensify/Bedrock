@@ -53,6 +53,7 @@
 #define S_ENOBUFS ENOBUFS
 #define S_ENOTCONN ENOTCONN
 #define S_ECONNABORTED ECONNABORTED
+#define S_ECONNREFUSED ECONNREFUSED
 #define S_EACCES EACCES
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
@@ -1823,7 +1824,8 @@ bool S_sendconsume(int s, string& sendBuffer) {
         case S_ECONNRESET:
         case S_ETIMEDOUT:
         case S_ENOTCONN:
-            SINFO("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), closing.");
+        case S_ECONNREFUSED:
+            SHMMM("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), closing.");
             return false; // Socket died
 
         // And these aren't interesting enough to say anything about at all (and aren't fatal).
