@@ -25,10 +25,12 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
                         // We ask for `756` responses to verify we don't accidentally get back something besides what
                         // we expect (some default value).
-                        if (i % 10 == 0) {
-                            if (j % 5 == 0) {
+                        int randNum = SRandom::rand64();
+                        int randNum2 = SRandom::rand64();
+                        if (randNum % 10 == 0) {
+                            if (randNum2 % 5 == 0) {
                                 SData query("sendrequest" + randCommand);
-                                if (j % 15 == 0) {
+                                if (randNum2 % 15 == 0) {
                                     // In this case, let's make them `Connection: forget` to make sure they're
                                     // forgotten.
                                     query["Connection"] = "forget";
@@ -39,7 +41,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                                 query["response"] = "756";
                                 requests.push_back(query);
                             }
-                        } else if (i % 2 == 0) {
+                        } else if (randNum % 2 == 0) {
                             // Every remaining even client makes write requests.
                             SData query("idcollision" + randCommand);
                             query["writeConsistency"] = "ASYNC";
@@ -53,7 +55,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
                             // Any other client makes read requests.
                             SData query("testcommand" + randCommand);
                             // A few of them will get scheduled in the future to make sure they don't block shutdown.
-                            if (j % 50 == 15) {
+                            if (randNum2 % 50 == 15) {
                                 query["commandExecuteTime"] = to_string(STimeNow() + 1000000 * 60);
                             }
                             query["peekSleep"] = "10";
@@ -98,11 +100,15 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         int success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = node->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == state) {
-                success = true;
-                break;
+            try {
+                string response = node->executeWaitVerifyContent(cmd);
+                STable json = SParseJSONObject(response);
+                if (json["state"] == state) {
+                    success = true;
+                    break;
+                }
+            } catch (const SException& e) {
+                // Just try again.
             }
 
             // Give it another second...
@@ -115,11 +121,14 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         BedrockTester* node = tester->getBedrockTester(nodeNumber);
         int count = 0;
         while (count++ < 50) {
-            SData cmd("Status");
-            string response = node->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            return json[propName];
-
+            try {
+                SData cmd("Status");
+                string response = node->executeWaitVerifyContent(cmd);
+                STable json = SParseJSONObject(response);
+                return json[propName];
+            } catch (const SException& e) {
+                // Just try again.
+            }
             // Give it another second...
             sleep(1);
         }
@@ -133,15 +142,15 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
-        list<thread> threads;
+        list<thread>* threads = new list<thread>();
         atomic<bool> done;
         done.store(false);
-        map<string, int> counts;
+        map<string, int>* counts = new map<string, int>();
 
         atomic<int> commandID(10000);
         mutex mu;
-        vector<list<SData>> allresults(60);
-        startClientThreads(threads, done, counts, commandID, mu, allresults);
+        vector<list<SData>>* allresults = new vector<list<SData>>(60);
+        startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
         // Let the clients get some activity going, we want everything to be busy.
         sleep(2);
@@ -157,6 +166,7 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // Bring master back up.
         ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
+        sleep(15);
 
         // Now let's  stop a slave and make sure everything keeps working.
         tester->stopNode(2);
@@ -183,23 +193,23 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // We're done, let spammers finish.
         done.store(true);
-        for (auto& t : threads) {
+        for (auto& t : *threads) {
             t.join();
         }
-        threads.clear();
-        counts.clear();
-        allresults.clear();
-        allresults.resize(60);
+        threads->clear();
+        counts->clear();
+        allresults->clear();
+        allresults->resize(60);
         done.store(false);
 
         // Verify everything was either a 202 or a 756.
-        for (auto& p : counts) {
+        for (auto& p : *counts) {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
             cout << "method: " << p.first << ", count: " << p.second << endl;
         }
         
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
-        startClientThreads(threads, done, counts, commandID, mu, allresults);
+        startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
         // Wait for them to be busy.
         sleep(2);
@@ -224,14 +234,18 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
 
         // We're really done, let everything finish a last time.
         done.store(true);
-        for (auto& t : threads) {
+        for (auto& t : *threads) {
             t.join();
         }
-        threads.clear();
-        counts.clear();
-        allresults.clear();
-        allresults.resize(60);
+        threads->clear();
+        counts->clear();
+        allresults->clear();
+        allresults->resize(60);
         done.store(false);
+
+        delete counts;
+        delete threads;
+        delete allresults;
     }
 
 } __l_GracefulFailoverTest;

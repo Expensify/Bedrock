@@ -91,6 +91,50 @@ class BedrockServer : public SQLiteServer {
     // can do about these, except not shut down. If we're standing down, we could keep them, but they break our
     // checking against whether the main command queue is empty, and fall into the same category of us being unable to
     // distinguish them from commands that may have already started.
+    //
+    // Notes on timing out a shutdown.
+    // Here's how timing out a shutdown works:
+    // 1. When _beginShutdown() is called, it sets a one minute timer. It proceeds to shut down the node as normal.
+    // 2. When shutdown progresses far enough that we can shut down the sync node, we set the timeout for the sync node
+    // to whatever portion of our minute is remaining (minus 5 seconds, to allow for final cleanup afterward - also, we
+    // make sure this value stays positive, so will always be at least 1us).
+    // 3. The sync node should finish with at least 5 seconds left, and we should finish any final cleanup or responses
+    // and shut down cleanly.
+    //
+    // However, if we do get to the end of our 1 minute timer, everything just starts exiting. Worker threads return,
+    // whether there's more work to do or not. The sync thread drops out of it's main loop and starts joining workers.
+    // This leaves us in a potentially broken state, and hitting the timeout should count as an error condition, but we
+    // need to support it for now. Here's the case that should look catastrophic, but is actually quite common, and what
+    // we should eventually do about it:
+    // 
+    // A slave begins shutdown, and sets a 60 second timeout. It has escalated commands to master. It wants to wait for
+    // the responses to these commands before it finishes shutting down, but *there is no timeout on escalated
+    // commands*. Normally, we won't try to shut down the sync node until we've responded to all connected clients.
+    // Because there will always be connected clients waiting for these responses to escalated commands, we'll wait the
+    // full 60 seconds, and then we'll just die with no responses. Effectively, the sever `kill -9`'s itself here,
+    // leaving clients hanging with no cleanup.
+    //
+    // On master, this state could be catastrophic, though master doesn't need to worry about a lack of timeouts on
+    // escalations, so let's look at a different case - a command running a custom query that takes longer than our 60
+    // second timeout. There will be a local client waiting for the response to this command, so the same criteria
+    // breaks - we can't shut down the sync thread until it's complete, but the command it's waiting for doesn't return
+    // until after our timeout. This is *after* everything just starts exiting, which is to say the sync node could
+    // have shut down due to hitting the timeout before a worker thread shut down performing a write command. This
+    // write will be orphaned, as the sync node will not be able to send it out, and this database is then forked.
+    //
+    // We can't safely start shutting down the sync node until we know that all possible writes are complete for this
+    // reason, but if we're going to enforce a timeout, then we need to.
+    //
+    // The only way to make this timeout safe is to make sure no individual command can live longer than our shutdown
+    // timeout, which would require time-stamping commands pre-escalation and giving up on them if we failed to receive
+    // a response in time, as well as making sure that commands always return in less time than that (they currently,
+    // usually will, as long as the default command timeout is less than one minute, but they can still block in system
+    // calls like sleep(), and the timeout is configurable). Certainly, no "normal" command (i.e., a programmatically
+    // generated command, as opposed to something like a CustomQuery command) should have a timeout longer than the
+    // shutdown timeout, or it can cause a non-graceful shutdown.
+    //
+    // Of course, if nothing can take longer than the shutdown timeout, then we should never hit that timeout, and all
+    // our failures should be limited to individual commands rather than the entire server shutting down.
 
     // Shutdown states.
     enum SHUTDOWN_STATE {
@@ -208,6 +252,7 @@ class BedrockServer : public SQLiteServer {
 
     // The actual thread object for the sync thread.
     thread _syncThread;
+    atomic<bool> _syncThreadComplete;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes master. It will return true if the DB has changed and needs to be committed.
