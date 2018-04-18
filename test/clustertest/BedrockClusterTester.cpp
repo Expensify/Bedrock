@@ -6,7 +6,6 @@ BedrockClusterTester::BedrockClusterTester(int threadID)
 BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts)
 : _size(size)
 {
-    cout << "Starting " << size << " node bedrock cluster." << endl;
     // Make sure we won't re-allocate.
     _cluster.reserve(size);
 
