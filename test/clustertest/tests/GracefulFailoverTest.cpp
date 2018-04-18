@@ -1,11 +1,11 @@
 #include "../BedrockClusterTester.h"
 
-struct l_GracefulFailoverTest : tpunit::TestFixture {
-    l_GracefulFailoverTest()
-        : tpunit::TestFixture("l_GracefulFailover",
-                              BEFORE_CLASS(l_GracefulFailoverTest::setup),
-                              AFTER_CLASS(l_GracefulFailoverTest::teardown),
-                              TEST(l_GracefulFailoverTest::test)
+struct GracefulFailoverTest : tpunit::TestFixture {
+    GracefulFailoverTest()
+        : tpunit::TestFixture("GracefulFailover",
+                              BEFORE_CLASS(GracefulFailoverTest::setup),
+                              AFTER_CLASS(GracefulFailoverTest::teardown),
+                              TEST(GracefulFailoverTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -255,4 +255,4 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         delete allresults;
     }
 
-} __l_GracefulFailoverTest;
+} __GracefulFailoverTest;

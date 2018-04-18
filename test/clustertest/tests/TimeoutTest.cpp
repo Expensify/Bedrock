@@ -1,13 +1,13 @@
 
 #include "../BedrockClusterTester.h"
 
-struct i_TimeoutTest : tpunit::TestFixture {
-    i_TimeoutTest()
-        : tpunit::TestFixture("i_TimeoutTest",
-                              BEFORE_CLASS(i_TimeoutTest::setup),
-                              AFTER_CLASS(i_TimeoutTest::teardown),
-                              TEST(i_TimeoutTest::test),
-                              TEST(i_TimeoutTest::testprocess)) { }
+struct TimeoutTest : tpunit::TestFixture {
+    TimeoutTest()
+        : tpunit::TestFixture("TimeoutTest",
+                              BEFORE_CLASS(TimeoutTest::setup),
+                              AFTER_CLASS(TimeoutTest::teardown),
+                              TEST(TimeoutTest::test),
+                              TEST(TimeoutTest::testprocess)) { }
 
     BedrockClusterTester* tester;
 
@@ -52,5 +52,5 @@ struct i_TimeoutTest : tpunit::TestFixture {
         slow["count"] = "10000";
         brtester->executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
-} __i_TimeoutTest;
+} __TimeoutTest;
 

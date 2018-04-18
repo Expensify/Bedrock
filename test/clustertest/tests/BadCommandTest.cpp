@@ -1,11 +1,11 @@
 #include "../BedrockClusterTester.h"
 
-struct j_BadCommandTest : tpunit::TestFixture {
-    j_BadCommandTest()
-        : tpunit::TestFixture("j_BadCommand",
-                              BEFORE_CLASS(j_BadCommandTest::setup),
-                              AFTER_CLASS(j_BadCommandTest::teardown),
-                              TEST(j_BadCommandTest::test)
+struct BadCommandTest : tpunit::TestFixture {
+    BadCommandTest()
+        : tpunit::TestFixture("BadCommand",
+                              BEFORE_CLASS(BadCommandTest::setup),
+                              AFTER_CLASS(BadCommandTest::teardown),
+                              TEST(BadCommandTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -144,4 +144,4 @@ struct j_BadCommandTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
     }
 
-} __j_BadCommandTest;
+} __BadCommandTest;

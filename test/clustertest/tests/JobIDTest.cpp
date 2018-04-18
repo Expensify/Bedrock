@@ -1,11 +1,11 @@
 #include "../BedrockClusterTester.h"
 
-struct k_JobIDTest : tpunit::TestFixture {
-    k_JobIDTest()
-        : tpunit::TestFixture("k_jobID",
-                              BEFORE_CLASS(k_JobIDTest::setup),
-                              AFTER_CLASS(k_JobIDTest::teardown),
-                              TEST(k_JobIDTest::test)
+struct JobIDTest : tpunit::TestFixture {
+    JobIDTest()
+        : tpunit::TestFixture("jobID",
+                              BEFORE_CLASS(JobIDTest::setup),
+                              AFTER_CLASS(JobIDTest::teardown),
+                              TEST(JobIDTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -83,4 +83,4 @@ struct k_JobIDTest : tpunit::TestFixture {
         slave->executeWaitVerifyContentTable(getCmd, "200");
     }
 
-} __k_JobIDTest;
+} __JobIDTest;

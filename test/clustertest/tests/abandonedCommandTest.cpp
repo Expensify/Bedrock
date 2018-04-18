@@ -1,12 +1,12 @@
 #include "../BedrockClusterTester.h"
 #include <fstream>
 
-struct d_abandonedCommandTest : tpunit::TestFixture {
-    d_abandonedCommandTest()
-        : tpunit::TestFixture("d_abandonedCommandTest",
-                              BEFORE_CLASS(d_abandonedCommandTest::setup),
-                              AFTER_CLASS(d_abandonedCommandTest::teardown),
-                              TEST(d_abandonedCommandTest::abandon)) { }
+struct abandonedCommandTest : tpunit::TestFixture {
+    abandonedCommandTest()
+        : tpunit::TestFixture("abandonedCommandTest",
+                              BEFORE_CLASS(abandonedCommandTest::setup),
+                              AFTER_CLASS(abandonedCommandTest::teardown),
+                              TEST(abandonedCommandTest::abandon)) { }
 
     BedrockClusterTester* tester;
 
@@ -86,4 +86,4 @@ struct d_abandonedCommandTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[1], results[2]);
     }
 
-} __d_abandonedCommandTest;
+} __abandonedCommandTest;

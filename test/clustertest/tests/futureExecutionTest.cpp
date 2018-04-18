@@ -1,12 +1,12 @@
 #include "../BedrockClusterTester.h"
 #include <fstream>
 
-struct e_futureExecutionTest : tpunit::TestFixture {
-    e_futureExecutionTest()
-        : tpunit::TestFixture("e_futureExecution",
-                              BEFORE_CLASS(e_futureExecutionTest::setup),
-                              AFTER_CLASS(e_futureExecutionTest::teardown),
-                              TEST(e_futureExecutionTest::futureExecution)) { }
+struct futureExecutionTest : tpunit::TestFixture {
+    futureExecutionTest()
+        : tpunit::TestFixture("futureExecution",
+                              BEFORE_CLASS(futureExecutionTest::setup),
+                              AFTER_CLASS(futureExecutionTest::teardown),
+                              TEST(futureExecutionTest::futureExecution)) { }
 
     BedrockClusterTester* tester;
 
@@ -48,4 +48,4 @@ struct e_futureExecutionTest : tpunit::TestFixture {
         ASSERT_TRUE(SContains(result, "50011"));
     }
 
-} __e_futureExecutionTest;
+} __futureExecutionTest;

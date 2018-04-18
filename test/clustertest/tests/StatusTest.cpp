@@ -1,11 +1,11 @@
 #include "../BedrockClusterTester.h"
 
-struct c_StatusTest : tpunit::TestFixture {
-    c_StatusTest()
-        : tpunit::TestFixture("c_StatusTest",
-                              BEFORE_CLASS(c_StatusTest::setup),
-                              AFTER_CLASS(c_StatusTest::teardown),
-                              TEST(c_StatusTest::status)) { }
+struct StatusTest : tpunit::TestFixture {
+    StatusTest()
+        : tpunit::TestFixture("StatusTest",
+                              BEFORE_CLASS(StatusTest::setup),
+                              AFTER_CLASS(StatusTest::teardown),
+                              TEST(StatusTest::status)) { }
 
     BedrockClusterTester* tester;
 
@@ -55,4 +55,4 @@ struct c_StatusTest : tpunit::TestFixture {
             ASSERT_EQUAL(peers.size(), 2);
         }
     }
-} __c_StatusTest;
+} __StatusTest;
