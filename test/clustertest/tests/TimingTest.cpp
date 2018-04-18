@@ -1,12 +1,12 @@
 
 #include "../BedrockClusterTester.h"
 
-struct timingTest : tpunit::TestFixture {
-    timingTest()
-        : tpunit::TestFixture("timingTest",
-                              BEFORE_CLASS(timingTest::setup),
-                              AFTER_CLASS(timingTest::teardown),
-                              TEST(timingTest::test)) { }
+struct TimingTest : tpunit::TestFixture {
+    TimingTest()
+        : tpunit::TestFixture("TimingTest",
+                              BEFORE_CLASS(TimingTest::setup),
+                              AFTER_CLASS(TimingTest::teardown),
+                              TEST(TimingTest::test)) { }
 
     BedrockClusterTester* tester;
 
@@ -95,5 +95,5 @@ struct timingTest : tpunit::TestFixture {
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
         }
     }
-} __timingTest;
+} __TimingTest;
 

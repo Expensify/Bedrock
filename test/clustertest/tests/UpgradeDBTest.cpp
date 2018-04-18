@@ -1,11 +1,11 @@
 #include "../BedrockClusterTester.h"
 
-struct upgradeDBTest : tpunit::TestFixture {
-    upgradeDBTest()
-        : tpunit::TestFixture("upgradeDBTest",
-                              BEFORE_CLASS(upgradeDBTest::setup),
-                              AFTER_CLASS(upgradeDBTest::teardown),
-                              TEST(upgradeDBTest::test)) { }
+struct UpgradeDBTest : tpunit::TestFixture {
+    UpgradeDBTest()
+        : tpunit::TestFixture("UpgradeDBTest",
+                              BEFORE_CLASS(UpgradeDBTest::setup),
+                              AFTER_CLASS(UpgradeDBTest::teardown),
+                              TEST(UpgradeDBTest::test)) { }
 
     BedrockClusterTester* tester;
 
@@ -28,5 +28,5 @@ struct upgradeDBTest : tpunit::TestFixture {
             string result = brtester->executeWaitVerifyContent(query, "200");
         }
     }
-} __upgradeDBTest;
+} __UpgradeDBTest;
 

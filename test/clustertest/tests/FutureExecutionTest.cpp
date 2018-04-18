@@ -1,12 +1,12 @@
 #include "../BedrockClusterTester.h"
 #include <fstream>
 
-struct futureExecutionTest : tpunit::TestFixture {
-    futureExecutionTest()
-        : tpunit::TestFixture("futureExecution",
-                              BEFORE_CLASS(futureExecutionTest::setup),
-                              AFTER_CLASS(futureExecutionTest::teardown),
-                              TEST(futureExecutionTest::futureExecution)) { }
+struct FutureExecutionTest : tpunit::TestFixture {
+    FutureExecutionTest()
+        : tpunit::TestFixture("FutureExecution",
+                              BEFORE_CLASS(FutureExecutionTest::setup),
+                              AFTER_CLASS(FutureExecutionTest::teardown),
+                              TEST(FutureExecutionTest::FutureExecution)) { }
 
     BedrockClusterTester* tester;
 
@@ -18,7 +18,7 @@ struct futureExecutionTest : tpunit::TestFixture {
         delete tester;
     }
 
-    void futureExecution() {
+    void FutureExecution() {
         // We only care about master because future execution only works on Master.
         BedrockTester* brtester = tester->getBedrockTester(0);
 
@@ -48,4 +48,4 @@ struct futureExecutionTest : tpunit::TestFixture {
         ASSERT_TRUE(SContains(result, "50011"));
     }
 
-} __futureExecutionTest;
+} __FutureExecutionTest;
