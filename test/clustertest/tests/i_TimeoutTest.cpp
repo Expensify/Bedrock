@@ -4,14 +4,24 @@
 struct i_TimeoutTest : tpunit::TestFixture {
     i_TimeoutTest()
         : tpunit::TestFixture("i_TimeoutTest",
+                              BEFORE_CLASS(i_TimeoutTest::setup),
+                              AFTER_CLASS(i_TimeoutTest::teardown),
                               TEST(i_TimeoutTest::test),
                               TEST(i_TimeoutTest::testprocess)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Run one long query.
@@ -28,7 +38,6 @@ struct i_TimeoutTest : tpunit::TestFixture {
     void testprocess()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Run one long query.

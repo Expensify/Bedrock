@@ -3,14 +3,23 @@
 struct j_BadCommandTest : tpunit::TestFixture {
     j_BadCommandTest()
         : tpunit::TestFixture("j_BadCommand",
+                              BEFORE_CLASS(j_BadCommandTest::setup),
+                              AFTER_CLASS(j_BadCommandTest::teardown),
                               TEST(j_BadCommandTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
-        tester = BedrockClusterTester::testers.front();
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 

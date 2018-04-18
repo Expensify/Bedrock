@@ -52,7 +52,7 @@ travis_fold end build_bedrock
 travis_fold start test_bedrock
 travis_time_start
 cd test
-./test
+./test -threads 8
 cd ..
 travis_time_finish
 travis_fold end test_bedrock

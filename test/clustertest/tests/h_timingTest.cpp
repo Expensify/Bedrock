@@ -4,13 +4,23 @@
 struct h_timingTest : tpunit::TestFixture {
     h_timingTest()
         : tpunit::TestFixture("h_timingTest",
+                              BEFORE_CLASS(h_timingTest::setup),
+                              AFTER_CLASS(h_timingTest::teardown),
                               TEST(h_timingTest::test)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         for (auto i : {0,1,2}) {
             BedrockTester* brtester = tester->getBedrockTester(i);
 

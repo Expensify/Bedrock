@@ -3,14 +3,22 @@
 struct c_StatusTest : tpunit::TestFixture {
     c_StatusTest()
         : tpunit::TestFixture("c_StatusTest",
+                              BEFORE_CLASS(c_StatusTest::setup),
+                              AFTER_CLASS(c_StatusTest::teardown),
                               TEST(c_StatusTest::status)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void status()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         mutex m;
 
         // Send to each node simultaneously.

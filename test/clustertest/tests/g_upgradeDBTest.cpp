@@ -3,12 +3,22 @@
 struct g_upgradeDBTest : tpunit::TestFixture {
     g_upgradeDBTest()
         : tpunit::TestFixture("g_upgradeDBTest",
+                              BEFORE_CLASS(g_upgradeDBTest::setup),
+                              AFTER_CLASS(g_upgradeDBTest::teardown),
                               TEST(g_upgradeDBTest::test)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         for (auto i : {0,1,2}) {
             BedrockTester* brtester = tester->getBedrockTester(i);
 

@@ -3,6 +3,8 @@
 struct a_MasteringTest : tpunit::TestFixture {
     a_MasteringTest()
         : tpunit::TestFixture("a_Mastering",
+                              BEFORE_CLASS(a_MasteringTest::setup),
+                              AFTER_CLASS(a_MasteringTest::teardown),
                               TEST(a_MasteringTest::clusterUp),
                               TEST(a_MasteringTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
@@ -13,11 +15,16 @@ struct a_MasteringTest : tpunit::TestFixture {
 
     BedrockClusterTester* tester;
 
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown () {
+        delete tester;
+    }
+
     void clusterUp()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         vector<string> results(3);
 
         // Get the status from each node.

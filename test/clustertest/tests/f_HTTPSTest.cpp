@@ -18,14 +18,22 @@
 struct f_HTTPSTest : tpunit::TestFixture {
     f_HTTPSTest()
         : tpunit::TestFixture("f_HTTPSTest",
+                              BEFORE_CLASS(f_HTTPSTest::setup),
+                              AFTER_CLASS(f_HTTPSTest::teardown),
                               TEST(f_HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
+
+    void setup () {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         // Send one request to verify that it works.
         BedrockTester* brtester = tester->getBedrockTester(0);
 

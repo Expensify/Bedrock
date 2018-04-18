@@ -3,10 +3,20 @@
 struct l_GracefulFailoverTest : tpunit::TestFixture {
     l_GracefulFailoverTest()
         : tpunit::TestFixture("l_GracefulFailover",
+                              BEFORE_CLASS(l_GracefulFailoverTest::setup),
+                              AFTER_CLASS(l_GracefulFailoverTest::teardown),
                               TEST(l_GracefulFailoverTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
 
     void startClientThreads(list<thread>& threads, atomic<bool>& done, map<string, int>& counts,
                             atomic<int>& commandID, mutex& mu, vector<list<SData>>& allresults) {
@@ -136,9 +146,6 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        // Verify the existing master is up.
-        tester = BedrockClusterTester::testers.front();
-
         ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.

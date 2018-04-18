@@ -3,14 +3,23 @@
 struct k_JobIDTest : tpunit::TestFixture {
     k_JobIDTest()
         : tpunit::TestFixture("k_jobID",
+                              BEFORE_CLASS(k_JobIDTest::setup),
+                              AFTER_CLASS(k_JobIDTest::teardown),
                               TEST(k_JobIDTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup () {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown () {
+        delete tester;
+    }
+
     void test()
     {
-        tester = BedrockClusterTester::testers.front();
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 

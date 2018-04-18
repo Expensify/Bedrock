@@ -21,7 +21,6 @@ class BedrockTester {
     // These can be over-ridden when instantiating a tester.
     // Typically, these values will be set in main().
     static string defaultDBFile;
-    static string defaultServerAddr;
 
     // This is expected to be set by main, built from argv, to expose command-line options to tests.
     static SData globalArgs;
@@ -33,8 +32,15 @@ class BedrockTester {
     string getServerAddr() { return _serverAddr; };
 
     // Constructor/destructor
+    // Automatically use the default threadID (won't work correctly with multi-threaded tests)
     BedrockTester(const map<string, string>& args = {},
-                  const list<string>& queries = {}, 
+                  const list<string>& queries = {},
+                  bool startImmediately = true,
+                  bool keepFilesWhenFinished = false);
+
+    // Supply a threadID.
+    BedrockTester(int threadID, const map<string, string>& args = {},
+                  const list<string>& queries = {},
                   bool startImmediately = true,
                   bool keepFilesWhenFinished = false);
     ~BedrockTester();

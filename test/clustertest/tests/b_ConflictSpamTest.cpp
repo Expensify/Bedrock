@@ -4,6 +4,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
     b_ConflictSpamTest()
         : tpunit::TestFixture("b_ConflictSpam",
                               BEFORE_CLASS(b_ConflictSpamTest::setup),
+                              AFTER_CLASS(b_ConflictSpamTest::teardown),
                               TEST(b_ConflictSpamTest::slow),
                               TEST(b_ConflictSpamTest::spam)) { }
 
@@ -21,7 +22,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
         // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
         // happen as expected.
-        tester = BedrockClusterTester::testers.front();
+        tester = new BedrockClusterTester(_threadID);
         for (int i = 0; i < 3; i++) {
             BedrockTester* node = tester->getBedrockTester(i);
             SData controlCommand("SetCheckpointIntervals");
@@ -35,6 +36,10 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             ASSERT_EQUAL(results[0]["fullCheckpointPageMin"], to_string(25000));
             ASSERT_EQUAL(results[0]["passiveCheckpointPageMin"], to_string(2500));
         }
+    }
+
+    void teardown() {
+        delete tester;
     }
 
     void slow()
@@ -80,9 +85,6 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         recursive_mutex m;
         atomic<int> totalRequestFailures(0);
 

@@ -4,11 +4,22 @@
 struct e_futureExecutionTest : tpunit::TestFixture {
     e_futureExecutionTest()
         : tpunit::TestFixture("e_futureExecution",
+                              BEFORE_CLASS(e_futureExecutionTest::setup),
+                              AFTER_CLASS(e_futureExecutionTest::teardown),
                               TEST(e_futureExecutionTest::futureExecution)) { }
+
+    BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
 
     void futureExecution() {
         // We only care about master because future execution only works on Master.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Let's run a command in the future.

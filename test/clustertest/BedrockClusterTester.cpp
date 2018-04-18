@@ -1,6 +1,7 @@
 #include "BedrockClusterTester.h"
 
-list<BedrockClusterTester*> BedrockClusterTester::testers;
+BedrockClusterTester::BedrockClusterTester(int threadID)
+  : BedrockClusterTester(THREE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, threadID, {}, {}) {}
 
 BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts)
 : _size(size)
@@ -85,7 +86,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         for (auto& a : _args) {
             args[a.first] = a.second;
         }
-        _cluster.emplace_back(args, queries, false);
+        _cluster.emplace_back(threadID, args, queries, false);
     }
     list<thread> threads;
     for (size_t i = 0; i < _cluster.size(); i++) {
@@ -120,8 +121,6 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             usleep(500000); // 0.5 seconds.
         }
     }
-
-    testers.push_back(this);
 }
 
 BedrockClusterTester::~BedrockClusterTester()
@@ -132,10 +131,6 @@ BedrockClusterTester::~BedrockClusterTester()
     }
 
     _cluster.clear();
-    // Remove ourselves from our global list.
-    testers.remove_if([this](BedrockClusterTester* bct){
-        return (bct == this);
-    });
 }
 
 BedrockTester* BedrockClusterTester::getBedrockTester(size_t index)
