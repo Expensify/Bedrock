@@ -698,6 +698,9 @@ int S_poll(fd_map& fdm, uint64_t timeout);
 string SGetHostName();
 string SGetPeerName(int s);
 
+// Common error checking/logging.
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber);
+
 // --------------------------------------------------------------------------
 // File stuff
 // --------------------------------------------------------------------------
