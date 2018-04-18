@@ -1172,7 +1172,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 // **FIXME**: Should it also deny if it knows of a higher priority peer?
                 SData response("STANDUP_RESPONSE");
                 // Parrot back the node's attempt count so that it can differentiate stale responses.
-                response["AttemptCount"] = message["AttemptCount"];
+                response["StandupAttemptCount"] = message["StandupAttemptCount"];
                 if (peer->params["Permaslave"] == "true") {
                     // We think it's a permaslave, deny
                     PHMMM("Permaslave trying to stand up, denying.");
@@ -1271,8 +1271,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
             // messages from peers on older versions. Once all nodes have been upgraded past the first version that
             // supports this, we can enforce that this count is present.
-            if (message.isSet("AttemptCount") && message.calc("AttemptCount") != _standupAttempt) {
-                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("AttemptCount") << "), ignoring.");
+            if (message.isSet("StandupAttemptCount") && message.calc("StandupAttemptCount") != _standupAttempt) {
+                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StandupAttemptCount") << "), ignoring.");
                 return;
             }
             if (!message.isSet("Response")) {
@@ -1998,7 +1998,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         SData state("STATE");
         if (_state == STANDINGUP) {
             // If we're standing up, peers will need to know which attempt we're on.
-            state["AttemptCount"] = to_string(++_standupAttempt);
+            state["StandupAttemptCount"] = to_string(++_standupAttempt);
         }
         state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
