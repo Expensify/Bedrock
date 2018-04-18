@@ -201,4 +201,9 @@ class SQLiteNode : public STCPNode {
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
+
+    // An integer indicating the sequential standup attempt for this node (i.e., 1 the first time this node tries to
+    // stand up as master). This is used to clarify standup responses and make sure they apply to the current attempt,
+    // rather than as late responses to old attempts to stand up.
+    int _standupAttempt;
 };

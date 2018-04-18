@@ -47,7 +47,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpoint)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _standupAttempt(0)
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -1171,6 +1171,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 //
                 // **FIXME**: Should it also deny if it knows of a higher priority peer?
                 SData response("STANDUP_RESPONSE");
+                // Parrot back the node's attempt count so that it can differentiate stale responses.
+                response["AttemptCount"] = message["AttemptCount"];
                 if (peer->params["Permaslave"] == "true") {
                     // We think it's a permaslave, deny
                     PHMMM("Permaslave trying to stand up, denying.");
@@ -1266,6 +1268,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
         // peer for testing in the update loop.
         if (_state == STANDINGUP) {
+            // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
+            // messages from peers on older versions. Once all nodes have been upgraded past the first version that
+            // supports this, we can enforce that this count is present.
+            if (message.isSet("AttemptCount") && message.calc("AttemptCount") != _standupAttempt) {
+                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("AttemptCount") << "), ignoring.");
+                return;
+            }
             if (!message.isSet("Response")) {
                 STHROW("missing Response");
             }
@@ -1987,6 +1996,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Broadcast the new state
         _state = newState;
         SData state("STATE");
+        if (_state == STANDINGUP) {
+            // If we're standing up, peers will need to know which attempt we're on.
+            state["AttemptCount"] = to_string(++_standupAttempt);
+        }
         state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
