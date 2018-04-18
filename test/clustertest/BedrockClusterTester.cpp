@@ -22,7 +22,6 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         ports.push_back(nodePorts);
     }
 
-
     // We'll need a list of each node's addresses, and each will need to know the addresses of the others.
     // We'll use this to create the 'peerList' argument for each node.
     vector<string> peers;

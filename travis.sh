@@ -60,7 +60,7 @@ travis_fold end test_bedrock
 travis_fold start test_bedrock_cluster
 travis_time_start
 cd test/clustertest
-./clustertest
+./clustertest -threads 20
 cd ../..
 travis_time_finish
 travis_fold end test_bedrock_cluster
