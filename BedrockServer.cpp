@@ -235,17 +235,21 @@ void BedrockServer::sync(SData& args,
         // And set our next timeout for 1 second from now.
         nextActivity = STimeNow() + STIME_US_PER_S;
 
-        // Process any activity in our plugins.
-        server._postPollPlugins(fdm, nextActivity);
+        // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
+        // auto-revert when we're finished.
+        {
+            SAUTOPREFIX("xxxxxx");
 
-        // Process any network traffic that happened.
-        SQLiteNode::State preUpdateState = server._syncNode->getState();
-        server._syncNode->postPoll(fdm, nextActivity);
-        syncNodeQueuedCommands.postPoll(fdm);
-        completedCommands.postPoll(fdm);
+            // Process any activity in our plugins.
+            server._postPollPlugins(fdm, nextActivity);
+            server._syncNode->postPoll(fdm, nextActivity);
+            syncNodeQueuedCommands.postPoll(fdm);
+            completedCommands.postPoll(fdm);
+        }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
+        SQLiteNode::State preUpdateState = server._syncNode->getState();
         while (server._syncNode->update()) {}
         SQLiteNode::State nodeState = server._syncNode->getState();
         replicationState.store(nodeState);
