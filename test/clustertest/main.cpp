@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
     {
         // Create our cluster.
         list<string> queries = {
-            "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, value TEXT NOT NULL)"
+            "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"
         };
 
         BedrockClusterTester tester(BedrockClusterTester::THREE_NODE_CLUSTER, queries);

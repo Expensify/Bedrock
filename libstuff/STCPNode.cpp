@@ -146,7 +146,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
                     if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
-                        SWARN("Connection with peer '" << peer->name << "' timed out.");
+                        SHMMM("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
@@ -162,7 +162,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     while ((messageSize = message.deserialize(peer->s->recvBuffer))) {
                         // Which message?
                         SConsumeFront(peer->s->recvBuffer, messageSize);
-                        PDEBUG("Received '" << message.methodLine << "': " << message.serialize());
+                        PDEBUG("Received '" << message.methodLine << "'.");
                         if (SIEquals(message.methodLine, "PING")) {
                             // Let's not delay on flushing the PING PONG
                             // exchanges in case we get blocked before we
@@ -186,9 +186,12 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 } catch (const SException& e) {
-                    // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
-                                                       << "), reconnecting:" << message.serialize());
+                    // Warn if the message is set. Otherwise, the error is that we got no message (we timed out), just
+                    // reconnect without complaining about it.
+                    if (message.methodLine.size()) {
+                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
+                                                           << "), reconnecting:" << message.serialize());
+                    }
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
                     peer->s->send(reconnect.serialize());

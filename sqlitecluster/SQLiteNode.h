@@ -71,7 +71,7 @@ class SQLiteNode : public STCPNode {
     bool commitSucceeded() { return _commitState == CommitState::SUCCESS; }
 
     // Call this if you want to shut down the node.
-    void beginShutdown();
+    void beginShutdown(uint64_t usToWait);
 
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
@@ -87,7 +87,8 @@ class SQLiteNode : public STCPNode {
     // If we have a command that can't be handled on a slave, we can escalate it to the master node. The SQLiteNode
     // takes ownership of the command until it receives a response from the slave. When the command completes, it will
     // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
-    void escalateCommand(SQLiteCommand&& command);
+    // If the 'forget' flag is set, we will not expect a response from master for this command.
+    void escalateCommand(SQLiteCommand&& command, bool forget = false);
 
     // This takes a completed command and sends the response back to the originating peer. If we're not the master
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
@@ -200,4 +201,9 @@ class SQLiteNode : public STCPNode {
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
+
+    // This is an integer that increments every time we change states. This is useful for responses to state changes
+    // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
+    // and not stale reponses to old changes.
+    int _stateChangeCount;
 };

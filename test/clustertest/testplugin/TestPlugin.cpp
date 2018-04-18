@@ -17,16 +17,23 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
 }
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    if (command.request.calc("PeekSleep")) {
+        usleep(command.request.calc("PeekSleep") * 1000);
+    }
     // Always blacklist on userID.
     command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequest);
-    if (command.request.methodLine == "testcommand") {
-        command.response.methodLine = "200 OK";
+    if (SStartsWith(command.request.methodLine,"testcommand")) {
+        if (!command.request["response"].empty()) {
+            command.response.methodLine = command.request["response"];
+        } else {
+            command.response.methodLine = "200 OK";
+        }
         command.response.content = "this is a test response";
         return true;
-    } else if (command.request.methodLine == "sendrequest") {
-        if (_server->getState() != SQLiteNode::MASTERING) {
+    } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
+        if (_server->getState() != SQLiteNode::MASTERING && _server->getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on master, otherwise, we'll escalate.
             return false;
         }
@@ -35,7 +42,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         command.httpsRequest = httpsManager.send("https://www.google.com/", request);
         return false; // Not complete.
-    } else if (command.request.methodLine == "slowquery") {
+    } else if (SStartsWith(command.request.methodLine, "slowquery")) {
         int size = 100000000;
         int count = 1;
         if (command.request.isSet("size")) {
@@ -50,7 +57,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             db.read(query, result);
         }
         return true;
-    } else if (command.request.methodLine == "httpstimeout") {
+    } else if (SStartsWith(command.request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
         // when there's a blocking command and master needs to stand down, to verify the timeout for that works.
         // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
@@ -61,22 +68,28 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
         command.httpsRequest = transaction;
         thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
-    } else if (command.request.methodLine == "dieinpeek") {
+    } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
         throw 1;
-    } else if (command.request.methodLine == "generatesegfaultpeek") {
+    } else if (SStartsWith(command.request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);
+    } else if (SStartsWith(command.request.methodLine, "generateassertpeek")) {
+        SASSERT(0);
+        command.response["invalid"] = "nope";
     }
 
     return false;
 }
 
 bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& command) {
-    if (command.request.methodLine == "sendrequest") {
+    if (command.request.calc("ProcessSleep")) {
+        usleep(command.request.calc("ProcessSleep") * 1000);
+    }
+    if (SStartsWith(command.request.methodLine, "sendrequest")) {
         if (command.httpsRequest) {
             // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(command.httpsRequest->finished);
+            SASSERT(command.httpsRequest->response);
             command.response.methodLine = to_string(command.httpsRequest->response);
             // return the number of times we made an HTTPS request on this command.
             int tries = SToInt(command.request["httpsRequests"]);
@@ -86,25 +99,36 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             command.response.content = " " + command.httpsRequest->fullResponse.content;
 
             // Update the DB so we can test conflicts.
-            if (!command.request["Query"].empty()) {
-                if (!db.write(command.request["Query"])) {
-                    STHROW("502 Query failed.");
-                }
-            }
+            SQResult result;
+            db.read("SELECT MAX(id) FROM test", result);
+            SASSERT(result.size());
+            int nextID = SToInt(result[0][0]) + 1;
+            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
         } else {
             // Shouldn't get here.
+            SINFO ("Calling process with no https request: " << command.request.methodLine);
             SASSERT(false);
+        }
+        if (!command.request["response"].empty() && command.httpsRequest->response < 400) {
+            command.response.methodLine = command.request["response"];
         }
         return true;
     }
-    else if (command.request.methodLine == "idcollision") {
+    else if (SStartsWith(command.request.methodLine, "idcollision")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
         int nextID = SToInt(result[0][0]) + 1;
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+
+        if (!command.request["response"].empty()) {
+            command.response.methodLine = command.request["response"];
+        } else {
+            command.response.methodLine = "200 OK";
+        }
+
         return true;
-    } else if (command.request.methodLine == "slowprocessquery") {
+    } else if (SStartsWith(command.request.methodLine, "slowprocessquery")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
@@ -131,13 +155,13 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             query += ";";
             db.read(query, result);
         }
-    } else if (command.request.methodLine == "dieinprocess") {
+    } else if (SStartsWith(command.request.methodLine, "dieinprocess")) {
         throw 2;
-    } else if (command.request.methodLine == "generatesegfaultprocess") {
+    } else if (SStartsWith(command.request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);
-    } else if (command.request.methodLine == "ineffectiveUpdate") {
+    } else if (SStartsWith(command.request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return true;
     }

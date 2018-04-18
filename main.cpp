@@ -289,6 +289,9 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
+    // Log stack traces if we have unhandled exceptions.
+    set_terminate(STerminateHandler);
+
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
         if (SGetSignals()) {

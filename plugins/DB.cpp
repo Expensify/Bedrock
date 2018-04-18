@@ -109,6 +109,10 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.getVerb(), "Query")) {
+        if (db.getUpdateNoopMode()) {
+            SINFO("Query run in mocked request, just ignoring.");
+            return true;
+        }
         // - Query( query )
         //
         //     Executes a simple read/write query

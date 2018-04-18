@@ -8,6 +8,7 @@
 #include <mbedtls/aes.h>
 #include <mbedtls/base64.h>
 #include <mbedtls/sha1.h>
+#include <mbedtls/sha256.h>
 
 // Additional headers
 #include <netdb.h>
@@ -52,9 +53,11 @@
 #define S_ENOBUFS ENOBUFS
 #define S_ENOTCONN ENOTCONN
 #define S_ECONNABORTED ECONNABORTED
+#define S_ECONNREFUSED ECONNREFUSED
 #define S_EACCES EACCES
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
+#define S_EPIPE EPIPE
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -1723,6 +1726,43 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     }
 }
 
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
+    switch (S_errno) {
+        // These cases are interesting enough to warn.
+        case S_NOTINITIALISED:
+        case S_ENETDOWN:
+        case S_EACCES:
+        case S_EFAULT:
+        case S_ENETRESET:
+        case S_ENOBUFS:
+        case S_ENOTSOCK:
+        case S_EOPNOTSUPP:
+        case S_EMSGSIZE:
+        case S_EHOSTUNREACH:
+        case S_EINVAL:
+        default:
+            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // These are only interesting enough for an info line.
+        case S_ECONNABORTED:
+        case S_ETIMEDOUT:
+        case S_ENOTCONN:
+        case S_ECONNREFUSED:
+        case S_ECONNRESET:
+        case S_EPIPE:
+            SHMMM(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // And these aren't interesting enough to say anything about at all (and aren't fatal).
+        case S_EINTR:
+        case S_EINPROGRESS:
+        case S_EWOULDBLOCK:
+        case S_ESHUTDOWN:
+            return true; // Socket still alive
+    }
+}
+
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
@@ -1752,35 +1792,10 @@ bool S_recvappend(int s, string& recvBuffer) {
     if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
     }
-    else {
-        // Some kind of error -- what happened?
-        switch (S_errno) {
-        case S_NOTINITIALISED:
-        case S_ENETDOWN:
-        case S_EFAULT:
-        case S_ENETRESET:
-        case S_ENOTSOCK:
-        case S_EOPNOTSUPP:
-        case S_EMSGSIZE:
-        case S_EINVAL:
-        case S_ECONNABORTED:
-        case S_ETIMEDOUT:
-        case S_ECONNRESET:
-        case S_ENOTCONN:
-        default:
-            // Interesting -- reset the socket and hope it clears
-            SWARN("recv(" << fromAddr << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                          << "), closing.");
-            return false; // Socket died
-
-        case S_EINTR:
-        case S_EINPROGRESS:
-        case S_EWOULDBLOCK:
-        case S_ESHUTDOWN:
-            // Not interesting, and not fatal.
-            return true; // Socket still alive
-        }
-    }
+    // Some kind of error -- what happened?
+    stringstream addrStr;
+    addrStr << fromAddr;
+    return SCheckNetworkErrorType("recv", addrStr.str(), S_errno);
 }
 
 // --------------------------------------------------------------------------
@@ -1796,39 +1811,12 @@ bool S_sendconsume(int s, string& sendBuffer) {
         SConsumeFront(sendBuffer, numSent);
 
     // Exit of no error
-    if (numSent >= 0)
+    if (numSent >= 0) {
         return true; // No error; still alive
+    }
 
     // Error, what kind?
-    switch (S_errno) {
-    case S_NOTINITIALISED:
-    case S_ENETDOWN:
-    case S_EACCES:
-    case S_EFAULT:
-    case S_ENETRESET:
-    case S_ENOBUFS:
-    case S_ENOTSOCK:
-    case S_EOPNOTSUPP:
-    case S_EMSGSIZE:
-    case S_EHOSTUNREACH:
-    case S_EINVAL:
-    case S_ECONNABORTED:
-    case S_ECONNRESET:
-    case S_ETIMEDOUT:
-    case S_ENOTCONN:
-    default:
-        // Interesting -- reset the socket and hope it clears
-        SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                      << ", closing.");
-        return false; // Socket died
-
-    case S_EINTR:
-    case S_EINPROGRESS:
-    case S_EWOULDBLOCK:
-    case S_ESHUTDOWN:
-        // Not interesting and not fatal
-        return true; // Socket still alive
-    }
+    return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
 }
 
 void SFDset(fd_map& fdm, int socket, short evts) {
@@ -2133,6 +2121,13 @@ string SHashSHA1(const string& buffer) {
     return result;
 }
 
+string SHashSHA256(const string& buffer) {
+    string result;
+    result.resize(32);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
+    return result;
+}
+
 // --------------------------------------------------------------------------
 
 string SEncodeBase64(const unsigned char* buffer, int size) {
@@ -2184,6 +2179,19 @@ string SHMACSHA1(const string& key, const string& buffer) {
     // Then use it to make the hashes
     const string& innerHash = SHashSHA1(ipadSecret + buffer);
     const string& outerHash = SHashSHA1(opadSecret + innerHash);
+    return outerHash;
+}
+
+string SHMACSHA256(const string& key, const string& buffer) {
+    int BLOCK_SIZE = 64;
+    string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
+    for (int c = 0; c < (int)key.size(); ++c) {
+        ipadSecret[c] ^= key[c];
+        opadSecret[c] ^= key[c];
+    }
+
+    const string& innerHash = SHashSHA256(ipadSecret + buffer);
+    const string& outerHash = SHashSHA256(opadSecret + innerHash);
     return outerHash;
 }
 
@@ -2347,4 +2355,32 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
+}
+
+string SGetCurrentExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
+}
+
+void STerminateHandler(void) {
+    // Alert.
+    SALERT("Terminating with uncaught exception '" << SGetCurrentExceptionName() << "'.");
+
+    // And we're out.
+    abort();
 }
