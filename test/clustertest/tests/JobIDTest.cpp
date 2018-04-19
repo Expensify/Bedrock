@@ -1,16 +1,25 @@
 #include "../BedrockClusterTester.h"
 
-struct k_JobIDTest : tpunit::TestFixture {
-    k_JobIDTest()
-        : tpunit::TestFixture("k_jobID",
-                              TEST(k_JobIDTest::test)
+struct JobIDTest : tpunit::TestFixture {
+    JobIDTest()
+        : tpunit::TestFixture("jobID",
+                              BEFORE_CLASS(JobIDTest::setup),
+                              AFTER_CLASS(JobIDTest::teardown),
+                              TEST(JobIDTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup () {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown () {
+        delete tester;
+    }
+
     void test()
     {
-        tester = BedrockClusterTester::testers.front();
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 
@@ -74,4 +83,4 @@ struct k_JobIDTest : tpunit::TestFixture {
         slave->executeWaitVerifyContentTable(getCmd, "200");
     }
 
-} __k_JobIDTest;
+} __JobIDTest;

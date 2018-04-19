@@ -21,7 +21,7 @@ struct WriteTest : tpunit::TestFixture {
     BedrockTester* tester;
 
     void setup() {
-        tester = new BedrockTester({}, {
+        tester = new BedrockTester(_threadID, {}, {
             "CREATE TABLE foo (bar INTEGER);",
             "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER);",
         });

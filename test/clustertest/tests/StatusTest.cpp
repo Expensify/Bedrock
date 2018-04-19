@@ -1,16 +1,24 @@
 #include "../BedrockClusterTester.h"
 
-struct c_StatusTest : tpunit::TestFixture {
-    c_StatusTest()
-        : tpunit::TestFixture("c_StatusTest",
-                              TEST(c_StatusTest::status)) { }
+struct StatusTest : tpunit::TestFixture {
+    StatusTest()
+        : tpunit::TestFixture("StatusTest",
+                              BEFORE_CLASS(StatusTest::setup),
+                              AFTER_CLASS(StatusTest::teardown),
+                              TEST(StatusTest::status)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void status()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         mutex m;
 
         // Send to each node simultaneously.
@@ -47,4 +55,4 @@ struct c_StatusTest : tpunit::TestFixture {
             ASSERT_EQUAL(peers.size(), 2);
         }
     }
-} __c_StatusTest;
+} __StatusTest;

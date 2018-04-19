@@ -1,23 +1,30 @@
 #include "../BedrockClusterTester.h"
 
-struct a_MasteringTest : tpunit::TestFixture {
-    a_MasteringTest()
-        : tpunit::TestFixture("a_Mastering",
-                              TEST(a_MasteringTest::clusterUp),
-                              TEST(a_MasteringTest::failover),
+struct MasteringTest : tpunit::TestFixture {
+    MasteringTest()
+        : tpunit::TestFixture("Mastering",
+                              BEFORE_CLASS(MasteringTest::setup),
+                              AFTER_CLASS(MasteringTest::teardown),
+                              TEST(MasteringTest::clusterUp),
+                              TEST(MasteringTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
-                              // TEST(a_MasteringTest::standDownTimeout),
-                              TEST(a_MasteringTest::restoreMaster),
-                              TEST(a_MasteringTest::synchronizing)
+                              // TEST(MasteringTest::standDownTimeout),
+                              TEST(MasteringTest::restoreMaster),
+                              TEST(MasteringTest::synchronizing)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown () {
+        delete tester;
+    }
+
     void clusterUp()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         vector<string> results(3);
 
         // Get the status from each node.
@@ -179,4 +186,4 @@ struct a_MasteringTest : tpunit::TestFixture {
         ASSERT_TRUE(wasSynchronizing);
     }
 
-} __a_MasteringTest;
+} __MasteringTest;

@@ -1,12 +1,22 @@
 #include "../BedrockClusterTester.h"
 
-struct l_GracefulFailoverTest : tpunit::TestFixture {
-    l_GracefulFailoverTest()
-        : tpunit::TestFixture("l_GracefulFailover",
-                              TEST(l_GracefulFailoverTest::test)
+struct GracefulFailoverTest : tpunit::TestFixture {
+    GracefulFailoverTest()
+        : tpunit::TestFixture("GracefulFailover",
+                              BEFORE_CLASS(GracefulFailoverTest::setup),
+                              AFTER_CLASS(GracefulFailoverTest::teardown),
+                              TEST(GracefulFailoverTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
 
     void startClientThreads(list<thread>& threads, atomic<bool>& done, map<string, int>& counts,
                             atomic<int>& commandID, mutex& mu, vector<list<SData>>& allresults) {
@@ -136,9 +146,6 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        // Verify the existing master is up.
-        tester = BedrockClusterTester::testers.front();
-
         ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
@@ -248,4 +255,4 @@ struct l_GracefulFailoverTest : tpunit::TestFixture {
         delete allresults;
     }
 
-} __l_GracefulFailoverTest;
+} __GracefulFailoverTest;
