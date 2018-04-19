@@ -17,10 +17,8 @@ class BedrockTester {
     // Search paths for `getServerName()`. Allowed to be modified before startup by implementer.
     static list<string> locations;
 
-    // Default values for the location of the DB file and the server to talk to.
-    // These can be over-ridden when instantiating a tester.
-    // Typically, these values will be set in main().
-    static string defaultDBFile;
+    static string defaultDBFile; // Unused, exists for backwards compatibility.
+    static string defaultServerAddr; // Unused, exists for backwards compatibility.
 
     // This is expected to be set by main, built from argv, to expose command-line options to tests.
     static SData globalArgs;

@@ -2,6 +2,8 @@
 #include <sys/wait.h>
 
 // Define static vars.
+string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibility.
+string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
 SData BedrockTester::globalArgs;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
