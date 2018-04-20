@@ -1053,22 +1053,12 @@ BedrockServer::BedrockServer(const SData& args)
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(syncWrapper,
-<<<<<<< HEAD
-                         ref(_args),
-                         ref(_replicationState),
-                         ref(_upgradeInProgress),
-                         ref(_masterVersion),
-                         ref(_syncNodeQueuedCommands),
-                         ref(*this));
-
-=======
                      ref(_args),
                      ref(_replicationState),
                      ref(_upgradeInProgress),
                      ref(_masterVersion),
                      ref(_syncNodeQueuedCommands),
                      ref(*this));
->>>>>>> 26cdd2af509dcec6f5e054499cec4be6774e3c17
 }
 
 BedrockServer::~BedrockServer() {
@@ -1904,4 +1894,3 @@ void BedrockServer::_acceptSockets() {
         }
     }
 }
-
