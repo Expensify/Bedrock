@@ -2203,7 +2203,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
     if (peer->s) {
         // Reset
-        SWARN("Reconnecting to '" << peer->name << "'");
+        SHMMM("Reconnecting to '" << peer->name << "'");
         shutdownSocket(peer->s);
         (*peer)["LoggedIn"] = "false";
     }
