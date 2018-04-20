@@ -1862,39 +1862,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
     }
 
     // Error, what kind?
-<<<<<<< HEAD
-    switch (S_errno) {
-    case S_NOTINITIALISED:
-    case S_ENETDOWN:
-    case S_EACCES:
-    case S_EFAULT:
-    case S_ENETRESET:
-    case S_ENOBUFS:
-    case S_ENOTSOCK:
-    case S_EOPNOTSUPP:
-    case S_EMSGSIZE:
-    case S_EHOSTUNREACH:
-    case S_EINVAL:
-    case S_ECONNABORTED:
-    case S_ECONNRESET:
-    case S_ETIMEDOUT:
-    case S_ENOTCONN:
-    default:
-        // Interesting -- reset the socket and hope it clears
-        SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                      << "), closing.");
-        return false; // Socket died
-
-    case S_EINTR:
-    case S_EINPROGRESS:
-    case S_EWOULDBLOCK:
-    case S_ESHUTDOWN:
-        // Not interesting and not fatal
-        return true; // Socket still alive
-    }
-=======
     return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
->>>>>>> 9aa42b8934f903622deb013105d959d7461f716a
 }
 
 void SFDset(fd_map& fdm, int socket, short evts) {
