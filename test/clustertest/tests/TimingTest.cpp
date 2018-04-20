@@ -1,16 +1,26 @@
 
 #include "../BedrockClusterTester.h"
 
-struct h_timingTest : tpunit::TestFixture {
-    h_timingTest()
-        : tpunit::TestFixture("h_timingTest",
-                              TEST(h_timingTest::test)) { }
+struct TimingTest : tpunit::TestFixture {
+    TimingTest()
+        : tpunit::TestFixture("TimingTest",
+                              BEFORE_CLASS(TimingTest::setup),
+                              AFTER_CLASS(TimingTest::teardown),
+                              TEST(TimingTest::test)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         for (auto i : {0,1,2}) {
             BedrockTester* brtester = tester->getBedrockTester(i);
 
@@ -85,5 +95,5 @@ struct h_timingTest : tpunit::TestFixture {
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
         }
     }
-} __h_timingTest;
+} __TimingTest;
 

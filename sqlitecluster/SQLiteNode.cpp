@@ -47,7 +47,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpoint)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -105,12 +105,12 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     _sendToPeer(peer, escalate);
 }
 
-void SQLiteNode::beginShutdown() {
+void SQLiteNode::beginShutdown(uint64_t usToWait) {
     // Ignore redundant
     if (!gracefulShutdown()) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+        _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
     }
 }
@@ -140,8 +140,17 @@ bool SQLiteNode::shutdownComplete() {
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_gracefulShutdownTimeout.ringing()) {
-        // Timing out
         SWARN("Graceful shutdown timed out, killing non gracefully.");
+        if (_escalatedCommandMap.size()) {
+            SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
+            for (auto& commandPair : _escalatedCommandMap) {
+                commandPair.second.response.methodLine = "500 Abandoned";
+                commandPair.second.complete = true;
+                _server.acceptCommand(move(commandPair.second), false);
+            }
+            _escalatedCommandMap.clear();
+        }
+        _changeState(SEARCHING);
         return true;
     }
 
@@ -229,7 +238,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
     unsentTransactions.store(false);
 }
 
-void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
+void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     // If the master is currently standing down, we won't escalate, we'll give the command back to the caller.
     if((*_masterPeer)["State"] == "STANDINGDOWN") {
         SINFO("Asked to escalate command but master standing down, letting server retry.");
@@ -249,9 +258,13 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     escalate["ID"] = command.id;
     escalate.content = command.request.serialize();
 
-    // Store the command as escalated.
-    command.escalationTimeUS = STimeNow();
-    _escalatedCommandMap.emplace(command.id, move(command));
+    // Store the command as escalated, unless we intend to forget about it anyway.
+    if (forget) {
+        SINFO("Firing and forgetting command '" << command.request.methodLine << "' to master.");
+    } else {
+        command.escalationTimeUS = STimeNow();
+        _escalatedCommandMap.emplace(command.id, move(command));
+    }
 
     // And send to master.
     _sendToPeer(_masterPeer, escalate);
@@ -936,7 +949,7 @@ bool SQLiteNode::update() {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
             } else if (!_server.canStandDown()) {
                 // Try again.
-                SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
+                SINFO("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return false;
             }
             // Standdown complete
@@ -1158,6 +1171,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 //
                 // **FIXME**: Should it also deny if it knows of a higher priority peer?
                 SData response("STANDUP_RESPONSE");
+                // Parrot back the node's attempt count so that it can differentiate stale responses.
+                response["StateChangeCount"] = message["StateChangeCount"];
                 if (peer->params["Permaslave"] == "true") {
                     // We think it's a permaslave, deny
                     PHMMM("Permaslave trying to stand up, denying.");
@@ -1253,6 +1268,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
         // peer for testing in the update loop.
         if (_state == STANDINGUP) {
+            // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
+            // messages from peers on older versions. Once all nodes have been upgraded past the first version that
+            // supports this, we can enforce that this count is present.
+            if (message.isSet("StateChangeCount") && message.calc("StateChangeCount") != _stateChangeCount) {
+                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StateChangeCount") << "), ignoring.");
+                return;
+            }
             if (!message.isSet("Response")) {
                 STHROW("missing Response");
             }
@@ -1974,6 +1996,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Broadcast the new state
         _state = newState;
         SData state("STATE");
+        state["StateChangeCount"] = to_string(++_stateChangeCount);
         state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
@@ -2180,7 +2203,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
     if (peer->s) {
         // Reset
-        SWARN("Reconnecting to '" << peer->name << "'");
+        SHMMM("Reconnecting to '" << peer->name << "'");
         shutdownSocket(peer->s);
         (*peer)["LoggedIn"] = "false";
     }

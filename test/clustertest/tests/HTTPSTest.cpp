@@ -15,17 +15,25 @@
  * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
  *     {brcluster_node_0/MASTERING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
-struct f_HTTPSTest : tpunit::TestFixture {
-    f_HTTPSTest()
-        : tpunit::TestFixture("f_HTTPSTest",
-                              TEST(f_HTTPSTest::test)) { }
+struct HTTPSTest : tpunit::TestFixture {
+    HTTPSTest()
+        : tpunit::TestFixture("HTTPSTest",
+                              BEFORE_CLASS(HTTPSTest::setup),
+                              AFTER_CLASS(HTTPSTest::teardown),
+                              TEST(HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
+
+    void setup () {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         // Send one request to verify that it works.
         BedrockTester* brtester = tester->getBedrockTester(0);
 
@@ -87,4 +95,4 @@ struct f_HTTPSTest : tpunit::TestFixture {
             ASSERT_EQUAL(SToInt(code), 200);
         }
     }
-} __f_HTTPSTest;
+} __HTTPSTest;

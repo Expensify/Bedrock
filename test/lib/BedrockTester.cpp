@@ -2,8 +2,8 @@
 #include <sys/wait.h>
 
 // Define static vars.
-string BedrockTester::defaultDBFile;
-string BedrockTester::defaultServerAddr;
+string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibility.
+string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
 SData BedrockTester::globalArgs;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
@@ -40,7 +40,11 @@ void BedrockTester::stopAll() {
     }
 }
 
-BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
+BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished) :
+    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished)
+{ }
+
+BedrockTester::BedrockTester(int threadID, const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
   : _keepFilesWhenFinished(keepFilesWhenFinished)
 {
     {
@@ -48,24 +52,29 @@ BedrockTester::BedrockTester(const map<string, string>& args, const list<string>
         _testers.insert(this);
     }
 
+    // Set the ports.
+    int serverPort = 8989 + threadID;
+    int hostPort = 9889 + threadID;
+    int controlPort = 19999 + threadID;
+
     // Set these values from the arguments if provided, or the defaults if not.
     try {
         _dbName = args.at("-db");
     } catch (...) {
-        _dbName = defaultDBFile;
+        _dbName = getTempFileName();
     }
     try {
         _serverAddr = args.at("-serverHost");
     } catch (...) {
-        _serverAddr = defaultServerAddr;
+        _serverAddr = "127.0.0.1:" + to_string(serverPort);
     }
 
     map <string, string> defaultArgs = {
         {"-db",               _dbName},
         {"-serverHost",       _serverAddr},
         {"-nodeName",         "bedrock_test"},
-        {"-nodeHost",         "localhost:9889"},
-        {"-controlPort",      "localhost:19999"},
+        {"-nodeHost",         "localhost:" + to_string(hostPort)},
+        {"-controlPort",      "localhost:" + to_string(controlPort)},
         {"-priority",         "200"},
         {"-plugins",          "db"},
         {"-workerThreads",    "8"},

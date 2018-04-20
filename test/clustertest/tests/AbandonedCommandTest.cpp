@@ -1,19 +1,30 @@
 #include "../BedrockClusterTester.h"
 #include <fstream>
 
-struct d_abandonedCommandTest : tpunit::TestFixture {
-    d_abandonedCommandTest()
-        : tpunit::TestFixture("d_abandonedCommandTest",
-                              TEST(d_abandonedCommandTest::abandon)) { }
+struct AbandonedCommandTest : tpunit::TestFixture {
+    AbandonedCommandTest()
+        : tpunit::TestFixture("AbandonedCommandTest",
+                              BEFORE_CLASS(AbandonedCommandTest::setup),
+                              AFTER_CLASS(AbandonedCommandTest::teardown),
+                              TEST(AbandonedCommandTest::abandon)) { }
+
+    BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
 
     void abandon() {
-
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
 
         // Send three commands (one to each node) and immediately disconnect after each.
         list<thread> threads;
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &tester](){
+            threads.emplace_back([this, i](){
 
                 BedrockTester* brtester = tester->getBedrockTester(i);
                 int socket = S_socket(brtester->getServerAddr(), true, false, true);
@@ -52,7 +63,7 @@ struct d_abandonedCommandTest : tpunit::TestFixture {
         mutex m;
         vector<string> results(3);
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &tester, &results, &m](){
+            threads.emplace_back([this, i, &results, &m](){
 
                 BedrockTester* brtester = tester->getBedrockTester(i);
 
@@ -75,4 +86,4 @@ struct d_abandonedCommandTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[1], results[2]);
     }
 
-} __d_abandonedCommandTest;
+} __AbandonedCommandTest;

@@ -53,9 +53,11 @@
 #define S_ENOBUFS ENOBUFS
 #define S_ENOTCONN ENOTCONN
 #define S_ECONNABORTED ECONNABORTED
+#define S_ECONNREFUSED ECONNREFUSED
 #define S_EACCES EACCES
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
+#define S_EPIPE EPIPE
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -1770,6 +1772,43 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     }
 }
 
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
+    switch (S_errno) {
+        // These cases are interesting enough to warn.
+        case S_NOTINITIALISED:
+        case S_ENETDOWN:
+        case S_EACCES:
+        case S_EFAULT:
+        case S_ENETRESET:
+        case S_ENOBUFS:
+        case S_ENOTSOCK:
+        case S_EOPNOTSUPP:
+        case S_EMSGSIZE:
+        case S_EHOSTUNREACH:
+        case S_EINVAL:
+        default:
+            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // These are only interesting enough for an info line.
+        case S_ECONNABORTED:
+        case S_ETIMEDOUT:
+        case S_ENOTCONN:
+        case S_ECONNREFUSED:
+        case S_ECONNRESET:
+        case S_EPIPE:
+            SHMMM(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // And these aren't interesting enough to say anything about at all (and aren't fatal).
+        case S_EINTR:
+        case S_EINPROGRESS:
+        case S_EWOULDBLOCK:
+        case S_ESHUTDOWN:
+            return true; // Socket still alive
+    }
+}
+
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
@@ -1799,35 +1838,10 @@ bool S_recvappend(int s, string& recvBuffer) {
     if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
     }
-    else {
-        // Some kind of error -- what happened?
-        switch (S_errno) {
-        case S_NOTINITIALISED:
-        case S_ENETDOWN:
-        case S_EFAULT:
-        case S_ENETRESET:
-        case S_ENOTSOCK:
-        case S_EOPNOTSUPP:
-        case S_EMSGSIZE:
-        case S_EINVAL:
-        case S_ECONNABORTED:
-        case S_ETIMEDOUT:
-        case S_ECONNRESET:
-        case S_ENOTCONN:
-        default:
-            // Interesting -- reset the socket and hope it clears
-            SWARN("recv(" << fromAddr << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                          << "), closing.");
-            return false; // Socket died
-
-        case S_EINTR:
-        case S_EINPROGRESS:
-        case S_EWOULDBLOCK:
-        case S_ESHUTDOWN:
-            // Not interesting, and not fatal.
-            return true; // Socket still alive
-        }
-    }
+    // Some kind of error -- what happened?
+    stringstream addrStr;
+    addrStr << fromAddr;
+    return SCheckNetworkErrorType("recv", addrStr.str(), S_errno);
 }
 
 // --------------------------------------------------------------------------
@@ -1843,10 +1857,12 @@ bool S_sendconsume(int s, string& sendBuffer) {
         SConsumeFront(sendBuffer, numSent);
 
     // Exit of no error
-    if (numSent >= 0)
+    if (numSent >= 0) {
         return true; // No error; still alive
+    }
 
     // Error, what kind?
+<<<<<<< HEAD
     switch (S_errno) {
     case S_NOTINITIALISED:
     case S_ENETDOWN:
@@ -1876,6 +1892,9 @@ bool S_sendconsume(int s, string& sendBuffer) {
         // Not interesting and not fatal
         return true; // Socket still alive
     }
+=======
+    return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
+>>>>>>> 9aa42b8934f903622deb013105d959d7461f716a
 }
 
 void SFDset(fd_map& fdm, int socket, short evts) {
@@ -2446,4 +2465,32 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
+}
+
+string SGetCurrentExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
+}
+
+void STerminateHandler(void) {
+    // Alert.
+    SALERT("Terminating with uncaught exception '" << SGetCurrentExceptionName() << "'.");
+
+    // And we're out.
+    abort();
 }

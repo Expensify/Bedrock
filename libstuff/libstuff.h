@@ -54,7 +54,6 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
     do {                                                                                                               \
         if (!(_LHS_)) {                                                                                                \
             SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
-            abort();                                                                                                   \
         }                                                                                                              \
     } while (false)
 #define SASSERTEQUALS(_LHS_, _RHS_)                                                                                    \
@@ -299,6 +298,10 @@ string SGetSignalDescription();
 // Clear all outstanding signals.
 void SClearSignals();
 
+// And also exception stuff.
+string SGetCurrentExceptionName();
+void STerminateHandler(void);
+
 // --------------------------------------------------------------------------
 // Log stuff
 // --------------------------------------------------------------------------
@@ -343,7 +346,7 @@ void SLogStackTrace();
         SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
         SLogStackTrace();                                                                                              \
         fflush(stdout);                                                                                                \
-        exit(1);                                                                                                       \
+        abort();                                                                                                       \
     } while (false)
 #define STRACE() SLOG("[trac] " << __FILE__ << "(" << __LINE__ << ") :" << __FUNCTION__)
 
@@ -694,6 +697,9 @@ int S_poll(fd_map& fdm, uint64_t timeout);
 // Network helpers
 string SGetHostName();
 string SGetPeerName(int s);
+
+// Common error checking/logging.
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber);
 
 // --------------------------------------------------------------------------
 // File stuff

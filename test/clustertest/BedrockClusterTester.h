@@ -2,10 +2,6 @@
 
 class BedrockClusterTester {
   public:
-
-    // This is really only set up to ever have a single entry.
-    static list<BedrockClusterTester*> testers;
-
     enum ClusterSize {
         ONE_NODE_CLUSTER   = 1,
         THREE_NODE_CLUSTER = 3,
@@ -15,6 +11,7 @@ class BedrockClusterTester {
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become master.
     BedrockClusterTester(ClusterSize size, list<string> queries = {}, int threadID = 0, map<string, string> _args = {}, list<string> uniquePorts = {});
+    BedrockClusterTester(int threadID);
     ~BedrockClusterTester();
 
     // Returns the index of the node that's mastering. Returns a negative number on error:
