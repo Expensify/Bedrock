@@ -17,9 +17,15 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     command.peekCount++;
     uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
+    if (timeout > 2'000'000) {
+        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
+        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
+        timeout /= 1000;
+    }
+
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        _db.startTiming(timeout);
+        _db.startTiming(timeout * 1000);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
@@ -117,11 +123,17 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     command.processCount++;
     uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
 
+    if (timeout > 2'000'000) {
+        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
+        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
+        timeout /= 1000;
+    }
+
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
         // Time in US.
-        _db.startTiming(timeout);
+        _db.startTiming(timeout * 1000);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
