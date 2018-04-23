@@ -30,12 +30,10 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID IS NOT NULL;"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
 
-    if (!lastJobID) {
-        SQResult nextIDResult;
-        db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-        lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
-        SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
-    }
+    SQResult nextIDResult;
+    db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
+    lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
+    SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
 }
 
 // ==========================================================================
