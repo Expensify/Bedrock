@@ -1078,7 +1078,6 @@ BedrockServer::~BedrockServer() {
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
     // finished, it may keep writing to these sockets.
-    SAUTOLOCK(_socketIDMutex);
     if (_socketIDMap.size()) {
         SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
@@ -1386,7 +1385,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
-        SAUTOLOCK(_socketIDMutex);
         closeSocket(s);
     }
 
@@ -1858,7 +1856,6 @@ void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
 void BedrockServer::_acceptSockets() {
     Socket* s = nullptr;
     Port* acceptPort = nullptr;
-    SAUTOLOCK(_socketIDMutex);
     while ((s = acceptSocket(acceptPort))) {
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
