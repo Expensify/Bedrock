@@ -1256,6 +1256,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we're shutting down and past our lastChance timeout, we start killing these.
                 if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                     SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                    SAUTOLOCK(_socketIDMutex);
+                    _socketIDMap.erase(s->id);
                     socketsToClose.push_back(s);
                 } else if (s->recvBuffer.empty()) {
                     // If nothing's been received, break early.
