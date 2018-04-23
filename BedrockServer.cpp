@@ -1082,6 +1082,7 @@ BedrockServer::~BedrockServer() {
         SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
 
+    SAUTOLOCK(_socketIDMutex);
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
@@ -1380,6 +1381,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
+        SAUTOLOCK(_socketIDMutex);
         closeSocket(s);
     }
 
@@ -1851,6 +1853,7 @@ void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
 void BedrockServer::_acceptSockets() {
     Socket* s = nullptr;
     Port* acceptPort = nullptr;
+    SAUTOLOCK(_socketIDMutex);
     while ((s = acceptSocket(acceptPort))) {
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
