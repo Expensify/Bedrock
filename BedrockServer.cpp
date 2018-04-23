@@ -1078,11 +1078,11 @@ BedrockServer::~BedrockServer() {
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
     // finished, it may keep writing to these sockets.
+    SAUTOLOCK(_socketIDMutex);
     if (_socketIDMap.size()) {
         SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
 
-    SAUTOLOCK(_socketIDMutex);
     for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
         // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
         Socket* s = *socketIt++;
@@ -1254,10 +1254,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             case STCPManager::Socket::CONNECTED:
             {
                 // If we're shutting down and past our lastChance timeout, we start killing these.
+                SAUTOLOCK(_socketIDMutex);
                 if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                     SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                    SAUTOLOCK(_socketIDMutex);
-                    _socketIDMap.erase(s->id);
                     socketsToClose.push_back(s);
                 } else if (s->recvBuffer.empty()) {
                     // If nothing's been received, break early.
