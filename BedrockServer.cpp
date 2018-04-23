@@ -1239,6 +1239,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
     // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
     static uint64_t lastChance = 0;
+
+    // We don't lock on this access to socketList, because we're sure that only `main` can modify it. How do we know
+    // that? Because we only modify socketList by closing sockets, or accepting them (BedrockServer never calls
+    // openSocket). closeSocket and acceptSocket are only called by the main thread, in this function.
     for (auto s : socketList) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
