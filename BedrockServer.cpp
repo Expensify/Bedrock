@@ -7,7 +7,6 @@
 #include <iomanip>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
-list<string>BedrockServer::pluginControlCommands;
 recursive_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
@@ -41,9 +40,20 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             command.writeConsistency = SQLiteNode::QUORUM;
             SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
         }
-        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
-              << " commands already queued.");
-        _commandQueue.push(BedrockCommand(move(command)));
+
+        // If this is a status or a contorl command we need to handle it here, or else
+        // it will get stuck in the _commandQueue if we are in `Detached` mode and the
+        // command comes from a bedrock node.
+        SData request;
+        request.deserialize(command.request.content);
+        request.methodLine = command.request.methodLine;
+        BedrockCommand command(request);
+        if (!_handleIfStatusOrControlCommand(command)) {
+            SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
+                    << " commands already queued.");
+            _commandQueue.push(move(command));
+        }
+
         if (!isNew) {
             // If the command isn't new, then we already think it's in progress, but it's been returned to us, so reset
             // that.
@@ -1024,16 +1034,6 @@ BedrockServer::BedrockServer(const SData& args)
         if (iterator != info.end()) {
             versions.push_back(plugin->getName() + "_" + iterator->second);
         }
-
-        // Find any control commands set in the info of our plugins.
-        auto it = info.find("ControlCommands");
-        if (it != info.end()) {
-            list<string> controlCommands =  SParseList(it->second);
-            for (auto& command : controlCommands) {
-                SINFO("Setting " << command << " as a control command for plugin " << pluginName << ".");
-                pluginControlCommands.emplace_back(command);
-            }
-        }
     }
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
@@ -1677,8 +1677,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 }
 
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
-    if (SContains(pluginControlCommands, command.request.methodLine)   ||
-        SIEquals(command.request.methodLine, "BeginBackup")            ||
+    if (SIEquals(command.request.methodLine, "BeginBackup")            ||
         SIEquals(command.request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command.request.methodLine, "ClearCommandPort")       ||
         SIEquals(command.request.methodLine, "ClearCrashCommands")     ||
@@ -1710,11 +1709,6 @@ void BedrockServer::_control(BedrockCommand& command) {
     } else if (SIEquals(command.request.methodLine, "Attach")) {
         response.methodLine = "204 ATTACHING";
         _detach = false;
-
-    // If this command is in the control commands from a plugin, we need to pass it
-    // to the queue so that plugin can get it.
-    } else if (SContains(pluginControlCommands, command.request.methodLine)){
-        _commandQueue.push(move(command));
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
         response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());

@@ -8,10 +8,10 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // Shutting Down and Standing Down a BedrockServer. 
+    // Shutting Down and Standing Down a BedrockServer.
     //
     // # What's the difference between these two things?
-    // 
+    //
     // Shutting down is pretty obvious - when we want to turn a server off, we shut it down. The shut down process
     // tries to do this without interrupting any client requests.
     // Standing down is a little less obvious. If we're the master node in a cluster, there are two ways to stand down.
@@ -26,7 +26,7 @@ class BedrockServer : public SQLiteServer {
     //
     // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
     // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
-    // 
+    //
     // 1. The command port is closed, and no new connections are accepted from clients.
     // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
     //    response is sent.
@@ -40,7 +40,7 @@ class BedrockServer : public SQLiteServer {
     // next section.
     //
     // The sync node will continue STANDINGDOWN until two conditions are true:
-    // 
+    //
     // 1. There are no commands in progress.
     // 2. There are no outstanding queued commands.
     //
@@ -106,7 +106,7 @@ class BedrockServer : public SQLiteServer {
     // This leaves us in a potentially broken state, and hitting the timeout should count as an error condition, but we
     // need to support it for now. Here's the case that should look catastrophic, but is actually quite common, and what
     // we should eventually do about it:
-    // 
+    //
     // A slave begins shutdown, and sets a 60 second timeout. It has escalated commands to master. It wants to wait for
     // the responses to these commands before it finishes shutting down, but *there is no timeout on escalated
     // commands*. Normally, we won't try to shut down the sync node until we've responded to all connected clients.
@@ -352,9 +352,6 @@ class BedrockServer : public SQLiteServer {
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _blacklistedParallelCommands;
     static recursive_mutex  _blacklistedParallelCommandMutex;
-
-    // This is a list of command names that are considered control commands.
-    static list<string> pluginControlCommands;
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
