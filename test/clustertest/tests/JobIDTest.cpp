@@ -29,6 +29,12 @@ struct JobIDTest : tpunit::TestFixture {
         STable response = master->executeWaitVerifyContentTable(createCmd);
         const int jobID = SToInt(response["jobID"]);
 
+        // Restart slave. This is a regression test, before we only re-initialized the lastID if it was !=0 which made
+        // these tests pass (because the first ID is 0) but fail in the real life. So here we make sure that when a slave
+        // becomes master, it gets the correct ID and the inserts do not fail the unique constrain due to repeated ID.
+        tester->stopNode(1);
+        tester->startNode(1);
+
         // Stop master
         tester->stopNode(0);
 
