@@ -84,6 +84,9 @@ void BedrockServer::syncWrapper(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
+    // Initialize the thread.
+    SInitialize(_syncThreadName);
+    
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
         if (server._detach) {
@@ -113,9 +116,6 @@ void BedrockServer::sync(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
-    // Initialize the thread.
-    SInitialize(_syncThreadName);
-
     // We currently have no commands in progress.
     server._commandsInProgress.store(0);
 
@@ -1003,7 +1003,7 @@ BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;

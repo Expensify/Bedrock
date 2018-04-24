@@ -1496,6 +1496,7 @@ string SGZip(const string& content) {
 
 string SGunZip(const string& content) {
     z_stream stream;
+    string result;
 
     stream.zalloc = Z_NULL;
     stream.zfree = Z_NULL;
@@ -1504,35 +1505,60 @@ string SGunZip(const string& content) {
     stream.avail_in = 0;
 
     // read 1MB at a time
-    unsigned int bufferSize = 1024 * 1024 ;
+    unsigned int bufferSize = content.size();
     unsigned char* outBuffer = new unsigned char[bufferSize];
-
-    stream.avail_out = bufferSize;
-    stream.next_out = outBuffer;
 
     int status = inflateInit(&stream);
 
     if (status != Z_OK) {
-        SHMMM("failed to initialize a GZip context");
+        SHMMM("Failed to initialize a GZip context");
         return "";
     }
 
-    status = inflate(&stream, Z_FINISH);
-    if (status != Z_STREAM_END) {
-        inflateEnd(&stream);
-        if (status == Z_OK) {
-            status = Z_BUF_ERROR;
-        }
-    } else {
-        status = inflateEnd(&stream);
-    }
 
-    string result;
-    result.append((char*)outBuffer, stream.total_out);
+    do {
+        memcpy(stream.next_in, content.c_str(), bufferSize);
+        stream.avail_in = bufferSize;
+        do {
+            stream.avail_out = bufferSize;
+            stream.next_out = outBuffer;
+            status = inflate(&stream, Z_NO_FLUSH);
+            if (status == Z_STREAM_ERROR) {
+                SHMMM("Error unzipping.");
+                return "";
+            }
+            switch (status) {
+                case Z_NEED_DICT:
+                    status = Z_DATA_ERROR;     /* and fall through */
+                case Z_DATA_ERROR:
+                case Z_MEM_ERROR:
+                    (void)inflateEnd(&stream);
+                    return "";
+            }
+            result.append((char*)outBuffer, sizeof(outBuffer));
+        } while (stream.avail_out == 0);
+    } while (status != Z_STREAM_END);
+
+    // status = inflate(&stream, Z_FINISH);
+    // SDEBUG("[COLE] we failed to inflate, status is: " << status);
+    // if (status != Z_STREAM_END) {
+    //     inflateEnd(&stream);
+    //     if (status == Z_OK) {
+    //         SDEBUG("[COLE] we failed to inflateEnd.");
+    //         status = Z_BUF_ERROR;
+    //     }
+    // } else {
+    //     status = inflateEnd(&stream);
+    //     SDEBUG("[COLE] Actually we failed here.");
+    // }
+
 
     delete[] outBuffer;
 
-    if (status == Z_OK) {
+    /* clean up and return */
+    (void)inflateEnd(&stream);
+
+    if (status == Z_OK || status == Z_STREAM_END) {
         return result;
     } else {
         SHMMM("GZip operation failed status:" << status);
