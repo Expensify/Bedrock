@@ -327,11 +327,6 @@ void BedrockServer::sync(SData& args,
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !server._syncNode->commitInProgress()) {
-            // It should be impossible to get here if we're not mastering or standing down.
-            if (nodeState != SQLiteNode::MASTERING && nodeState != SQLiteNode::STANDINGDOWN) {
-                SERROR("Committing command but node state is " << SQLiteNode::stateNames[nodeState]);
-            }
-
             // Record the time spent.
             command.stopTiming(BedrockCommand::COMMIT_SYNC);
 
