@@ -1247,22 +1247,24 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case STCPManager::Socket::CONNECTED:
             {
-                // If we're shutting down and past our lastChance timeout, we start killing these.
-                if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                    SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                    socketsToClose.push_back(s);
-                } else if (s->recvBuffer.empty()) {
-                    // If nothing's been received, break early.
-                    break;
-                } else {
-                    // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
-                    // pipelining requests well. We process commands in no particular order, so we can't dequeue two
-                    // requests off the same socket at one time, or we don't guarantee their return order, thus we just
-                    // wait and will try again later.
+                {
                     SAUTOLOCK(_socketIDMutex);
-                    auto socketIt = _socketIDMap.find(s->id);
-                    if (socketIt != _socketIDMap.end()) {
+                    // If we're shutting down and past our lastChance timeout, we start killing these.
+                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                        socketsToClose.push_back(s);
+                    } else if (s->recvBuffer.empty()) {
+                        // If nothing's been received, break early.
                         break;
+                    } else {
+                        // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
+                        // pipelining requests well. We process commands in no particular order, so we can't dequeue two
+                        // requests off the same socket at one time, or we don't guarantee their return order, thus we just
+                        // wait and will try again later.
+                        auto socketIt = _socketIDMap.find(s->id);
+                        if (socketIt != _socketIDMap.end()) {
+                            break;
+                        }
                     }
                 }
 
