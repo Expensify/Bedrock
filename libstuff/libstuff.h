@@ -785,7 +785,6 @@ inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
 // --------------------------------------------------------------------------
 // Compression
 string SGZip(const string& content);
-string SGunZip(const string& content);
 
 // Command-line helpers
 SData SParseCommandLine(int argc, char* argv[]);
