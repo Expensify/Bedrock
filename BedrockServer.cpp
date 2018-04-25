@@ -355,15 +355,15 @@ void BedrockServer::sync(SData& args,
                     server._reply(command);
                 }
             } else {
-                // TODO: This `else` block should be unreachable since the sync thread now blocks workers for entire
-                // transactions. It should probably be removed, but we'll leave it in for the time being until the
-                // final implementation of multi-write is stabilized.
-                BedrockConflictMetrics::recordConflict(command.request.methodLine);
-
-                // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
-                SINFO("[performance] Conflict committing in sync thread, requeueing command "
-                      << command.request.methodLine << ". Sync thread has "
-                      << syncNodeQueuedCommands.size() << " queued commands.");
+                // This should only happen if the cluster becomes largely disconnected while we were in the process of
+                // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
+                // mastering. This code won't actually run until the node comes back up in a MASTERING or SLAVING
+                // state, because this loop is skipped except when MASTERING, SLAVING, or STANDINGDOWN. It's also
+                // theoretically feasible for this to happen if a slave fails to commit a transaction, but that
+                // probably indicates a bug (or a slave disk failure).
+                SINFO("requeueing command " << command.request.methodLine
+                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                      << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
 
