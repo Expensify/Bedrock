@@ -736,7 +736,8 @@ bool SQLiteNode::update() {
             }
 
             // See if all active non-permaslaves have responded.
-            // NOTE: This can be true if nobody responds if there are no full slaves.
+            // NOTE: This can be true if nobody responds if there are no full slaves - this includes machines that
+            // should be slaves that are disconnected.
             bool everybodyResponded = numFullResponded >= numFullSlaves;
 
             // Record these for posterity
@@ -751,14 +752,16 @@ bool SQLiteNode::update() {
                    << ", everybodyResponded="     << everybodyResponded
                    << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
 
-            // If everyone's responded, but we didn't get the required number of approvals, roll this back. Or, if
-            // *anyone* denied, we'll roll back without waiting for the rest of the cluster.
-            if ((everybodyResponded && !consistentEnough) || numFullDenied > 0) {
-                // Abort this distributed transaction. Happened either because the initiator disappeared, or everybody
-                // has responded without enough consistency (indicating it'll never come). Failed, tell everyone to
-                // rollback.
-                SWARN("Rolling back transaction because everybody responded but not consistent enough."
-                      << "(This transaction would likely have conflicted.)");
+            // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
+            // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
+            // theory, if we were disconnected from enough of the cluster that we could no longer reach QUORUM, but
+            // this should have been detected earlier and forced us out of mastering.
+            // TODO: we might want to remove the `numFullDenied` condition here. A single failure shouldn't cause the
+            // entire cluster to break. Imagine a scenario where a slave disk was full, and every write operation
+            // failed with an sqlite3 error.
+            if (numFullDenied || (everybodyResponded && !consistentEnough)) {
+                SINFO("Rolling back transaction because everybody currently connected responded "
+                      "but not consistent enough. Num denied: " << numFullDenied << ". Slave write failure?");
                 _db.rollback();
 
                 // Notify everybody to rollback
@@ -1475,9 +1478,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 STHROW("new hash mismatch");
             }
         } catch (const SException& e) {
-            // Ok, so we failed to commit. This probably means that master ran two transactions that each would have
-            // succeeded on their own, but will end up conflicting. We should deny this transaction if we're
-            // participating in quorum, though it will eventually conflict and get rolled back anyway.
+            // Something caused a commit failure.
             success = false;
             _db.rollback();
         }
@@ -1840,12 +1841,16 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     if (_state == MASTERING || _state == STANDINGUP || _state == STANDINGDOWN) {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        for (auto peer : peerList) {
+        for (auto otherPeer : peerList) {
+            // Skip the current peer, it no longer counts.
+            if (otherPeer == peer) {
+                continue;
+            }
             // Make sure we're a full peer
-            if (peer->params["Permaslave"] != "true") {
+            if (otherPeer->params["Permaslave"] != "true") {
                 // Verify we're logged in
                 ++numFullPeers;
-                if (SIEquals((*peer)["LoggedIn"], "true")) {
+                if (SIEquals((*otherPeer)["LoggedIn"], "true")) {
                     // Verify we're still fresh
                     ++numLoggedInFullPeers;
                 }
