@@ -179,7 +179,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
                             // peers.
                             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
-                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/STIME_US_PER_MS << "ms latency)");
+                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
                             _onMESSAGE(peer, message);
@@ -202,11 +202,11 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 if (peer->s->connectFailure) {
-                    PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
-                                                          << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                    PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / 1000
+                                                          << "ms, reconnecting in " << delay / 1000 << "ms");
                 } else {
-                    PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
-                                                        << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                    PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / 1000
+                                                        << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)

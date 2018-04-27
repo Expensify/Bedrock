@@ -68,6 +68,6 @@ void SPerformanceTimer::log() {
     snprintf(buffer, 7, "%.2f", percentage);
 
     // Log both raw numbers and our friendly percentage.
-    SINFO("[performance] " << (_timeLogged + _timeNotLogged)/STIME_US_PER_MS << "ms elapsed, " << _timeLogged/STIME_US_PER_MS << "ms in "
-          << _description << ", " << _timeNotLogged/STIME_US_PER_MS << "ms " << adj << ". " << buffer << "% " << "usage.");
+    SINFO("[performance] " << (_timeLogged + _timeNotLogged)/1000 << "ms elapsed, " << _timeLogged/1000 << "ms in "
+          << _description << ", " << _timeNotLogged/1000 << "ms " << adj << ". " << buffer << "% " << "usage.");
 }

@@ -113,11 +113,11 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             }
         } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout) {
             // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
+            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
-                      << "' timed out receiving response in " << (elapsed / STIME_US_PER_MS) << "ms.");
+                      << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
@@ -128,7 +128,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         if (active->response) {
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
-                  << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
+                  << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
             _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
             completedRequests.push_back(active);
