@@ -47,11 +47,11 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         SData request;
         request.deserialize(command.request.content);
         request.methodLine = command.request.methodLine;
-        BedrockCommand command(request);
-        if (!_handleIfStatusOrControlCommand(command)) {
+        BedrockCommand newCommand(request);
+        if (!_handleIfStatusOrControlCommand(newCommand)) {
             SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
                     << " commands already queued.");
-            _commandQueue.push(move(command));
+            _commandQueue.push(BedrockCommand(move(command)));
         }
 
         if (!isNew) {
