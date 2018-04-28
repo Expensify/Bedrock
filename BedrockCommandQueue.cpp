@@ -126,6 +126,9 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
     // We're going to delete every command scehduled after this timestamp.
     uint64_t timeLimit = STimeNow() + msInFuture * 1000;
 
+    // Lock around changes to the queue.
+    unique_lock<mutex> queueLock(_queueMutex);
+
     // We're going to look at each queue by priority. It's possible we'll end up removing *everything* from multiple
     // queues. In that case, we need to remove the queues themselves, so we keep a list of queues to delete when we're
     // done operating on each of them (so that we don't delete them while iterating over them).

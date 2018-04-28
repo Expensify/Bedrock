@@ -338,11 +338,6 @@ void BedrockServer::sync(SData& args,
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !server._syncNode->commitInProgress()) {
-            // It should be impossible to get here if we're not mastering or standing down.
-            if (nodeState != SQLiteNode::MASTERING && nodeState != SQLiteNode::STANDINGDOWN) {
-                SERROR("Committing command but node state is " << SQLiteNode::stateNames[nodeState]);
-            }
-
             // Record the time spent.
             command.stopTiming(BedrockCommand::COMMIT_SYNC);
 
@@ -371,15 +366,15 @@ void BedrockServer::sync(SData& args,
                     server._reply(command);
                 }
             } else {
-                // TODO: This `else` block should be unreachable since the sync thread now blocks workers for entire
-                // transactions. It should probably be removed, but we'll leave it in for the time being until the
-                // final implementation of multi-write is stabilized.
-                BedrockConflictMetrics::recordConflict(command.request.methodLine);
-
-                // If the commit failed, then it must have conflicted, so we'll re-queue it to try again.
-                SINFO("[performance] Conflict committing in sync thread, requeueing command "
-                      << command.request.methodLine << ". Sync thread has "
-                      << syncNodeQueuedCommands.size() << " queued commands.");
+                // This should only happen if the cluster becomes largely disconnected while we were in the process of
+                // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
+                // mastering. This code won't actually run until the node comes back up in a MASTERING or SLAVING
+                // state, because this loop is skipped except when MASTERING, SLAVING, or STANDINGDOWN. It's also
+                // theoretically feasible for this to happen if a slave fails to commit a transaction, but that
+                // probably indicates a bug (or a slave disk failure).
+                SINFO("requeueing command " << command.request.methodLine
+                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                      << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
 
@@ -1304,22 +1299,24 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case STCPManager::Socket::CONNECTED:
             {
-                // If we're shutting down and past our lastChance timeout, we start killing these.
-                if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                    SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                    socketsToClose.push_back(s);
-                } else if (s->recvBuffer.empty()) {
-                    // If nothing's been received, break early.
-                    break;
-                } else {
-                    // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
-                    // pipelining requests well. We process commands in no particular order, so we can't dequeue two
-                    // requests off the same socket at one time, or we don't guarantee their return order, thus we just
-                    // wait and will try again later.
+                {
                     SAUTOLOCK(_socketIDMutex);
-                    auto socketIt = _socketIDMap.find(s->id);
-                    if (socketIt != _socketIDMap.end()) {
+                    // If we're shutting down and past our lastChance timeout, we start killing these.
+                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                        socketsToClose.push_back(s);
+                    } else if (s->recvBuffer.empty()) {
+                        // If nothing's been received, break early.
                         break;
+                    } else {
+                        // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
+                        // pipelining requests well. We process commands in no particular order, so we can't dequeue two
+                        // requests off the same socket at one time, or we don't guarantee their return order, thus we just
+                        // wait and will try again later.
+                        auto socketIt = _socketIDMap.find(s->id);
+                        if (socketIt != _socketIDMap.end()) {
+                            break;
+                        }
                     }
                 }
 
