@@ -48,6 +48,10 @@ STable BedrockPlugin::getInfo() {
     return STable();
 }
 
+int BedrockPlugin::needsSecureData() {
+    return 0;
+}
+
 string BedrockPlugin::getName() {
     SERROR("No name defined by this plugin, aborting.");
 }
@@ -66,6 +70,8 @@ bool BedrockPlugin::shouldSuppressTimeoutWarnings() {
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
+
+void BedrockPlugin::loadSecureData(SData& secureData) {}
 
 BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
     // If our global list isn't set, there's no plugin to return.

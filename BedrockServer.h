@@ -322,6 +322,9 @@ class BedrockServer : public SQLiteServer {
     // those ports.
     void _acceptSockets();
 
+    // Loads secure data from a file or from a socket for any plugins that require secure data.
+    void _loadSecureData(const map<BedrockPlugin*, int>& pluginSecureDataMap, const SData& args);
+
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 

@@ -1964,6 +1964,7 @@ string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
     if (size != (int)string::npos) {
         decryptedBuffer.resize(size);
     }
+
     return decryptedBuffer;
 }
 
@@ -1972,6 +1973,34 @@ string SAESDecrypt(const string& buffer, const string& ivStr, const string& key)
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
     return SAESDecrypt(buffer, iv, key);
+}
+
+// These decrypt functions are used to return a value that still includes possible
+// padding, so it is up the caller to manage stripping the potential NULL chars off the end.
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, unsigned char* iv, const string& key) {
+    SASSERT(key.size() == SAES_KEY_SIZE);
+    // If the message is invalid.
+    if (buffer.size() % SAES_BLOCK_SIZE != 0) {
+        return "";
+    }
+
+    // Decrypt
+    mbedtls_aes_context ctx;
+    string decryptedBuffer;
+    decryptedBuffer.resize(bufferSize);
+    mbedtls_aes_setkey_dec(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_DECRYPT, (int)buffer.size(), iv, (unsigned char*)buffer.c_str(),
+                          (unsigned char*)decryptedBuffer.c_str());
+    return decryptedBuffer;
+
+
+}
+
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    return SAESDecryptNoStrip(buffer, bufferSize, iv, key);
 }
 
 /////////////////////////////////////////////////////////////////////////////

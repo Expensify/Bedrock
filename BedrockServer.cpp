@@ -86,7 +86,7 @@ void BedrockServer::syncWrapper(SData& args,
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
-    
+
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
         if (server._detach) {
@@ -1020,21 +1020,56 @@ BedrockServer::BedrockServer(const SData& args)
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
     vector<string> versions = {_version};
+
+    // A map of plugins and how many secure data entries they need.
+    map<BedrockPlugin*, int> pluginSecureDataMap;
     for (string& pluginName : pluginNameList) {
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin) {
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         }
-        plugin->initialize(args, *this);
-        plugins.push_back(plugin);
 
-        // If the plugin has version info, add it to the list.
-        auto info = plugin->getInfo();
-        auto iterator = info.find("version");
-        if (iterator != info.end()) {
-            versions.push_back(plugin->getName() + "_" + iterator->second);
+        // Does this plugin need secured data? If the plugin already has all of
+        // it's secure data, this should return 0. Otherwise, it should return
+        // the number of entries this plugin requires. A plugin will already have
+        // it's secure data if the BedrockServer gets destroyed and re-created
+        // but the binary is not terminated. This happens when it gets interrupted to
+        // handle a signal (like a SIGHUP that triggers a DB backup). If they need
+        // secure data, we'll skip initializing them here then instead initialize
+        // them after we've loaded the data.
+        int needsSecureData = plugin->needsSecureData();
+        if (needsSecureData) {
+            pluginSecureDataMap.insert(make_pair(plugin, needsSecureData));
+        } else {
+            plugin->initialize(args, *this);
+            plugins.push_back(plugin);
+
+            // If the plugin has version info, add it to the list.
+            auto info = plugin->getInfo();
+            auto iterator = info.find("version");
+            if (iterator != info.end()) {
+                versions.push_back(plugin->getName() + "_" + iterator->second);
+            }
         }
     }
+
+    // If any plguins needs secure data, load that now, then initialize.
+    if (!pluginSecureDataMap.empty()) {
+        _loadSecureData(pluginSecureDataMap, args);
+
+        for (auto plugin : pluginSecureDataMap) {
+            plugin.first->initialize(args, *this);
+            plugins.push_back(plugin.first);
+
+            // If the plugin has version info, add it to the list.
+            auto info = plugin.first->getInfo();
+            auto iterator = info.find("version");
+            if (iterator != info.end()) {
+                versions.push_back(plugin.first->getName() + "_" + iterator->second);
+            }
+        }
+    }
+
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
 
@@ -1071,6 +1106,7 @@ BedrockServer::BedrockServer(const SData& args)
     _controlPort = openPort(_args["-controlPort"]);
 
     // If we're bootstraping this node we need to go into detached mode here.
+    // The syncWrapper will handle this for us.
     if (_detach) {
         SWARN("Bootstrap flag detected, starting sync node in detach mode.");
     }
@@ -1877,6 +1913,98 @@ void BedrockServer::_acceptSockets() {
             // Remember that this socket is owned by this plugin.
             SASSERT(!s->data);
             s->data = plugin;
+        }
+    }
+}
+
+void BedrockServer::_loadSecureData(const map<BedrockPlugin*, int>& pluginSecureDataMap, const SData& args) {
+    // If a key host wasn't specified, use the default.
+    string keyHost;
+    if (!args.isSet("-keyHost")) {
+        keyHost = "localhost:401";
+    } else {
+        keyHost = args["-keyHost"];
+    }
+
+    // Are we a live server? Skip loading keys if we are. In this case, plugins
+    // should manage loading debug keys inside of the plugin.
+    if (!args.isSet("-live")) {
+        SINFO("Skipping loading secure data, not a live server.");
+        return;
+    }
+
+    // Loop through the plugins that require secure data, try to load from a
+    // file on the file system first, if not able to, open a blocking socket
+    // to load the data from.
+    for (auto plugin : pluginSecureDataMap) {
+        const string& pluginName = SToLower(plugin.first->getName());
+        int NUM_KEYS = plugin.second;
+        SData keys[NUM_KEYS];
+
+        for (int i = 0; i < NUM_KEYS; i++) {
+            const string& fileName = "/etc/pki/" + pluginName + "_securedata_" + to_string(i) + ".key";
+
+            // If a secure data file exists for this plugin, try and open it and read from it.
+            if (SFileExists(fileName)) {
+                FILE* file = fopen(fileName.c_str(), "r");
+                if (!file) {
+                    SWARN("Couldn't open file " << fileName << " for reading. Error: " << errno << ", " << strerror(errno) << ".");
+                    continue;
+                }
+                SINFO("Successfully opened " << fileName << " for reading.");
+
+                // Read the whole file into a buffer, these should be small text files,
+                // buf if the file is too large we could die here with bad_alloc.
+                size_t fileSize = SFileSize(fileName);
+                char* buf = new char[fileSize];
+                fread(buf, 1, fileSize, file);
+
+                // Move the file into an SData object and pass it to the plugin it belongs to.
+                keys[i].deserialize(string(buf));
+                plugin.first->loadSecureData(keys[i]);
+
+                // We need one less key for this plugin now.
+                NUM_KEYS--;
+                fclose(file);
+            } else {
+                SINFO("No key file found for key #" << i << " for plugin " << pluginName << ", will read from a socket insetad.");
+            }
+        }
+
+        // If we have any keys left to load for this plugin, open a socket to receive them.
+        if (NUM_KEYS) {
+            // Open a port to listen for key request
+            int p = S_socket(keyHost, true, true, true);  // tcp, port, blocking
+            SASSERT(p >= 0);
+
+            // Read one key at a time.
+            for (int i = 0; i < NUM_KEYS; i++) {
+                // Wait for a socket
+                SINFO("Waiting for key #" << i << " for plugin " << pluginName);
+                sockaddr_in fromAddr;
+                int s = S_accept(p, fromAddr, true); // blocking
+                SASSERT(s >= 0);
+
+                // Receive everything
+                SINFO("Receiving key #" << i << " from " << fromAddr << " for plugin " << pluginName);
+                string recvBuffer;
+                bool alive = true;
+                while (!keys[i].deserialize(recvBuffer) && alive) {
+                    alive = S_recvappend(s, recvBuffer);
+                }
+
+                // Done with this socket
+                close(s);
+                s = 0;
+
+                // Send the plugin what we got
+                plugin.first->loadSecureData(keys[i]);
+                SINFO("Done receiving key #" << i << " for plugin " << pluginName);
+            }
+
+            // Done receiving
+            close(p);
+            p = 0;
         }
     }
 }
