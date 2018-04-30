@@ -1,16 +1,25 @@
 #include "../BedrockClusterTester.h"
 
-struct j_BadCommandTest : tpunit::TestFixture {
-    j_BadCommandTest()
-        : tpunit::TestFixture("j_BadCommand",
-                              TEST(j_BadCommandTest::test)
+struct BadCommandTest : tpunit::TestFixture {
+    BadCommandTest()
+        : tpunit::TestFixture("BadCommand",
+                              BEFORE_CLASS(BadCommandTest::setup),
+                              AFTER_CLASS(BadCommandTest::teardown),
+                              TEST(BadCommandTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
-        tester = BedrockClusterTester::testers.front();
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 
@@ -43,6 +52,38 @@ struct j_BadCommandTest : tpunit::TestFixture {
         tester->startNode(0);
         int count = 0;
         bool success = false;
+        while (count++ < 50) {
+            SData cmd("Status");
+            string response = master->executeWaitVerifyContent(cmd);
+            STable json = SParseJSONObject(response);
+            if (json["state"] == "MASTERING") {
+                success = true;
+                break;
+            }
+            sleep(1);
+        }
+        ASSERT_TRUE(success);
+
+        // ASSERT in peek.
+        diedCorrectly = false;
+        try {
+            SData cmd("generateassertpeek");
+            cmd["userID"] = "32";
+            string response = master->executeWaitVerifyContent(cmd);
+        } catch (const SException& e) {
+            diedCorrectly = (e.what() == "Empty response"s);
+        }
+        ASSERT_TRUE(diedCorrectly);
+
+        // Send the same command to the slave.
+        cmd = SData("generateassertpeek");
+        cmd["userID"] = "32";
+        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+
+        // Bring master back up.
+        tester->startNode(0);
+        count = 0;
+        success = false;
         while (count++ < 50) {
             SData cmd("Status");
             string response = master->executeWaitVerifyContent(cmd);
@@ -103,4 +144,4 @@ struct j_BadCommandTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
     }
 
-} __j_BadCommandTest;
+} __BadCommandTest;

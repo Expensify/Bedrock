@@ -71,7 +71,7 @@ class SQLiteNode : public STCPNode {
     bool commitSucceeded() { return _commitState == CommitState::SUCCESS; }
 
     // Call this if you want to shut down the node.
-    void beginShutdown();
+    void beginShutdown(uint64_t usToWait);
 
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
@@ -201,4 +201,9 @@ class SQLiteNode : public STCPNode {
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
+
+    // This is an integer that increments every time we change states. This is useful for responses to state changes
+    // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
+    // and not stale reponses to old changes.
+    int _stateChangeCount;
 };

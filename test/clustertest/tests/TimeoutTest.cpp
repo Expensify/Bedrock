@@ -1,22 +1,32 @@
 
 #include "../BedrockClusterTester.h"
 
-struct i_TimeoutTest : tpunit::TestFixture {
-    i_TimeoutTest()
-        : tpunit::TestFixture("i_TimeoutTest",
-                              TEST(i_TimeoutTest::test),
-                              TEST(i_TimeoutTest::testprocess)) { }
+struct TimeoutTest : tpunit::TestFixture {
+    TimeoutTest()
+        : tpunit::TestFixture("TimeoutTest",
+                              BEFORE_CLASS(TimeoutTest::setup),
+                              AFTER_CLASS(TimeoutTest::teardown),
+                              TEST(TimeoutTest::test),
+                              TEST(TimeoutTest::testprocess)) { }
 
     BedrockClusterTester* tester;
+
+    void setup() {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown() {
+        delete tester;
+    }
+
     void test()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Run one long query.
         SData slow("slowquery");
-        slow["timeout"] = "5000000"; // 5s
+        slow["timeout"] = "5000"; // 5s
         brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
 
         // And a bunch of faster ones.
@@ -28,12 +38,11 @@ struct i_TimeoutTest : tpunit::TestFixture {
     void testprocess()
     {
         // Test write commands.
-        BedrockClusterTester* tester = BedrockClusterTester::testers.front();
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Run one long query.
         SData slow("slowprocessquery");
-        slow["timeout"] = "500000"; // 0.5s
+        slow["timeout"] = "500"; // 0.5s
         slow["size"] = "1000000";
         slow["count"] = "1";
         brtester->executeWaitVerifyContent(slow, "555 Timeout processing command");
@@ -43,5 +52,5 @@ struct i_TimeoutTest : tpunit::TestFixture {
         slow["count"] = "10000";
         brtester->executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
-} __i_TimeoutTest;
+} __TimeoutTest;
 

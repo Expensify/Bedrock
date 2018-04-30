@@ -1,16 +1,25 @@
 #include "../BedrockClusterTester.h"
 
-struct k_JobIDTest : tpunit::TestFixture {
-    k_JobIDTest()
-        : tpunit::TestFixture("k_jobID",
-                              TEST(k_JobIDTest::test)
+struct JobIDTest : tpunit::TestFixture {
+    JobIDTest()
+        : tpunit::TestFixture("jobID",
+                              BEFORE_CLASS(JobIDTest::setup),
+                              AFTER_CLASS(JobIDTest::teardown),
+                              TEST(JobIDTest::test)
                              ) { }
 
     BedrockClusterTester* tester;
 
+    void setup () {
+        tester = new BedrockClusterTester(_threadID);
+    }
+
+    void teardown () {
+        delete tester;
+    }
+
     void test()
     {
-        tester = BedrockClusterTester::testers.front();
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 
@@ -19,6 +28,12 @@ struct k_JobIDTest : tpunit::TestFixture {
         createCmd["name"] = "TestJob";
         STable response = master->executeWaitVerifyContentTable(createCmd);
         const int jobID = SToInt(response["jobID"]);
+
+        // Restart slave. This is a regression test, before we only re-initialized the lastID if it was !=0 which made
+        // these tests pass (because the first ID is 0) but fail in the real life. So here we make sure that when a slave
+        // becomes master, it gets the correct ID and the inserts do not fail the unique constrain due to repeated ID.
+        tester->stopNode(1);
+        tester->startNode(1);
 
         // Stop master
         tester->stopNode(0);
@@ -74,4 +89,4 @@ struct k_JobIDTest : tpunit::TestFixture {
         slave->executeWaitVerifyContentTable(getCmd, "200");
     }
 
-} __k_JobIDTest;
+} __JobIDTest;

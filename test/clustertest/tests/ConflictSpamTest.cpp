@@ -1,11 +1,12 @@
 #include "../BedrockClusterTester.h"
 
-struct b_ConflictSpamTest : tpunit::TestFixture {
-    b_ConflictSpamTest()
-        : tpunit::TestFixture("b_ConflictSpam",
-                              BEFORE_CLASS(b_ConflictSpamTest::setup),
-                              TEST(b_ConflictSpamTest::slow),
-                              TEST(b_ConflictSpamTest::spam)) { }
+struct ConflictSpamTest : tpunit::TestFixture {
+    ConflictSpamTest()
+        : tpunit::TestFixture("ConflictSpam",
+                              BEFORE_CLASS(ConflictSpamTest::setup),
+                              AFTER_CLASS(ConflictSpamTest::teardown),
+                              TEST(ConflictSpamTest::slow),
+                              TEST(ConflictSpamTest::spam)) { }
 
     /* What's a conflict spam test? The main point of this test is to make sure we have lots of conflicting commits
      * coming in to the whole cluster, so that we can make sure they all eventually get committed and replicated in a
@@ -21,7 +22,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
         // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
         // happen as expected.
-        tester = BedrockClusterTester::testers.front();
+        tester = new BedrockClusterTester(_threadID);
         for (int i = 0; i < 3; i++) {
             BedrockTester* node = tester->getBedrockTester(i);
             SData controlCommand("SetCheckpointIntervals");
@@ -35,6 +36,10 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
             ASSERT_EQUAL(results[0]["fullCheckpointPageMin"], to_string(25000));
             ASSERT_EQUAL(results[0]["passiveCheckpointPageMin"], to_string(2500));
         }
+    }
+
+    void teardown() {
+        delete tester;
     }
 
     void slow()
@@ -80,9 +85,6 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
-        // Get the global tester object.
-        tester = BedrockClusterTester::testers.front();
-
         recursive_mutex m;
         atomic<int> totalRequestFailures(0);
 
@@ -297,8 +299,7 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         // And that they're all 66.
         list<string> resultCount = SParseList(allResults[0], '\n');
         resultCount.pop_front();
-        // The "+1" is because the `synchronizing` test in `a_masteringTest` inserts one row in this table.
-        ASSERT_EQUAL(cmdID.load() + 1, SToInt(resultCount.front()));
+        ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
 
         int fail = totalRequestFailures.load();
         if (fail > 0) {
@@ -307,4 +308,4 @@ struct b_ConflictSpamTest : tpunit::TestFixture {
         ASSERT_EQUAL(fail, 0);
     }
 
-} __b_ConflictSpamTest;
+} __ConflictSpamTest;
