@@ -1923,9 +1923,9 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, int>& pluginSecure
         keyHost = args["-keyHost"];
     }
 
-    // Are we a live server? Skip loading keys if we are. In this case, plugins
+    // Do we need to load secure data? Skip loading keys if we don't. In this case, plugins
     // should manage loading debug keys inside of the plugin.
-    if (!args.isSet("-live")) {
+    if (!args.isSet("-loadSecureData")) {
         SINFO("Skipping loading secure data, not a live server.");
         return;
     }
