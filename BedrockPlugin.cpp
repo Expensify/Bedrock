@@ -48,7 +48,7 @@ STable BedrockPlugin::getInfo() {
     return STable();
 }
 
-list<string> BedrockPlugin::needsSecureData() {
+list<string> BedrockPlugin::needsSecureData(const SData& args) {
     list<string> data;
     return data;
 }
@@ -72,7 +72,7 @@ void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
 
-void BedrockPlugin::loadSecureData(SData& secureData) {}
+void BedrockPlugin::loadSecureData(string& secureData) {}
 
 BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
     // If our global list isn't set, there's no plugin to return.

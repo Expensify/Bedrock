@@ -40,20 +40,9 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             command.writeConsistency = SQLiteNode::QUORUM;
             SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
         }
-
-        // If this is a status or a contorl command we need to handle it here, or else
-        // it will get stuck in the _commandQueue if we are in `Detached` mode and the
-        // command comes from a bedrock node.
-        SData request;
-        request.deserialize(command.request.content);
-        request.methodLine = command.request.methodLine;
-        BedrockCommand newCommand(request);
-        if (!_handleIfStatusOrControlCommand(newCommand)) {
-            SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
-                    << " commands already queued.");
-            _commandQueue.push(BedrockCommand(move(command)));
-        }
-
+        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
+                << " commands already queued.");
+        _commandQueue.push(BedrockCommand(move(command)));
         if (!isNew) {
             // If the command isn't new, then we already think it's in progress, but it's been returned to us, so reset
             // that.
@@ -1025,43 +1014,34 @@ BedrockServer::BedrockServer(const SData& args)
         }
 
         // Does this plugin need secured data? If the plugin already has all of
-        // it's secure data, this should return 0. Otherwise, it should return
-        // the number of entries this plugin requires. A plugin will already have
-        // it's secure data if the BedrockServer gets destroyed and re-created
-        // but the binary is not terminated. This happens when it gets interrupted to
-        // handle a signal (like a SIGHUP that triggers a DB backup). If they need
-        // secure data, we'll skip initializing them here then instead initialize
-        // them after we've loaded the data.
-        list<string> needsSecureData = plugin->needsSecureData();
+        // it's secure data, this should return an empty list. Otherwise, it should
+        // return a list of secure data files this plugin requires. If a file should
+        // be read from a socket, the filename should be prefixed with socket:.
+        // A plugin will already have it's secure data if the BedrockServer gets
+        // destroyed and re-created but the binary is not terminated. This happens
+        // when it gets interrupted to handle a signal (like a SIGHUP that triggers
+        // a DB backup). If they need secure data, we'll skip initializing them
+        // here then instead initialize them after we've loaded the data.
+        list<string> needsSecureData = plugin->needsSecureData(args);
         if (needsSecureData.size()) {
-            pluginSecureDataMap.insert(make_pair(plugin, needsSecureData));
-        } else {
-            plugin->initialize(args, *this);
-            plugins.push_back(plugin);
-
-            // If the plugin has version info, add it to the list.
-            auto info = plugin->getInfo();
-            auto iterator = info.find("version");
-            if (iterator != info.end()) {
-                versions.push_back(plugin->getName() + "_" + iterator->second);
-            }
+            pluginSecureDataMap[plugin] = needsSecureData;
         }
+        plugins.push_back(plugin);
     }
 
-    // If any plguins needs secure data, load that now, then initialize.
+    // If any plugins needs secure data, load that now, then initialize.
     if (!pluginSecureDataMap.empty()) {
         _loadSecureData(pluginSecureDataMap, args);
+    }
 
-        for (auto plugin : pluginSecureDataMap) {
-            plugin.first->initialize(args, *this);
-            plugins.push_back(plugin.first);
+    for (auto plugin : plugins) {
+        plugin->initialize(args, *this);
 
-            // If the plugin has version info, add it to the list.
-            auto info = plugin.first->getInfo();
-            auto iterator = info.find("version");
-            if (iterator != info.end()) {
-                versions.push_back(plugin.first->getName() + "_" + iterator->second);
-            }
+        // If the plugin has version info, add it to the list.
+        auto info = plugin->getInfo();
+        auto iterator = info.find("version");
+        if (iterator != info.end()) {
+            versions.push_back(plugin->getName() + "_" + iterator->second);
         }
     }
 
@@ -1103,7 +1083,7 @@ BedrockServer::BedrockServer(const SData& args)
     // If we're bootstraping this node we need to go into detached mode here.
     // The syncWrapper will handle this for us.
     if (_detach) {
-        SWARN("Bootstrap flag detected, starting sync node in detach mode.");
+        SINFO("Bootstrap flag detected, starting sync node in detach mode.");
     }
 
     // Start the sync thread, which will start the worker threads.
@@ -1561,6 +1541,14 @@ list<STable> BedrockServer::getPeerInfo() {
     return peerData;
 }
 
+void BedrockServer::setDetach(bool detach) {
+    if (detach) {
+        _beginShutdown("Detach", true);
+    } else {
+        _detach = false;
+    }
+}
+
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
@@ -1923,11 +1911,11 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& plu
     }
 
     // If a scecure data host wasn't specified, use the default.
-    string keyHost;
+    string secureDataHost;
     if (!args.isSet("-secureDataHost")) {
-        keyHost = "localhost:4001";
+        secureDataHost = "localhost:4001";
     } else {
-        keyHost = args["-secureDataHost"];
+        secureDataHost = args["-secureDataHost"];
     }
 
     // Loop through the plugins that require secure data, if the file name
@@ -1937,7 +1925,6 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& plu
 
         for (auto file : plugin.second) {
             const string& fileName = file;
-            SData secureData;
 
             if (!SStartsWith(fileName, "socket")) {
                 // If a secure data file exists for this plugin, try and open it and read from it.
@@ -1949,15 +1936,9 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& plu
                     }
                     SINFO("Successfully opened secure data file " << fileName << " for reading.");
 
-                    // Read the whole file into a buffer, these should be small text files,
-                    // buf if the file is too large we could die here with bad_alloc.
-                    size_t fileSize = SFileSize(fileName);
-                    char* buf = new char[fileSize];
-                    fread(buf, 1, fileSize, file);
-
-                    // Move the file into an SData object and pass it to the plugin it belongs to.
-                    secureData.deserialize(string(buf));
-                    plugin.first->loadSecureData(secureData);
+                    // Read the whole file into a string and pass it to the plugin it belongs to.
+                    string fileContents = SFileLoad(fileName);
+                    plugin.first->loadSecureData(fileContents);
 
                     // We need one less key for this plugin now.
                     fclose(file);
@@ -1966,20 +1947,20 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& plu
                 }
             } else {
                 // Open a port to listen for secure data request
-                int p = S_socket(keyHost, true, true, true);  // tcp, port, blocking
+                int p = S_socket(secureDataHost, true, true, true);  // tcp, port, blocking
                 SASSERT(p >= 0);
 
                 // Wait for a socket
-                SINFO("Waiting for secure data #" << fileName << " for plugin " << pluginName);
+                SINFO("Waiting for secure data " << fileName << " for plugin " << pluginName);
                 sockaddr_in fromAddr;
                 int s = S_accept(p, fromAddr, true); // blocking
                 SASSERT(s >= 0);
 
                 // Receive everything
-                SINFO("Receiving secure data #" << fileName << " from " << fromAddr << " for plugin " << pluginName);
+                SINFO("Receiving secure data " << fileName << " from " << fromAddr << " for plugin " << pluginName);
                 string recvBuffer;
                 bool alive = true;
-                while (!secureData.deserialize(recvBuffer) && alive) {
+                while (alive) {
                     alive = S_recvappend(s, recvBuffer);
                 }
 
@@ -1988,8 +1969,8 @@ void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& plu
                 s = 0;
 
                 // Send the plugin what we got
-                plugin.first->loadSecureData(secureData);
-                SINFO("Done receiving secure data #" << fileName << " for plugin " << pluginName);
+                plugin.first->loadSecureData(recvBuffer);
+                SINFO("Done receiving secure data " << fileName << " for plugin " << pluginName);
 
                 // Done receiving
                 close(p);

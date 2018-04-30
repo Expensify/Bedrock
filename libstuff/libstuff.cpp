@@ -1472,7 +1472,7 @@ string SGZip(const string& content) {
 
     status = deflate(&stream, Z_FINISH);
     if (status != Z_STREAM_END && status != Z_OK) {
-        SDEBUG("We deflated but we didn't get Z_STREAM_END or Z_OK, we got " << status);
+        SHMMM("We deflated but we didn't get Z_STREAM_END or Z_OK, we got " << status);
         deflateEnd(&stream);
         if (status == Z_OK) {
             status = Z_BUF_ERROR;
@@ -1894,28 +1894,26 @@ string SGetPeerName(int s) {
 }
 
 // --------------------------------------------------------------------------
-string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
-    SASSERT(key.size() == SAES_KEY_SIZE);
-    // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
-    string paddedBuffer = buffer;
-    if (buffer.size() % SAES_BLOCK_SIZE != 0) {
-        paddedBuffer.append(SAES_BLOCK_SIZE - ((int)buffer.size() % SAES_BLOCK_SIZE), (char)0);
-    }
-
-    // Encrypt
-    mbedtls_aes_context ctx;
-    mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
-    string encryptedBuffer;
-    encryptedBuffer.resize(paddedBuffer.size());
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(), (unsigned char*)encryptedBuffer.c_str());
-    return encryptedBuffer;
+string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
+    return SAESEncrypt(buffer, buffer.size(), ivStr, key);
 }
 
-string SAESEncrypt(char* buffer, const int bufferSize, const string& ivStr, const string& key) {
+string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
+    char buf[buffer.size()];
+    memcpy(buf, buffer.c_str(), buffer.size());
+    return SAESEncrypt(buf, buffer.size(), iv, key);
+}
+
+string SAESEncrypt(const string& buffer, const int bufferSize, const string& ivStr, const string& key) {
     SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    char buf[buffer.size()];
+    memcpy(buf, buffer.c_str(), buffer.size());
+    return SAESEncrypt(buf, bufferSize, iv, key);
+}
 
+string SAESEncrypt(char* buffer, const int bufferSize, unsigned char* iv, const string& key) {
     // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
     if (bufferSize % SAES_BLOCK_SIZE != 0) {
         int appendAmount = SAES_BLOCK_SIZE - (((int)bufferSize) % SAES_BLOCK_SIZE);
@@ -1936,28 +1934,9 @@ string SAESEncrypt(char* buffer, const int bufferSize, const string& ivStr, cons
     return encryptedBuffer;
 }
 
-string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
-    SASSERT(ivStr.size() == SAES_IV_SIZE);
-    unsigned char iv[SAES_IV_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    return SAESEncrypt(buffer, iv, key);
-}
-
 // --------------------------------------------------------------------------
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
-    SASSERT(key.size() == SAES_KEY_SIZE);
-    // If the message is invalid.
-    if (buffer.size() % SAES_BLOCK_SIZE != 0) {
-        return "";
-    }
-
-    // Decrypt
-    mbedtls_aes_context ctx;
-    string decryptedBuffer;
-    decryptedBuffer.resize(buffer.size());
-    mbedtls_aes_setkey_dec(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_DECRYPT, (int)buffer.size(), iv, (unsigned char*)buffer.c_str(),
-                          (unsigned char*)decryptedBuffer.c_str());
+    string decryptedBuffer = SAESDecryptNoStrip(buffer, buffer.size(), iv, key);
 
     // Trim off the padding.
     int size = (int)decryptedBuffer.find('\0');

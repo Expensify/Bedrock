@@ -203,6 +203,10 @@ class BedrockServer : public SQLiteServer {
     // Send a command to all of our peers. It will be wrapped appropriately.
     void broadcastCommand(const SData& message);
 
+    // Set the detach state of the server. Setting to True will cause the server to detach from the database and go
+    // into a sleep loop until this is called again with False
+    void setDetach(bool detach);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -374,7 +378,7 @@ class BedrockServer : public SQLiteServer {
 
     // Set this to cause a backup to run when the server shuts down.
     bool _backupOnShutdown;
-    bool _detach;
+    atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
     Port* _controlPort;
