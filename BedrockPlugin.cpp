@@ -48,8 +48,9 @@ STable BedrockPlugin::getInfo() {
     return STable();
 }
 
-int BedrockPlugin::needsSecureData() {
-    return 0;
+list<string> BedrockPlugin::needsSecureData() {
+    list<string> data;
+    return data;
 }
 
 string BedrockPlugin::getName() {

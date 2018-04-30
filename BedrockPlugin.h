@@ -36,7 +36,7 @@ class BedrockPlugin {
     // Returns the number of secure data entries required by this plugin.
     // If the plugin already has some data entries, this should return how many
     // remaining entries are required.
-    virtual int needsSecureData();
+    virtual list<string> needsSecureData();
 
     // Returns a short, descriptive name of this plugin
     virtual string getName();
