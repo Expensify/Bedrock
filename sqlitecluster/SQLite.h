@@ -85,6 +85,19 @@ class SQLite {
     // journal; no additional writes are allowed until the next transaction has begun.
     bool prepare();
 
+    // Enable or disable automatic query re-writing. To play nice with other plugins, make sure your plugin disables
+    // this at the end of it's request.
+    void enableRewrite(bool enable);
+
+    // Update the rewrite handler.
+    // The rewrite handler accepts an SQLite action code, a table name, and a refernce to a string.
+    // If the action and table name indicate that the query should be re-written, then `newQuery` should be updated to
+    // the new query to run, and `true` should be returned. If the query doesn't need to be re-written, then `false`
+    // should be returned.
+    // This function is only called when enableRewrite is true.
+    // Important: there can be only one re-write handler for a given DB at once.
+    void setRewriteHandler(function<bool(int actionCode, const char* table, string& newQuery)>);
+
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     int commit();
 
@@ -317,6 +330,20 @@ class SQLite {
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
+
+    // The following variables maintain the state required around automatically re-writing queries.
+
+    // If true, we'll attempt query re-writing.
+    bool _enableRewrite;
+
+    // The current handler to determine if a query needs to be rewritten.
+    function<bool(int actionCode, const char* table, string& newQuery)> _rewriteHandler;
+
+    // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
+    string _rewrittenQuery;
+
+    // Causes the current query to skip re-write checking if it's already a re-written query.
+    bool _currentlyRunningRewritten;
 
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);

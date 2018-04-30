@@ -2280,7 +2280,7 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2321,7 +2321,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
-        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+        if (!skipWarn) {
+            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+        }
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
