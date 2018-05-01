@@ -102,42 +102,7 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
 
-bool BedrockPlugin_DB::rewriteHandler(int actionCode, const char* table, string& newQuery) {
-    switch (actionCode) {
-        case SQLITE_INSERT:
-            if (table == "chats"s) {
-                newQuery = "INSERT INTO chats VALUES (1000, 1, 1, 'fake', 'fake', 'fake'); DELETE FROM chats WHERE chatID = 1000";
-            } else if (table == "jobs"s) {
-                newQuery = "/* Some query here.*/";
-            }
-                return true;
-        break;
-        case SQLITE_DELETE:
-            // Can handle this differently if desired.
-            return false;
-        break;
-        default:
-        return false;
-    }
-}
-
-class AutoEnableRewrite{
-  public:
-    AutoEnableRewrite(SQLite& db) : _db(db) {
-        _db.enableRewrite(true);
-    };
-    ~AutoEnableRewrite() {
-        _db.enableRewrite(false);
-    };
-
-  private:
-    SQLite& _db;
-};
-
 bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
-    AutoEnableRewrite disableOnScopeEnd(db);
-    db.setRewriteHandler(rewriteHandler);
-
     // Pull out some helpful variables
     SData& request = command.request;
     SData& response = command.response;

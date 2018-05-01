@@ -9,9 +9,6 @@ class BedrockPlugin_DB : public BedrockPlugin {
     virtual bool peekCommand(SQLite& db, BedrockCommand& command);
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
-    // Handle re-writing queries.
-    static bool rewriteHandler(int actionCode, const char* table, string& newQuery);
-
   private:
     // Attributes
     SData _args;
