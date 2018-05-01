@@ -85,8 +85,21 @@ class SQLite {
     // journal; no additional writes are allowed until the next transaction has begun.
     bool prepare();
 
-    // Enable or disable automatic query re-writing. To play nice with other plugins, make sure your plugin disables
-    // this at the end of it's request.
+    // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
+    // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
+    // action being taken and the table being operated on) and instead, run a different query in their place. For
+    // instance, this can replace an INSERT statement into a particular table with a no-op, or an INSERT immediately
+    // followed by a DELETE. When enabled, this is implemented as follows:
+    //
+    // Plugin calls `write`.
+    // 1. If enableRewrite is ON, the rewriteHandler is run as part of the authorizer.
+    // 2. If the rewriteHandler wants to re-write a query, it should return `true` and update the string reference it
+    //    was passed (see setRewriteHandler() below).
+    // 3. If the rewriteHandler returns true, the initial query will fail with SQLITE_AUTH (warnings for this failure
+    //    are suppressed) and the new replacement query will be run in it's place.
+    //
+    // Note: your plugin should only enable rewrites during it's own scope (i.e., it should disable them at the end of
+    // `peekCommand` or `processCommand`). This prevents re-writing queries being handled by other plugins.
     void enableRewrite(bool enable);
 
     // Update the rewrite handler.

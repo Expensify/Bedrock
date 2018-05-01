@@ -511,10 +511,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool result = false;
     if (_enableRewrite) {
-        int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, false);
+        int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
-            SINFO("TYLER " << resultCode << " Automatically re-writing query from: " << query << ", to: " << _rewrittenQuery);
             _currentlyRunningRewritten = true;
             result = !SQuery(_db, "read/write transaction", _rewrittenQuery);
             _currentlyRunningRewritten = false;
