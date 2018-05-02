@@ -3,6 +3,38 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _args["-nodeName"] << ":" << getName() << "} "
 
+bool BedrockPlugin_DB::rewriteHandler(int actionCode, const char* table, string& newQuery) {
+// Hack to make logging work in static function
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << "unknown" << ":" << "DB" << "} "
+    SINFO("bedrock Running DB rewrite handler.");
+    switch (actionCode) {
+        case SQLITE_INSERT:
+            if (table == "chats"s) {
+                SINFO("bedrock DB rewrite handler replacing chat insert.");
+                newQuery = "INSERT INTO chats VALUES (-1000, 1, 1, 'fake', 'fake', 'fake'); DELETE FROM chats WHERE chatID = -1000;";
+            } else if (table == "jobs"s) {
+                newQuery = "/* Some query here.*/";
+            }
+            return true;
+        break;
+        case SQLITE_DELETE:
+            // Can handle this differently if desired.
+            return false;
+        break;
+        default:
+        return false;
+    }
+// Disable hack.
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << _args["-nodeName"] << ":" << getName() << "} "
+}
+
+bool BedrockPlugin_DB::shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**handler)(int, const char*, string&)) {
+    *handler = BedrockPlugin_DB::rewriteHandler;
+    return db.getUpdateNoopMode();
+}
+
 bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables
     SData& request = command.request;
@@ -109,10 +141,10 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
 
     // ----------------------------------------------------------------------
     if (SIEquals(request.getVerb(), "Query")) {
-        if (db.getUpdateNoopMode()) {
-            SINFO("Query run in mocked request, just ignoring.");
-            return true;
-        }
+        //if (db.getUpdateNoopMode()) {
+        //    SINFO("Query run in mocked request, just ignoring.");
+        //    return true;
+        //}
         // - Query( query )
         //
         //     Executes a simple read/write query
@@ -121,7 +153,7 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Attempt the query
         const string& query = request["query"] + ";";
-        if (!db.write(query)) {
+        if (!db.writeIdempotent(query)) {
             // Query failed
             SALERT("Query failed: '" << query << "'");
             response["error"] = db.getLastError();

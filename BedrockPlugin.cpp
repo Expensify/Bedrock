@@ -44,6 +44,10 @@ void BedrockPlugin::verifyAttributeBool(const SData& request, const string& name
     }
 }
 
+bool BedrockPlugin::shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**rewriteHandler)(int, const char*, string&)) {
+    return false;
+}
+
 STable BedrockPlugin::getInfo() {
     return STable();
 }

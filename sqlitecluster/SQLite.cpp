@@ -446,6 +446,7 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
+    // TODO: Support query re-writing.
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
@@ -510,12 +511,15 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     // Try to execute the query
     uint64_t before = STimeNow();
     bool result = false;
+    bool usedRewrittenQuery = false;
     if (_enableRewrite) {
         int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
+            SASSERT(SEndsWith(_rewrittenQuery, ";"));
             result = !SQuery(_db, "read/write transaction", _rewrittenQuery);
+            usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         } else {
             result = !resultCode;
@@ -537,7 +541,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // If something changed, or we're always keeping queries, then save this.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
-        _uncommittedQuery += query;
+        _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
     }
     return true;
 }
@@ -805,7 +809,7 @@ void SQLite::enableRewrite(bool enable) {
     _enableRewrite = enable;
 }
 
-void SQLite::setRewriteHandler(function<bool(int actionCode, const char* table, string& newQuery)> handler) {
+void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
     _rewriteHandler = handler;
 }
 
@@ -818,7 +822,7 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 
 int SQLite::_authorize(int actionCode, const char* table, const char* column) {
     // If we've enabled re-writing, see if we need to re-write this query.
-    if (_enableRewrite && !_currentlyRunningRewritten && _rewriteHandler(actionCode, table, _rewrittenQuery)) {
+    if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, table, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
         return SQLITE_DENY;
     }
@@ -933,7 +937,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
     }
 }
 
-bool SQLite::getUpdateNoopMode() {
+bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
 }
 

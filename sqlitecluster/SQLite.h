@@ -79,7 +79,7 @@ class SQLite {
 
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
-    bool getUpdateNoopMode();
+    bool getUpdateNoopMode() const;
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
@@ -109,7 +109,7 @@ class SQLite {
     // should be returned.
     // This function is only called when enableRewrite is true.
     // Important: there can be only one re-write handler for a given DB at once.
-    void setRewriteHandler(function<bool(int actionCode, const char* table, string& newQuery)>);
+    void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     int commit();
@@ -349,8 +349,8 @@ class SQLite {
     // If true, we'll attempt query re-writing.
     bool _enableRewrite;
 
-    // The current handler to determine if a query needs to be rewritten.
-    function<bool(int actionCode, const char* table, string& newQuery)> _rewriteHandler;
+    // Pointer to the current handler to determine if a query needs to be rewritten.
+    bool (*_rewriteHandler)(int, const char*, string&);
 
     // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
     string _rewrittenQuery;
