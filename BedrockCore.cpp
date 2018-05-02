@@ -63,17 +63,11 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             // Make sure no writes happen while in peek command
             _db.read("PRAGMA query_only = true;");
 
-            // If the command is mocked, turn on UpdateNoopMode.
-            _db.setUpdateNoopMode(command.request.isSet("mockRequest"));
-
             // Try each plugin, and go with the first one that says it succeeded.
             for (auto plugin : _server.plugins) {
                 shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                bool (*handler)(int, const char*, string&) = nullptr;
-                bool enable = plugin->shouldEnableQueryRewriting(_db, command, &handler);
-                AutoScopeRewrite rewrite(enable, _db, handler);
                 if (plugin->peekCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
                     pluginPeeked = true;

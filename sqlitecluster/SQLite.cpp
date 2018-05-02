@@ -446,7 +446,6 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
-    // TODO: Support query re-writing.
     bool queryResult = !SQuery(_db, "read only query", query, result);
     _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
