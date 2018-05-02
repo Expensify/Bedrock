@@ -1895,44 +1895,26 @@ string SGetPeerName(int s) {
 
 // --------------------------------------------------------------------------
 string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
-    return SAESEncrypt(buffer, buffer.size(), ivStr, key);
-}
-
-string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
-    char buf[buffer.size()];
-    memcpy(buf, buffer.c_str(), buffer.size());
-    return SAESEncrypt(buf, buffer.size(), iv, key);
-}
-
-string SAESEncrypt(const string& buffer, const int bufferSize, const string& ivStr, const string& key) {
-    SASSERT(ivStr.size() == SAES_IV_SIZE);
-    unsigned char iv[SAES_IV_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    char buf[buffer.size()];
-    memcpy(buf, buffer.c_str(), buffer.size());
-    return SAESEncrypt(buf, bufferSize, iv, key);
-}
-
-string SAESEncrypt(char* buffer, const int bufferSize, unsigned char* iv, const string& key) {
+    SASSERT(key.size() == SAES_KEY_SIZE);
     // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
-    if (bufferSize % SAES_BLOCK_SIZE != 0) {
-        int appendAmount = SAES_BLOCK_SIZE - (((int)bufferSize) % SAES_BLOCK_SIZE);
-        while(appendAmount > 0) {
-            buffer[bufferSize] += '\0';
-            appendAmount--;
-        }
+    string paddedBuffer = buffer;
+    if (buffer.size() % SAES_BLOCK_SIZE != 0) {
+        paddedBuffer.append(SAES_BLOCK_SIZE - ((int)buffer.size() % SAES_BLOCK_SIZE), (char)0);
     }
 
     // Encrypt
+    unsigned char iv[SAES_BLOCK_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_BLOCK_SIZE);
     mbedtls_aes_context ctx;
     mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     string encryptedBuffer;
-    encryptedBuffer.resize(bufferSize);
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, ((int)bufferSize), iv, (unsigned char*)buffer,
+    encryptedBuffer.resize(paddedBuffer.size());
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(),
                           (unsigned char*)encryptedBuffer.c_str());
 
     return encryptedBuffer;
 }
+
 
 // --------------------------------------------------------------------------
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
