@@ -1494,6 +1494,54 @@ string SGZip(const string& content) {
     }
 }
 
+string SGUnzip (const string& content) {
+    int CHUNK = 16384;
+    int status;
+    unsigned have;
+    z_stream strm;
+    unsigned char out[CHUNK];
+    string data;
+
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    strm.avail_in = 0;
+    strm.next_in = Z_NULL;
+
+    status = inflateInit2(&strm, 16 + MAX_WBITS);
+    if (status != Z_OK) {
+        SWARN("Error inflating stream for gunzip, status: " << status);
+        return "";
+    }
+
+    strm.avail_in = content.size();
+    strm.next_in = (unsigned char*)content.c_str();
+
+    do {
+        strm.avail_out = CHUNK;
+        strm.next_out = out;
+        status = inflate(&strm, Z_NO_FLUSH);
+        switch (status) {
+            case Z_NEED_DICT:
+            case Z_DATA_ERROR:
+            case Z_MEM_ERROR:
+                inflateEnd(&strm);
+                SWARN("Error gunzipping, status:" << status);
+                return "";
+        }
+        have = CHUNK - strm.avail_out;
+        data.append((char*)out, have);
+    } while (strm.avail_out == 0);
+
+    status = inflateEnd(&strm);
+    if (status != Z_OK) {
+        SWARN("Error gunzipping, status: " << status);
+        return "";
+    }
+
+    return data;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
