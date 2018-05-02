@@ -1013,15 +1013,22 @@ BedrockServer::BedrockServer(const SData& args)
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         }
 
-        // Does this plugin need secured data? If the plugin already has all of
-        // it's secure data, this should return an empty list. Otherwise, it should
-        // return a list of secure data files this plugin requires. If a file should
-        // be read from a socket, the filename should be prefixed with socket:.
+        // Does this plugin need secured data? Plugin secure data is a method of
+        // storing sensitive data that you wouldn't want to commit into your code
+        // base (API keys, encryption keys, etc). Bedrock will allow a plugin to
+        // define a set of system file locations to load secure data from it (if
+        // the plugin requires any). These locations can be prefaced with `socket:`,
+        // in which case Bedrock will read the secure data from a socket (specified
+        // by the -secureDataHost flag or the default of localhost:4001).
+
+        // If the plugin already has all of it's secure data, needsSecureData should
+        // return an empty list. Otherwise, it should return a list of secure data files
+        // this plugin requires.
+
         // A plugin will already have it's secure data if the BedrockServer gets
         // destroyed and re-created but the binary is not terminated. This happens
         // when it gets interrupted to handle a signal (like a SIGHUP that triggers
-        // a DB backup). If they need secure data, we'll skip initializing them
-        // here then instead initialize them after we've loaded the data.
+        // a DB backup).
         list<string> needsSecureData = plugin->needsSecureData(args);
         if (needsSecureData.size()) {
             pluginSecureDataMap[plugin] = needsSecureData;
@@ -1029,7 +1036,7 @@ BedrockServer::BedrockServer(const SData& args)
         plugins.push_back(plugin);
     }
 
-    // If any plugins needs secure data, load that now, then initialize.
+    // If any plugins needs secure data, load that now, then initialize all plugins.
     if (!pluginSecureDataMap.empty()) {
         _loadSecureData(pluginSecureDataMap, args);
     }
