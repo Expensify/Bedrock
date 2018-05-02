@@ -1357,6 +1357,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 } else {
+                    SAUTOLOCK(_socketIDMutex);
                     // If we weren't able to deserialize a complete request, and we're shutting down, give up.
                     if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                         SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
