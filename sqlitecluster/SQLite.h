@@ -97,9 +97,6 @@ class SQLite {
     //    was passed (see setRewriteHandler() below).
     // 3. If the rewriteHandler returns true, the initial query will fail with SQLITE_AUTH (warnings for this failure
     //    are suppressed) and the new replacement query will be run in it's place.
-    //
-    // Note: your plugin should only enable rewrites during it's own scope (i.e., it should disable them at the end of
-    // `peekCommand` or `processCommand`). This prevents re-writing queries being handled by other plugins.
     void enableRewrite(bool enable);
 
     // Update the rewrite handler.
