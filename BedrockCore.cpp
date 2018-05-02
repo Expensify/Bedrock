@@ -7,6 +7,27 @@ SQLiteCore(db),
 _server(server)
 { }
 
+// RAII-style mechanism for automatically setting and unsetting query rewriting 
+class AutoScopeRewrite {
+  public:
+    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
+        if (_enable) {
+            _db.setRewriteHandler(_handler);
+            _db.enableRewrite(true);
+        }
+    }
+    ~AutoScopeRewrite() {
+        if (_enable) {
+            _db.setRewriteHandler(nullptr);
+            _db.enableRewrite(false);
+        }
+    }
+  private:
+    bool _enable;
+    SQLite& _db;
+    bool (*_handler)(int, const char*, string&);
+};
+
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
@@ -47,11 +68,11 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                    if (plugin->peekCommand(_db, command)) {
-                        SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                        pluginPeeked = true;
-                        break;
-                    }
+                if (plugin->peekCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
+                    pluginPeeked = true;
+                    break;
+                }
             }
         } catch (const SQLite::timeout_error& e) {
             if (!shouldSuppressTimeoutWarnings) {
@@ -148,6 +169,9 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         _db.setUpdateNoopMode(command.request.isSet("mockRequest"));
         for (auto plugin : _server.plugins) {
             // Try to process the command.
+            bool (*handler)(int, const char*, string&) = nullptr;
+            bool enable = plugin->shouldEnableQueryRewriting(_db, command, &handler);
+            AutoScopeRewrite rewrite(enable, _db, handler);
             try {
                 if (plugin->processCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
