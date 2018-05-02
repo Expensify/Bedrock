@@ -1077,12 +1077,14 @@ BedrockServer::~BedrockServer() {
         SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
 
-    for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
-        // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
-        Socket* s = *socketIt++;
-        closeSocket(s);
+    if (socketList.size()) {
+        SWARN("Still have " << socketList.size() << " entries in socketList.");
+        for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
+            // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
+            Socket* s = *socketIt++;
+            closeSocket(s);
+        }
     }
-    SINFO("Sockets closed.");
 }
 
 bool BedrockServer::shutdownComplete() {
@@ -1249,12 +1251,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 {
                     SAUTOLOCK(_socketIDMutex);
-                    // If we're shutting down and past our lastChance timeout, we start killing these.
-                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                        socketsToClose.push_back(s);
-                    } else if (s->recvBuffer.empty()) {
+                    if (s->recvBuffer.empty()) {
                         // If nothing's been received, break early.
+                        if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                            // If we're shutting down and past our lastChance timeout, we start killing these.
+                            SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                            socketsToClose.push_back(s);
+                        }
                         break;
                     } else {
                         // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
@@ -1353,6 +1356,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             _commandQueue.push(move(command));
                         }
                     }
+                } else {
+                    SAUTOLOCK(_socketIDMutex);
+                    // If we weren't able to deserialize a complete request, and we're shutting down, give up.
+                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
+                        socketsToClose.push_back(s);
+                    }
                 }
             }
             break;
@@ -1397,6 +1407,18 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (socketList.empty() || _gracefulShutdownTimeout.ringing()) {
             lastChance = 0;
+
+            // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
+            // shutdown any time after here, and we'll have no way to handle new requests.
+            if (socketList.size()) {
+                SAUTOLOCK(_socketIDMutex);
+                SINFO("Killing " << socketList.size() << " remaining sockets at graceful shutdown timeout.");
+                while(socketList.size()) {
+                    auto s = socketList.front();
+                    _socketIDMap.erase(s->id);
+                    closeSocket(s);
+                }
+            }
             _shutdownState.store(CLIENTS_RESPONDED);
         }
     }
