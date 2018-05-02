@@ -1249,12 +1249,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 {
                     SAUTOLOCK(_socketIDMutex);
-                    // If we're shutting down and past our lastChance timeout, we start killing these.
-                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                        socketsToClose.push_back(s);
-                    } else if (s->recvBuffer.empty()) {
+                    if (s->recvBuffer.empty()) {
                         // If nothing's been received, break early.
+                        if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                            // If we're shutting down and past our lastChance timeout, we start killing these.
+                            SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                            socketsToClose.push_back(s);
+                        }
                         break;
                     } else {
                         // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
@@ -1352,6 +1353,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                   << _commandQueue.size() << " commands already queued.");
                             _commandQueue.push(move(command));
                         }
+                    }
+                } else {
+                    // If we weren't able to deserialize a complete request, and we're shutting down, give up.
+                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                        SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
+                        socketsToClose.push_back(s);
                     }
                 }
             }
