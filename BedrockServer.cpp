@@ -41,7 +41,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
         }
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
-                << " commands already queued.");
+              << " commands already queued.");
         _commandQueue.push(BedrockCommand(move(command)));
         if (!isNew) {
             // If the command isn't new, then we already think it's in progress, but it's been returned to us, so reset
@@ -1004,45 +1004,13 @@ BedrockServer::BedrockServer(const SData& args)
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
     vector<string> versions = {_version};
-
-    // A map of plugins and what secure data entries they need.
-    map<BedrockPlugin*, list<string>> pluginSecureDataMap;
     for (string& pluginName : pluginNameList) {
         BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
         if (!plugin) {
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         }
-
-        // Does this plugin need secured data? Plugin secure data is a method of
-        // storing sensitive data that you wouldn't want to commit into your code
-        // base (API keys, encryption keys, etc). Bedrock will allow a plugin to
-        // define a set of system file locations to load secure data from it (if
-        // the plugin requires any). These locations can be prefaced with `socket:`,
-        // in which case Bedrock will read the secure data from a socket (specified
-        // by the -secureDataHost flag or the default of localhost:4001).
-
-        // If the plugin already has all of it's secure data, needsSecureData should
-        // return an empty list. Otherwise, it should return a list of secure data files
-        // this plugin requires.
-
-        // A plugin will already have it's secure data if the BedrockServer gets
-        // destroyed and re-created but the binary is not terminated. This happens
-        // when it gets interrupted to handle a signal (like a SIGHUP that triggers
-        // a DB backup).
-        list<string> needsSecureData = plugin->needsSecureData(args);
-        if (needsSecureData.size()) {
-            pluginSecureDataMap[plugin] = needsSecureData;
-        }
-        plugins.push_back(plugin);
-    }
-
-    // If any plugins needs secure data, load that now, then initialize all plugins.
-    if (!pluginSecureDataMap.empty()) {
-        _loadSecureData(pluginSecureDataMap, args);
-    }
-
-    for (auto plugin : plugins) {
         plugin->initialize(args, *this);
+        plugins.push_back(plugin);
 
         // If the plugin has version info, add it to the list.
         auto info = plugin->getInfo();
@@ -1905,84 +1873,6 @@ void BedrockServer::_acceptSockets() {
             // Remember that this socket is owned by this plugin.
             SASSERT(!s->data);
             s->data = plugin;
-        }
-    }
-}
-
-void BedrockServer::_loadSecureData(const map<BedrockPlugin*, list<string>>& pluginSecureDataMap, const SData& args) {
-    // Do we need to load secure data? Skip loading if we don't. In this case, plugins
-    // should manage loading debug secure data inside of the plugin.
-    if (!args.isSet("-loadSecureData")) {
-        SDEBUG("Skipping loading secure data.");
-        return;
-    }
-
-    // If a scecure data host wasn't specified, use the default.
-    string secureDataHost;
-    if (!args.isSet("-secureDataHost")) {
-        secureDataHost = "localhost:4001";
-    } else {
-        secureDataHost = args["-secureDataHost"];
-    }
-
-    // Loop through the plugins that require secure data, if the file name
-    // is prefixed with socket:, load the data from a socket instead.
-    for (auto plugin : pluginSecureDataMap) {
-        const string& pluginName = SToLower(plugin.first->getName());
-
-        for (auto file : plugin.second) {
-            const string& fileName = file;
-
-            if (!SStartsWith(fileName, "socket")) {
-                // If a secure data file exists for this plugin, try and open it and read from it.
-                if (SFileExists(fileName)) {
-                    FILE* file = fopen(fileName.c_str(), "r");
-                    if (!file) {
-                        SWARN("Couldn't open file secure data file " << fileName << " for reading. Error: " << errno << ", " << strerror(errno) << ".");
-                        continue;
-                    }
-                    SINFO("Successfully opened secure data file " << fileName << " for reading.");
-
-                    // Read the whole file into a string and pass it to the plugin it belongs to.
-                    string fileContents = SFileLoad(fileName);
-                    plugin.first->loadSecureData(fileContents);
-
-                    // We need one less key for this plugin now.
-                    fclose(file);
-                } else {
-                    SWARN("No secure data file " << fileName << " found for plugin " << pluginName << ".");
-                }
-            } else {
-                // Open a port to listen for secure data request
-                int p = S_socket(secureDataHost, true, true, true);  // tcp, port, blocking
-                SASSERT(p >= 0);
-
-                // Wait for a socket
-                SINFO("Waiting for secure data " << fileName << " for plugin " << pluginName);
-                sockaddr_in fromAddr;
-                int s = S_accept(p, fromAddr, true); // blocking
-                SASSERT(s >= 0);
-
-                // Receive everything
-                SINFO("Receiving secure data " << fileName << " from " << fromAddr << " for plugin " << pluginName);
-                string recvBuffer;
-                bool alive = true;
-                while (alive) {
-                    alive = S_recvappend(s, recvBuffer);
-                }
-
-                // Done with this socket
-                close(s);
-                s = 0;
-
-                // Send the plugin what we got
-                plugin.first->loadSecureData(recvBuffer);
-                SINFO("Done receiving secure data " << fileName << " for plugin " << pluginName);
-
-                // Done receiving
-                close(p);
-                p = 0;
-            }
         }
     }
 }

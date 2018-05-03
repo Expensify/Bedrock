@@ -33,11 +33,6 @@ class BedrockPlugin {
     // manner, as it will be called from a different thread than any processing commands.
     virtual STable getInfo();
 
-    // Returns the number of secure data entries required by this plugin.
-    // If the plugin already has some data entries, this should return how many
-    // remaining entries are required.
-    virtual list<string> needsSecureData(const SData& args);
-
     // Returns a short, descriptive name of this plugin
     virtual string getName();
 
@@ -86,9 +81,6 @@ class BedrockPlugin {
 
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings();
-
-    // Loads a given secure data object into the plugins local secure data map.
-    virtual void loadSecureData(string& secureData);
 
   public:
     // A global static list of all registered plugins.
