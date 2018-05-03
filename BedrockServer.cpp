@@ -1019,7 +1019,6 @@ BedrockServer::BedrockServer(const SData& args)
             versions.push_back(plugin->getName() + "_" + iterator->second);
         }
     }
-
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
 

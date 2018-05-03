@@ -203,8 +203,8 @@ class BedrockServer : public SQLiteServer {
     // Send a command to all of our peers. It will be wrapped appropriately.
     void broadcastCommand(const SData& message);
 
-    // Set the detach state of the server. Setting to True will cause the server to detach from the database and go
-    // into a sleep loop until this is called again with False
+    // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
+    // into a sleep loop until this is called again with false
     void setDetach(bool detach);
 
   private:
