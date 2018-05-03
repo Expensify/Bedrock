@@ -532,7 +532,7 @@ void SConsumeFront(string& lhs, ssize_t num) {
     if (!num)
         return;
 
-    // If we're clearing hte whole thing, early out
+    // If we're clearing the whole thing, early out
     if ((int)lhs.size() == num) {
         // Clear and done
         lhs.clear();
@@ -1471,7 +1471,8 @@ string SGZip(const string& content) {
     }
 
     status = deflate(&stream, Z_FINISH);
-    if (status != Z_STREAM_END) {
+    if (status != Z_STREAM_END && status != Z_OK) {
+        SHMMM("We deflated but we didn't get Z_STREAM_END or Z_OK, we got " << status);
         deflateEnd(&stream);
         if (status == Z_OK) {
             status = Z_BUF_ERROR;
@@ -1491,6 +1492,54 @@ string SGZip(const string& content) {
         SHMMM("GZip operation failed status:" << status);
         return "";
     }
+}
+
+string SGUnzip (const string& content) {
+    int CHUNK = 16384;
+    int status;
+    unsigned have;
+    z_stream strm;
+    unsigned char out[CHUNK];
+    string data;
+
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    strm.avail_in = 0;
+    strm.next_in = Z_NULL;
+
+    status = inflateInit2(&strm, 16 + MAX_WBITS);
+    if (status != Z_OK) {
+        SWARN("Error inflating stream for gunzip, status: " << status);
+        return "";
+    }
+
+    strm.avail_in = content.size();
+    strm.next_in = (unsigned char*)content.c_str();
+
+    do {
+        strm.avail_out = CHUNK;
+        strm.next_out = out;
+        status = inflate(&strm, Z_NO_FLUSH);
+        switch (status) {
+            case Z_NEED_DICT:
+            case Z_DATA_ERROR:
+            case Z_MEM_ERROR:
+                inflateEnd(&strm);
+                SWARN("Error gunzipping, status:" << status);
+                return "";
+        }
+        have = CHUNK - strm.avail_out;
+        data.append((char*)out, have);
+    } while (strm.avail_out == 0);
+
+    status = inflateEnd(&strm);
+    if (status != Z_OK) {
+        SWARN("Error gunzipping, status: " << status);
+        return "";
+    }
+
+    return data;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1893,7 +1942,7 @@ string SGetPeerName(int s) {
 }
 
 // --------------------------------------------------------------------------
-string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
+string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
     string paddedBuffer = buffer;
@@ -1902,23 +1951,42 @@ string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
     }
 
     // Encrypt
+    unsigned char iv[SAES_BLOCK_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_BLOCK_SIZE);
     mbedtls_aes_context ctx;
     mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     string encryptedBuffer;
     encryptedBuffer.resize(paddedBuffer.size());
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(), (unsigned char*)encryptedBuffer.c_str());
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(),
+                          (unsigned char*)encryptedBuffer.c_str());
+
     return encryptedBuffer;
 }
 
-string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
-    SASSERT(ivStr.size() == SAES_IV_SIZE);
-    unsigned char iv[SAES_IV_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    return SAESEncrypt(buffer, iv, key);
-}
 
 // --------------------------------------------------------------------------
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
+    string decryptedBuffer = SAESDecryptNoStrip(buffer, buffer.size(), iv, key);
+
+    // Trim off the padding.
+    int size = (int)decryptedBuffer.find('\0');
+    if (size != (int)string::npos) {
+        decryptedBuffer.resize(size);
+    }
+
+    return decryptedBuffer;
+}
+
+string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    return SAESDecrypt(buffer, iv, key);
+}
+
+// These decrypt functions are used to return a value that still includes possible
+// padding, so it is up the caller to manage stripping the potential NULL chars off the end.
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, unsigned char* iv, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // If the message is invalid.
     if (buffer.size() % SAES_BLOCK_SIZE != 0) {
@@ -1928,24 +1996,20 @@ string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
     // Decrypt
     mbedtls_aes_context ctx;
     string decryptedBuffer;
-    decryptedBuffer.resize(buffer.size());
+    decryptedBuffer.resize(bufferSize);
     mbedtls_aes_setkey_dec(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_DECRYPT, (int)buffer.size(), iv, (unsigned char*)buffer.c_str(),
                           (unsigned char*)decryptedBuffer.c_str());
-
-    // Trim off the padding.
-    int size = (int)decryptedBuffer.find('\0');
-    if (size != (int)string::npos) {
-        decryptedBuffer.resize(size);
-    }
     return decryptedBuffer;
+
+
 }
 
-string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const string& ivStr, const string& key) {
     SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    return SAESDecrypt(buffer, iv, key);
+    return SAESDecryptNoStrip(buffer, bufferSize, iv, key);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2114,7 +2178,6 @@ uint64_t SFileSize(const string& path) {
 /////////////////////////////////////////////////////////////////////////////
 
 string SHashSHA1(const string& buffer) {
-    // Just add and return
     string result;
     result.resize(20);
     mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
@@ -2182,14 +2245,20 @@ string SHMACSHA1(const string& key, const string& buffer) {
     return outerHash;
 }
 
+// --------------------------------------------------------------------------
 string SHMACSHA256(const string& key, const string& buffer) {
+    // See: http://en.wikipedia.org/wiki/HMAC
+
+    // First, build the secret pads
     int BLOCK_SIZE = 64;
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
     for (int c = 0; c < (int)key.size(); ++c) {
+        // XOR front of opadSecret/ipadSecret with secret access key
         ipadSecret[c] ^= key[c];
         opadSecret[c] ^= key[c];
     }
 
+    // Then use it to make the hashes
     const string& innerHash = SHashSHA256(ipadSecret + buffer);
     const string& outerHash = SHashSHA256(opadSecret + innerHash);
     return outerHash;

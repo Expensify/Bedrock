@@ -73,6 +73,9 @@ void BedrockServer::syncWrapper(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
+    // Initialize the thread.
+    SInitialize(_syncThreadName);
+
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
         if (server._detach) {
@@ -102,9 +105,6 @@ void BedrockServer::sync(SData& args,
                          CommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
-    // Initialize the thread.
-    SInitialize(_syncThreadName);
-
     // We currently have no commands in progress.
     server._commandsInProgress.store(0);
 
@@ -987,7 +987,7 @@ BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(false),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr)
 {
     _version = SVERSION;
@@ -1053,6 +1053,12 @@ BedrockServer::BedrockServer(const SData& args)
     // Allow sending control commands when the server's not MASTERING/SLAVING.
     SINFO("Opening control port on '" << _args["-controlPort"] << "'");
     _controlPort = openPort(_args["-controlPort"]);
+
+    // If we're bootstraping this node we need to go into detached mode here.
+    // The syncWrapper will handle this for us.
+    if (_detach) {
+        SINFO("Bootstrap flag detected, starting sync node in detach mode.");
+    }
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
@@ -1531,6 +1537,14 @@ list<STable> BedrockServer::getPeerInfo() {
     return peerData;
 }
 
+void BedrockServer::setDetach(bool detach) {
+    if (detach) {
+        _beginShutdown("Detach", true);
+    } else {
+        _detach = false;
+    }
+}
+
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
@@ -1883,4 +1897,3 @@ void BedrockServer::_acceptSockets() {
         }
     }
 }
-

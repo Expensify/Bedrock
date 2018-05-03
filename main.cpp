@@ -121,11 +121,11 @@ set<string> loadPlugins(SData& args) {
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
         if(!lib) {
-            cout << "Error loading bedrock plugin " << pluginName << ": " << dlerror() << endl;
+            SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {
             void* sym = dlsym(lib, symbolName.c_str());
             if (!sym) {
-                cout << "Couldn't find symbol " << symbolName << endl;
+                SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
                 ((void(*)()) sym)();
@@ -283,6 +283,9 @@ int main(int argc, char* argv[]) {
         SDEBUG("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
+    } else if (args.isSet("-bootstrap")) {
+        // Allow for bootstraping a node with no database file in place.
+        SINFO("Loading in bootstrap mode, skipping check for database existance.");
     } else {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");
