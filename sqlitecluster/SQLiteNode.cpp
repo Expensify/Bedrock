@@ -251,7 +251,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
     uint64_t elapsed = STimeNow() - command.request.calcU64("commandExecuteTime");
     SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer->name
-          << "' after " << elapsed / STIME_US_PER_MS << " ms");
+          << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our master.
     SData escalate("ESCALATE");
@@ -367,7 +367,7 @@ bool SQLiteNode::update() {
 
         // Keep searching until we connect to at least half our non-permaslave peers OR timeout
         SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
-                              << " with permaslaves), timeout in " << (_stateTimeout - STimeNow()) / STIME_US_PER_MS
+                              << " with permaslaves), timeout in " << (_stateTimeout - STimeNow()) / 1000
                               << "ms");
         if (((float)numLoggedInFullPeers < numFullPeers / 2.0) && (STimeNow() < _stateTimeout))
             return false;
@@ -802,10 +802,10 @@ bool SQLiteNode::update() {
                           << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
                           << consistencyLevelNames[_commitConsistency] << "), " << numFullApproved << " of "
                           << numFullPeers << " approved (" << peerList.size() << " total) in "
-                          << totalElapsed / STIME_US_PER_MS << " ms ("
-                          << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
-                          << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
-                          << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
+                          << totalElapsed / 1000 << " ms ("
+                          << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
+                          << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
+                          << commitElapsed / 1000 << "+" << rollbackElapsed / 1000 << "ms)");
 
                     SINFO("[performance] Successfully committed " << consistencyLevelNames[_commitConsistency]
                           << " transaction. Sending COMMIT_TRANSACTION to peers.");
@@ -1592,10 +1592,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                              commitElapsed, rollbackElapsed);
         SINFO("Committed slave transaction #" << message["CommitCount"] << " (" << message["Hash"] << ") in "
-              << totalElapsed / STIME_US_PER_MS << " ms (" << beginElapsed / STIME_US_PER_MS << "+"
-              << readElapsed / STIME_US_PER_MS << "+" << writeElapsed / STIME_US_PER_MS << "+"
-              << prepareElapsed / STIME_US_PER_MS << "+" << commitElapsed / STIME_US_PER_MS << "+"
-              << rollbackElapsed / STIME_US_PER_MS << "ms)");
+              << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+              << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+              << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+              << rollbackElapsed / 1000 << "ms)");
 
         // Look up in our escalated commands and see if it's one being processed
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
@@ -1716,7 +1716,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (command.escalationTimeUS) {
                 command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
                 SINFO("[performance] Total escalation time for command " << command.request.methodLine << " was "
-                      << command.escalationTimeUS << "us.");
+                      << command.escalationTimeUS/1000 << "ms.");
             }
             command.response = response;
             command.complete = true;
@@ -1946,7 +1946,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } else {
             timeout = 0;
         }
-        SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
+        SDEBUG("Setting state timeout of " << timeout / 1000 << "ms");
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
@@ -2172,13 +2172,13 @@ void SQLiteNode::_updateSyncPeer()
         string from, to;
         if (_syncPeer) {
             from = _syncPeer->name + " (commit count=" + (*_syncPeer)["CommitCount"] + "), latency="
-                                   + to_string(_syncPeer->latency) + "us";
+                                   + to_string(_syncPeer->latency/1000) + "ms";
         } else {
             from = "(NONE)";
         }
         if (newSyncPeer) {
             to = newSyncPeer->name + " (commit count=" + (*newSyncPeer)["CommitCount"] + "), latency="
-                                   + to_string(newSyncPeer->latency) + "us";
+                                   + to_string(newSyncPeer->latency/1000) + "ms";
         } else {
             to = "(NONE)";
         }
@@ -2194,7 +2194,7 @@ void SQLiteNode::_updateSyncPeer()
             } else if (peer->calcU64("CommitCount") <= commitCount) {
                 nonChosenPeers.push_back(peer->name + ":commit=" + (*peer)["CommitCount"]);
             } else {
-                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency) + "us");
+                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/1000) + "ms");
             }
         }
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));

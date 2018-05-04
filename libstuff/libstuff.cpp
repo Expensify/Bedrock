@@ -1584,8 +1584,8 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 
             // Note if this seems slow.
             uint64_t elapsed = STimeNow() - start;
-            if (elapsed > 100 * STIME_US_PER_MS) {
-                SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
+            if (elapsed > 100 * 1000) {
+                SWARN("Slow DNS lookup. " << elapsed / 1000 << "ms for '" << domain << "'.");
             }
 
             // Grab the resolved address.
@@ -2377,7 +2377,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sql.substr(0, 150));
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
