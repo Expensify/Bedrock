@@ -42,6 +42,15 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
+
+        auto it = command.request.nameValueMap.find("Connection");
+        if (it != command.request.nameValueMap.end() && SIEquals(it->second, "forget")) {
+            // Forgotten commands are always "new". This is because when we escalate one of these commands, we assume
+            // we'll never see a response to it, so we no longer consider it a command in progress. However, if master
+            // is standing down when this happens, the command will be returned to BedrockServer to be re-queued later
+            // on, and we need to make sure we don't double-decrement the _commandsInProgress counter.
+            isNew = true;
+        }
         _commandQueue.push(BedrockCommand(move(command)));
         if (!isNew) {
             // If the command isn't new, then we already think it's in progress, but it's been returned to us, so reset
