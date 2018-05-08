@@ -47,7 +47,7 @@ class SHTTPSManager : public STCPManager {
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
-    virtual bool _onRecv(Transaction* transaction) = 0;
+    virtual bool _onRecv(Transaction* transaction);
 
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
