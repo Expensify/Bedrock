@@ -207,6 +207,9 @@ class BedrockServer : public SQLiteServer {
     // into a sleep loop until this is called again with false
     void setDetach(bool detach);
 
+    // Reset the backup on shutdown variable back to false.
+    void resetBackupOnShutdown();
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";

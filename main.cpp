@@ -295,6 +295,10 @@ int main(int argc, char* argv[]) {
     // Log stack traces if we have unhandled exceptions.
     set_terminate(STerminateHandler);
 
+    // Create our BedrockServer object so we can keep it for the life of the
+    // program.
+    BedrockServer server(args);
+
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
         if (SGetSignals()) {
@@ -303,29 +307,28 @@ int main(int argc, char* argv[]) {
             SClearSignals();
         }
 
-        // Run the server. Scoped to allow us to create a new server after a backup.
-        {
-            SINFO("Starting bedrock server");
-            BedrockServer server(args);
-            uint64_t nextActivity = STimeNow();
-            while (!server.shutdownComplete()) {
-                // Wait and process
-                fd_map fdm;
-                server.prePoll(fdm);
-                const uint64_t now = STimeNow();
-                S_poll(fdm, max(nextActivity, now) - now);
-                nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-                server.postPoll(fdm, nextActivity);
-            }
-            SINFO("Graceful bedrock shutdown complete");
+        SINFO("Starting bedrock server");
+        uint64_t nextActivity = STimeNow();
+        while (!server.shutdownComplete()) {
             if (server.backupOnShutdown()) {
                 BackupDB(args["-db"]);
+                server.setDetach(false);
+                server.resetBackupOnShutdown();
             }
+            // Wait and process
+            fd_map fdm;
+            server.prePoll(fdm);
+            const uint64_t now = STimeNow();
+            S_poll(fdm, max(nextActivity, now) - now);
+            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+            server.postPoll(fdm, nextActivity);
         }
-
+        SINFO("Graceful bedrock shutdown complete");
         // Backup the main database on HUP signal.
         if (SGetSignal(SIGHUP)) {
+            server.setDetach(true);
             BackupDB(args["-db"]);
+            server.setDetach(false);
         }
     }
 

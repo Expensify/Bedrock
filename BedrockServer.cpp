@@ -1550,8 +1550,16 @@ void BedrockServer::setDetach(bool detach) {
     if (detach) {
         _beginShutdown("Detach", true);
     } else {
+        // When the sync thread exits it sets this to true. However, since we
+        // aren't destroying the BedrockServer object anymore we need to make sure we reset it
+        // or else we will go into a shutdown loop we cannot get out of.
+        _syncThreadComplete.store(false);
         _detach = false;
     }
+}
+
+void BedrockServer::resetBackupOnShutdown() {
+    _backupOnShutdown = false;
 }
 
 void BedrockServer::_status(BedrockCommand& command) {
@@ -1721,7 +1729,7 @@ void BedrockServer::_control(BedrockCommand& command) {
     response.methodLine = "200 OK";
     if (SIEquals(command.request.methodLine, "BeginBackup")) {
         _backupOnShutdown = true;
-        _beginShutdown("BeginBackup");
+        _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "SuppressCommandPort")) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
@@ -1734,6 +1742,10 @@ void BedrockServer::_control(BedrockCommand& command) {
         _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "Attach")) {
         response.methodLine = "204 ATTACHING";
+        // When the sync thread exits it sets this to true. However, since we
+        // aren't destroying the BedrockServer object anymore we need to make sure we reset it
+        // or else we will go into a shutdown loop we cannot get out of.
+        _syncThreadComplete.store(false);
         _detach = false;
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
@@ -1828,7 +1840,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 }
 
 bool BedrockServer::backupOnShutdown() {
-    return _backupOnShutdown;
+    return _backupOnShutdown && _detach && _syncThreadComplete;
 }
 
 SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
