@@ -1005,6 +1005,7 @@ void BedrockServer::_resetServer() {
     _backupOnShutdown = false;
     _commandPort = nullptr;
     _maxConflictRetries = 3;
+    _gracefulShutdownTimeout.alarmDuration = 0;
 }
 
 BedrockServer::BedrockServer(const SData& args)
@@ -1569,6 +1570,10 @@ void BedrockServer::setDetach(bool detach) {
     }
 }
 
+bool BedrockServer::isDetached() {
+    return _detach && _syncThreadComplete;
+}
+
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
@@ -1833,12 +1838,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason
               << "', closing command port on '" << _args["-serverHost"] << "'");
-
-        // Only start our graceful timeout timer if we are not detaching.
-        if (!_detach) {
-            _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
-            _gracefulShutdownTimeout.start();
-        }
+        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
+        _gracefulShutdownTimeout.start();
 
         // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);
@@ -1862,8 +1863,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     }
 }
 
-bool BedrockServer::backupOnShutdown() {
-    return _backupOnShutdown && _detach && _syncThreadComplete;
+bool BedrockServer::shouldBackup() {
+    return _backupOnShutdown;
 }
 
 SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {

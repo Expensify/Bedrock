@@ -193,8 +193,8 @@ class BedrockServer : public SQLiteServer {
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
     virtual bool canStandDown();
 
-    // Returns whether or not this server was configured to backup when it completed shutdown.
-    bool backupOnShutdown();
+    // Returns whether or not this server was configured to backup.
+    bool shouldBackup();
 
     // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
     // sync node.
@@ -206,6 +206,9 @@ class BedrockServer : public SQLiteServer {
     // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
     // into a sleep loop until this is called again with false
     void setDetach(bool detach);
+
+    // Returns if we are detached and the sync thread has exited.
+    bool isDetached();
 
   private:
     // The name of the sync thread.

@@ -310,7 +310,7 @@ int main(int argc, char* argv[]) {
 
         uint64_t nextActivity = STimeNow();
         while (!server.shutdownComplete()) {
-            if (server.backupOnShutdown()) {
+            if (server.shouldBackup() && server.isDetached()) {
                 BackupDB(args["-db"]);
                 server.setDetach(false);
             }
