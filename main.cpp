@@ -322,12 +322,6 @@ int main(int argc, char* argv[]) {
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
             server.postPoll(fdm, nextActivity);
         }
-        // Backup the main database on HUP signal.
-        if (SGetSignal(SIGHUP)) {
-            server.setDetach(true);
-            BackupDB(args["-db"]);
-            server.setDetach(false);
-        }
     }
 
     // Log how much time we spent in our main mutex.
