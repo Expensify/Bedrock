@@ -98,6 +98,7 @@ void BedrockServer::syncWrapper(SData& args,
             }
             SINFO("Bedrock server entering attached state.");
         }
+        server._resetServer();
         sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -991,12 +992,26 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     return false;
 }
 
+void BedrockServer::_resetServer() {
+    _requestCount = 0;
+    _replicationState = SQLiteNode::SEARCHING;
+    _upgradeInProgress = false;
+    _suppressCommandPort = false;
+    _suppressCommandPortManualOverride = false;
+    _syncThreadComplete = false;
+    _syncNode = nullptr;
+    _suppressMultiWrite = true;
+    _shutdownState = RUNNING;
+    _shouldBackup = false;
+    _commandPort = nullptr;
+    _gracefulShutdownTimeout.alarmDuration = 0;
+}
 
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(args.isSet("-bootstrap")),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
 {
     _version = SVERSION;
@@ -1554,6 +1569,10 @@ void BedrockServer::setDetach(bool detach) {
     }
 }
 
+bool BedrockServer::isDetached() {
+    return _detach && _syncThreadComplete;
+}
+
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
@@ -1721,8 +1740,8 @@ void BedrockServer::_control(BedrockCommand& command) {
     SData& response = command.response;
     response.methodLine = "200 OK";
     if (SIEquals(command.request.methodLine, "BeginBackup")) {
-        _backupOnShutdown = true;
-        _beginShutdown("BeginBackup");
+        _shouldBackup = true;
+        _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "SuppressCommandPort")) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
@@ -1843,8 +1862,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     }
 }
 
-bool BedrockServer::backupOnShutdown() {
-    return _backupOnShutdown;
+bool BedrockServer::shouldBackup() {
+    return _shouldBackup;
 }
 
 SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {

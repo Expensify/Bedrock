@@ -193,8 +193,8 @@ class BedrockServer : public SQLiteServer {
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
     virtual bool canStandDown();
 
-    // Returns whether or not this server was configured to backup when it completed shutdown.
-    bool backupOnShutdown();
+    // Returns whether or not this server was configured to backup.
+    bool shouldBackup();
 
     // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
     // sync node.
@@ -206,6 +206,9 @@ class BedrockServer : public SQLiteServer {
     // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
     // into a sleep loop until this is called again with false
     void setDetach(bool detach);
+
+    // Returns if we are detached and the sync thread has exited.
+    bool isDetached();
 
   private:
     // The name of the sync thread.
@@ -272,6 +275,9 @@ class BedrockServer : public SQLiteServer {
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
     void _prePollPlugins(fd_map& fdm);
     void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
+
+    // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
+    void _resetServer();
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
@@ -373,8 +379,8 @@ class BedrockServer : public SQLiteServer {
     // Flag indicating whether multi-write is enabled.
     atomic<bool> _multiWriteEnabled;
 
-    // Set this to cause a backup to run when the server shuts down.
-    bool _backupOnShutdown;
+    // Set this to cause a backup to run in detached mode
+    bool _shouldBackup;
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
