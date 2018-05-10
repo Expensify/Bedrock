@@ -297,6 +297,7 @@ int main(int argc, char* argv[]) {
 
     // Create our BedrockServer object so we can keep it for the life of the
     // program.
+    SINFO("Starting bedrock server");
     BedrockServer server(args);
 
     // Keep going until someone kills it (either via TERM or Control^C)
@@ -307,13 +308,11 @@ int main(int argc, char* argv[]) {
             SClearSignals();
         }
 
-        SINFO("Starting bedrock server");
         uint64_t nextActivity = STimeNow();
         while (!server.shutdownComplete()) {
             if (server.backupOnShutdown()) {
                 BackupDB(args["-db"]);
                 server.setDetach(false);
-                server.resetBackupOnShutdown();
             }
             // Wait and process
             fd_map fdm;
@@ -323,7 +322,6 @@ int main(int argc, char* argv[]) {
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
             server.postPoll(fdm, nextActivity);
         }
-        SINFO("Graceful bedrock shutdown complete");
         // Backup the main database on HUP signal.
         if (SGetSignal(SIGHUP)) {
             server.setDetach(true);

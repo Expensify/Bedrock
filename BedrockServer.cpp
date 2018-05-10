@@ -1569,10 +1569,6 @@ void BedrockServer::setDetach(bool detach) {
     }
 }
 
-void BedrockServer::resetBackupOnShutdown() {
-    _backupOnShutdown = false;
-}
-
 void BedrockServer::_status(BedrockCommand& command) {
     SData& request  = command.request;
     SData& response = command.response;
