@@ -379,8 +379,8 @@ class BedrockServer : public SQLiteServer {
     // Flag indicating whether multi-write is enabled.
     atomic<bool> _multiWriteEnabled;
 
-    // Set this to cause a backup to run when the server shuts down.
-    bool _backupOnShutdown;
+    // Set this to cause a backup to run in detached mode
+    bool _shouldBackup;
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
