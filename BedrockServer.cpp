@@ -1565,10 +1565,6 @@ void BedrockServer::setDetach(bool detach) {
     if (detach) {
         _beginShutdown("Detach", true);
     } else {
-        // When the sync thread exits it sets this to true. However, since we
-        // aren't destroying the BedrockServer object anymore we need to make sure we reset it
-        // or else we will go into a shutdown loop we cannot get out of.
-        _syncThreadComplete.store(false);
         _detach = false;
     }
 }
@@ -1758,10 +1754,6 @@ void BedrockServer::_control(BedrockCommand& command) {
         _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "Attach")) {
         response.methodLine = "204 ATTACHING";
-        // When the sync thread exits it sets this to true. However, since we
-        // aren't destroying the BedrockServer object anymore we need to make sure we reset it
-        // or else we will go into a shutdown loop we cannot get out of.
-        _syncThreadComplete.store(false);
         _detach = false;
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
