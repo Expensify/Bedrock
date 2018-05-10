@@ -98,6 +98,7 @@ void BedrockServer::syncWrapper(SData& args,
             }
             SINFO("Bedrock server entering attached state.");
         }
+        server._resetServer();
         sync(args, replicationState, upgradeInProgress, masterVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -991,6 +992,20 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
     return false;
 }
 
+void BedrockServer::_resetServer() {
+    _requestCount = 0;
+    _replicationState = SQLiteNode::SEARCHING;
+    _upgradeInProgress = false;
+    _suppressCommandPort = false;
+    _suppressCommandPortManualOverride = false;
+    _syncThreadComplete = false;
+    _syncNode = nullptr;
+    _suppressMultiWrite = true;
+    _shutdownState = RUNNING;
+    _backupOnShutdown = false;
+    _commandPort = nullptr;
+    _maxConflictRetries = 3;
+}
 
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
@@ -1830,8 +1845,12 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason
               << "', closing command port on '" << _args["-serverHost"] << "'");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
-        _gracefulShutdownTimeout.start();
+
+        // Only start our graceful timeout timer if we are not detaching.
+        if (!_detach) {
+            _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
+            _gracefulShutdownTimeout.start();
+        }
 
         // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);

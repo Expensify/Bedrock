@@ -276,6 +276,9 @@ class BedrockServer : public SQLiteServer {
     void _prePollPlugins(fd_map& fdm);
     void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
 
+    // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
+    void _resetServer();
+
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
     static void sync(SData& args,
