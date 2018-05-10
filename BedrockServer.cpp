@@ -2,7 +2,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
-#include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
 #include <iomanip>
 
@@ -351,7 +350,6 @@ void BedrockServer::sync(SData& args,
                     server._commandsInProgress--;
                     continue;
                 }
-                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                 SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
                 // Otherwise, save the commit count, mark this command as complete, and reply.
@@ -738,9 +736,6 @@ void BedrockServer::worker(SData& args,
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
 
-            // We check first, and allow this command to retry all three times, even if it becomes disallowed during
-            // iteration.
-            bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
             while (retry) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
@@ -805,7 +800,6 @@ void BedrockServer::worker(SData& args,
 
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
-                    canWriteParallel = canWriteParallel && multiWriteOK;
                     if (!canWriteParallel                 ||
                         server._suppressMultiWrite.load() ||
                         state != SQLiteNode::MASTERING    ||
@@ -868,7 +862,6 @@ void BedrockServer::worker(SData& args,
                                 }
                             }
                             if (commitSuccess) {
-                                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
@@ -902,7 +895,6 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                BedrockConflictMetrics::recordConflict(command.request.methodLine);
                 SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
                       << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
@@ -1640,7 +1632,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             // Both of these need to be in the correct state for multi-write to be enabled.
             bool multiWriteOn =  _multiWriteEnabled.load() && !_suppressMultiWrite;
             content["multiWriteEnabled"] = multiWriteOn ? "true" : "false";
-            content["multiWriteAutoBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
             content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
         }
 
@@ -1703,9 +1694,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             for (auto& command : parallelCommands) {
                 _blacklistedParallelCommands.insert(command);
             }
-        }
-        if (request.isSet("autoBlacklistConflictFraction")) {
-            BedrockConflictMetrics::setFraction(SToFloat(request["autoBlacklistConflictFraction"]));
         }
 
         // Prepare the command to respond to the caller.
@@ -1770,13 +1758,6 @@ void BedrockServer::_control(BedrockCommand& command) {
             if (retries > 0 && retries <= 100) {
                 SINFO("Updating _maxConflictRetries to: " << retries);
                 _maxConflictRetries.store(retries);
-            }
-        }
-        if (command.request.isSet("AutoBlacklistConflictFraction")) {
-            float fraction = SToFloat(command.request["AutoBlacklistConflictFraction"]);
-            if (fraction > 0.001 && fraction <= 1.0) {
-                SINFO("Updating BedrockConflictMetrics::fraction to: " << fraction);
-                BedrockConflictMetrics::setFraction(fraction);
             }
         }
     }
