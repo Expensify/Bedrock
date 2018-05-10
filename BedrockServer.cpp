@@ -735,7 +735,7 @@ void BedrockServer::worker(SData& args,
             }
 
             // We'll retry on conflict up to this many times.
-            int retry = 3;
+            int retry = server._maxConflictRetries.load();
 
             // We check first, and allow this command to retry all three times, even if it becomes disallowed during
             // iteration.
@@ -997,7 +997,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _backupOnShutdown(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr)
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
 {
     _version = SVERSION;
 
@@ -1717,6 +1717,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
         SIEquals(command.request.methodLine, "ClearCrashCommands")     ||
         SIEquals(command.request.methodLine, "Detach")                 ||
         SIEquals(command.request.methodLine, "Attach")                 ||
+        SIEquals(command.request.methodLine, "SetConflictParams")      ||
         SIEquals(command.request.methodLine, "SetCheckpointIntervals")
         ) {
         return true;
@@ -1755,6 +1756,21 @@ void BedrockServer::_control(BedrockCommand& command) {
         }
         if (command.request.isSet("fullCheckpointPageMin")) {
             SQLite::fullCheckpointPageMin.store(command.request.calc("fullCheckpointPageMin"));
+        }
+    } else if (SIEquals(command.request.methodLine, "SetConflictParams")) {
+        if (command.request.isSet("MaxConflictRetries")) {
+            int retries = command.request.calc("MaxConflictRetries");
+            if (retries > 0 && retries <= 100) {
+                SINFO("Updating _maxConflictRetries to: " << retries);
+                _maxConflictRetries.store(retries);
+            }
+        }
+        if (command.request.isSet("AutoBlacklistConflictFraction")) {
+            float fraction = SToFloat(command.request["AutoBlacklistConflictFraction"]);
+            if (fraction > 0.001 && fraction <= 1.0) {
+                SINFO("Updating BedrockConflictMetrics::fraction to: " << fraction);
+                BedrockConflictMetrics::setFraction(fraction);
+            }
         }
     }
 }

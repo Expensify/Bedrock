@@ -191,3 +191,9 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     _activeTransactionList.push_front(transaction);
     return transaction;
 }
+
+bool SHTTPSManager::_onRecv(Transaction* transaction)
+{
+    transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
+    return false;
+}

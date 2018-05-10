@@ -384,6 +384,9 @@ class BedrockServer : public SQLiteServer {
     Port* _controlPort;
     Port* _commandPort;
 
+    // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
+    atomic<int> _maxConflictRetries;
+
     // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
     // their HTTPS requests finish and move them back to the main queue.
     map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
