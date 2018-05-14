@@ -998,6 +998,7 @@ void BedrockServer::_resetServer() {
     _upgradeInProgress = false;
     _suppressCommandPort = false;
     _suppressCommandPortManualOverride = false;
+    _commandPortClosures = 0;
     _syncThreadComplete = false;
     _syncNode = nullptr;
     _suppressMultiWrite = true;
@@ -1010,9 +1011,9 @@ void BedrockServer::_resetServer() {
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
+    _commandPortClosures(0), _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true),
+    _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false),
+    _detach(args.isSet("-bootstrap")), _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
 {
     _version = SVERSION;
 
@@ -1191,10 +1192,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
     if (!_suppressCommandPort && (state == SQLiteNode::MASTERING || state == SQLiteNode::SLAVING) &&
         _shutdownState.load() == RUNNING) {
-        // Open the port
-        if (!_commandPort) {
+        // Open the port if we don't have one and we've had as many opens as we have closures.
+        if (!_commandPort && !_commandPortClosures) {
             SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
             _commandPort = openPort(_args["-serverHost"]);
+        } else if (!_commandPortClosures) {
+            SHMMM("Not opening command port because of " << _commandPortClosures << " outstanding closures.");
         }
         if (!_controlPort) {
             SINFO("Opening control port on '" << _args["-controlPort"] << "'");
@@ -1528,10 +1531,17 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
             closePorts({_controlPort});
             _portPluginMap.clear();
             _commandPort = nullptr;
+            _commandPortClosures += 1;
         }
     } else {
         // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
         SHMMM("Clearing command port suppression");
+        if (_commandPortClosures) {
+            _commandPortClosures -= 1;
+        } else {
+            SWARN("Trying to decrement command port closures past 0, skipping decrement.");
+        }
+
     }
 }
 
@@ -1624,7 +1634,8 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["state"]    = SQLiteNode::stateNames[state];
         content["version"]  = _version;
         content["host"]     = _args["-nodeHost"];
-
+        content["commandPortOpen"] = _commandPort ? "true" : "false";
+        content["CommandPortClosures"] = to_string(_commandPortClosures);
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
@@ -1746,6 +1757,9 @@ void BedrockServer::_control(BedrockCommand& command) {
         suppressCommandPort("SuppressCommandPort", true, true);
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
+        if (_commandPortClosures) {
+            response.methodLine = "201 Not opening port, " + to_string(_commandPortClosures) + " closures reamining";
+        }
     } else if (SIEquals(command.request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
