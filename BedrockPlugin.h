@@ -87,6 +87,8 @@ class BedrockPlugin {
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings();
 
+    virtual bool preventAttach();
+
   public:
     // A global static list of all registered plugins.
     static list<BedrockPlugin*>* g_registeredPluginList;
