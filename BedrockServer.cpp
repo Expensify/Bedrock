@@ -1753,8 +1753,15 @@ void BedrockServer::_control(BedrockCommand& command) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "Attach")) {
-        response.methodLine = "204 ATTACHING";
-        _detach = false;
+        // Ensure none of our plugins are blocking attaching
+        for (auto plugin : plugins) {
+            if (plugin->preventAttach()) {
+                response.methodLine = "401 Attaching prevented by " + plugin->getName();
+            } else {
+                response.methodLine = "204 ATTACHING";
+                _detach = false;
+            }
+        }
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
         response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
