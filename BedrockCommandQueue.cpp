@@ -97,6 +97,14 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     _queueCondition.notify_one();
 }
 
+void BedrockCommandQueue::requeue(BedrockCommand&& item) {
+    SAUTOLOCK(_queueMutex);
+    auto& queue = _commandQueue[item.priority];
+    item.startTiming(BedrockCommand::QUEUE_WORKER);
+    queue.emplace(STimeNow(), move(item));
+    _queueCondition.notify_one();
+}
+
 // This function currently never gets called. It's actually completely untested, so if you ever make any changes that
 // cause it to actually get called, you'll want to do that testing.
 bool BedrockCommandQueue::removeByID(const string& id) {
