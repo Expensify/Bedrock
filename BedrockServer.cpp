@@ -891,7 +891,7 @@ void BedrockServer::worker(SData& args,
             } else if (command.processCount < server._maxConflictRetries.load()) {
                 SINFO("requeueing command " << command.request.methodLine << " in main queue with "
                       << server._commandQueue.size() << " commands.");
-                server._commandQueue.requeue(move(command));
+                server._commandQueue.push(move(command), true);
             } else {
                 BedrockConflictMetrics::recordConflict(command.request.methodLine);
                 SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
