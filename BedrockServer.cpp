@@ -129,7 +129,7 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // Initialize the DB.
-    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
+    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"], stoll(args["-mmapSizeGB"]));
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -585,7 +585,7 @@ void BedrockServer::worker(SData& args,
                            int threadCount)
 {
     SInitialize("worker" + to_string(threadId));
-    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
+    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], stoll(args["-mmapSizeGB"]));
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
