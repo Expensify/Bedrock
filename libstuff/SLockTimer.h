@@ -122,8 +122,8 @@ void SLockTimer<LOCKTYPE>::log() {
         snprintf(freeBuffer, 7, "%.2f", freePercent);
 
         // Log both raw numbers and our friendly lockPercent.
-        SINFO("[performance] " << _description << ", thread: " << threadName << ". Wait/Lock/Free " << waitTime << "/"
-              << lockTime << "/" << freeTime << "us, " << waitBuffer << "/" << lockBuffer << "/" << freeBuffer
+        SINFO("[performance] " << _description << ", thread: " << threadName << ". Wait/Lock/Free " << waitTime/1000 << "/"
+              << lockTime/1000 << "/" << freeTime/1000 << "ms, " << waitBuffer << "/" << lockBuffer << "/" << freeBuffer
               << "%.");
 
         // Reset the counters.

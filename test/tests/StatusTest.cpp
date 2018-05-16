@@ -9,7 +9,7 @@ struct StatusTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setup() { tester = new BedrockTester(); }
+    void setup() { tester = new BedrockTester(_threadID); }
 
     void tearDown() { delete tester; }
 

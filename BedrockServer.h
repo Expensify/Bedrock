@@ -8,10 +8,10 @@
 class BedrockServer : public SQLiteServer {
   public:
 
-    // Shutting Down and Standing Down a BedrockServer. 
+    // Shutting Down and Standing Down a BedrockServer.
     //
     // # What's the difference between these two things?
-    // 
+    //
     // Shutting down is pretty obvious - when we want to turn a server off, we shut it down. The shut down process
     // tries to do this without interrupting any client requests.
     // Standing down is a little less obvious. If we're the master node in a cluster, there are two ways to stand down.
@@ -25,8 +25,8 @@ class BedrockServer : public SQLiteServer {
     // we'll get to that later.
     //
     // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
-    // server receives a SIGINT, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
-    // 
+    // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
+    //
     // 1. The command port is closed, and no new connections are accepted from clients.
     // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
     //    response is sent.
@@ -40,7 +40,7 @@ class BedrockServer : public SQLiteServer {
     // next section.
     //
     // The sync node will continue STANDINGDOWN until two conditions are true:
-    // 
+    //
     // 1. There are no commands in progress.
     // 2. There are no outstanding queued commands.
     //
@@ -55,7 +55,7 @@ class BedrockServer : public SQLiteServer {
     // implying that there are neither queued commands nor commands in progress.
     //
     // The sync node then finishes standing down, informing the other nodes in the cluster that it is now in the
-    // searching STATE. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
+    // SEARCHING state. At this point, we switch to the DONE state. The sync thread waits for worker threads to join.
     // The worker threads, when they find the main command queue empty, will check for the DONE state, and return. The
     // sync thread can then complete and the server is shut down.
     //
@@ -78,7 +78,7 @@ class BedrockServer : public SQLiteServer {
     //
     // The reason we have to wait for the main queue to be empty *and* no commands to be in progress when standing
     // down, is because of the way certain commands can move between queues. For instance, a command that has a pending
-    // HTTPS transaction is "in progress" until the transaction completes, butt hen re-queued for processing by a
+    // HTTPS transaction is "in progress" until the transaction completes, but then re-queued for processing by a
     // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
     // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
     // down, then we'd try and run processCommand() while slaving, which would be invalid. For this reason, we need to
@@ -91,6 +91,50 @@ class BedrockServer : public SQLiteServer {
     // can do about these, except not shut down. If we're standing down, we could keep them, but they break our
     // checking against whether the main command queue is empty, and fall into the same category of us being unable to
     // distinguish them from commands that may have already started.
+    //
+    // Notes on timing out a shutdown.
+    // Here's how timing out a shutdown works:
+    // 1. When _beginShutdown() is called, it sets a one minute timer. It proceeds to shut down the node as normal.
+    // 2. When shutdown progresses far enough that we can shut down the sync node, we set the timeout for the sync node
+    // to whatever portion of our minute is remaining (minus 5 seconds, to allow for final cleanup afterward - also, we
+    // make sure this value stays positive, so will always be at least 1us).
+    // 3. The sync node should finish with at least 5 seconds left, and we should finish any final cleanup or responses
+    // and shut down cleanly.
+    //
+    // However, if we do get to the end of our 1 minute timer, everything just starts exiting. Worker threads return,
+    // whether there's more work to do or not. The sync thread drops out of it's main loop and starts joining workers.
+    // This leaves us in a potentially broken state, and hitting the timeout should count as an error condition, but we
+    // need to support it for now. Here's the case that should look catastrophic, but is actually quite common, and what
+    // we should eventually do about it:
+    //
+    // A slave begins shutdown, and sets a 60 second timeout. It has escalated commands to master. It wants to wait for
+    // the responses to these commands before it finishes shutting down, but *there is no timeout on escalated
+    // commands*. Normally, we won't try to shut down the sync node until we've responded to all connected clients.
+    // Because there will always be connected clients waiting for these responses to escalated commands, we'll wait the
+    // full 60 seconds, and then we'll just die with no responses. Effectively, the sever `kill -9`'s itself here,
+    // leaving clients hanging with no cleanup.
+    //
+    // On master, this state could be catastrophic, though master doesn't need to worry about a lack of timeouts on
+    // escalations, so let's look at a different case - a command running a custom query that takes longer than our 60
+    // second timeout. There will be a local client waiting for the response to this command, so the same criteria
+    // breaks - we can't shut down the sync thread until it's complete, but the command it's waiting for doesn't return
+    // until after our timeout. This is *after* everything just starts exiting, which is to say the sync node could
+    // have shut down due to hitting the timeout before a worker thread shut down performing a write command. This
+    // write will be orphaned, as the sync node will not be able to send it out, and this database is then forked.
+    //
+    // We can't safely start shutting down the sync node until we know that all possible writes are complete for this
+    // reason, but if we're going to enforce a timeout, then we need to.
+    //
+    // The only way to make this timeout safe is to make sure no individual command can live longer than our shutdown
+    // timeout, which would require time-stamping commands pre-escalation and giving up on them if we failed to receive
+    // a response in time, as well as making sure that commands always return in less time than that (they currently,
+    // usually will, as long as the default command timeout is less than one minute, but they can still block in system
+    // calls like sleep(), and the timeout is configurable). Certainly, no "normal" command (i.e., a programmatically
+    // generated command, as opposed to something like a CustomQuery command) should have a timeout longer than the
+    // shutdown timeout, or it can cause a non-graceful shutdown.
+    //
+    // Of course, if nothing can take longer than the shutdown timeout, then we should never hit that timeout, and all
+    // our failures should be limited to individual commands rather than the entire server shutting down.
 
     // Shutdown states.
     enum SHUTDOWN_STATE {
@@ -149,8 +193,8 @@ class BedrockServer : public SQLiteServer {
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
     virtual bool canStandDown();
 
-    // Returns whether or not this server was configured to backup when it completed shutdown.
-    bool backupOnShutdown();
+    // Returns whether or not this server was configured to backup.
+    bool shouldBackup();
 
     // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
     // sync node.
@@ -158,6 +202,13 @@ class BedrockServer : public SQLiteServer {
 
     // Send a command to all of our peers. It will be wrapped appropriately.
     void broadcastCommand(const SData& message);
+
+    // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
+    // into a sleep loop until this is called again with false
+    void setDetach(bool detach);
+
+    // Returns if we are detached and the sync thread has exited.
+    bool isDetached();
 
   private:
     // The name of the sync thread.
@@ -177,7 +228,14 @@ class BedrockServer : public SQLiteServer {
     // open. It will be re-inserted in this set when another command is read from it.
     map <uint64_t, Socket*> _socketIDMap;
 
-    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that modify it.
+    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
+    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
+    // to the main thread.
+    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
+    // and acceptSocket in STCPServer.
+    // prePoll and postPoll are only ever called by the main thread.
+    // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
+    // closeSocket and acceptSocket are only called inside postPoll.
     recursive_mutex _socketIDMutex;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
@@ -208,6 +266,7 @@ class BedrockServer : public SQLiteServer {
 
     // The actual thread object for the sync thread.
     thread _syncThread;
+    atomic<bool> _syncThreadComplete;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes master. It will return true if the DB has changed and needs to be committed.
@@ -216,6 +275,9 @@ class BedrockServer : public SQLiteServer {
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
     void _prePollPlugins(fd_map& fdm);
     void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
+
+    // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
+    void _resetServer();
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
@@ -317,13 +379,16 @@ class BedrockServer : public SQLiteServer {
     // Flag indicating whether multi-write is enabled.
     atomic<bool> _multiWriteEnabled;
 
-    // Set this to cause a backup to run when the server shuts down.
-    bool _backupOnShutdown;
-    bool _detach;
+    // Set this to cause a backup to run in detached mode
+    bool _shouldBackup;
+    atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
     Port* _controlPort;
     Port* _commandPort;
+
+    // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
+    atomic<int> _maxConflictRetries;
 
     // This is a map of all of our outstanding HTTPS requests to their commands, which are stored in the next list.
     map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
@@ -331,6 +396,10 @@ class BedrockServer : public SQLiteServer {
     // This contains all of the command that the previous list points at. This allows us to keep only a single copy of
     // each command, even if it has multiple requests.
     set<BedrockCommand*> _outstandingHTTPSCommands;
+
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their HTTPS requests finish and move them back to the main queue.
+    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS

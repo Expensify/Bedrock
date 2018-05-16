@@ -317,6 +317,9 @@ struct LibStuff : tpunit::TestFixture {
         // Ok, this actually tests for correctness.
         data = "this is a test";
         ASSERT_EQUAL(SToHex(SGZip(data)), "1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000");
+
+        // Test end to end.
+        ASSERT_EQUAL(SGUnzip(SGZip(data)), data);
     }
 
     void testConstantTimeEquals() {

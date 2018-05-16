@@ -37,6 +37,23 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     delete transaction;
 }
 
+int SHTTPSManager::getHTTPResponseCode(const string& methodLine) {
+    // This code looks for the first space in the methodLine, and then for the first non-space
+    // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
+    // integer, we default to 400.
+    size_t offset = methodLine.find_first_of(' ', 0);
+    offset = methodLine.find_first_not_of(' ', offset);
+    if (offset != string::npos) {
+        int status = SToInt(methodLine.substr(offset));
+        if (status) {
+            return status;
+        }
+    }
+
+    // Default case, return 400
+    return 400;
+}
+
 SHTTPSManager::Socket* SHTTPSManager::openSocket(const string& host, SX509* x509) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
@@ -96,11 +113,11 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             }
         } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout) {
             // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / STIME_US_PER_MS << "ms");
+            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
                 SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
-                      << "' timed out receiving response in " << (elapsed / STIME_US_PER_MS) << "ms.");
+                      << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
             }
         } else {
             // Haven't timed out yet, let the caller know how long until we do.
@@ -111,7 +128,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         if (active->response) {
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
-                  << "' with response '" << active->response << "' in '" << elapsed / STIME_US_PER_MS << "'ms");
+                  << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
             _activeTransactionList.erase(activeIt);
             _completedTransactionList.push_back(active);
             completedRequests.push_back(active);
@@ -173,4 +190,10 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     SAUTOLOCK(_listMutex);
     _activeTransactionList.push_front(transaction);
     return transaction;
+}
+
+bool SHTTPSManager::_onRecv(Transaction* transaction)
+{
+    transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
+    return false;
 }

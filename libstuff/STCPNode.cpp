@@ -146,7 +146,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // peer->s->lastRecvTime is always set, it's initialized to STimeNow() at creation.
                     if (peer->s->lastRecvTime + recvTimeout < STimeNow()) {
                         // Reset and reconnect.
-                        SWARN("Connection with peer '" << peer->name << "' timed out.");
+                        SHMMM("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
@@ -179,16 +179,19 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
                             // peers.
                             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
-                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency << "us latency)");
+                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
                             _onMESSAGE(peer, message);
                         }
                     }
                 } catch (const SException& e) {
-                    // Error -- reconnect
-                    PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
-                                                       << "), reconnecting:" << message.serialize());
+                    // Warn if the message is set. Otherwise, the error is that we got no message (we timed out), just
+                    // reconnect without complaining about it.
+                    if (message.methodLine.size()) {
+                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what()
+                                                           << "), reconnecting:" << message.serialize());
+                    }
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
                     peer->s->send(reconnect.serialize());
@@ -202,11 +205,11 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 if (peer->s->connectFailure) {
-                    PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
-                                                          << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                    PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / 1000
+                                                          << "ms, reconnecting in " << delay / 1000 << "ms");
                 } else {
-                    PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / STIME_US_PER_MS
-                                                        << "ms, reconnecting in " << delay / STIME_US_PER_MS << "ms");
+                    PHMMM("Lost peer connection after " << (STimeNow() - peer->s->openTime) / 1000
+                                                        << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)

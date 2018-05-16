@@ -51,6 +51,11 @@ class BedrockPlugin {
     // with any changes to the DB made by this plugin.
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
+    // Bedrock will call this before each or `processCommand` (note: not `peekCommand`) for each plugin to allow it to
+    // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
+    // set the rewriteHandler it would like to use.
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**rewriteHandler)(int, const char*, string&));
+
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);
 
@@ -81,6 +86,8 @@ class BedrockPlugin {
 
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings();
+
+    virtual bool preventAttach();
 
   public:
     // A global static list of all registered plugins.

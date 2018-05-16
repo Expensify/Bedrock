@@ -54,7 +54,6 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
     do {                                                                                                               \
         if (!(_LHS_)) {                                                                                                \
             SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
-            abort();                                                                                                   \
         }                                                                                                              \
     } while (false)
 #define SASSERTEQUALS(_LHS_, _RHS_)                                                                                    \
@@ -299,6 +298,10 @@ string SGetSignalDescription();
 // Clear all outstanding signals.
 void SClearSignals();
 
+// And also exception stuff.
+string SGetCurrentExceptionName();
+void STerminateHandler(void);
+
 // --------------------------------------------------------------------------
 // Log stuff
 // --------------------------------------------------------------------------
@@ -343,7 +346,7 @@ void SLogStackTrace();
         SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
         SLogStackTrace();                                                                                              \
         fflush(stdout);                                                                                                \
-        exit(1);                                                                                                       \
+        abort();                                                                                                       \
     } while (false)
 #define STRACE() SLOG("[trac] " << __FILE__ << "(" << __LINE__ << ") :" << __FUNCTION__)
 
@@ -695,6 +698,9 @@ int S_poll(fd_map& fdm, uint64_t timeout);
 string SGetHostName();
 string SGetPeerName(int s);
 
+// Common error checking/logging.
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber);
+
 // --------------------------------------------------------------------------
 // File stuff
 // --------------------------------------------------------------------------
@@ -728,10 +734,11 @@ string SHMACSHA256(const string& key, const string& buffer);
 #define SAES_KEY_SIZE 32 // AES256 32 bytes = 256 bits
 #define SAES_IV_SIZE 16
 #define SAES_BLOCK_SIZE 16
-string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key);
-string SAESEncrypt(const string& buffer, const string& iv, const string& key);
+string SAESEncrypt(const string& buffer, const string& ivStr, const string& key);
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key);
 string SAESDecrypt(const string& buffer, const string& iv, const string& key);
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, unsigned char* iv, const string& key);
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const string& iv, const string& key);
 
 // --------------------------------------------------------------------------
 // SQLite Stuff
@@ -760,10 +767,10 @@ void SQueryLogClose();
 
 // Returns an SQLite result code.
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
-           int64_t warnThreshold = 2000 * STIME_US_PER_MS);
-inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS) {
+           int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
+inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold);
+    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
 }
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
@@ -778,6 +785,7 @@ inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
 // --------------------------------------------------------------------------
 // Compression
 string SGZip(const string& content);
+string SGUnzip(const string& content);
 
 // Command-line helpers
 SData SParseCommandLine(int argc, char* argv[]);

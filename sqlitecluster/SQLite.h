@@ -79,11 +79,34 @@ class SQLite {
 
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
-    bool getUpdateNoopMode();
+    bool getUpdateNoopMode() const;
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     bool prepare();
+
+    // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
+    // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
+    // action being taken and the table being operated on) and instead, run a different query in their place. For
+    // instance, this can replace an INSERT statement into a particular table with a no-op, or an INSERT immediately
+    // followed by a DELETE. When enabled, this is implemented as follows:
+    //
+    // Plugin calls `write`.
+    // 1. If enableRewrite is ON, the rewriteHandler is run as part of the authorizer.
+    // 2. If the rewriteHandler wants to re-write a query, it should return `true` and update the string reference it
+    //    was passed (see setRewriteHandler() below).
+    // 3. If the rewriteHandler returns true, the initial query will fail with SQLITE_AUTH (warnings for this failure
+    //    are suppressed) and the new replacement query will be run in it's place.
+    void enableRewrite(bool enable);
+
+    // Update the rewrite handler.
+    // The rewrite handler accepts an SQLite action code, a table name, and a refernce to a string.
+    // If the action and table name indicate that the query should be re-written, then `newQuery` should be updated to
+    // the new query to run, and `true` should be returned. If the query doesn't need to be re-written, then `false`
+    // should be returned.
+    // This function is only called when enableRewrite is true.
+    // Important: there can be only one re-write handler for a given DB at once.
+    void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     int commit();
@@ -317,6 +340,20 @@ class SQLite {
 
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
+
+    // The following variables maintain the state required around automatically re-writing queries.
+
+    // If true, we'll attempt query re-writing.
+    bool _enableRewrite;
+
+    // Pointer to the current handler to determine if a query needs to be rewritten.
+    bool (*_rewriteHandler)(int, const char*, string&);
+
+    // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
+    string _rewrittenQuery;
+
+    // Causes the current query to skip re-write checking if it's already a re-written query.
+    bool _currentlyRunningRewritten;
 
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);

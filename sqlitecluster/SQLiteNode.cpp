@@ -47,7 +47,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpoint)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -105,12 +105,12 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     _sendToPeer(peer, escalate);
 }
 
-void SQLiteNode::beginShutdown() {
+void SQLiteNode::beginShutdown(uint64_t usToWait) {
     // Ignore redundant
     if (!gracefulShutdown()) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
+        _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
     }
 }
@@ -140,8 +140,17 @@ bool SQLiteNode::shutdownComplete() {
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_gracefulShutdownTimeout.ringing()) {
-        // Timing out
         SWARN("Graceful shutdown timed out, killing non gracefully.");
+        if (_escalatedCommandMap.size()) {
+            SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
+            for (auto& commandPair : _escalatedCommandMap) {
+                commandPair.second.response.methodLine = "500 Abandoned";
+                commandPair.second.complete = true;
+                _server.acceptCommand(move(commandPair.second), false);
+            }
+            _escalatedCommandMap.clear();
+        }
+        _changeState(SEARCHING);
         return true;
     }
 
@@ -229,7 +238,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
     unsentTransactions.store(false);
 }
 
-void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
+void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     // If the master is currently standing down, we won't escalate, we'll give the command back to the caller.
     if((*_masterPeer)["State"] == "STANDINGDOWN") {
         SINFO("Asked to escalate command but master standing down, letting server retry.");
@@ -242,16 +251,20 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command) {
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
     uint64_t elapsed = STimeNow() - command.request.calcU64("commandExecuteTime");
     SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer->name
-          << "' after " << elapsed / STIME_US_PER_MS << " ms");
+          << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our master.
     SData escalate("ESCALATE");
     escalate["ID"] = command.id;
     escalate.content = command.request.serialize();
 
-    // Store the command as escalated.
-    command.escalationTimeUS = STimeNow();
-    _escalatedCommandMap.emplace(command.id, move(command));
+    // Store the command as escalated, unless we intend to forget about it anyway.
+    if (forget) {
+        SINFO("Firing and forgetting command '" << command.request.methodLine << "' to master.");
+    } else {
+        command.escalationTimeUS = STimeNow();
+        _escalatedCommandMap.emplace(command.id, move(command));
+    }
 
     // And send to master.
     _sendToPeer(_masterPeer, escalate);
@@ -354,7 +367,7 @@ bool SQLiteNode::update() {
 
         // Keep searching until we connect to at least half our non-permaslave peers OR timeout
         SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
-                              << " with permaslaves), timeout in " << (_stateTimeout - STimeNow()) / STIME_US_PER_MS
+                              << " with permaslaves), timeout in " << (_stateTimeout - STimeNow()) / 1000
                               << "ms");
         if (((float)numLoggedInFullPeers < numFullPeers / 2.0) && (STimeNow() < _stateTimeout))
             return false;
@@ -723,7 +736,8 @@ bool SQLiteNode::update() {
             }
 
             // See if all active non-permaslaves have responded.
-            // NOTE: This can be true if nobody responds if there are no full slaves.
+            // NOTE: This can be true if nobody responds if there are no full slaves - this includes machines that
+            // should be slaves that are disconnected.
             bool everybodyResponded = numFullResponded >= numFullSlaves;
 
             // Record these for posterity
@@ -738,14 +752,16 @@ bool SQLiteNode::update() {
                    << ", everybodyResponded="     << everybodyResponded
                    << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
 
-            // If everyone's responded, but we didn't get the required number of approvals, roll this back. Or, if
-            // *anyone* denied, we'll roll back without waiting for the rest of the cluster.
-            if ((everybodyResponded && !consistentEnough) || numFullDenied > 0) {
-                // Abort this distributed transaction. Happened either because the initiator disappeared, or everybody
-                // has responded without enough consistency (indicating it'll never come). Failed, tell everyone to
-                // rollback.
-                SWARN("Rolling back transaction because everybody responded but not consistent enough."
-                      << "(This transaction would likely have conflicted.)");
+            // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
+            // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
+            // theory, if we were disconnected from enough of the cluster that we could no longer reach QUORUM, but
+            // this should have been detected earlier and forced us out of mastering.
+            // TODO: we might want to remove the `numFullDenied` condition here. A single failure shouldn't cause the
+            // entire cluster to break. Imagine a scenario where a slave disk was full, and every write operation
+            // failed with an sqlite3 error.
+            if (numFullDenied || (everybodyResponded && !consistentEnough)) {
+                SINFO("Rolling back transaction because everybody currently connected responded "
+                      "but not consistent enough. Num denied: " << numFullDenied << ". Slave write failure?");
                 _db.rollback();
 
                 // Notify everybody to rollback
@@ -786,10 +802,10 @@ bool SQLiteNode::update() {
                           << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
                           << consistencyLevelNames[_commitConsistency] << "), " << numFullApproved << " of "
                           << numFullPeers << " approved (" << peerList.size() << " total) in "
-                          << totalElapsed / STIME_US_PER_MS << " ms ("
-                          << beginElapsed / STIME_US_PER_MS << "+" << readElapsed / STIME_US_PER_MS << "+"
-                          << writeElapsed / STIME_US_PER_MS << "+" << prepareElapsed / STIME_US_PER_MS << "+"
-                          << commitElapsed / STIME_US_PER_MS << "+" << rollbackElapsed / STIME_US_PER_MS << "ms)");
+                          << totalElapsed / 1000 << " ms ("
+                          << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
+                          << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
+                          << commitElapsed / 1000 << "+" << rollbackElapsed / 1000 << "ms)");
 
                     SINFO("[performance] Successfully committed " << consistencyLevelNames[_commitConsistency]
                           << " transaction. Sending COMMIT_TRANSACTION to peers.");
@@ -936,7 +952,7 @@ bool SQLiteNode::update() {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
             } else if (!_server.canStandDown()) {
                 // Try again.
-                SWARN("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
+                SINFO("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
                 return false;
             }
             // Standdown complete
@@ -1158,6 +1174,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 //
                 // **FIXME**: Should it also deny if it knows of a higher priority peer?
                 SData response("STANDUP_RESPONSE");
+                // Parrot back the node's attempt count so that it can differentiate stale responses.
+                response["StateChangeCount"] = message["StateChangeCount"];
                 if (peer->params["Permaslave"] == "true") {
                     // We think it's a permaslave, deny
                     PHMMM("Permaslave trying to stand up, denying.");
@@ -1253,6 +1271,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
         // peer for testing in the update loop.
         if (_state == STANDINGUP) {
+            // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
+            // messages from peers on older versions. Once all nodes have been upgraded past the first version that
+            // supports this, we can enforce that this count is present.
+            if (message.isSet("StateChangeCount") && message.calc("StateChangeCount") != _stateChangeCount) {
+                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StateChangeCount") << "), ignoring.");
+                return;
+            }
             if (!message.isSet("Response")) {
                 STHROW("missing Response");
             }
@@ -1453,9 +1478,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 STHROW("new hash mismatch");
             }
         } catch (const SException& e) {
-            // Ok, so we failed to commit. This probably means that master ran two transactions that each would have
-            // succeeded on their own, but will end up conflicting. We should deny this transaction if we're
-            // participating in quorum, though it will eventually conflict and get rolled back anyway.
+            // Something caused a commit failure.
             success = false;
             _db.rollback();
         }
@@ -1569,10 +1592,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                              commitElapsed, rollbackElapsed);
         SINFO("Committed slave transaction #" << message["CommitCount"] << " (" << message["Hash"] << ") in "
-              << totalElapsed / STIME_US_PER_MS << " ms (" << beginElapsed / STIME_US_PER_MS << "+"
-              << readElapsed / STIME_US_PER_MS << "+" << writeElapsed / STIME_US_PER_MS << "+"
-              << prepareElapsed / STIME_US_PER_MS << "+" << commitElapsed / STIME_US_PER_MS << "+"
-              << rollbackElapsed / STIME_US_PER_MS << "ms)");
+              << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+              << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+              << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+              << rollbackElapsed / 1000 << "ms)");
 
         // Look up in our escalated commands and see if it's one being processed
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
@@ -1693,7 +1716,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (command.escalationTimeUS) {
                 command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
                 SINFO("[performance] Total escalation time for command " << command.request.methodLine << " was "
-                      << command.escalationTimeUS << "us.");
+                      << command.escalationTimeUS/1000 << "ms.");
             }
             command.response = response;
             command.complete = true;
@@ -1818,12 +1841,16 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     if (_state == MASTERING || _state == STANDINGUP || _state == STANDINGDOWN) {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        for (auto peer : peerList) {
+        for (auto otherPeer : peerList) {
+            // Skip the current peer, it no longer counts.
+            if (otherPeer == peer) {
+                continue;
+            }
             // Make sure we're a full peer
-            if (peer->params["Permaslave"] != "true") {
+            if (otherPeer->params["Permaslave"] != "true") {
                 // Verify we're logged in
                 ++numFullPeers;
-                if (SIEquals((*peer)["LoggedIn"], "true")) {
+                if (SIEquals((*otherPeer)["LoggedIn"], "true")) {
                     // Verify we're still fresh
                     ++numLoggedInFullPeers;
                 }
@@ -1919,7 +1946,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } else {
             timeout = 0;
         }
-        SDEBUG("Setting state timeout of " << timeout / STIME_US_PER_MS << "ms");
+        SDEBUG("Setting state timeout of " << timeout / 1000 << "ms");
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
@@ -1974,6 +2001,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Broadcast the new state
         _state = newState;
         SData state("STATE");
+        state["StateChangeCount"] = to_string(++_stateChangeCount);
         state["State"] = stateNames[_state];
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
@@ -2144,13 +2172,13 @@ void SQLiteNode::_updateSyncPeer()
         string from, to;
         if (_syncPeer) {
             from = _syncPeer->name + " (commit count=" + (*_syncPeer)["CommitCount"] + "), latency="
-                                   + to_string(_syncPeer->latency) + "us";
+                                   + to_string(_syncPeer->latency/1000) + "ms";
         } else {
             from = "(NONE)";
         }
         if (newSyncPeer) {
             to = newSyncPeer->name + " (commit count=" + (*newSyncPeer)["CommitCount"] + "), latency="
-                                   + to_string(newSyncPeer->latency) + "us";
+                                   + to_string(newSyncPeer->latency/1000) + "ms";
         } else {
             to = "(NONE)";
         }
@@ -2166,7 +2194,7 @@ void SQLiteNode::_updateSyncPeer()
             } else if (peer->calcU64("CommitCount") <= commitCount) {
                 nonChosenPeers.push_back(peer->name + ":commit=" + (*peer)["CommitCount"]);
             } else {
-                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency) + "us");
+                nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/1000) + "ms");
             }
         }
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));
@@ -2180,7 +2208,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
     if (peer->s) {
         // Reset
-        SWARN("Reconnecting to '" << peer->name << "'");
+        SHMMM("Reconnecting to '" << peer->name << "'");
         shutdownSocket(peer->s);
         (*peer)["LoggedIn"] = "false";
     }

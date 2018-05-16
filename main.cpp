@@ -121,11 +121,11 @@ set<string> loadPlugins(SData& args) {
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
         if(!lib) {
-            cout << "Error loading bedrock plugin " << pluginName << ": " << dlerror() << endl;
+            SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {
             void* sym = dlsym(lib, symbolName.c_str());
             if (!sym) {
-                cout << "Couldn't find symbol " << symbolName << endl;
+                SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
                 ((void(*)()) sym)();
@@ -283,11 +283,22 @@ int main(int argc, char* argv[]) {
         SDEBUG("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
+    } else if (args.isSet("-bootstrap")) {
+        // Allow for bootstraping a node with no database file in place.
+        SINFO("Loading in bootstrap mode, skipping check for database existance.");
     } else {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");
         SASSERT(SFileExists(args["-db"]));
     }
+
+    // Log stack traces if we have unhandled exceptions.
+    set_terminate(STerminateHandler);
+
+    // Create our BedrockServer object so we can keep it for the life of the
+    // program.
+    SINFO("Starting bedrock server");
+    BedrockServer server(args);
 
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
@@ -297,29 +308,19 @@ int main(int argc, char* argv[]) {
             SClearSignals();
         }
 
-        // Run the server. Scoped to allow us to create a new server after a backup.
-        {
-            SINFO("Starting bedrock server");
-            BedrockServer server(args);
-            uint64_t nextActivity = STimeNow();
-            while (!server.shutdownComplete()) {
-                // Wait and process
-                fd_map fdm;
-                server.prePoll(fdm);
-                const uint64_t now = STimeNow();
-                S_poll(fdm, max(nextActivity, now) - now);
-                nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-                server.postPoll(fdm, nextActivity);
-            }
-            SINFO("Graceful bedrock shutdown complete");
-            if (server.backupOnShutdown()) {
+        uint64_t nextActivity = STimeNow();
+        while (!server.shutdownComplete()) {
+            if (server.shouldBackup() && server.isDetached()) {
                 BackupDB(args["-db"]);
+                server.setDetach(false);
             }
-        }
-
-        // Backup the main database on HUP signal.
-        if (SGetSignal(SIGHUP)) {
-            BackupDB(args["-db"]);
+            // Wait and process
+            fd_map fdm;
+            server.prePoll(fdm);
+            const uint64_t now = STimeNow();
+            S_poll(fdm, max(nextActivity, now) - now);
+            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+            server.postPoll(fdm, nextActivity);
         }
     }
 

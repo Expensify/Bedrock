@@ -29,6 +29,11 @@ int main(int argc, char* argv[]) {
     list<string> before;
     list<string> after;
     int threads = 1;
+    int repeatCount = 1;
+
+    if (args.isSet("-repeatCount")) {
+        repeatCount = max(1, SToInt(args["-repeatCount"]));
+    }
 
     if (args.isSet("-only")) {
         list<string> includeList = SParseList(args["-only"]);
@@ -74,9 +79,6 @@ int main(int argc, char* argv[]) {
     }
 
     // Set the defaults for the servers that each BedrockTester will start.
-    BedrockTester::defaultDBFile = BedrockTester::getTempFileName();
-    cout << "Temp file for this run: " << BedrockTester::defaultDBFile << endl;
-    BedrockTester::defaultServerAddr = "127.0.0.1:8989";
 
     if (args.isSet("-wait")) {
         cout << "Waiting... (type anything to continue)." << endl;
@@ -85,11 +87,13 @@ int main(int argc, char* argv[]) {
     }
 
     int retval = 0;
-    try {
-        retval = tpunit::Tests::run(include, exclude, before, after, threads);
-    } catch (...) {
-        cout << "Unhandled exception running tests!" << endl;
-        retval = 1;
+    for (int i = 0; i < repeatCount; i++) {
+        try {
+            retval = tpunit::Tests::run(include, exclude, before, after, threads);
+        } catch (...) {
+            cout << "Unhandled exception running tests!" << endl;
+            retval = 1;
+        }
     }
 
     return retval;

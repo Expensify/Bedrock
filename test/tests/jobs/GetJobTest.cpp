@@ -12,12 +12,13 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testPrioritiesWithDifferentNextRunTimes),
                               TEST(GetJobTest::testWithFinishedAndCancelledChildren),
                               TEST(GetJobTest::testPrioritiesWithRunQueued),
+                              TEST(GetJobTest::testMultipleNames),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass() { tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
@@ -478,6 +479,69 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["name"], "medium_4");
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "low_5");
+    }
+
+    // Get a job from a list of names and make sure the jobs are returned in the proper order by priorities
+    void testMultipleNames() {
+        // Create jobs of different priorities
+        // Low
+        SData command("CreateJob");
+        command["name"] = "low";
+        command["priority"] = "0";
+        tester->executeWaitVerifyContent(command);
+
+        // High
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "high";
+        command["priority"] = "1000";
+        tester->executeWaitVerifyContent(command);
+
+        // Medium
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "medium";
+        command["priority"] = "500";
+        tester->executeWaitVerifyContent(command);
+
+        // Medium
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "medium";
+        command["priority"] = "500";
+        tester->executeWaitVerifyContent(command);
+
+        // Get medium and high jobs
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "medium,high";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm that high is in the RUNNING state
+        SQResult result;
+        tester->readDB("SELECT DISTINCT state FROM jobs WHERE name = 'high' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
+
+        // Get any of the job names
+        command["name"] = "low,medium,high";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm that medium is in the RUNNING state since there are no more high jobs
+        tester->readDB("SELECT COUNT(1) FROM jobs WHERE name = 'medium' AND state = 'RUNNING' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "1");
+
+        // Return 2 jobs and confirm that the jobs are returned in medium and low order
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "low,medium";
+        command["numResults"] = "2";
+
+        tester->readDB("SELECT COUNT(1) FROM jobs WHERE name = 'medium' AND state = 'RUNNING' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        list<string> jobList = SParseJSONArray(response["jobs"]);
+        ASSERT_EQUAL(jobList.size(), 2);
     }
 } __GetJobTest;
 

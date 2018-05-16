@@ -16,6 +16,10 @@ void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& serv
     _server = &server;
 }
 
+bool BedrockPlugin_TestPlugin::preventAttach() {
+    return shouldPreventAttach;
+}
+
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     if (command.request.calc("PeekSleep")) {
         usleep(command.request.calc("PeekSleep") * 1000);
@@ -74,6 +78,24 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         int* i = 0;
         int x = *i;
         command.response["invalid"] = to_string(x);
+    } else if (SStartsWith(command.request.methodLine, "generateassertpeek")) {
+        SASSERT(0);
+        command.response["invalid"] = "nope";
+    } else if (SStartsWith(command.request.methodLine, "preventattach")) {
+        // We do all of this work in a thread because plugins don't poll in detached
+        // mode, so the tester will send this command to the plugin, then detach BedrockServer,
+        // then the tester will try to attach, sleep, then try again.
+        thread([this](){
+            // Have this plugin block attaching
+            shouldPreventAttach = true;
+
+            // Wait for the tester to try to attach
+            sleep(5);
+
+            // Reset so the tester can attach this time.
+            shouldPreventAttach = false;
+        }).detach();
+        return true;
     }
 
     return false;

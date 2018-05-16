@@ -35,6 +35,8 @@ class SHTTPSManager : public STCPManager {
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
 
+    static int getHTTPResponseCode(const string& methodLine);
+
   protected: // Child API
 
     // Used to create the signing certificate.
@@ -45,7 +47,7 @@ class SHTTPSManager : public STCPManager {
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
-    virtual bool _onRecv(Transaction* transaction) = 0;
+    virtual bool _onRecv(Transaction* transaction);
 
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;

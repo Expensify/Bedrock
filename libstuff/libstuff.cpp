@@ -53,9 +53,11 @@
 #define S_ENOBUFS ENOBUFS
 #define S_ENOTCONN ENOTCONN
 #define S_ECONNABORTED ECONNABORTED
+#define S_ECONNREFUSED ECONNREFUSED
 #define S_EACCES EACCES
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
+#define S_EPIPE EPIPE
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -530,7 +532,7 @@ void SConsumeFront(string& lhs, ssize_t num) {
     if (!num)
         return;
 
-    // If we're clearing hte whole thing, early out
+    // If we're clearing the whole thing, early out
     if ((int)lhs.size() == num) {
         // Clear and done
         lhs.clear();
@@ -1469,7 +1471,8 @@ string SGZip(const string& content) {
     }
 
     status = deflate(&stream, Z_FINISH);
-    if (status != Z_STREAM_END) {
+    if (status != Z_STREAM_END && status != Z_OK) {
+        SHMMM("We deflated but we didn't get Z_STREAM_END or Z_OK, we got " << status);
         deflateEnd(&stream);
         if (status == Z_OK) {
             status = Z_BUF_ERROR;
@@ -1489,6 +1492,54 @@ string SGZip(const string& content) {
         SHMMM("GZip operation failed status:" << status);
         return "";
     }
+}
+
+string SGUnzip (const string& content) {
+    int CHUNK = 16384;
+    int status;
+    unsigned have;
+    z_stream strm;
+    unsigned char out[CHUNK];
+    string data;
+
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    strm.avail_in = 0;
+    strm.next_in = Z_NULL;
+
+    status = inflateInit2(&strm, 16 + MAX_WBITS);
+    if (status != Z_OK) {
+        SWARN("Error inflating stream for gunzip, status: " << status);
+        return "";
+    }
+
+    strm.avail_in = content.size();
+    strm.next_in = (unsigned char*)content.c_str();
+
+    do {
+        strm.avail_out = CHUNK;
+        strm.next_out = out;
+        status = inflate(&strm, Z_NO_FLUSH);
+        switch (status) {
+            case Z_NEED_DICT:
+            case Z_DATA_ERROR:
+            case Z_MEM_ERROR:
+                inflateEnd(&strm);
+                SWARN("Error gunzipping, status:" << status);
+                return "";
+        }
+        have = CHUNK - strm.avail_out;
+        data.append((char*)out, have);
+    } while (strm.avail_out == 0);
+
+    status = inflateEnd(&strm);
+    if (status != Z_OK) {
+        SWARN("Error gunzipping, status: " << status);
+        return "";
+    }
+
+    return data;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1533,8 +1584,8 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 
             // Note if this seems slow.
             uint64_t elapsed = STimeNow() - start;
-            if (elapsed > 100 * STIME_US_PER_MS) {
-                SWARN("Slow DNS lookup. " << elapsed / STIME_US_PER_MS << "ms for '" << domain << "'.");
+            if (elapsed > 100 * 1000) {
+                SWARN("Slow DNS lookup. " << elapsed / 1000 << "ms for '" << domain << "'.");
             }
 
             // Grab the resolved address.
@@ -1724,6 +1775,43 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     }
 }
 
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
+    switch (S_errno) {
+        // These cases are interesting enough to warn.
+        case S_NOTINITIALISED:
+        case S_ENETDOWN:
+        case S_EACCES:
+        case S_EFAULT:
+        case S_ENETRESET:
+        case S_ENOBUFS:
+        case S_ENOTSOCK:
+        case S_EOPNOTSUPP:
+        case S_EMSGSIZE:
+        case S_EHOSTUNREACH:
+        case S_EINVAL:
+        default:
+            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // These are only interesting enough for an info line.
+        case S_ECONNABORTED:
+        case S_ETIMEDOUT:
+        case S_ENOTCONN:
+        case S_ECONNREFUSED:
+        case S_ECONNRESET:
+        case S_EPIPE:
+            SHMMM(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
+
+        // And these aren't interesting enough to say anything about at all (and aren't fatal).
+        case S_EINTR:
+        case S_EINPROGRESS:
+        case S_EWOULDBLOCK:
+        case S_ESHUTDOWN:
+            return true; // Socket still alive
+    }
+}
+
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
@@ -1753,35 +1841,10 @@ bool S_recvappend(int s, string& recvBuffer) {
     if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
     }
-    else {
-        // Some kind of error -- what happened?
-        switch (S_errno) {
-        case S_NOTINITIALISED:
-        case S_ENETDOWN:
-        case S_EFAULT:
-        case S_ENETRESET:
-        case S_ENOTSOCK:
-        case S_EOPNOTSUPP:
-        case S_EMSGSIZE:
-        case S_EINVAL:
-        case S_ECONNABORTED:
-        case S_ETIMEDOUT:
-        case S_ECONNRESET:
-        case S_ENOTCONN:
-        default:
-            // Interesting -- reset the socket and hope it clears
-            SWARN("recv(" << fromAddr << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                          << "), closing.");
-            return false; // Socket died
-
-        case S_EINTR:
-        case S_EINPROGRESS:
-        case S_EWOULDBLOCK:
-        case S_ESHUTDOWN:
-            // Not interesting, and not fatal.
-            return true; // Socket still alive
-        }
-    }
+    // Some kind of error -- what happened?
+    stringstream addrStr;
+    addrStr << fromAddr;
+    return SCheckNetworkErrorType("recv", addrStr.str(), S_errno);
 }
 
 // --------------------------------------------------------------------------
@@ -1797,39 +1860,12 @@ bool S_sendconsume(int s, string& sendBuffer) {
         SConsumeFront(sendBuffer, numSent);
 
     // Exit of no error
-    if (numSent >= 0)
+    if (numSent >= 0) {
         return true; // No error; still alive
+    }
 
     // Error, what kind?
-    switch (S_errno) {
-    case S_NOTINITIALISED:
-    case S_ENETDOWN:
-    case S_EACCES:
-    case S_EFAULT:
-    case S_ENETRESET:
-    case S_ENOBUFS:
-    case S_ENOTSOCK:
-    case S_EOPNOTSUPP:
-    case S_EMSGSIZE:
-    case S_EHOSTUNREACH:
-    case S_EINVAL:
-    case S_ECONNABORTED:
-    case S_ECONNRESET:
-    case S_ETIMEDOUT:
-    case S_ENOTCONN:
-    default:
-        // Interesting -- reset the socket and hope it clears
-        SWARN("send(" << SGetPeerName(s) << ") failed with response '" << strerror(S_errno) << "' (#" << S_errno
-                      << ", closing.");
-        return false; // Socket died
-
-    case S_EINTR:
-    case S_EINPROGRESS:
-    case S_EWOULDBLOCK:
-    case S_ESHUTDOWN:
-        // Not interesting and not fatal
-        return true; // Socket still alive
-    }
+    return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
 }
 
 void SFDset(fd_map& fdm, int socket, short evts) {
@@ -1906,7 +1942,7 @@ string SGetPeerName(int s) {
 }
 
 // --------------------------------------------------------------------------
-string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
+string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // Pad the buffer to land on SAES_BLOCK_SIZE boundary (required).
     string paddedBuffer = buffer;
@@ -1915,23 +1951,42 @@ string SAESEncrypt(const string& buffer, unsigned char* iv, const string& key) {
     }
 
     // Encrypt
+    unsigned char iv[SAES_BLOCK_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_BLOCK_SIZE);
     mbedtls_aes_context ctx;
     mbedtls_aes_setkey_enc(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     string encryptedBuffer;
     encryptedBuffer.resize(paddedBuffer.size());
-    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(), (unsigned char*)encryptedBuffer.c_str());
+    mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_ENCRYPT, (int)paddedBuffer.size(), iv, (unsigned char*)paddedBuffer.c_str(),
+                          (unsigned char*)encryptedBuffer.c_str());
+
     return encryptedBuffer;
 }
 
-string SAESEncrypt(const string& buffer, const string& ivStr, const string& key) {
-    SASSERT(ivStr.size() == SAES_IV_SIZE);
-    unsigned char iv[SAES_IV_SIZE];
-    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    return SAESEncrypt(buffer, iv, key);
-}
 
 // --------------------------------------------------------------------------
 string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
+    string decryptedBuffer = SAESDecryptNoStrip(buffer, buffer.size(), iv, key);
+
+    // Trim off the padding.
+    int size = (int)decryptedBuffer.find('\0');
+    if (size != (int)string::npos) {
+        decryptedBuffer.resize(size);
+    }
+
+    return decryptedBuffer;
+}
+
+string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+    SASSERT(ivStr.size() == SAES_IV_SIZE);
+    unsigned char iv[SAES_IV_SIZE];
+    memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
+    return SAESDecrypt(buffer, iv, key);
+}
+
+// These decrypt functions are used to return a value that still includes possible
+// padding, so it is up the caller to manage stripping the potential NULL chars off the end.
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, unsigned char* iv, const string& key) {
     SASSERT(key.size() == SAES_KEY_SIZE);
     // If the message is invalid.
     if (buffer.size() % SAES_BLOCK_SIZE != 0) {
@@ -1941,24 +1996,20 @@ string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
     // Decrypt
     mbedtls_aes_context ctx;
     string decryptedBuffer;
-    decryptedBuffer.resize(buffer.size());
+    decryptedBuffer.resize(bufferSize);
     mbedtls_aes_setkey_dec(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_DECRYPT, (int)buffer.size(), iv, (unsigned char*)buffer.c_str(),
                           (unsigned char*)decryptedBuffer.c_str());
-
-    // Trim off the padding.
-    int size = (int)decryptedBuffer.find('\0');
-    if (size != (int)string::npos) {
-        decryptedBuffer.resize(size);
-    }
     return decryptedBuffer;
+
+
 }
 
-string SAESDecrypt(const string& buffer, const string& ivStr, const string& key) {
+string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const string& ivStr, const string& key) {
     SASSERT(ivStr.size() == SAES_IV_SIZE);
     unsigned char iv[SAES_IV_SIZE];
     memcpy(iv, ivStr.c_str(), SAES_IV_SIZE);
-    return SAESDecrypt(buffer, iv, key);
+    return SAESDecryptNoStrip(buffer, bufferSize, iv, key);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2127,7 +2178,6 @@ uint64_t SFileSize(const string& path) {
 /////////////////////////////////////////////////////////////////////////////
 
 string SHashSHA1(const string& buffer) {
-    // Just add and return
     string result;
     result.resize(20);
     mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
@@ -2195,14 +2245,20 @@ string SHMACSHA1(const string& key, const string& buffer) {
     return outerHash;
 }
 
+// --------------------------------------------------------------------------
 string SHMACSHA256(const string& key, const string& buffer) {
+    // See: http://en.wikipedia.org/wiki/HMAC
+
+    // First, build the secret pads
     int BLOCK_SIZE = 64;
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
     for (int c = 0; c < (int)key.size(); ++c) {
+        // XOR front of opadSecret/ipadSecret with secret access key
         ipadSecret[c] ^= key[c];
         opadSecret[c] ^= key[c];
     }
 
+    // Then use it to make the hashes
     const string& innerHash = SHashSHA256(ipadSecret + buffer);
     const string& outerHash = SHashSHA256(opadSecret + innerHash);
     return outerHash;
@@ -2293,7 +2349,7 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2321,7 +2377,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / STIME_US_PER_MS << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sql.substr(0, 150));
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
@@ -2334,7 +2390,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
-        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+        if (!skipWarn) {
+            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+        }
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
@@ -2368,4 +2426,32 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
     SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
+}
+
+string SGetCurrentExceptionName()
+{
+    // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
+    // exception name.
+    int status = 0;
+    size_t length = 1000;
+    char buffer[length] = {0};
+
+    // Demangle the name of the current exception.
+    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    string exceptionName = buffer;
+
+    // If it failed, use the original name instead.
+    if (status) {
+        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+    }
+    return exceptionName;
+}
+
+void STerminateHandler(void) {
+    // Alert.
+    SALERT("Terminating with uncaught exception '" << SGetCurrentExceptionName() << "'.");
+
+    // And we're out.
+    abort();
 }
