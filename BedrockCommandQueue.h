@@ -32,7 +32,7 @@ class BedrockCommandQueue {
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(BedrockCommand&& item);
-    
+
     // Looks for a command with the given ID and removes it.
     // This will inspect every command in the case the command does not exist.
     bool removeByID(const string& id);
