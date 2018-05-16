@@ -20,6 +20,7 @@ struct HTTPSTest : tpunit::TestFixture {
         : tpunit::TestFixture("HTTPSTest",
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
+                              TEST(HTTPSTest::testMultipleRequests),
                               TEST(HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
@@ -32,14 +33,23 @@ struct HTTPSTest : tpunit::TestFixture {
         delete tester;
     }
 
-    void test()
-    {
+    void testMultipleRequests() {
+        BedrockTester* brtester = tester->getBedrockTester(0);
+        SData request("sendrequest");
+        request["httpsRequestCount"] = to_string(3);
+        auto result = brtester->executeWaitVerifyContent(request);
+        auto lines = SParseList(result, '\n');
+        ASSERT_EQUAL(lines.size(), 3);
+    }
+
+    void test() {
         // Send one request to verify that it works.
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         SData request("sendrequest a");
         auto result = brtester->executeWaitVerifyContent(request);
-        ASSERT_TRUE(result.size() > 10);
+        auto lines = SParseList(result, '\n');
+        ASSERT_EQUAL(lines.size(), 1);
 
         // Now we spam a bunch of commands at the cluster, with one of them being an HTTPS reqeust command, and attempt
         // to cause a conflict.
@@ -85,9 +95,9 @@ struct HTTPSTest : tpunit::TestFixture {
             string code = responses[0][i].methodLine;
             string body = responses[0][i].content;
             if (i % nthHasRequest == 0) {
-                ASSERT_TRUE(body.size() > 10);
+                ASSERT_TRUE(body.size());
             } else {
-                ASSERT_EQUAL(body.size(), 0);
+                ASSERT_FALSE(body.size());
             }
             if (SToInt(code) != 200) {
                 cout << "Bad code: " << code << endl;
