@@ -390,16 +390,13 @@ class BedrockServer : public SQLiteServer {
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;
 
-    // This is a map of all of our outstanding HTTPS requests to their commands, which are stored in the next list.
-    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
-
     // This contains all of the command that the previous list points at. This allows us to keep only a single copy of
     // each command, even if it has multiple requests.
     set<BedrockCommand*> _outstandingHTTPSCommands;
 
     // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
     // their HTTPS requests finish and move them back to the main queue.
-    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
