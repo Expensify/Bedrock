@@ -772,7 +772,7 @@ void BedrockServer::worker(SData& args,
                         }
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
-                        if (!command.AreHttpsRequestsComplete()) {
+                        if (!command.areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
@@ -1965,7 +1965,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         auto commandPtrIt = _outstandingHTTPSCommands.find(commandPtr);
         if (commandPtrIt != _outstandingHTTPSCommands.end()) {
             // I guess it's still here! Is it done?
-            if (commandPtr->AreHttpsRequestsComplete()) {
+            if (commandPtr->areHttpsRequestsComplete()) {
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
                 _commandQueue.push(move(*commandPtr));
                 _outstandingHTTPSCommands.erase(commandPtrIt);
