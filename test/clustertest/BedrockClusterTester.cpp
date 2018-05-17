@@ -1,9 +1,9 @@
 #include "BedrockClusterTester.h"
 
-BedrockClusterTester::BedrockClusterTester(int threadID)
-  : BedrockClusterTester(THREE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, threadID, {}, {}) {}
+BedrockClusterTester::BedrockClusterTester(int threadID, string pluginsToLoad)
+  : BedrockClusterTester(THREE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, threadID, {}, {}, pluginsToLoad) {}
 
-BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts)
+BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts, string pluginsToLoad)
 : _size(size)
 {
     // Make sure we won't re-allocate.
@@ -77,7 +77,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
             {"-priority",    priority},
             {"-nodeName",    nodeName},
             {"-peerList",    peerString},
-            {"-plugins",     "db,cache,jobs," + string(cwd) + "/testplugin/testplugin.so"},
+            {"-plugins",     pluginsToLoad + "," + string(cwd) + "/testplugin/testplugin.so"},
             {"-overrideProcessName", "bedrock" + to_string(nodePort)},
         };
 
