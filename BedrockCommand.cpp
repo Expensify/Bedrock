@@ -143,7 +143,7 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
     get<2>(_inProgressTiming) = 0;
 }
 
-bool BedrockCommand::httpsRequestsAreComplete() const {
+bool BedrockCommand::AreHttpsRequestsComplete() const {
     for (auto request : httpsRequests) {
         if (!request->response) {
             return false;

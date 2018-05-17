@@ -24,7 +24,7 @@ class BedrockServer : public SQLiteServer {
     // Let's start with shutting down. Standing down is a subset of shutting down (when we start out mastering), and
     // we'll get to that later.
     //
-    // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
+    // When a BedrockServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
     // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
     //
     // 1. The command port is closed, and no new connections are accepted from clients.
@@ -390,14 +390,14 @@ class BedrockServer : public SQLiteServer {
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;
 
-    // This contains all of the command that the previous list points at. This allows us to keep only a single copy of
-    // each command, even if it has multiple requests.
-    set<BedrockCommand*> _outstandingHTTPSCommands;
-
     // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
     // their HTTPS requests finish and move them back to the main queue.
     map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
+
+    // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
+    // copy of each command, even if it has multiple requests.
+    set<BedrockCommand*> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.

@@ -53,7 +53,7 @@ class BedrockCommand : public SQLiteCommand {
     void finalizeTimingInfo();
 
     // Returns true if all of the httpsRequests for this command are complete (or if it has none).
-    bool httpsRequestsAreComplete() const;
+    bool AreHttpsRequestsComplete() const;
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     list<SHTTPSManager::Transaction*> httpsRequests;
