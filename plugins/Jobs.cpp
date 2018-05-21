@@ -44,6 +44,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
+    // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
+    command.request["crashID"] = to_string(SRandom::rand64());
+    command.crashIdentifyingValues.insert("crashID");
+
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
     content.clear();
