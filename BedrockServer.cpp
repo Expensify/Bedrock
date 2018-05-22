@@ -762,6 +762,7 @@ void BedrockServer::worker(SData& args,
                         command.response.methodLine = "500 STANDDOWN TIMEOUT";
                         server._reply(command);
                         core.rollback();
+                        continue;
                     }
 
                     // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
