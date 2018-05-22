@@ -737,6 +737,9 @@ void BedrockServer::worker(SData& args,
             // iteration.
             bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
 
+            // Block if a checkpoint is happening so we don't interrupt it.
+            db.waitForCheckpoint();
+
             // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
             // now. We don't duplicate peeks for commands that make https requests.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
