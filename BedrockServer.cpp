@@ -1047,6 +1047,11 @@ BedrockServer::BedrockServer(const SData& args)
         _version = SComposeList(versionStrings, ":");
     }
 
+    // Allow setting a blacklist fraction at startup.
+    if (args.isSet("-autoBlacklistConflictFraction")) {
+        BedrockConflictMetrics::setFraction(stod(args["-autoBlacklistConflictFraction"]));
+    }
+
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
@@ -1782,6 +1787,9 @@ void BedrockServer::_control(BedrockCommand& command) {
                 BedrockConflictMetrics::setFraction(fraction);
             }
         }
+
+        command.response["AutoBlacklistConflictFraction"] = to_string(BedrockConflictMetrics::getFraction());
+        command.response["MaxConflictRetries"] = to_string(_maxConflictRetries.load());
     }
 }
 
