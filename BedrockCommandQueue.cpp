@@ -89,11 +89,11 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
     return returnVal;
 }
 
-void BedrockCommandQueue::push(BedrockCommand&& item) {
+void BedrockCommandQueue::push(BedrockCommand&& item, bool useCurrentTime) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     item.startTiming(BedrockCommand::QUEUE_WORKER);
-    queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
+    queue.emplace(useCurrentTime ? STimeNow() : item.request.calcU64("commandExecuteTime"), move(item));
     _queueCondition.notify_one();
 }
 

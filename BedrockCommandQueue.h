@@ -31,7 +31,9 @@ class BedrockCommandQueue {
     list<string> getRequestMethodLines();
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
-    void push(BedrockCommand&& item);
+    // useCurrentTime will schedule the command for now, instead of for when it was originally created. This is useful
+    // for re-scheduling conflicting commands without pushing them to the front of the queue.
+    void push(BedrockCommand&& item, bool useCurrentTime = false);
 
     // Looks for a command with the given ID and removes it.
     // This will inspect every command in the case the command does not exist.
