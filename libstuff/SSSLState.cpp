@@ -17,14 +17,18 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509) {
+SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
 
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
-    mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    if(server) {
+        mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    } else {
+        mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    }
 
     mbedtls_ssl_setup(&state->ssl, &state->conf);
 
