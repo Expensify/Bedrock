@@ -1,10 +1,11 @@
 #include "BedrockConflictMetrics.h"
 
 // Initialize non-const static variables.
+const double DEFAULT_FRAC = 0.10;
 recursive_mutex BedrockConflictMetrics::_mutex;
 map<string, BedrockConflictMetrics> BedrockConflictMetrics::_conflictInfoMap;
-double BedrockConflictMetrics::_fraction = 0.10;
-int BedrockConflictMetrics::_threshold = _fraction * COMMAND_COUNT;
+atomic<double> BedrockConflictMetrics::_fraction(DEFAULT_FRAC);
+atomic<int> BedrockConflictMetrics::_threshold(DEFAULT_FRAC * COMMAND_COUNT);
 
 BedrockConflictMetrics::BedrockConflictMetrics(const string& commandName) :
 _commandName(commandName)
@@ -116,4 +117,8 @@ void BedrockConflictMetrics::setFraction(double fraction) {
         _threshold = _fraction * COMMAND_COUNT;
         SINFO("Multi-write conflict limit fraction set to " << _fraction << ".");
     }
+}
+
+double BedrockConflictMetrics::getFraction() {
+    return _fraction;
 }
