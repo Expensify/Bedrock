@@ -1,5 +1,8 @@
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace
+#include <mbedtls/error.h>
+#include <mbedtls/net.h>
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -72,20 +75,24 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         list<Socket*>::iterator socketIt = nextSocketIt++;
         Socket* socket = *socketIt;
         try {
+            SDEBUG("MB SOCKET LOOP " << socket->state.load() << " " << SToStr(socket->addr));
             // Verify it's still alive
             if (socket->state.load() != Socket::CONNECTED)
                 STHROW("premature disconnect");
+
 
             // Still alive; try to login
             SData message;
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
+                SDEBUG("MB RECEIVED " << message.methodLine);
                 // What is it?
                 SConsumeFront(socket->recvBuffer, messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we asssociate with a peer?
                     bool foundIt = false;
                     for (Peer* peer : peerList) {
+                        SDEBUG("MB PeerList " << peer->name << " vs " << message["Name"] << " vs " << peer->host );
                         // Just match any unconnected peer
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
@@ -119,6 +126,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     STHROW("expecting NODE_LOGIN");
             }
         } catch (const SException& e) {
+            SDEBUG("MB Exception Catch" << e.what());
             // Died prematurely
             if (socket->recvBuffer.empty() && socket->sendBufferEmpty()) {
                 SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
@@ -134,8 +142,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Try to establish connections with peers and process messages
     for (Peer* peer : peerList) {
         // See if we're connected
+        
         if (peer->s) {
             // We have a socket; process based on its state
+            SDEBUG("MB SOCKET STATE " << peer->s->state.load());
             switch (peer->s->state.load()) {
             case Socket::CONNECTED: {
                 // See if there is anything new.
@@ -182,6 +192,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class
+                            SDEBUG("RECEIVED MESSAGE " << peer->name << " : " << message.methodLine);
                             _onMESSAGE(peer, message);
                         }
                     }
@@ -214,8 +225,14 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _onDisconnect(peer);
                 if (peer->s->connectFailure)
                     peer->failedConnections++;
+                if(peer->s->ssl) {
+                    SDEBUG("MB SSL Closed");
+                    SSSLClose(peer->s->ssl);
+                }
                 peer->closeSocket(this);
                 peer->reset();
+                
+
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect);
                 break;
@@ -224,6 +241,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             default:
                 // Connecting or shutting down, wait
                 // **FIXME: Add timeout here?
+                SDEBUG("MB Socket in strange state " << peer->s->state.load()); 
                 break;
             }
         } else {
@@ -234,13 +252,55 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 peer->reset();
                 peer->s = openSocket(peer->host);
                 if (peer->s) {
-                    // Try to log in now.  Send a PING immediately after so we
-                    // can get a fast estimate of latency.
-                    SData login("NODE_LOGIN");
-                    login["Name"] = name;
-                    peer->s->send(login.serialize());
-                    _sendPING(peer);
-                    _onConnect(peer);
+                    if(!peer->s->ssl) {
+                            
+                        /*********** TLS NODE CLIENT ***********/
+
+                        // Escalate to SSL?
+                        SX509* x509 = new SX509;
+                        SDEBUG("MB Opening TLS Client");
+                        x509 = SX509Open("", "", "", false, "");
+                        peer->ssl = SSSLOpen(peer->s->s,x509,false);
+                        string domain;
+                        uint16_t serverport = 0;
+                        if (!SParseHost(peer->host, domain, serverport)) {
+                            STHROW("invalid host: " + peer->host);
+                        }
+                        // TODO put our local server name here.
+                        // mbedtls_ssl_set_hostname( &peer->ssl->ssl, "mbed TLS Client 1" );
+
+                        // TODO re-use our existing socket? This feels like duplicated work.
+
+                        mbedtls_net_init( &peer->ssl->ctx );
+
+                        mbedtls_net_connect( &peer->ssl->ctx, domain.c_str(), (char *)&serverport, MBEDTLS_NET_PROTO_TCP );
+                        
+                        int ret = 0;
+
+                        do {
+                            ret = mbedtls_ssl_handshake(&peer->ssl->ssl);
+                            SDEBUG("MB Client SSL Handshake " << ret << " : " << SSSLError(ret));
+                            // remove me after debugging.
+                            sleep(1);
+                        } while(ret != 0);
+
+                        //SDEBUG("MB NON LOOP HANDSHAKE " << ret);
+                        //ret = mbedtls_ssl_handshake(&peer->ssl->ssl);
+                        
+                        SDEBUG("XXXXXXXXXXXXXXXX MB Client Handshake Done. Connected to " << &peer->name << " at " << peer->host);
+                        //&peer->s->useSSL = true;
+
+                        SData login("NODE_LOGIN");
+                        login["Name"] = name;
+                        peer->s->send(login.serialize());
+                        SDEBUG("MB Send NODE_LOGIN");
+                        //SSSLSend(peer->s->ssl, login.serialize());
+                        SDEBUG("MB Send PING");
+                        _sendPING(peer);
+                        _onConnect(peer);
+
+                        /******* END TLS ************/
+                    } 
                 } else {
                     // Failed to open -- try again later
                     SWARN("Failed to open socket '" << peer->host << "', trying again in 60s");
@@ -261,12 +321,15 @@ void STCPNode::_sendPING(Peer* peer) {
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
     peer->s->send(ping.serialize());
+    //SSSLSend(peer->s->ssl,ping.serialize());
 }
 
 void STCPNode::Peer::sendMessage(const SData& message) {
     lock_guard<decltype(socketMutex)> lock(socketMutex);
     if (s) {
         s->send(message.serialize());
+        
+        
     } else {
         SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
     }

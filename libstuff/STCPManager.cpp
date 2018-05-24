@@ -258,8 +258,10 @@ bool STCPManager::Socket::send() {
     // Send data
     bool result = false;
     if (ssl) {
+        SDEBUG("MB socket send SSL");
         result = SSSLSendConsume(ssl, sendBuffer);
     } else if (s > 0) {
+        SDEBUG("MB socket send non-SSL");
         result = S_sendconsume(s, sendBuffer);
     }
     lastSendTime = STimeNow();
@@ -302,8 +304,10 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
+        SDEBUG("MB SSL RECV");
         result = SSSLRecvAppend(ssl, recvBuffer);
     } else if (s > 0) {
+        SDEBUG("MB NON-SSL RECV");
         result = S_recvappend(s, recvBuffer);
     }
 

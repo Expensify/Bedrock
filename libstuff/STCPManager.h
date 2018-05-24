@@ -19,6 +19,7 @@ struct STCPManager {
         uint64_t lastSendTime;
         uint64_t lastRecvTime;
         SSSLState* ssl;
+        bool useSSL; // force send and recv to use mbedTLS instead of net::
         void* data;
         bool send();
         bool send(const string& buffer);
