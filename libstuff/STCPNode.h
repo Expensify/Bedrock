@@ -44,6 +44,7 @@ struct STCPNode : public STCPServer {
 
       private:
         Socket* s;
+        SSSLState* ssl;
         recursive_mutex socketMutex;
     };
 

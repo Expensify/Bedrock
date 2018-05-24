@@ -61,6 +61,33 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
             socket = new Socket(s, Socket::CONNECTED);
+
+
+            // SSL?
+            SDEBUG("MB SERVER ACCEPTSOCKET " << socket->state.load() << " " << SToStr(socket->addr));
+
+            SX509* x509;
+
+            x509 = SX509Open();
+
+            socket->ssl = SSSLOpen(s, x509, true);
+            SDEBUG("MB SSL object for peer client created"); 
+            // SERVER HELLO?
+            
+            int ret = 0;
+            do {
+                ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
+                SDEBUG("MB Server SSL Handshake " << ret << " : " << SSSLError(ret));
+                sleep(1);
+            } while(ret != 0);
+            
+            //SDEBUG("MB NON-LOOP SERVER Handshake");
+            //int ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
+            
+
+            SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
+            socket->useSSL = true;
+
             socket->addr = addr;
             socketList.push_back(socket);
 

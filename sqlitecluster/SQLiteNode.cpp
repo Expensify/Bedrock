@@ -1884,7 +1884,10 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
-    peer->s->send(messageCopy.serialize());
+    if(peer->s) {
+        peer->s->send(messageCopy.serialize());
+    }
+    
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {

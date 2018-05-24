@@ -2,6 +2,11 @@
 #include <mbedtls/error.h>
 #include <mbedtls/net.h>
 
+#include "mbedtls/certs.h"
+#include "mbedtls/debug.h"
+
+
+
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
@@ -16,30 +21,63 @@ SSSLState::~SSSLState() {
     mbedtls_ssl_free(&ssl);
 }
 
+// handle the old case of client instantiation
+SSSLState* SSSLOpen(int s, SX509* x509) {
+    return SSSLOpen(s, x509, false);
+}
+
 // --------------------------------------------------------------------------
 SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
+    // compatibility with mbedtls
+    //state->ctx.fd = s;
 
+
+
+    mbedtls_ssl_init( &state->ssl );
+    mbedtls_ssl_config_init( &state->conf );
+
+        mbedtls_ssl_conf_dbg(&state->conf, MBEDTLS_DEBUG, NULL);
+    mbedtls_debug_set_threshold(1);
+
+
+    mbedtls_entropy_init( &state->ec );
+    mbedtls_ctr_drbg_init( &state->ctr_drbg );
+
+    SDEBUG("MB ctr_drbg_seed");
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
+
+    
+    // if we are receiving an SSL connection (say, from another node), then we need to act as server for the handshake.
     if(server) {
+
+        SDEBUG("MB ssl_config_defaults");
         mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+
+        SDEBUG("MB SSL OPENED IN SERVER MODE");
     } else {
+        //mbedtls_ssl_set_hostname( &state->ssl, "mbed TLS Client 1" );
+        SDEBUG("MB SSL OPENED IN CLIENT MODE");
         mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
     }
-
+    SDEBUG("MB ssl_setup");
     mbedtls_ssl_setup(&state->ssl, &state->conf);
-
-    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    SDEBUG("MB ssl_conf_authmode");
+    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
+    SDEBUG("MB ssl_conf_rng");
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
+    SDEBUG("MB ssl_set_bio");
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
+
+
 
     if (x509) {
         // Add the certificate
-        mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
-        SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
+        mbedtls_ssl_conf_ca_chain(&state->conf, x509->cert.next, 0);
+        SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->cert, &x509->pk) == 0);
     }
     return state;
 }
@@ -47,7 +85,8 @@ SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
 // --------------------------------------------------------------------------
 int SSSLSend(SSSLState* sslState, const char* buffer, int length) {
     // Send as much as possible and report what happened
-    SASSERT(sslState && buffer);
+    SDEBUG("SSSLSend Main Func state " << sslState << " buffer " << buffer);
+    //SASSERT(sslState && buffer);
     const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
         return numSent;
@@ -152,6 +191,8 @@ void SSSLClose(SSSLState* ssl) {
 // --------------------------------------------------------------------------
 int SSSLSend(SSSLState* ssl, const string& buffer) {
     // Unwind the buffer
+    // make sure we're sending the right thing.
+    SDEBUG("MB Call to SSSLSend with " << typeid(buffer).name() << " cstr " << buffer.c_str());
     return SSSLSend(ssl, buffer.c_str(), (int)buffer.size());
 }
 
@@ -202,4 +243,36 @@ bool SSSLRecvAppend(SSSLState* ssl, string& recvBuffer) {
 
     // Return whether or not the socket is still alive
     return (numRecv != -1);
+}
+
+void MBEDTLS_DEBUG( void *ctx, int level,
+                      const char *file, int line,
+                      const char *str )
+{
+    ((void) level);
+    switch (level) {
+        case 4:
+            SDEBUG("MBEDTLS DEBUG level " << level << " file " << file << " line " << line << " remark " << str);
+            break;
+        case 3: 
+            SDEBUG("MBEDTLS DEBUG level " << level << " file " << file << " line " << line << " remark " << str);
+            break;
+        case 2:
+            SDEBUG("MBEDTLS DEBUG level " << level << " file " << file << " line " << line << " remark " << str);
+            break;
+        case 1:
+            SWARN("MBEDTLS DEBUG level " << level << " file " << file << " line " << line << " remark " << str);
+            break;
+    }
+    
+    fflush(  (FILE *) ctx  );
+}
+
+// --------------------------------------------------------------------------
+string SSSLError(int val)
+{
+    char error_buf[100];
+    mbedtls_strerror( val, error_buf, 100 );
+    SDEBUG("SSSLError Parsed as " << val << ": " << error_buf);
+    return error_buf;
 }

@@ -172,7 +172,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     }
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
-    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt, true, nullptr) : nullptr;
     Socket* s = openSocket(host, x509);
     if (!s) {
         return _createErrorTransaction();
