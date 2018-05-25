@@ -8,6 +8,7 @@ struct STCPServer : public STCPManager {
         // Attributes
         int s;
         string host;
+        bool isHost;
     };
 
     // Listens on a given port and accepts sockets, and shuts them down

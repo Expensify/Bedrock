@@ -18,6 +18,8 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     Port port;
     port.host = host;
     port.s = S_socket(host, true, true, false);
+    port.isHost = true;
+    SDEBUG("MB OPENING PORT " << port.host);
     SASSERT(port.s >= 0);
     lock_guard <decltype(portListMutex)> lock(portListMutex);
     list<Port>::iterator portIt = portList.insert(portList.end(), port);
@@ -64,30 +66,35 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
 
 
             // SSL?
-            SDEBUG("MB SERVER ACCEPTSOCKET " << socket->state.load() << " " << SToStr(socket->addr));
+            if(port.isHost) {
+                SDEBUG("MB SERVER ACCEPT HOST SOCKET " << socket->state.load() << " " << SToStr(socket->addr));
 
-            SX509* x509;
+                SX509* x509;
 
-            x509 = SX509Open();
+                x509 = SX509Open();
 
-            socket->ssl = SSSLOpen(s, x509, true);
-            SDEBUG("MB SSL object for peer client created"); 
-            // SERVER HELLO?
+                socket->ssl = SSSLOpen(s, x509, true);
+                SDEBUG("MB SSL object for peer client created"); 
+                // SERVER HELLO?
+                
+                int ret = 0;
+                do {
+                    ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
+                    SDEBUG("MB Server SSL Handshake " << ret << " : " << SSSLError(ret));
+                    sleep(1);
+                } while(ret != 0);
+                
+                //SDEBUG("MB NON-LOOP SERVER Handshake");
+                //int ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
+                
+
+                SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
+                socket->useSSL = true;
+
+            } else {
+                SDEBUG("MB Accepted non-host socket. ");
+            }
             
-            int ret = 0;
-            do {
-                ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
-                SDEBUG("MB Server SSL Handshake " << ret << " : " << SSSLError(ret));
-                sleep(1);
-            } while(ret != 0);
-            
-            //SDEBUG("MB NON-LOOP SERVER Handshake");
-            //int ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
-            
-
-            SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
-            socket->useSSL = true;
-
             socket->addr = addr;
             socketList.push_back(socket);
 
