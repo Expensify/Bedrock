@@ -139,6 +139,20 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
+    SDEBUG("MY PEERS");
+    for (Peer* peer : peerList) {
+        if(peer->s) {
+            if(peer->s->ssl) {
+                SDEBUG("Peer " << peer->name << " in SSL state " << SSSLGetState(peer->s->ssl));
+            } else {
+                SDEBUG("Peer " << peer->name << " in Non-SSL state " << peer->s->state.load());
+            }
+        } else {
+            SDEBUG("Peer " << peer->name << " disconnected. " );
+        }
+
+    }
+
     // Try to establish connections with peers and process messages
     for (Peer* peer : peerList) {
         // See if we're connected
