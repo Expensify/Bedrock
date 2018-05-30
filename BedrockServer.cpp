@@ -1039,11 +1039,6 @@ BedrockServer::BedrockServer(const SData& args)
         _version = SComposeList(versionStrings, ":");
     }
 
-    // Allow setting a blacklist fraction at startup.
-    if (args.isSet("-autoBlacklistConflictFraction")) {
-        BedrockConflictMetrics::setFraction(stod(args["-autoBlacklistConflictFraction"]));
-    }
-
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
@@ -1760,7 +1755,6 @@ void BedrockServer::_control(BedrockCommand& command) {
         if (command.request.isSet("fullCheckpointPageMin")) {
             SQLite::fullCheckpointPageMin.store(command.request.calc("fullCheckpointPageMin"));
         }
-    } else if (SIEquals(command.request.methodLine, "SetConflictParams")) {
         if (command.request.isSet("MaxConflictRetries")) {
             int retries = command.request.calc("MaxConflictRetries");
             if (retries > 0 && retries <= 100) {
