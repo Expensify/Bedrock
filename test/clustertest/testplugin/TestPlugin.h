@@ -18,6 +18,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     BedrockPlugin_TestPlugin();
     void upgradeDatabase(SQLite& db);
     virtual string getName() { return "TestPlugin"; }
+    virtual bool preventAttach();
     void initialize(const SData& args, BedrockServer& server);
     bool peekCommand(SQLite& db, BedrockCommand& command);
     bool processCommand(SQLite& db, BedrockCommand& command);
@@ -25,4 +26,5 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
   private:
     TestHTTPSMananager httpsManager;
     BedrockServer* _server;
+    bool shouldPreventAttach = false;
 };

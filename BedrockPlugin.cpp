@@ -61,12 +61,19 @@ void BedrockPlugin::initialize(const SData& args, BedrockServer& server) {}
 bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
+
 bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
+
 bool BedrockPlugin::shouldSuppressTimeoutWarnings() {
     return false;
 }
+
+bool BedrockPlugin::preventAttach() {
+    return false;
+}
+
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}

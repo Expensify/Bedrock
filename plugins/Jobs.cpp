@@ -44,6 +44,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
+    // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
+    command.request["crashID"] = to_string(SRandom::rand64());
+    command.crashIdentifyingValues.insert("crashID");
+
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
     content.clear();
@@ -500,7 +504,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state, parentJobID FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -509,6 +513,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                }
+
+                // Verify that the parent and child job have the same `mockRequest` setting.
+                STable parentData = SParseJSONObject(result[0][2]);
+                if (command.request.isSet("mockRequest") != (parentData.find("mockRequest") != parentData.end())) {
+                    STHROW("405 Parent and child jobs must have matching mockRequest setting");
                 }
 
                 // Prevent jobs from creating grandchildren
@@ -857,7 +867,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), data "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -873,6 +883,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         string repeat = result[0][3];
         int64_t parentJobID = SToInt(result[0][4]);
         bool mockRequest = result[0][5] == "1";
+        const string& existingData = result[0][6];
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
@@ -900,6 +911,32 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
+
+            // See if the existing data was from a mockRequest.
+            STable oldData;
+            bool oldMocked = false;
+            if (!existingData.empty()) {
+                oldData = SParseJSONObject(existingData);
+                oldMocked = oldData.find("mockRequest") != oldData.end();
+            }
+
+            // And the new data.
+            STable newData = SParseJSONObject(data);
+            bool newMocked = newData.find("mockRequest") != newData.end();
+
+            // Make sure these match each other and the request object or don't do an update.
+            if (oldMocked != newMocked) {
+                SWARN("Not updating mockRequest field of job data.");
+                STHROW("500 Mock Mismatch");
+            }
+            if (newMocked != command.request.isSet("mockRequest")) {
+                SWARN("mockRequest field in job data does not match request header.");
+                STHROW("500 Mock Mismatch");
+            }
+
+            // Note that if `mockRequest` is set for this request, the following is a noop, so it would be impossible
+            // to corrupt this value with `mockRequest` set. To make any changes, we'd have to hit this code on a
+            // non-mock request.
             if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
