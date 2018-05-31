@@ -71,7 +71,9 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         // The current incarnation of this object is going away, if it had an httpsRequest, we'll need to destroy it,
         // or it will leak and never get cleaned up.
         for (auto request : httpsRequests) {
-            SWARN("Closing httpRequest by assigning over it. This was probably a mistake.");
+            if (!request->response) {
+                SWARN("Closing unfinished httpRequest by assigning over it. This was probably a mistake.");
+            }
             request->owner.closeTransaction(request);
         }
         httpsRequests = move(from.httpsRequests);
