@@ -228,7 +228,13 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
             case Socket::CLOSED: {
                 // Done; clean up and try to reconnect
-                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                uint64_t delay;
+                if(peer->s->ssl) {
+                    delay = SRandom::rand64() % (STIME_US_PER_S * 5) + 5000;
+                } else {
+                    delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                }
+                
                 if (peer->s->connectFailure) {
                     PINFO("Peer connection failed after " << (STimeNow() - peer->s->openTime) / 1000
                                                           << "ms, reconnecting in " << delay / 1000 << "ms");
@@ -242,6 +248,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if(peer->s->ssl) {
                     SDEBUG("MB SSL Closed");
                     SSSLClose(peer->s->ssl);
+                    // Cleanup
+                    int ret;
+                    do ret = mbedtls_ssl_close_notify( &peer->s->ssl->ssl );
+                    while( ret == MBEDTLS_ERR_SSL_WANT_WRITE );
                 }
                 peer->closeSocket(this);
                 peer->reset();
@@ -306,9 +316,14 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                         SData login("NODE_LOGIN");
                         login["Name"] = name;
-                        peer->s->send(login.serialize());
+                        //peer->s->send(login.serialize());
                         SDEBUG("MB Send NODE_LOGIN");
-                        //SSSLSend(peer->s->ssl, login.serialize());
+                        //static unsigned char buf[1024];
+                        //sprintf( (char *) buf,  "%s", login.serialize().c_str());
+                        static const char* data = login.serialize().c_str();
+                        SDEBUG("MB Serialized string data " << data);
+                        SSSLSend(peer->s->ssl, data);
+                        //SSSLSend(peer->s->ssl, &buf);
                         SDEBUG("MB Send PING");
                         _sendPING(peer);
                         _onConnect(peer);

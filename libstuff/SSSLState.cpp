@@ -41,7 +41,7 @@ SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
     mbedtls_ssl_config_init( &state->conf );
 
         mbedtls_ssl_conf_dbg(&state->conf, MBEDTLS_DEBUG, NULL);
-    mbedtls_debug_set_threshold(1);
+    mbedtls_debug_set_threshold(4);
 
 
     mbedtls_entropy_init( &state->ec );
