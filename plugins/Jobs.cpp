@@ -5,6 +5,25 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
+// Disable noop mode for the lifetime of this object.
+class scopedDisableNoopMode {
+  public:
+    scopedDisableNoopMode(SQLite& db) : _db(db) {
+        _wasNoop = db.getUpdateNoopMode();
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(false);
+        }
+    }
+    ~scopedDisableNoopMode() {
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(true);
+        }
+    }
+  private:
+    SQLite& _db;
+    bool _wasNoop;
+};
+
 // ==========================================================================
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
@@ -241,7 +260,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, retryAfter, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -253,6 +272,22 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                }
+
+                // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
+                // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
+                // any change made here will happen early enough for all of our existing checks to work correctly, and
+                // everything should be good when we get to `processCommand`.
+                STable parentData = SParseJSONObject(result[0][2]);
+                bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
+                bool childIsMocked = command.request.isSet("mockRequest");
+
+                if (parentIsMocked && !childIsMocked) {
+                    command.request["mockRequest"] = "true";
+                    SINFO("Setting child job to mocked to match parent.");
+                } else if (!parentIsMocked && childIsMocked) {
+                    command.request.erase("mockRequest");
+                    SINFO("Setting child job to non-mocked to match parent.");
                 }
             }
 
@@ -740,6 +775,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                  "SET state='RUNNING', "
                                      "lastRun=" + SCURRENT_TIMESTAMP() + " "
                                  "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
+            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 Update failed");
             }
@@ -754,6 +790,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                          "lastRun=" + SCURRENT_TIMESTAMP() + ", "
                                          "nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(job["retryAfter"]) + ") "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
+                scopedDisableNoopMode dis(db);
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
                 }
@@ -946,6 +983,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (SIEquals(requestVerb, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
+            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
@@ -1000,6 +1038,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
+            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Update failed");
             }
@@ -1008,6 +1047,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SASSERT(!SIEquals(requestVerb, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
+                scopedDisableNoopMode dis(db);
                 if (!db.writeIdempotent("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
                     STHROW("502 Failed to mark job as FINISHED");
                 }
@@ -1049,8 +1089,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         // Cancel the job
-        if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
-            STHROW("502 Failed to update job data");
+        {
+            scopedDisableNoopMode dis(db);
+            if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to update job data");
+            }
         }
 
         // If this was the last queued child, resume the parent
@@ -1071,6 +1114,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
         if (SToInt(result[0][0]) == 0) {
             SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
+            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
                 STHROW("502 Failed to update job data");
             }
@@ -1123,6 +1167,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         updateList.push_back("state='FAILED'");
 
         // Update this job
+        scopedDisableNoopMode dis(db);
         if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Fail failed");
         }

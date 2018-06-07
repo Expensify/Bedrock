@@ -8,6 +8,7 @@ struct CreateJobsTest : tpunit::TestFixture {
                               TEST(CreateJobsTest::createWithHttp),
                               TEST(CreateJobsTest::createWithInvalidJson),
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
+                              TEST(CreateJobsTest::createWithParentMocked),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass)) { }
 
@@ -102,5 +103,97 @@ struct CreateJobsTest : tpunit::TestFixture {
         jobs.push_back(SComposeJSONObject(job2Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING or PAUSED");
+    }
+
+    void createWithParentMocked() {
+
+        // Create a mocked parent.
+        SData command("CreateJob");
+        command["name"] = "createWithParentMocked";
+        command["mockRequest"] = "true";
+        string response = tester->executeWaitVerifyContent(command);
+        STable responseJSON = SParseJSONObject(response);
+        string parentID = responseJSON["jobID"];
+
+        // Get the parent (to set it running). mockRequest must be set or we'll get a non-mocked parent.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "createWithParentMocked";
+        command["mockRequest"] = "true";
+        response = tester->executeWaitVerifyContent(command);
+
+        // Now try to create two child jobs. These aren't explicitly mocked.
+        command.clear();
+        command.methodLine = "CreateJobs";
+
+        STable job1Content;
+        STable data1;
+        data1["blabla"] = "blabla";
+        job1Content["name"] = "createWithParentMocked_child1";
+        job1Content["data"] = SComposeJSONObject(data1);
+        job1Content["parentJobID"] = parentID;
+
+        STable job2Content;
+        STable data2;
+        data2["nope"] = "nope";
+        job2Content["name"] = "createWithParentMocked_child2";
+        job2Content["data"] = SComposeJSONObject(data2);
+        job1Content["parentJobID"] = parentID;
+
+        // Send the command to create the children. Note that they're not explicitly mocked.
+        vector<string> jobs;
+        jobs.push_back(SComposeJSONObject(job1Content));
+        jobs.push_back(SComposeJSONObject(job2Content));
+        command["jobs"] = SComposeJSONArray(jobs);
+        response = tester->executeWaitVerifyContent(command);
+
+        // Finish the parent so that our children are queued to run.
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        tester->executeWaitVerifyContent(command);
+
+        // Verify the children came back mocked. We have to ask for them with the `mocked` flag or we won't get them.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "createWithParentMocked_child1";
+        command["mockRequest"] = "true";
+        STable response2 = tester->executeWaitVerifyContentTable(command);
+        int child1ID = stoi(response2["jobID"]);
+        responseJSON = SParseJSONObject(response2["data"]);
+        ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "createWithParentMocked_child2";
+        command["mockRequest"] = "true";
+        response2 = tester->executeWaitVerifyContentTable(command);
+        int child2ID = stoi(response2["jobID"]);
+        responseJSON = SParseJSONObject(response2["data"]);
+        ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
+
+
+        // Finish the children.
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = to_string(child1ID);
+        tester->executeWaitVerifyContent(command);
+        command["jobID"] = to_string(child2ID);
+        tester->executeWaitVerifyContent(command);
+
+        // Now we can finish the parent.
+        command["jobID"] = parentID;
+        response = tester->executeWaitVerifyContent(command);
+
+        // Now make sure these are gone.
+        list<int> jobIDs = {child1ID, child2ID, stoi(parentID)};
+        SQResult result;
+        string query = "SELECT jobID, state FROM jobs WHERE jobID in (" + SQList(jobIDs) + ");";
+        tester->readDB(query, result);
+
+        cout << query << endl;
+        for (auto& row : result.rows) {
+            cout << row[0] << ", " << row[1] << endl;
+        }
     }
 } __CreateJobsTest;
