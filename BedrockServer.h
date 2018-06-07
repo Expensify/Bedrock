@@ -437,4 +437,6 @@ class BedrockServer : public SQLiteServer {
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
+
+    static void _addRequestID(SData& request);
 };
