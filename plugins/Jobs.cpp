@@ -1087,10 +1087,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         // Cancel the job
-        {
-            if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
-                STHROW("502 Failed to update job data");
-            }
+        if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+            STHROW("502 Failed to update job data");
         }
 
         // If this was the last queued child, resume the parent
