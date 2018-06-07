@@ -191,9 +191,6 @@ struct CreateJobsTest : tpunit::TestFixture {
         string query = "SELECT jobID, state FROM jobs WHERE jobID in (" + SQList(jobIDs) + ");";
         tester->readDB(query, result);
 
-        cout << query << endl;
-        for (auto& row : result.rows) {
-            cout << row[0] << ", " << row[1] << endl;
-        }
+        ASSERT_EQUAL(result.rows.size(), 0);
     }
 } __CreateJobsTest;
