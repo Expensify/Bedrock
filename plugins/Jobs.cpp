@@ -380,6 +380,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
 // ==========================================================================
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
+    // Disable noop update mode for jobs.
+    scopedDisableNoopMode disable(db);
+
     // Pull out some helpful variables
     SData& request = command.request;
     SData& response = command.response;
@@ -775,7 +778,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                  "SET state='RUNNING', "
                                      "lastRun=" + SCURRENT_TIMESTAMP() + " "
                                  "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
-            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 Update failed");
             }
@@ -790,7 +792,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                          "lastRun=" + SCURRENT_TIMESTAMP() + ", "
                                          "nextRun=DATETIME(" + SCURRENT_TIMESTAMP() + ", " + SQ(job["retryAfter"]) + ") "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
-                scopedDisableNoopMode dis(db);
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
                 }
@@ -983,7 +984,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (SIEquals(requestVerb, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
             // Update the parent job to PAUSED
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
@@ -1038,7 +1038,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
-            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Update failed");
             }
@@ -1047,7 +1046,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SASSERT(!SIEquals(requestVerb, "RetryJob"));
             if (parentJobID) {
                 // This is a child job.  Mark it as finished.
-                scopedDisableNoopMode dis(db);
                 if (!db.writeIdempotent("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(jobID) + ";")) {
                     STHROW("502 Failed to mark job as FINISHED");
                 }
@@ -1090,7 +1088,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Cancel the job
         {
-            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
@@ -1114,7 +1111,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
         if (SToInt(result[0][0]) == 0) {
             SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
-            scopedDisableNoopMode dis(db);
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
                 STHROW("502 Failed to update job data");
             }
@@ -1167,7 +1163,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        scopedDisableNoopMode dis(db);
         if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Fail failed");
         }
