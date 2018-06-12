@@ -5,6 +5,25 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
+// Disable noop mode for the lifetime of this object.
+class scopedDisableNoopMode {
+  public:
+    scopedDisableNoopMode(SQLite& db) : _db(db) {
+        _wasNoop = db.getUpdateNoopMode();
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(false);
+        }
+    }
+    ~scopedDisableNoopMode() {
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(true);
+        }
+    }
+  private:
+    SQLite& _db;
+    bool _wasNoop;
+};
+
 // ==========================================================================
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
@@ -241,7 +260,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, retryAfter, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -253,6 +272,22 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                }
+
+                // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
+                // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
+                // any change made here will happen early enough for all of our existing checks to work correctly, and
+                // everything should be good when we get to `processCommand`.
+                STable parentData = SParseJSONObject(result[0][2]);
+                bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
+                bool childIsMocked = command.request.isSet("mockRequest");
+
+                if (parentIsMocked && !childIsMocked) {
+                    command.request["mockRequest"] = "true";
+                    SINFO("Setting child job to mocked to match parent.");
+                } else if (!parentIsMocked && childIsMocked) {
+                    command.request.erase("mockRequest");
+                    SINFO("Setting child job to non-mocked to match parent.");
                 }
             }
 
@@ -345,6 +380,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
 // ==========================================================================
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
+    // Disable noop update mode for jobs.
+    scopedDisableNoopMode disable(db);
+
     // Pull out some helpful variables
     SData& request = command.request;
     SData& response = command.response;
