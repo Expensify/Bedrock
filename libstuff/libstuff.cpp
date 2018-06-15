@@ -1579,7 +1579,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             // There was a problem.
             if (result || !resolved) {
                 freeaddrinfo(resolved);
-                STHROW("can't resolve host");
+                STHROW("can't resolve host error:" << strerror(result));
             }
 
             // Note if this seems slow.
