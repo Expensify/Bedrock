@@ -1579,14 +1579,10 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             // There was a problem.
             if (result || !resolved) {
                 freeaddrinfo(resolved);
-                STHROW("can't resolve host error:" << strerror(result));
+                STHROW("can't resolve host error no#" + result);
             }
 
-            // Note if this seems slow.
-            uint64_t elapsed = STimeNow() - start;
-            if (elapsed > 100 * 1000) {
-                SWARN("Slow DNS lookup. " << elapsed / 1000 << "ms for '" << domain << "'.");
-            }
+            SINFO("DNS lookup took " << STimeNow() - start / 1000 << "ms for '" << domain << "'.");
 
             // Grab the resolved address.
             sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
