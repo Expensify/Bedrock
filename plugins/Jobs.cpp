@@ -905,7 +905,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), data "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest') "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -921,7 +921,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         string repeat = result[0][3];
         int64_t parentJobID = SToInt(result[0][4]);
         bool mockRequest = result[0][5] == "1";
-        const string& existingData = result[0][6];
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
@@ -949,32 +948,19 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
-
-            // See if the existing data was from a mockRequest.
-            STable oldData;
-            bool oldMocked = false;
-            if (!existingData.empty()) {
-                oldData = SParseJSONObject(existingData);
-                oldMocked = oldData.find("mockRequest") != oldData.end();
-            }
-
-            // And the new data.
+            // See if the new data says it's mocked.
             STable newData = SParseJSONObject(data);
             bool newMocked = newData.find("mockRequest") != newData.end();
 
-            // Make sure these match each other and the request object or don't do an update.
-            if (oldMocked != newMocked) {
+            // If both sets of data don't match each other, this is an error, we don't know who to trust.
+            // We don't worry about the state of the request header for mockRequest here, as we expect that the Bedrock
+            // client won't always set it when finishing or retrying a job. We'll just use what's in the data.
+            if (mockRequest != newMocked) {
                 SWARN("Not updating mockRequest field of job data.");
                 STHROW("500 Mock Mismatch");
             }
-            if (newMocked != command.request.isSet("mockRequest")) {
-                SWARN("mockRequest field in job data does not match request header.");
-                STHROW("500 Mock Mismatch");
-            }
 
-            // Note that if `mockRequest` is set for this request, the following is a noop, so it would be impossible
-            // to corrupt this value with `mockRequest` set. To make any changes, we'd have to hit this code on a
-            // non-mock request.
+            // Update the data to the new value.
             if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
