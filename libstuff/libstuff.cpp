@@ -1575,7 +1575,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 
             // Do the initialization.
             int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << STimeNow() - start / 1000 << "ms for '" << domain << "'.");
+            SINFO("DNS lookup took " << STimeNow() - start << "us for '" << domain << "'.");
 
             // There was a problem.
             if (result || !resolved) {
