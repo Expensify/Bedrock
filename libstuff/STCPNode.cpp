@@ -230,7 +230,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Done; clean up and try to reconnect
                 uint64_t delay;
                 if(peer->s->ssl) {
-                    delay = SRandom::rand64() % (STIME_US_PER_S * 5) + 5000;
+                    delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 } else {
                     delay = SRandom::rand64() % (STIME_US_PER_S * 5);
                 }
@@ -312,7 +312,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                 ret = -1;
                                 SDEBUG("XXXXXXXXXXXXXXXX MB Client Handshake ABORTING.");
                             }
-                        } while(ret != 0);
+                        } while(ret > 0);
 
                         //SDEBUG("MB NON LOOP HANDSHAKE " << ret);
                         //ret = mbedtls_ssl_handshake(&peer->ssl->ssl);
@@ -364,6 +364,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     peer->nextReconnect = STimeNow() + STIME_US_PER_M;
                 }
             } else {
+                SDEBUG("MB Waiting to reconnect" << STimeNow() << " not yet " << peer->nextReconnect << "(" << peer->nextReconnect - STimeNow() << " ms remaining)");
                 // Waiting to reconnect -- notify the caller
                 nextActivity = min(nextActivity, peer->nextReconnect);
             }
