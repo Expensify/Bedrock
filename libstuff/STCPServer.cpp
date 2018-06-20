@@ -64,7 +64,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
             socket = new Socket(s, Socket::CONNECTED);
 
-
+            int ret = 0;
             // SSL?
             if(port.isHost) {
                 SDEBUG("MB SERVER ACCEPT HOST SOCKET " << socket->state.load() << " " << SToStr(socket->addr));
@@ -78,7 +78,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
                 // SERVER HELLO?
                 
                 int tries = 0;
-                int ret = 0;
+                
                 do {
                     ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
                     SDEBUG("MB Server SSL Handshake " << ret << " : " << SSSLError(ret));
@@ -88,36 +88,42 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
                         ret = -1;
                         SDEBUG("XXXXXXXXXXXXXXXX MB Server Handshake ABORTING.");
                     }
-                } while(ret != 0);
+                } while(ret > 0);
                 
                 //SDEBUG("MB NON-LOOP SERVER Handshake");
                 //int ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
                 
-                if(ret == 0) {
-                    SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
-                    socket->useSSL = true;
-                } else {
-                    sleep(1);
-                    mbedtls_ssl_session_reset( &socket->ssl->ssl );
-                }
+
                 
 
             } else {
                 SDEBUG("MB Accepted non-host socket. ");
             }
-            
-            socket->addr = addr;
-            socketList.push_back(socket);
 
-            // Try to read immediately
-            if(socket->useSSL) {
-                SSSLRecvAppend(socket->ssl,socket->recvBuffer);
+            if(ret == 0) {
+                SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
+                socket->useSSL = true;
+
+
+                socket->addr = addr;
+                socketList.push_back(socket);
+
+                // Try to read immediately
+                if(socket->useSSL) {
+                    SSSLRecvAppend(socket->ssl,socket->recvBuffer);
+                } else {
+                    S_recvappend(socket->s, socket->recvBuffer);
+                }
+
+                // Record what port it was accepted on
+                portOut = &port;
             } else {
-                S_recvappend(socket->s, socket->recvBuffer);
-            }
+                // TLS Failed. Throw them out.
+                sleep(1);
+                mbedtls_ssl_session_reset( &socket->ssl->ssl );
 
-            // Record what port it was accepted on
-            portOut = &port;
+            }
+            
         }
     }
 
