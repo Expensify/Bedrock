@@ -40,8 +40,8 @@ SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
     mbedtls_ssl_init( &state->ssl );
     mbedtls_ssl_config_init( &state->conf );
 
-        mbedtls_ssl_conf_dbg(&state->conf, MBEDTLS_DEBUG, NULL);
-    mbedtls_debug_set_threshold(4);
+    mbedtls_ssl_conf_dbg(&state->conf, MBEDTLS_DEBUG, NULL);
+    mbedtls_debug_set_threshold(2);
 
 
     mbedtls_entropy_init( &state->ec );
@@ -85,7 +85,7 @@ SSSLState* SSSLOpen(int s, SX509* x509, bool server) {
 // --------------------------------------------------------------------------
 int SSSLSend(SSSLState* sslState, const char* buffer, int length) {
     // Send as much as possible and report what happened
-    SDEBUG("SSSLSend Main Func state " << sslState << " buffer " << buffer);
+    SDEBUG("SSSLSend Main Func state " << sslState << " buffer " << buffer << " length " << length);
     //SASSERT(sslState && buffer);
     const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
@@ -216,7 +216,7 @@ bool SSSLSendConsume(SSSLState* ssl, string& sendBuffer) {
 // --------------------------------------------------------------------------
 bool SSSLSendAll(SSSLState* ssl, const string& buffer) {
     // Keep sending until there is an error or we're done
-    SASSERT(ssl);
+    //SASSERT(ssl);
     int totalSent = 0;
     while (totalSent < (int)buffer.size()) {
         int numSent = SSSLSend(ssl, &buffer[totalSent], (int)buffer.size() - totalSent);

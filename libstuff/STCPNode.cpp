@@ -300,33 +300,60 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         mbedtls_net_connect( &peer->ssl->ctx, domain.c_str(), (char *)&serverport, MBEDTLS_NET_PROTO_TCP );
                         
                         int ret = 0;
-
+                        int tries = 0;
                         do {
+                            tries++;
                             ret = mbedtls_ssl_handshake(&peer->ssl->ssl);
                             SDEBUG("MB Client SSL Handshake " << ret << " : " << SSSLError(ret));
                             // remove me after debugging.
                             sleep(1);
+                            if(tries > 100) {
+                                // reset this show and let's loop around again.
+                                ret = -1;
+                                SDEBUG("XXXXXXXXXXXXXXXX MB Client Handshake ABORTING.");
+                            }
                         } while(ret != 0);
 
                         //SDEBUG("MB NON LOOP HANDSHAKE " << ret);
                         //ret = mbedtls_ssl_handshake(&peer->ssl->ssl);
-                        
-                        SDEBUG("XXXXXXXXXXXXXXXX MB Client Handshake Done. Connected to " << &peer->name << " at " << peer->host);
-                        //&peer->s->useSSL = true;
+                        if(ret == 0) {
+                            SDEBUG("XXXXXXXXXXXXXXXX MB Client Handshake Done. Connected to " << &peer->name << " at " << peer->host);
+                            sleep(1); // let the server catch up?
+                            //&peer->s->useSSL = true;
 
-                        SData login("NODE_LOGIN");
-                        login["Name"] = name;
-                        //peer->s->send(login.serialize());
-                        SDEBUG("MB Send NODE_LOGIN");
-                        //static unsigned char buf[1024];
-                        //sprintf( (char *) buf,  "%s", login.serialize().c_str());
-                        static const char* data = login.serialize().c_str();
-                        SDEBUG("MB Serialized string data " << data);
-                        SSSLSend(peer->s->ssl, data);
-                        //SSSLSend(peer->s->ssl, &buf);
-                        SDEBUG("MB Send PING");
-                        _sendPING(peer);
-                        _onConnect(peer);
+                            SData login("NODE_LOGIN");
+                            login["Name"] = name;
+                            //peer->s->send(login.serialize());
+                            SDEBUG("MB Send NODE_LOGIN");
+                            //static unsigned char buf[1024];
+                            //sprintf( (char *) buf,  "%s", login.serialize().c_str());
+                            static const char* data = login.serialize().c_str();
+                            SDEBUG("MB Serialized string data " << data);
+                            // SSSLSend(peer->s->ssl, data);
+                            SSSLSendAll(peer->s->ssl,data);
+                            //SSSLSend(peer->s->ssl, &buf);
+                            SDEBUG("MB Send PING");
+                            //_sendPING(peer);
+                            //_onConnect(peer);
+                        } else {
+                            sleep(1);
+                            mbedtls_ssl_session_reset( &peer->ssl->ssl );
+                            peer->s->state.store(Socket::CLOSED);
+                            _onDisconnect(peer);
+                            if (peer->s->connectFailure)
+                                peer->failedConnections++;
+                            if(peer->s->ssl) {
+                                SDEBUG("MB SSL Closed");
+                                SSSLClose(peer->s->ssl);
+                                // Cleanup
+                                int ret;
+                                do ret = mbedtls_ssl_close_notify( &peer->s->ssl->ssl );
+                                while( ret == MBEDTLS_ERR_SSL_WANT_WRITE );
+                            }
+                            peer->closeSocket(this);
+                            peer->reset();
+                        }
+                        
 
                         /******* END TLS ************/
                     } 
