@@ -77,19 +77,30 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
                 SDEBUG("MB SSL object for peer client created"); 
                 // SERVER HELLO?
                 
+                int tries = 0;
                 int ret = 0;
                 do {
                     ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
                     SDEBUG("MB Server SSL Handshake " << ret << " : " << SSSLError(ret));
                     sleep(1);
+                    if(tries++ > 100) {
+                        // give it up as a bad job.
+                        ret = -1;
+                        SDEBUG("XXXXXXXXXXXXXXXX MB Server Handshake ABORTING.");
+                    }
                 } while(ret != 0);
                 
                 //SDEBUG("MB NON-LOOP SERVER Handshake");
                 //int ret = mbedtls_ssl_handshake(&socket->ssl->ssl);
                 
-
-                SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
-                socket->useSSL = true;
+                if(ret == 0) {
+                    SDEBUG("XXXXXXXXXXXXXXXXXXXXXXXXXX MB Server Handshake Completed!" << ret);
+                    socket->useSSL = true;
+                } else {
+                    sleep(1);
+                    mbedtls_ssl_session_reset( &socket->ssl->ssl );
+                }
+                
 
             } else {
                 SDEBUG("MB Accepted non-host socket. ");
@@ -99,7 +110,11 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             socketList.push_back(socket);
 
             // Try to read immediately
-            S_recvappend(socket->s, socket->recvBuffer);
+            if(socket->useSSL) {
+                SSSLRecvAppend(socket->ssl,socket->recvBuffer);
+            } else {
+                S_recvappend(socket->s, socket->recvBuffer);
+            }
 
             // Record what port it was accepted on
             portOut = &port;
