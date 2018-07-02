@@ -734,8 +734,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Add jobID to the respective list depending on if retryAfter is set
             if (result[c][4] != "") {
-                STable job;
-                job["jobID"] = result[c][0];
                 job["retryAfter"] = result[c][4];
                 retriableJobs.push_back(job);
             } else {
