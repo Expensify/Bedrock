@@ -1510,7 +1510,7 @@ string SGUnzip (const string& content) {
 
     status = inflateInit2(&strm, 16 + MAX_WBITS);
     if (status != Z_OK) {
-        SWARN("Error inflating stream for gunzip, status: " << status);
+        SWARN("COLE Error inflating stream for gunzip, status: " << status);
         return "";
     }
 
@@ -1526,19 +1526,23 @@ string SGUnzip (const string& content) {
             case Z_DATA_ERROR:
             case Z_MEM_ERROR:
                 inflateEnd(&strm);
-                SWARN("Error gunzipping, status:" << status);
+                SWARN("COLE Error gunzipping, status:" << status);
                 return "";
         }
         have = CHUNK - strm.avail_out;
+        string temp;
+        temp.append((char*)out, have);
+        SDEBUG("COLE appending: " << temp  << " size is: " << have);
         data.append((char*)out, have);
     } while (strm.avail_out == 0);
 
     status = inflateEnd(&strm);
     if (status != Z_OK) {
-        SWARN("Error gunzipping, status: " << status);
+        SWARN("COLE Error gunzipping, status: " << status);
         return "";
     }
 
+    SDEBUG("COLE data size: " << data.size());
     return data;
 }
 
@@ -1994,6 +1998,8 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, unsign
     mbedtls_aes_setkey_dec(&ctx, (unsigned char*)key.c_str(), 8 * SAES_KEY_SIZE);
     mbedtls_aes_crypt_cbc(&ctx, MBEDTLS_AES_DECRYPT, (int)buffer.size(), iv, (unsigned char*)buffer.c_str(),
                           (unsigned char*)decryptedBuffer.c_str());
+    SDEBUG("COLE returning a decrypted buffer of size: " << decryptedBuffer.size());
+    SASSERT(bufferSize == decryptedBuffer.size());
     return decryptedBuffer;
 
 
@@ -2174,14 +2180,14 @@ uint64_t SFileSize(const string& path) {
 string SHashSHA1(const string& buffer) {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    mbedtls_sha1((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0]);
     return result;
 }
 
 string SHashSHA256(const string& buffer) {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0], 0);
     return result;
 }
 
