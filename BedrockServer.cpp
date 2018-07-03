@@ -654,6 +654,7 @@ void BedrockServer::worker(SData& args,
                 if (server._shutdownState.load() != RUNNING) {
                     SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
                           << command.request.methodLine << "'.");
+                    server._commandsInProgress--;
                     return;
                 }
 
