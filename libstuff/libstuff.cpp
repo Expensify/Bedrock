@@ -2174,14 +2174,14 @@ uint64_t SFileSize(const string& path) {
 string SHashSHA1(const string& buffer) {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    mbedtls_sha1((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0]);
     return result;
 }
 
 string SHashSHA256(const string& buffer) {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0], 0);
     return result;
 }
 
