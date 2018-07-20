@@ -788,6 +788,7 @@ string SGZip(const string& content);
 string SGUnzip(const string& content);
 
 // Command-line helpers
+SData SParseCommandLine(int argc, const char* argv[]);
 SData SParseCommandLine(int argc, char* argv[]);
 
 // --------------------------------------------------------------------------

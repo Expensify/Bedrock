@@ -546,6 +546,10 @@ void SConsumeFront(string& lhs, ssize_t num) {
 
 // --------------------------------------------------------------------------
 SData SParseCommandLine(int argc, char* argv[]) {
+    return SParseCommandLine(argc, (const char**)argv);
+}
+
+SData SParseCommandLine(int argc, const char* argv[]) {
     // Just walk across and find the pairs, then put the remainder on a list in the method
     SData results;
     string name;
