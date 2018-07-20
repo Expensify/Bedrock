@@ -1715,7 +1715,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SQLiteCommand& command = commandIt->second;
             if (command.escalationTimeUS) {
                 command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-                SINFO("[performance] Total escalation time for command " << command.request.methodLine << " was "
+                SINFO("Total escalation time for command " << command.request.methodLine << " was "
                       << command.escalationTimeUS/1000 << "ms.");
             }
             command.response = response;

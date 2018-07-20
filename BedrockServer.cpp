@@ -409,7 +409,7 @@ void BedrockServer::sync(SData& args,
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
+            SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
             // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
@@ -605,7 +605,7 @@ void BedrockServer::worker(SData& args,
             command = server._commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
+            SINFO("Dequeued command " << command.request.methodLine << " in worker, "
                   << server._commandQueue.size() << " commands in queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
@@ -805,7 +805,7 @@ void BedrockServer::worker(SData& args,
                         core.rollback();
 
                         // We're not handling a writable command anymore.
-                        SINFO("[performance] Sending non-parallel command " << command.request.methodLine
+                        SINFO("Sending non-parallel command " << command.request.methodLine
                               << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
                               << " queued commands.");
                         syncNodeQueuedCommands.push(move(command));
@@ -890,7 +890,7 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
+                SINFO("Max retries hit in worker, forwarding command " << command.request.methodLine
                       << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
