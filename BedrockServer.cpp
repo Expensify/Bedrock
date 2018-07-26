@@ -93,6 +93,10 @@ void BedrockServer::syncWrapper(SData& args,
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
             while (server._detach) {
+                if (server.shutdownWhileDetached) {
+                    SINFO("Bedrock server exiting from detached state.");
+                    return;
+                }
                 // Just wait until we're attached.
                 SINFO("Bedrock server sleeping in detached state.");
                 sleep(1);
@@ -995,7 +999,7 @@ void BedrockServer::_resetServer() {
 }
 
 BedrockServer::BedrockServer(const SData& args)
-  : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+  : SQLiteServer(""), shutdownWhileDetached(false), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
