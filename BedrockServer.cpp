@@ -1110,6 +1110,9 @@ BedrockServer::~BedrockServer() {
 
 bool BedrockServer::shutdownComplete() {
     if (_detach) {
+        if (shutdownWhileDetached) {
+            return true;
+        }
         // We don't want main() to stop calling `poll` for us, we are listening on the control port.
         return false;
     }
