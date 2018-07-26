@@ -66,7 +66,7 @@ class BedrockTester {
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
 
-    int getServerPID() {return _serverPID; }
+    int getServerPID() { return _serverPID; }
 
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
