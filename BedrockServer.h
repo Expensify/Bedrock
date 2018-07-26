@@ -210,6 +210,11 @@ class BedrockServer : public SQLiteServer {
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
+    // If you want to exit from the detached state, set this to true and the server will exit after the next loop.
+    // It has no effect when not detached (except that it will cause the server to exit immediately upon becoming
+    // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
+    atomic<bool> shutdownWhileDetached;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
