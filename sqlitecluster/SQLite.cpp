@@ -16,7 +16,7 @@ atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-               int maxRequiredJournalTableID, const string& synchronous) :
+               int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
     whitelist(nullptr),
     _maxJournalSize(maxJournalSize),
     _insideTransaction(false),
@@ -67,6 +67,13 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     if(_sharedDataLookupMap.empty()) {
         // Set the logging callback for sqlite errors.
         sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
+
+        // Enable memory-mapped files.
+        if (mmapSizeGB) {
+            SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
+            const int64_t GB = 1024 * 1024 * 1024;
+            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, _sqliteLogCallback, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
+        }
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
         // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
