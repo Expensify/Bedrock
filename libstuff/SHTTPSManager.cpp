@@ -56,8 +56,7 @@ int SHTTPSManager::getHTTPResponseCode(const string& methodLine) {
 
 SHTTPSManager::Socket* SHTTPSManager::openSocket(const string& host, SX509* x509) {
     // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    return STCPManager::openSocket(host, x509);
+    return STCPManager::openSocket(host, x509, &_listMutex);
 }
 
 void SHTTPSManager::closeSocket(Socket* socket) {

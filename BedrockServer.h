@@ -24,7 +24,7 @@ class BedrockServer : public SQLiteServer {
     // Let's start with shutting down. Standing down is a subset of shutting down (when we start out mastering), and
     // we'll get to that later.
     //
-    // When a BedroskServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
+    // When a BedrockServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
     // server receives a signal, that state changes to START_SHUTDOWN. This change causes a couple things to happen:
     //
     // 1. The command port is closed, and no new connections are accepted from clients.
@@ -210,6 +210,11 @@ class BedrockServer : public SQLiteServer {
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
+    // If you want to exit from the detached state, set this to true and the server will exit after the next loop.
+    // It has no effect when not detached (except that it will cause the server to exit immediately upon becoming
+    // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
+    atomic<bool> shutdownWhileDetached;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -392,8 +397,20 @@ class BedrockServer : public SQLiteServer {
 
     // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
     // their HTTPS requests finish and move them back to the main queue.
-    map<SHTTPSManager::Transaction*, BedrockCommand> _outstandingHTTPSRequests;
+    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
+
+    // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
+    // copy of each command, even if it has multiple requests.
+    set<BedrockCommand*> _outstandingHTTPSCommands;
+
+    // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
+    // requests are complete.
+    void waitForHTTPS(BedrockCommand&& command);
+
+    // Takes a list of completed HTTPS requests, and move those commands back to the main queue (as long as they don't
+    // have any other incomplete requests).
+    int finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests);
 
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
     void _finishPeerCommand(BedrockCommand& command);
@@ -425,4 +442,6 @@ class BedrockServer : public SQLiteServer {
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
+
+    static void _addRequestID(SData& request);
 };

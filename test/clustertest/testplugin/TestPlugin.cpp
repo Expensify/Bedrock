@@ -27,7 +27,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
     // Always blacklist on userID.
     command.crashIdentifyingValues.insert("userID");
     // This should never exist when calling peek.
-    SASSERT(!command.httpsRequest);
+    SASSERT(!command.httpsRequests.size());
     if (SStartsWith(command.request.methodLine,"testcommand")) {
         if (!command.request["response"].empty()) {
             command.response.methodLine = command.request["response"];
@@ -41,10 +41,15 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             // Only start HTTPS requests on master, otherwise, we'll escalate.
             return false;
         }
-        SData request("GET / HTTP/1.1");
-        request["Host"] = "www.google.com";
-        command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
-        command.httpsRequest = httpsManager.send("https://www.google.com/", request);
+        int requestCount = 1;
+        if (command.request.isSet("httpsRequestCount")) {
+            requestCount = max(command.request.calc("httpsRequestCount"), 1);
+        }
+        for (int i = 0; i < requestCount; i++) {
+            SData request("GET / HTTP/1.1");
+            request["Host"] = "www.google.com";
+            command.httpsRequests.push_back(httpsManager.send("https://www.google.com/", request));
+        }
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
         int size = 100000000;
@@ -68,9 +73,8 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         // up correctly on the former master.
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
-        command.request["httpsRequests"] = to_string(command.request.calc("httpsRequests") + 1);
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
-        command.httpsRequest = transaction;
+        command.httpsRequests.push_back(transaction);
         thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
     } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
         throw 1;
@@ -106,31 +110,41 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         usleep(command.request.calc("ProcessSleep") * 1000);
     }
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (command.httpsRequest) {
-            // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(command.httpsRequest->response);
-            command.response.methodLine = to_string(command.httpsRequest->response);
-            // return the number of times we made an HTTPS request on this command.
-            int tries = SToInt(command.request["httpsRequests"]);
-            if (tries != 1) {
-                STHROW("500 Retried HTTPS request!");
-            }
-            command.response.content = " " + command.httpsRequest->fullResponse.content;
-
-            // Update the DB so we can test conflicts.
-            SQResult result;
-            db.read("SELECT MAX(id) FROM test", result);
-            SASSERT(result.size());
-            int nextID = SToInt(result[0][0]) + 1;
-            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
-        } else {
-            // Shouldn't get here.
+        // Assert if we got here with no requests.
+        if (command.httpsRequests.empty()) {
             SINFO ("Calling process with no https request: " << command.request.methodLine);
             SASSERT(false);
         }
-        if (!command.request["response"].empty() && command.httpsRequest->response < 400) {
-            command.response.methodLine = command.request["response"];
+        // If any of our responses were bad, we want to know that.
+        bool allGoodResponses = true;
+        for (auto& request : command.httpsRequests) {
+            // If we're calling `process` on a command with a https request, it had better be finished.
+            SASSERT(request->response);
+
+            // Concatenate all of our responses into the body.
+            command.response.content += to_string(request->response) + "\n";
+
+            // If our response is an error, store that.
+            if (request->response >= 400) {
+                allGoodResponses = false;
+            }
         }
+        
+        // Update the response method line.
+        if (!command.request["response"].empty() && allGoodResponses) {
+            command.response.methodLine = command.request["response"];
+        } else {
+            command.response.methodLine = "200 OK";
+        }
+
+        // Update the DB so we can test conflicts.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+
+        // Done.
         return true;
     }
     else if (SStartsWith(command.request.methodLine, "idcollision")) {

@@ -321,7 +321,9 @@ string SQLite::_getJournalTableName(int journalTableID) {
 
 SQLite::~SQLite() {
     // Lock around changes to the global shared list.
+    SINFO("Locking g_commitLock in destructor.");
     SQLITE_COMMIT_AUTOLOCK;
+    SINFO("g_commitLock acquired in destructor.");
     
     // Remove ourself from the list of valid objects.
     _sharedData->validObjects.erase(this);
@@ -336,7 +338,9 @@ SQLite::~SQLite() {
     // Now we can clean up our own data.
     // First, rollback any incomplete transaction.
     if (!_uncommittedQuery.empty()) {
+        SINFO("Rolling back in destructor.");
         rollback();
+        SINFO("Rollback in destructor complete.");
     }
 
     // Finally, Close the DB.
