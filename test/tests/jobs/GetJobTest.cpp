@@ -476,9 +476,9 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high_2");
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_4"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
+        ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_3");
+        ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "low_5");
     }
