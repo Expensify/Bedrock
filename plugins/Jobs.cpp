@@ -46,8 +46,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID IS NOT NULL;"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
+    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
 
     SQResult nextIDResult;
     db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
