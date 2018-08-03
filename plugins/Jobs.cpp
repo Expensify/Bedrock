@@ -46,7 +46,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID IS NOT NULL;"));
+    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
 
     SQResult nextIDResult;
@@ -742,7 +742,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // Only non-retryable jobs can have children so see if this job has any
                 // FINISHED/CANCELLED child jobs, indicating it is being resumed
                 SQResult childJobs;
-                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
                     STHROW("502 Failed to select finished child jobs");
                 }
 
@@ -939,7 +939,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
-        if (!db.writeIdempotent("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
+        if (!db.writeIdempotent("DELETE FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
             STHROW("502 Failed deleting finished/cancelled child jobs");
         }
 
@@ -975,7 +975,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Also un-pause any child jobs such that they can run
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
                           "WHERE state='PAUSED' "
-                            "AND parentJobID=" + SQ(jobID) + ";")) {
+                            "AND parentJobID != 0 AND parentJobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Child update failed");
             }
 
@@ -1050,7 +1050,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
                 // At this point, all child jobs should already be deleted, but
                 // let's double check.
-                if (!db.read("SELECT 1 FROM jobs WHERE parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
+                if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
                     SWARN("Child jobs still exist when deleting parent job, ignoring.");
                 }
             }
@@ -1086,7 +1086,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& safeParentJobID = SQ(result[0][0]);
         if (!db.read("SELECT count(1) "
                      "FROM jobs "
-                     "WHERE parentJobID=" + safeParentJobID + " AND "
+                     "WHERE parentJobID != 0 AND parentJobID=" + safeParentJobID + " AND "
                        "state IN ('QUEUED', 'RUNQUEUED', 'RUNNING');",
                      result)) {
             STHROW("502 Select failed");
@@ -1257,7 +1257,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " +
+                 "WHERE parentJobID != 0 AND parentJobID = " + SQ(jobID) + " " +
                  " AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {
