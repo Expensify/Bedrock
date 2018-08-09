@@ -40,7 +40,7 @@ test: test/test
 clustertest: test/clustertest/clustertest testplugin
 
 testplugin:
-	cd test/clustertest/testplugin && make
+	cd test/clustertest/testplugin && $(MAKE)
 
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
@@ -66,15 +66,15 @@ clean:
 	rm -rf test/clustertest/clustertest
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
-	cd mbedtls && make clean
-	cd test/clustertest/testplugin && make clean
+	cd mbedtls && $(MAKE) clean
+	cd test/clustertest/testplugin && $(MAKE) clean
 
 # The mbedtls libraries are all built the same way.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
-	cd mbedtls && git checkout c49b808ae490f03d665df5faae457f613aa31aaf
-	cd mbedtls && make no_test && touch library/libmbedcrypto.a && touch library/libmbedtls.a && touch library/libmbedx509.a
+	cd mbedtls && git checkout -q c49b808ae490f03d665df5faae457f613aa31aaf
+	cd mbedtls && $(MAKE) no_test && touch library/libmbedcrypto.a && touch library/libmbedtls.a && touch library/libmbedx509.a
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
