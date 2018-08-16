@@ -335,12 +335,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
-        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID), j.parentJobID "
+        if (!db.read("SELECT j.state, j.parentJobID, (SELECT COUNT(1) FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + ") children "
                      "FROM jobs j "
-                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
-                     "WHERE j.jobID=" + SQ(jobID) + " "
-                        "AND jj.parentJobID != 0 "
-                     "GROUP BY j.jobID;",
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -351,12 +348,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (!result[0][1].empty()) {
+        if (SToInt(result[0][2]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
         // The command should only be called from a child job, throw if the job doesn't have a parent
-        if (SToInt(result[0][2]) == 0) {
+        if (SToInt(result[0][1]) == 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
         }
 
