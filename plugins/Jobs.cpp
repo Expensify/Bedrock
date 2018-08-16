@@ -339,6 +339,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "FROM jobs j "
                      "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
                      "WHERE j.jobID=" + SQ(jobID) + " "
+                        "AND jj.parentJobID != 0 "
                      "GROUP BY j.jobID;",
                      result)) {
             STHROW("502 Select failed");
