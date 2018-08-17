@@ -335,22 +335,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
-        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID), j.parentJobID "
+        if (!db.read("SELECT j.jobID, j.state, j.parentJobID, (SELECT COUNT(1) FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + ") children "
                      "FROM jobs j "
-                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
-                     "WHERE j.jobID=" + SQ(jobID) + " "
-                     "GROUP BY j.jobID;",
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
 
         // Verify the job exists
-        if (result.empty()) {
+        if (result.empty() || result[0][0].empty()) {
             STHROW("404 No job with this jobID");
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (!result[0][1].empty()) {
+        if (SToInt(result[0][3]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
@@ -360,13 +358,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Don't process the command if the job has finished or it's already running.
-        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+        if (result[0][1] == "FINISHED" || result[0][1] == "RUNNING") {
             SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
             return true; // Done
         }
 
         // Verify that we are not trying to cancel a PAUSED job.
-        if (result[0][0] == "PAUSED") {
+        if (result[0][1] == "PAUSED") {
             SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
             return true; // Done
         }
