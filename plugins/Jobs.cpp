@@ -335,7 +335,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
-        if (!db.read("SELECT j.state, j.parentJobID, (SELECT COUNT(1) FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + ") children "
+        if (!db.read("SELECT j.jobID, j.state, j.parentJobID, (SELECT COUNT(1) FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + ") children "
                      "FROM jobs j "
                      "WHERE j.jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -343,28 +343,28 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Verify the job exists
-        if (result.empty()) {
+        if (result.empty() || result[0][0].empty()) {
             STHROW("404 No job with this jobID");
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (SToInt(result[0][2]) != 0) {
+        if (SToInt(result[0][3]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
         // The command should only be called from a child job, throw if the job doesn't have a parent
-        if (SToInt(result[0][1]) == 0) {
+        if (SToInt(result[0][2]) == 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
         }
 
         // Don't process the command if the job has finished or it's already running.
-        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+        if (result[0][1] == "FINISHED" || result[0][1] == "RUNNING") {
             SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
             return true; // Done
         }
 
         // Verify that we are not trying to cancel a PAUSED job.
-        if (result[0][0] == "PAUSED") {
+        if (result[0][1] == "PAUSED") {
             SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
             return true; // Done
         }
