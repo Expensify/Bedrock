@@ -701,7 +701,7 @@ void BedrockServer::worker(SData& args,
             // original caller will need to re-send the request. This can happen if we're mastering, and receive a
             // request from a peer, but then we stand down from mastering. The SQLiteNode should have already told its
             // peers that their outstanding requests were being canceled at this point.
-            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || SQLiteNode::STANDINGDOWN)) {
+            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || state == SQLiteNode::STANDINGDOWN)) {
                 SWARN("Found " << (command.complete ? "" : "in") << "complete " << "command "
                       << command.request.methodLine << " from peer, but not mastering. Too late for it, discarding.");
                 server._commandsInProgress--;
