@@ -36,6 +36,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <functional>
 using namespace std;
 
 // Custom libraries.
