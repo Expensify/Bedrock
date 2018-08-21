@@ -2088,6 +2088,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
     FILE* to = fopen(toPath.c_str(), "wb");
     if (!to) {
         SWARN("Couldn't open file " << toPath << " for writing. Error: " << errno << ", " << strerror(errno) << ".");
+        fclose(from);
         return false;
     }
     SINFO("Successfully opened " << toPath << " for writing.");
