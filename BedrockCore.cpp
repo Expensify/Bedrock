@@ -74,15 +74,15 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                     break;
                 }
             }
+
+            // Peeking is over now, allow writes
+            _db.read("PRAGMA query_only = false;");
         } catch (const SQLite::timeout_error& e) {
             if (!shouldSuppressTimeoutWarnings) {
                 SALERT("Command " << command.request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
             STHROW("555 Timeout peeking command");
         }
-
-        // Peeking is over now, allow writes
-        _db.read("PRAGMA query_only = false;");
 
         // If nobody succeeded in peeking it, then we'll need to process it.
         // TODO: Would be nice to be able to check if a plugin *can* handle a command, so that we can differentiate
@@ -114,9 +114,11 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
+        _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
     } catch (...) {
+        _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command.response.methodLine = "500 Unhandled Exception";
