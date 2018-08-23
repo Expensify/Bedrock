@@ -3,7 +3,6 @@
 
 BedrockCommand::BedrockCommand() :
     SQLiteCommand(),
-    httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
@@ -12,15 +11,13 @@ BedrockCommand::BedrockCommand() :
 { }
 
 BedrockCommand::~BedrockCommand() {
-    if (httpsRequest) {
-        httpsRequest->owner.closeTransaction(httpsRequest);
-        httpsRequest = nullptr;
+    for (auto request : httpsRequests) {
+        request->owner.closeTransaction(request);
     }
 }
 
 BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
-    SQLiteCommand(std::move(from)),
-    httpsRequest(nullptr),
+    SQLiteCommand(move(from)),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
@@ -32,7 +29,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
 
 BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     SQLiteCommand(move(from)),
-    httpsRequest(from.httpsRequest),
+    httpsRequests(move(from.httpsRequests)),
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
@@ -41,14 +38,14 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     crashIdentifyingValues(move(from.crashIdentifyingValues)),
     _inProgressTiming(from._inProgressTiming)
 {
-    // The move constructor (and likewise, the move assignment operator), don't simply copy this pointer value, but
-    // they clear it from the old object, so that when its destructor is called, the HTTPS transaction isn't closed.
-    from.httpsRequest = nullptr;
+    // The move constructor (and likewise, the move assignment operator), don't simply copy these pointer values, but
+    // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
+    // closed.
+    from.httpsRequests.clear();
 }
 
 BedrockCommand::BedrockCommand(SData&& _request) :
     SQLiteCommand(move(_request)),
-    httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
@@ -60,7 +57,6 @@ BedrockCommand::BedrockCommand(SData&& _request) :
 
 BedrockCommand::BedrockCommand(SData _request) :
     SQLiteCommand(move(_request)),
-    httpsRequest(nullptr),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
@@ -74,11 +70,14 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
     if (this != &from) {
         // The current incarnation of this object is going away, if it had an httpsRequest, we'll need to destroy it,
         // or it will leak and never get cleaned up.
-        if (httpsRequest) {
-            httpsRequest->owner.closeTransaction(httpsRequest);
+        for (auto request : httpsRequests) {
+            if (!request->response) {
+                SWARN("Closing unfinished httpRequest by assigning over it. This was probably a mistake.");
+            }
+            request->owner.closeTransaction(request);
         }
-        httpsRequest = from.httpsRequest;
-        from.httpsRequest = nullptr;
+        httpsRequests = move(from.httpsRequests);
+        from.httpsRequests.clear();
 
         // Update our other properties.
         peekCount = from.peekCount;
@@ -145,6 +144,16 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
     get<1>(_inProgressTiming) = 0;
     get<2>(_inProgressTiming) = 0;
 }
+
+bool BedrockCommand::areHttpsRequestsComplete() const {
+    for (auto request : httpsRequests) {
+        if (!request->response) {
+            return false;
+        }
+    }
+    return true;
+}
+
 
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t peekTotal = 0;

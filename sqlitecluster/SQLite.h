@@ -34,8 +34,10 @@ class SQLite {
     //
     // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
     //                            'journal' and no numbered tables.
+    //
+    // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID, const string& synchronous = "");
+           int maxRequiredJournalTableID, const string& synchronous = "", int64_t mmapSizeGB = 0);
     ~SQLite();
 
     // Returns the canonicalized filename for this database

@@ -1575,19 +1575,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 
             // Do the initialization.
             int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
             // There was a problem.
             if (result || !resolved) {
                 freeaddrinfo(resolved);
-                STHROW("can't resolve host");
+                STHROW("can't resolve host error no#" + result);
             }
-
-            // Note if this seems slow.
-            uint64_t elapsed = STimeNow() - start;
-            if (elapsed > 100 * 1000) {
-                SWARN("Slow DNS lookup. " << elapsed / 1000 << "ms for '" << domain << "'.");
-            }
-
             // Grab the resolved address.
             sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
             ip = addr->sin_addr.s_addr;
@@ -2094,6 +2088,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
     FILE* to = fopen(toPath.c_str(), "wb");
     if (!to) {
         SWARN("Couldn't open file " << toPath << " for writing. Error: " << errno << ", " << strerror(errno) << ".");
+        fclose(from);
         return false;
     }
     SINFO("Successfully opened " << toPath << " for writing.");
@@ -2180,14 +2175,14 @@ uint64_t SFileSize(const string& path) {
 string SHashSHA1(const string& buffer) {
     string result;
     result.resize(20);
-    mbedtls_sha1((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0]);
+    mbedtls_sha1((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0]);
     return result;
 }
 
 string SHashSHA256(const string& buffer) {
     string result;
     result.resize(32);
-    mbedtls_sha256((unsigned char*)buffer.c_str(), (int)buffer.size(), (unsigned char*)&result[0], 0);
+    mbedtls_sha256((unsigned char*)buffer.c_str(), buffer.size(), (unsigned char*)&result[0], 0);
     return result;
 }
 

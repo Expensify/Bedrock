@@ -322,6 +322,10 @@ int main(int argc, char* argv[]) {
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
             server.postPoll(fdm, nextActivity);
         }
+        if (server.shutdownWhileDetached) {
+            // We need to actually shut down here.
+            break;
+        }
     }
 
     // Log how much time we spent in our main mutex.

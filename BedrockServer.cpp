@@ -2,7 +2,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
-#include "BedrockConflictMetrics.h"
 #include "BedrockCore.h"
 #include <iomanip>
 
@@ -33,6 +32,8 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             command.initiatingClientID = -1;
             command.initiatingPeerID = 0;
         }
+        // Add a request ID if one was missing.
+        _addRequestID(command.request);
         SAUTOPREFIX(command.request["requestID"]);
         if (command.writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
@@ -92,6 +93,10 @@ void BedrockServer::syncWrapper(SData& args,
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
             while (server._detach) {
+                if (server.shutdownWhileDetached) {
+                    SINFO("Bedrock server exiting from detached state.");
+                    return;
+                }
                 // Just wait until we're attached.
                 SINFO("Bedrock server sleeping in detached state.");
                 sleep(1);
@@ -129,7 +134,8 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // Initialize the DB.
-    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"]);
+    int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
+    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"], mmapSizeGB);
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -351,7 +357,6 @@ void BedrockServer::sync(SData& args,
                     server._commandsInProgress--;
                     continue;
                 }
-                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                 SINFO("[performance] Sync thread finished committing command " << command.request.methodLine);
 
                 // Otherwise, save the commit count, mark this command as complete, and reply.
@@ -409,7 +414,7 @@ void BedrockServer::sync(SData& args,
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("[performance] Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
+            SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
             // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
@@ -441,7 +446,7 @@ void BedrockServer::sync(SData& args,
                 // IMPORTANT: This check is omitted for commands with an HTTPS request object, because we don't want to
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
-                if (!command.httpsRequest) {
+                if (!command.httpsRequests.size()) {
                     if (core.peekCommand(command)) {
 
                         // Finished with this.
@@ -459,10 +464,8 @@ void BedrockServer::sync(SData& args,
                     }
 
                     // If we just started a new HTTPS request, save it for later.
-                    if (command.httpsRequest) {
-                        // Save this in our https commads queue.
-                        lock_guard<mutex> lock(server._httpsCommandMutex);
-                        server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+                    if (command.httpsRequests.size()) {
+                        server.waitForHTTPS(move(command));
 
                         // Move on to the next command until this one finishes.
                         core.rollback();
@@ -585,7 +588,8 @@ void BedrockServer::worker(SData& args,
                            int threadCount)
 {
     SInitialize("worker" + to_string(threadId));
-    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"]);
+    int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
+    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], mmapSizeGB);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
@@ -607,7 +611,7 @@ void BedrockServer::worker(SData& args,
             command = server._commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("[performance] Dequeued command " << command.request.methodLine << " in worker, "
+            SINFO("Dequeued command " << command.request.methodLine << " in worker, "
                   << server._commandQueue.size() << " commands in queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
@@ -656,6 +660,7 @@ void BedrockServer::worker(SData& args,
                 if (server._shutdownState.load() != RUNNING) {
                     SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
                           << command.request.methodLine << "'.");
+                    server._commandsInProgress--;
                     return;
                 }
 
@@ -696,7 +701,7 @@ void BedrockServer::worker(SData& args,
             // original caller will need to re-send the request. This can happen if we're mastering, and receive a
             // request from a peer, but then we stand down from mastering. The SQLiteNode should have already told its
             // peers that their outstanding requests were being canceled at this point.
-            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || SQLiteNode::STANDINGDOWN)) {
+            if (command.initiatingPeerID && !(state == SQLiteNode::MASTERING || state == SQLiteNode::STANDINGDOWN)) {
                 SWARN("Found " << (command.complete ? "" : "in") << "complete " << "command "
                       << command.request.methodLine << " from peer, but not mastering. Too late for it, discarding.");
                 server._commandsInProgress--;
@@ -738,9 +743,6 @@ void BedrockServer::worker(SData& args,
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
 
-            // We check first, and allow this command to retry all three times, even if it becomes disallowed during
-            // iteration.
-            bool multiWriteOK = BedrockConflictMetrics::multiWriteOK(command.request.methodLine);
             while (retry) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
@@ -750,7 +752,7 @@ void BedrockServer::worker(SData& args,
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
                 bool peekResult = false;
-                if (!command.httpsRequest) {
+                if (!command.httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
@@ -759,7 +761,7 @@ void BedrockServer::worker(SData& args,
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of MASTERING/STANDINGDOWN
                     // until we're finished with this command.
-                    if (command.httpsRequest) {
+                    if (command.httpsRequests.size()) {
                         // This *should* be impossible, but previous bugs have existed where it's feasible that we call
                         // `peekCommand` while mastering, and by the time we're done, we're SLAVING, so we check just
                         // in case we ever introduce another similar bug.
@@ -774,20 +776,14 @@ void BedrockServer::worker(SData& args,
                         }
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
-                        if (!command.httpsRequest->response) {
+                        if (!command.areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
                             }
 
-                            // We're not handling a writable command anymore (at the moment). We need to make sure we
-                            // don't shut down without checking for outstanding HTTPS commands.
-                            lock_guard<mutex> lock(server._httpsCommandMutex);
-                            SINFO("[performance] Waiting on HTTPS response " << command.request.methodLine
-                                  << ", " << server._outstandingHTTPSRequests.size() << " queued HTTPS commands.");
-
-                            // Save this in our https commads queue.
-                            server._outstandingHTTPSRequests.emplace(make_pair(command.httpsRequest, move(command)));
+                            // We'll save this command until any HTTPS requests finish.
+                            server.waitForHTTPS(move(command));
 
                             // Move on to the next command until this one finishes.
                             break;
@@ -805,7 +801,6 @@ void BedrockServer::worker(SData& args,
 
                     // We need to have multi-write enabled, the command needs to not be explicitly blacklisted, and it
                     // needs to not be automatically blacklisted.
-                    canWriteParallel = canWriteParallel && multiWriteOK;
                     if (!canWriteParallel                 ||
                         server._suppressMultiWrite.load() ||
                         state != SQLiteNode::MASTERING    ||
@@ -816,7 +811,7 @@ void BedrockServer::worker(SData& args,
                         core.rollback();
 
                         // We're not handling a writable command anymore.
-                        SINFO("[performance] Sending non-parallel command " << command.request.methodLine
+                        SINFO("Sending non-parallel command " << command.request.methodLine
                               << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
                               << " queued commands.");
                         syncNodeQueuedCommands.push(move(command));
@@ -868,7 +863,6 @@ void BedrockServer::worker(SData& args,
                                 }
                             }
                             if (commitSuccess) {
-                                BedrockConflictMetrics::recordSuccess(command.request.methodLine);
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
@@ -902,8 +896,7 @@ void BedrockServer::worker(SData& args,
 
             // We ran out of retries without finishing! We give it to the sync thread.
             if (!retry) {
-                BedrockConflictMetrics::recordConflict(command.request.methodLine);
-                SINFO("[performance] Max retries hit in worker, forwarding command " << command.request.methodLine
+                SINFO("Max retries hit in worker, forwarding command " << command.request.methodLine
                       << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
@@ -1009,7 +1002,7 @@ void BedrockServer::_resetServer() {
 }
 
 BedrockServer::BedrockServer(const SData& args)
-  : SQLiteServer(""), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+  : SQLiteServer(""), shutdownWhileDetached(false), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _commandPortClosures(1), _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true),
     _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false),
@@ -1120,6 +1113,9 @@ BedrockServer::~BedrockServer() {
 
 bool BedrockServer::shutdownComplete() {
     if (_detach) {
+        if (shutdownWhileDetached) {
+            return true;
+        }
         // We don't want main() to stop calling `poll` for us, we are listening on the control port.
         return false;
     }
@@ -1324,6 +1320,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
+                    // If there's no ID for this request, let's add one.
+                    _addRequestID(request);
                     SAUTOPREFIX(request["requestID"]);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
@@ -1653,7 +1651,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             // Both of these need to be in the correct state for multi-write to be enabled.
             bool multiWriteOn =  _multiWriteEnabled.load() && !_suppressMultiWrite;
             content["multiWriteEnabled"] = multiWriteOn ? "true" : "false";
-            content["multiWriteAutoBlacklist"] = BedrockConflictMetrics::getMultiWriteDeniedCommands();
             content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
         }
 
@@ -1716,9 +1713,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             for (auto& command : parallelCommands) {
                 _blacklistedParallelCommands.insert(command);
             }
-        }
-        if (request.isSet("autoBlacklistConflictFraction")) {
-            BedrockConflictMetrics::setFraction(SToFloat(request["autoBlacklistConflictFraction"]));
         }
 
         // Prepare the command to respond to the caller.
@@ -1792,19 +1786,11 @@ void BedrockServer::_control(BedrockCommand& command) {
         if (command.request.isSet("fullCheckpointPageMin")) {
             SQLite::fullCheckpointPageMin.store(command.request.calc("fullCheckpointPageMin"));
         }
-    } else if (SIEquals(command.request.methodLine, "SetConflictParams")) {
         if (command.request.isSet("MaxConflictRetries")) {
             int retries = command.request.calc("MaxConflictRetries");
             if (retries > 0 && retries <= 100) {
                 SINFO("Updating _maxConflictRetries to: " << retries);
                 _maxConflictRetries.store(retries);
-            }
-        }
-        if (command.request.isSet("AutoBlacklistConflictFraction")) {
-            float fraction = SToFloat(command.request["AutoBlacklistConflictFraction"]);
-            if (fraction > 0.001 && fraction <= 1.0) {
-                SINFO("Updating BedrockConflictMetrics::fraction to: " << fraction);
-                BedrockConflictMetrics::setFraction(fraction);
             }
         }
     }
@@ -1843,18 +1829,9 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
             }
 
-            // Move these back to the main queue to finish.
-            lock_guard<mutex> lock(_httpsCommandMutex);
-            for (auto request : completedHTTPSRequests) {
-                auto pairIt = _outstandingHTTPSRequests.find(request);
-                if (pairIt != _outstandingHTTPSRequests.end()) {
-                    _commandQueue.push(move(pairIt->second));
-                    _commandsInProgress--;
-                    _outstandingHTTPSRequests.erase(pairIt);
-                } else {
-                    SWARN("HTTPS request said it completed, but we can't find it.");
-                }
-            }
+            // Move any fully completed commands back to the main queue, and decrement the number of commands in
+            // progress to match.
+            _commandsInProgress.fetch_sub(finishWaitingForHTTPS(completedHTTPSRequests));
         }
     }
 }
@@ -1967,5 +1944,60 @@ void BedrockServer::_acceptSockets() {
             SASSERT(!s->data);
             s->data = plugin;
         }
+    }
+}
+
+void BedrockServer::waitForHTTPS(BedrockCommand&& command) {
+    lock_guard<mutex> lock(_httpsCommandMutex);
+
+    // Create a new BedrockCommand on the head via moving from our existing command. This is the one we'll store.
+    BedrockCommand* commandPtr = new BedrockCommand(move(command));
+
+    // And we keep it in a set of all commands with outstanding HTTPS requests.
+    _outstandingHTTPSCommands.insert(commandPtr);
+
+    // Insert each request pointing at the given object.
+    for (auto request : commandPtr->httpsRequests) {
+        _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+    }
+}
+
+int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests) {
+    lock_guard<mutex> lock(_httpsCommandMutex);
+    int commandsCompleted = 0;
+    for (auto transaction : completedHTTPSRequests) {
+        // We assume this is found, we should never be looking for a transaction in this list that isn't there.
+        auto transactionIt = _outstandingHTTPSRequests.find(transaction);
+        auto commandPtr = transactionIt->second;
+
+        // It's possible that we've already completed this command (imagine if completedHTTPSRequests contained more
+        // than one request for the same command, the first one we looked at will have finished the command), so if we
+        // can't find it in _outstandingHTTPSCommands, it must be done.
+        auto commandPtrIt = _outstandingHTTPSCommands.find(commandPtr);
+        if (commandPtrIt != _outstandingHTTPSCommands.end()) {
+            // I guess it's still here! Is it done?
+            if (commandPtr->areHttpsRequestsComplete()) {
+                // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
+                _commandQueue.push(move(*commandPtr));
+                _outstandingHTTPSCommands.erase(commandPtrIt);
+                delete commandPtr;
+                commandsCompleted++;
+            }
+        }
+        
+        // Now we can erase the transaction, as it's no longer outstanding.
+        _outstandingHTTPSRequests.erase(transactionIt);
+    }
+    return commandsCompleted;
+}
+
+void BedrockServer::_addRequestID(SData& request) {
+    if (!request.isSet("requestID")) {
+        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        string requestID;
+        for (int i = 0; i < 6; i++) {
+            requestID += chars[SRandom::rand64() % chars.size()];
+        }
+        request["requestID"] = requestID;
     }
 }

@@ -5,6 +5,25 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
+// Disable noop mode for the lifetime of this object.
+class scopedDisableNoopMode {
+  public:
+    scopedDisableNoopMode(SQLite& db) : _db(db) {
+        _wasNoop = db.getUpdateNoopMode();
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(false);
+        }
+    }
+    ~scopedDisableNoopMode() {
+        if (_wasNoop) {
+            _db.setUpdateNoopMode(true);
+        }
+    }
+  private:
+    SQLite& _db;
+    bool _wasNoop;
+};
+
 // ==========================================================================
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
@@ -27,7 +46,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID IS NOT NULL;"));
+    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
 
     SQResult nextIDResult;
@@ -43,6 +62,10 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     SData& response = command.response;
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
+
+    // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
+    command.request["crashID"] = to_string(SRandom::rand64());
+    command.crashIdentifyingValues.insert("crashID");
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
@@ -237,7 +260,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, retryAfter, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -249,6 +272,22 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                }
+
+                // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
+                // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
+                // any change made here will happen early enough for all of our existing checks to work correctly, and
+                // everything should be good when we get to `processCommand`.
+                STable parentData = SParseJSONObject(result[0][2]);
+                bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
+                bool childIsMocked = command.request.isSet("mockRequest");
+
+                if (parentIsMocked && !childIsMocked) {
+                    command.request["mockRequest"] = "true";
+                    SINFO("Setting child job to mocked to match parent.");
+                } else if (!parentIsMocked && childIsMocked) {
+                    command.request.erase("mockRequest");
+                    SINFO("Setting child job to non-mocked to match parent.");
                 }
             }
 
@@ -296,22 +335,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
-        if (!db.read("SELECT j.state, GROUP_CONCAT(jj.jobID), j.parentJobID "
+        if (!db.read("SELECT j.jobID, j.state, j.parentJobID, (SELECT COUNT(1) FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + ") children "
                      "FROM jobs j "
-                     "LEFT JOIN jobs jj ON jj.parentJobID = j.jobID "
-                     "WHERE j.jobID=" + SQ(jobID) + " "
-                     "GROUP BY j.jobID;",
+                     "WHERE j.jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
 
         // Verify the job exists
-        if (result.empty()) {
+        if (result.empty() || result[0][0].empty()) {
             STHROW("404 No job with this jobID");
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (!result[0][1].empty()) {
+        if (SToInt(result[0][3]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
@@ -321,13 +358,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Don't process the command if the job has finished or it's already running.
-        if (result[0][0] == "FINISHED" || result[0][0] == "RUNNING") {
+        if (result[0][1] == "FINISHED" || result[0][1] == "RUNNING") {
             SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
             return true; // Done
         }
 
         // Verify that we are not trying to cancel a PAUSED job.
-        if (result[0][0] == "PAUSED") {
+        if (result[0][1] == "PAUSED") {
             SALERT("Trying to cancel a job " << request["jobID"] << " that is PAUSED");
             return true; // Done
         }
@@ -341,6 +378,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
 // ==========================================================================
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
+    // Disable noop update mode for jobs.
+    scopedDisableNoopMode disable(db);
+
     // Pull out some helpful variables
     SData& request = command.request;
     SData& response = command.response;
@@ -500,7 +540,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state, parentJobID FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -509,6 +549,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                }
+
+                // Verify that the parent and child job have the same `mockRequest` setting.
+                STable parentData = SParseJSONObject(result[0][2]);
+                if (command.request.isSet("mockRequest") != (parentData.find("mockRequest") != parentData.end())) {
+                    STHROW("405 Parent and child jobs must have matching mockRequest setting");
                 }
 
                 // Prevent jobs from creating grandchildren
@@ -686,8 +732,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             // Add jobID to the respective list depending on if retryAfter is set
             if (result[c][4] != "") {
-                STable job;
-                job["jobID"] = result[c][0];
                 job["retryAfter"] = result[c][4];
                 retriableJobs.push_back(job);
             } else {
@@ -696,7 +740,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // Only non-retryable jobs can have children so see if this job has any
                 // FINISHED/CANCELLED child jobs, indicating it is being resumed
                 SQResult childJobs;
-                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
                     STHROW("502 Failed to select finished child jobs");
                 }
 
@@ -893,13 +937,26 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Delete any FINISHED/CANCELLED child jobs, but leave any PAUSED children alone (as those will signal that
         // we just want to re-PAUSE this job so those new children can run)
-        if (!db.writeIdempotent("DELETE FROM jobs WHERE parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
+        if (!db.writeIdempotent("DELETE FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " AND state IN ('FINISHED', 'CANCELLED');")) {
             STHROW("502 Failed deleting finished/cancelled child jobs");
         }
 
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
+            // See if the new data says it's mocked.
+            STable newData = SParseJSONObject(data);
+            bool newMocked = newData.find("mockRequest") != newData.end();
+
+            // If both sets of data don't match each other, this is an error, we don't know who to trust.
+            // We don't worry about the state of the request header for mockRequest here, as we expect that the Bedrock
+            // client won't always set it when finishing or retrying a job. We'll just use what's in the data.
+            if (mockRequest != newMocked) {
+                SWARN("Not updating mockRequest field of job data.");
+                STHROW("500 Mock Mismatch");
+            }
+
+            // Update the data to the new value.
             if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
@@ -916,7 +973,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Also un-pause any child jobs such that they can run
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
                           "WHERE state='PAUSED' "
-                            "AND parentJobID=" + SQ(jobID) + ";")) {
+                            "AND parentJobID != 0 AND parentJobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Child update failed");
             }
 
@@ -991,7 +1048,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
                 // At this point, all child jobs should already be deleted, but
                 // let's double check.
-                if (!db.read("SELECT 1 FROM jobs WHERE parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
+                if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
                     SWARN("Child jobs still exist when deleting parent job, ignoring.");
                 }
             }
@@ -1027,7 +1084,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& safeParentJobID = SQ(result[0][0]);
         if (!db.read("SELECT count(1) "
                      "FROM jobs "
-                     "WHERE parentJobID=" + safeParentJobID + " AND "
+                     "WHERE parentJobID != 0 AND parentJobID=" + safeParentJobID + " AND "
                        "state IN ('QUEUED', 'RUNQUEUED', 'RUNNING');",
                      result)) {
             STHROW("502 Select failed");
@@ -1198,7 +1255,7 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     SQResult result;
     if (!db.read("SELECT 1 "
                  "FROM jobs "
-                 "WHERE parentJobID = " + SQ(jobID) + " " +
+                 "WHERE parentJobID != 0 AND parentJobID = " + SQ(jobID) + " " +
                  " AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'PAUSED') "
                  "LIMIT 1;",
                  result)) {

@@ -200,7 +200,8 @@ struct GetJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "low";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow());
+        const uint64_t time = STimeNow();
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time);
         STable response = tester->executeWaitVerifyContentTable(command);
         list<string> jobList;
         jobList.push_back(response["jobID"]);
@@ -208,35 +209,35 @@ struct GetJobTest : tpunit::TestFixture {
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 1'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 1'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 2'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 2'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 5'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 5'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 4'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 4'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Low
         command["name"] = "low";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 3'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 3'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
@@ -408,7 +409,8 @@ struct GetJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "low_5";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        const uint64_t time = STimeNow();
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
         tester->executeWaitVerifyContent(command);
 
         // High
@@ -432,7 +434,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "high_2";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
         tester->executeWaitVerifyContent(command);
 
         // Medium
@@ -440,7 +442,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "medium_3";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
         tester->executeWaitVerifyContent(command);
 
         // Get the two jobs with retryAfter set to put them in a RUNQUEUED state
@@ -474,9 +476,9 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high_2");
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_3"); // Because we don't order by jobID, QUEUED jobs will always run before RUNQUEUED when priority and nextRun are the same
+        ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "medium_4");
+        ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "low_5");
     }
