@@ -8,7 +8,7 @@ These are the possible states a job can be in.
 
 * `QUEUED` - This job is waiting to start. This is the most typical case for a newly created job to be in.
 * `RUNNING` - This job has been given to a worker. Nominally, work is being done while this is set, but all we really know is that we've handed this job to a client and that client hasn't told us the job is done. This is the primary source of "stuck jobs" - the connection to the client breaks and it either never receives the job, or it never reports that it finished the job.
-* `RUNQUEUED` <- This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
+* `RUNQUEUED` - This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
 * `PAUSED` - This job is waiting for something else to happen, either a parent or child to finish running. This state is different from `QUEUED` only insofar as jobs wont move directly from `PAUSED` to `RUNNING` (i.e., `PAUSED` jobs can't be dequeued).
 * `FINISHED` - This job has completed (it will likely be deleted shortly).
 * `CANCELLED` - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`. Note: `CANCELLED` has two `L`s, not one.
@@ -17,14 +17,12 @@ These are the possible states a job can be in.
 
 A job is allowed to create "children" which can be any number of other jobs. These need to complete before the original "parent" job will be considered finished. When a job is created, if it it has a parent, and that parent is `RUNNING`, the newly created child job will be `PAUSED`. Otherwise, the newly created child job will be `QUEUED`. Child jobs can only be created for parents that are `RUNNING` or `PAUSED`. When we call `FinishJob` on a parent job with pending children, the parent will be set to `PAUSED`, and the children will all be set to `QUEUED`. You notice that we just said that a `RUNNING` parent creates `PAUSED` children, but we're allowed to create children while the parent is `PAUSED` as well. This allows children to create other children (i.e., sibling jobs) on behalf of their parent. When we call `FinishJob` on the *last* pending child of a parentJob, we reset the parent's state to `QUEUED`, so that it will run again (does this mean that parent jobs are inherently recurring? It seems so.) The `PAUSED` state exists primarily to prevent jobs from being dequeued (which make happen if they were `QUEUED`) until all their co-requisite jobs are ready to run. This state may have been more clearly named `WAITING`.
 
-## RetyAfter - Assuming jobs are going to fail without finishing?
+## RetyAfter - Assuming Lost Jobs Never Ran
 Original PR is here for dissection: https://github.com/Expensify/Bedrock/issues/111
 Followup is here: https://github.com/Expensify/Bedrock/pull/243
 
-The use case for this seems to be, "We think we started this running? Probably? But who the hell knows, let's just run
-it again if nobody finishes it after a while."
-
-Proposal for the future - either all jobs work this way or none do.
+The `retryAfter` flag is essentially a timeout on jobs, where if a caller dequeues a job and does not report it
+finished before the `retryAfter` time, we will assume it never ran and allow it to be dequeued again.
 
 ## IDEA:
 Fix stuck jobs with timeouts. This change does everything that RetryAfter does, but better, and in a more intuitive
