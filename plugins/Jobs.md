@@ -1,17 +1,17 @@
 # Bedrock::Jobs -- Rock solid job queuing
 Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that manages a scheduled job queue.
 
-## Overview - How Does It work?
 
-### Job State and the Lifecycle of a Job.
-What's QUEUED/RUNNING/FINISHED/etc? Which commands cause what to happen?
-states are:
-QUEUED
-RUNQUEUED <- This is `RUNNING` for jobs with `RetryAfter` set for them. These will have their `nextRun` set when dequeued.
-RUNNING
-PAUSED
-FINISHED
-CANCELLED 
+## Job State and the Lifecycle of a Job.
+
+These are the possible states a job can be in.
+
+* QUEUED - This job is waiting to start. This is the most typical case for a newly created job to be in.
+* RUNNING - This job has been given to a worker. Nominally, work is being done while this is set, but all we really know is that we've handed this job to a client and that client hasn't told us the job is done. This is the primary source of "stuck jobs" - the connection to the client breaks and it either never receives the job, or it never reports that it finished the job.
+* RUNQUEUED <- This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
+* PAUSED - This job is waiting for something else to happen, either a parent or child to finish running. This state is different from `QUEUED` only insofar as jobs wont move directly from `PAUSED` to `RUNNING` (i.e., `PAUSED` jobs can't be dequeued).
+* FINISHED - This job has completed (it will likely be deleted shortly).
+* CANCELLED - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`.
 
 ## The Relationship Between Parent and Child Jobs
 
@@ -26,9 +26,28 @@ it again if nobody finishes it after a while."
 
 Proposal for the future - either all jobs work this way or none do.
 
+## IDEA:
+Fix stuck jobs with timeouts. This change does everything that RetryAfter does, but better, and in a more intuitive
+way. Add two columns to the DB - timeout, which is a duration, and expires, which is a timestamp. When we create a job,
+we can set a timeout, like we do for bedrock commands. When we mark a job as running, we set it's `expires` field to
+the current timestamp plus the timeout.
+
+This way, we can periodically "reset" all the jobs that have run past their timeout without being finished, so they can
+be run again.
+
+FLAW: This fixes the "stuck jobs" issue, because we can't drop jobs on the way out of Bedrock so that the caller never
+receives them, but instead it replaces it with an issue where we can assign a job twice, and have it run twice, since
+the opposite may happen - the client may finish processing the job, but then fail to report to bedrock that it was
+finished, allowing bedrock to hit the timeout and try again.
+
+Whether dropping a job or repeating it is better is largely up to the job. It may be better to let bedrock err on the
+side of repeating jobs, and them let each job worker decide if it can idempotently handle repeated requests.
+
+More thought is needed.
+
 # Jobs - Callable Commands
 
-## `CreateJob` / `CreateJobs`
+## `CreateJob`/`CreateJobs`
 
 These commands will create zero or more new jobs, depending on their arguments.
 The format for `CreateJobs` is a HTTP-like set of header name/value pairs with the parameters for a single job.
@@ -45,7 +64,7 @@ object.
 * `data` (optional) - Any arbitrary JSON blob that contains parameters needed to run this particular job.
 * `firstRun` (optional) - The time/date on which to run this job the first time, in "YYYY-MM-DD [HH:MM:SS]" format. Defaults to the current time.
 * `repeat` (optional) - Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
-* `retryAfter` (optional) - RetryAfter uses the same SQLite datetime modifiers as mentioned in `repeat`. This effectively is a timeout for how long we wait until we assume a job was lost. *Note:* `retryAfter` cannot be combined with `repeat` or `unique`.
+* `retryAfter` (optional) - RetryAfter uses the same SQLite datetime modifiers as mentioned in `repeat`. This effectively is a timeout for how long we wait until we assume a job was lost. *Note:* `retryAfter` cannot be combined with `repeat` or `unique`. I think there's also some restriction on how it can be used in parent/child jobs.
    
 ### Return Value
 
