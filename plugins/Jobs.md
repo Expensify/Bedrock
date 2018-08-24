@@ -11,6 +11,7 @@ These are the possible states a job can be in.
 * `RUNQUEUED` - This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
 * `PAUSED` - This job is waiting for something else to happen, either a parent or child to finish running. This state is different from `QUEUED` only insofar as jobs wont move directly from `PAUSED` to `RUNNING` (i.e., `PAUSED` jobs can't be dequeued).
 * `FINISHED` - This job has completed (it will likely be deleted shortly).
+* `FAILED` - Functionally like `FINISHED`, but won't be automatically deleted. 
 * `CANCELLED` - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`. Note: `CANCELLED` has two `L`s, not one.
 
 ## The Relationship Between Parent and Child Jobs
@@ -68,17 +69,14 @@ object.
 
 `CreateJob` returns a header named `jobID` containing the `jobID` for the newly created job, or existing job if this was a `unique` job that already existed. `CreateJobs` returns a list named `jobIDs` as a JSON array, with each entry corresponding to one of the jobs created, with the same caveat above about existing `jobID`s for `unique` jobs.
 
-
-
 #########################################################################
-
 
  * **GetJob/GetJobs( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
 
- * **CancelJob
+ * **CancelJob**
 
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
@@ -94,9 +92,9 @@ object.
  * **DeleteJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to delete
 
- * ** FailJob
+ * **FailJob**
 
- * **RetryJob( jobID )** - Removes all trace of a job.
+ * **RetryJob( jobID )** - Removes all trace of a job. <-- That seems like a copy/paste error.
    * *jobID* - Identifier of the job to retry
    * *nextRun* - (optional) The time/date on which the job should be set to run again, in "YYYY-MM-DD [HH:MM:SS]" format. This is ignored if the job is set to repeat.
    * *delay* - (optional) Number of seconds to wait before retrying. This is ignored if the job is set to repeat or if "nextRun" is set.
