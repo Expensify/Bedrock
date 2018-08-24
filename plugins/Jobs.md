@@ -6,12 +6,12 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
 These are the possible states a job can be in.
 
-* QUEUED - This job is waiting to start. This is the most typical case for a newly created job to be in.
-* RUNNING - This job has been given to a worker. Nominally, work is being done while this is set, but all we really know is that we've handed this job to a client and that client hasn't told us the job is done. This is the primary source of "stuck jobs" - the connection to the client breaks and it either never receives the job, or it never reports that it finished the job.
-* RUNQUEUED <- This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
-* PAUSED - This job is waiting for something else to happen, either a parent or child to finish running. This state is different from `QUEUED` only insofar as jobs wont move directly from `PAUSED` to `RUNNING` (i.e., `PAUSED` jobs can't be dequeued).
-* FINISHED - This job has completed (it will likely be deleted shortly).
-* CANCELLED - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`.
+* `QUEUED` - This job is waiting to start. This is the most typical case for a newly created job to be in.
+* `RUNNING` - This job has been given to a worker. Nominally, work is being done while this is set, but all we really know is that we've handed this job to a client and that client hasn't told us the job is done. This is the primary source of "stuck jobs" - the connection to the client breaks and it either never receives the job, or it never reports that it finished the job.
+* `RUNQUEUED` <- This is `RUNNING` for jobs with `RetryAfter` set for them. The job is both `RUNNING` (a client dequeued it and hasn't said it finished), and `QUEUED`. If the client never reports back that the job has finished, it will be run again at the `nextRun` time. For these jobs, `nextRun` is set at dequeue time.
+* `PAUSED` - This job is waiting for something else to happen, either a parent or child to finish running. This state is different from `QUEUED` only insofar as jobs wont move directly from `PAUSED` to `RUNNING` (i.e., `PAUSED` jobs can't be dequeued).
+* `FINISHED` - This job has completed (it will likely be deleted shortly).
+* `CANCELLED` - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`. Note: `CANCELLED` has two `L`s, not one.
 
 ## The Relationship Between Parent and Child Jobs
 
