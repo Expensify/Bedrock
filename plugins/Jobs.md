@@ -1,10 +1,18 @@
 # Bedrock::Jobs -- Rock solid job queuing
 Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that manages a scheduled job queue.
 
+## What constitutes a Job? What does the `Jobs` plugin do with them?
 
-## Job State and the Lifecycle of a Job.
+Jobs are any task you might need to execute either right now, or scheduled at some point in the future, optionally in a
+repeating fashion. It's up to the caller to figure out what a Job should do and how to accomplish that. It's important
+to note that Bedrock::Jobs does not "run" Jobs. Bedrock::Jobs manages a queue of jobs. You can use anything you like as
+a "Job", so long as its parameters can be represented as a blob of JSON. You then schedule the job in Bedrock::Jobs,
+and later you ask for any Jobs that are scheduled to run right now. When you're finished with your job, you tell
+Bedrock::Jobs that it's complete. There's a "Sample Session" later in this doc that shows a basic lifecycle for this.
 
-These are the possible states a job can be in.
+## The Life Cycle of a Job -- Job States
+
+### These are the possible states a job can be in:
 
 * `QUEUED` - This job is waiting to start. This is the most typical case for a newly created job to be in.
 * `RUNNING` - This job has been given to a worker. Nominally, work is being done while this is set, but all we really know is that we've handed this job to a client and that client hasn't told us the job is done. This is the primary source of "stuck jobs" - the connection to the client breaks and it either never receives the job, or it never reports that it finished the job.
@@ -14,43 +22,35 @@ These are the possible states a job can be in.
 * `FAILED` - Functionally like `FINISHED`, but won't be automatically deleted. 
 * `CANCELLED` - This job was canceled without being run. This is effectively like `FINISHED` in terms of how jobs are handled, but is reported separately to a parent job when it occurs for a child job. Jobs can only be canceled if they have not yet changed to `RUNNING`. Note: `CANCELLED` has two `L`s, not one.
 
-## The Relationship Between Parent and Child Jobs
+The most typical life cycle of a job it to move from QUEUED to RUNNING to FINISHED, and then be deleted. The remaining
+states are described in the following sections.
+
+### Parent and Child Jobs
 
 A job is allowed to create "children" which can be any number of other jobs. These need to complete before the original "parent" job will be considered finished. When a job is created, if it it has a parent, and that parent is `RUNNING`, the newly created child job will be `PAUSED`. Otherwise, the newly created child job will be `QUEUED`. Child jobs can only be created for parents that are `RUNNING` or `PAUSED`. When we call `FinishJob` on a parent job with pending children, the parent will be set to `PAUSED`, and the children will all be set to `QUEUED`. You notice that we just said that a `RUNNING` parent creates `PAUSED` children, but we're allowed to create children while the parent is `PAUSED` as well. This allows children to create other children (i.e., sibling jobs) on behalf of their parent. When we call `FinishJob` on the *last* pending child of a parentJob, we reset the parent's state to `QUEUED`, so that it will run again (does this mean that parent jobs are inherently recurring? It seems so.) The `PAUSED` state exists primarily to prevent jobs from being dequeued (which make happen if they were `QUEUED`) until all their co-requisite jobs are ready to run. This state may have been more clearly named `WAITING`.
 
-## RetyAfter - Assuming Lost Jobs Never Ran
+### RetyAfter - Assuming Lost Jobs Never Ran
 Original PR is here for dissection: https://github.com/Expensify/Bedrock/issues/111
 Followup is here: https://github.com/Expensify/Bedrock/pull/243
 
-The `retryAfter` flag is essentially a timeout on jobs, where if a caller dequeues a job and does not report it
-finished before the `retryAfter` time, we will assume it never ran and allow it to be dequeued again.
+The `retryAfter` flag is essentially a timeout on jobs, where if a caller dequeues a job and does not report it finished before the `retryAfter` time, we will assume it never ran and allow it to be dequeued again.
 
-## IDEA:
-Fix stuck jobs with timeouts. This change does everything that RetryAfter does, but better, and in a more intuitive
-way. Add two columns to the DB - timeout, which is a duration, and expires, which is a timestamp. When we create a job,
-we can set a timeout, like we do for bedrock commands. When we mark a job as running, we set it's `expires` field to
-the current timestamp plus the timeout.
+### IDEA:
+Fix stuck jobs with timeouts. This change does everything that RetryAfter does, but better, and in a more intuitive way. Add two columns to the DB - timeout, which is a duration, and expires, which is a timestamp. When we create a job, we can set a timeout, like we do for bedrock commands. When we mark a job as running, we set it's `expires` field to the current timestamp plus the timeout.
 
-This way, we can periodically "reset" all the jobs that have run past their timeout without being finished, so they can
-be run again.
+This way, we can periodically "reset" all the jobs that have run past their timeout without being finished, so they can be run again.
 
-FLAW: This fixes the "stuck jobs" issue, because we can't drop jobs on the way out of Bedrock so that the caller never
-receives them, but instead it replaces it with an issue where we can assign a job twice, and have it run twice, since
-the opposite may happen - the client may finish processing the job, but then fail to report to bedrock that it was
-finished, allowing bedrock to hit the timeout and try again.
+FLAW: This fixes the "stuck jobs" issue, because we can't drop jobs on the way out of Bedrock so that the caller never receives them, but instead it replaces it with an issue where we can assign a job twice, and have it run twice, since the opposite may happen - the client may finish processing the job, but then fail to report to bedrock that it was finished, allowing bedrock to hit the timeout and try again.
 
-Whether dropping a job or repeating it is better is largely up to the job. It may be better to let bedrock err on the
-side of repeating jobs, and them let each job worker decide if it can idempotently handle repeated requests.
+Whether dropping a job or repeating it is better is largely up to the job. It may be better to let bedrock err on the side of repeating jobs, and them let each job worker decide if it can idempotently handle repeated requests.
 
 More thought is needed.
 
-# Jobs - Callable Commands
+# Bedrock::Jobs Commands
 
 ## `CreateJob`/`CreateJobs`
 
-These commands will create zero or more new jobs, depending on their arguments.
-The format for `CreateJobs` is a HTTP-like set of header name/value pairs with the parameters for a single job.
-The format for a `CreateJobs` command is a single header named `jobs` containing a JSON array of jobs, each as a JSON
+These commands will create zero or more new jobs, depending on their arguments.  The format for `CreateJobs` is a HTTP-like set of header name/value pairs with the parameters for a single job.  The format for a `CreateJobs` command is a single header named `jobs` containing a JSON array of jobs, each as a JSON
 object.
 
 ### Parameters for Creating Jobs
