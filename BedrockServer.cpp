@@ -991,7 +991,7 @@ void BedrockServer::_resetServer() {
     _upgradeInProgress = false;
     _suppressCommandPort = false;
     _suppressCommandPortManualOverride = false;
-    _commandPortClosures = 1;
+    _commandPortClosures = 0;
     _syncThreadComplete = false;
     _syncNode = nullptr;
     _suppressMultiWrite = true;
@@ -1004,7 +1004,7 @@ void BedrockServer::_resetServer() {
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), shutdownWhileDetached(false), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _commandPortClosures(1), _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true),
+    _commandPortClosures(0), _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true),
     _shutdownState(RUNNING), _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false),
     _detach(args.isSet("-bootstrap")), _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
 {
@@ -1191,7 +1191,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // Open the port if we don't have one and we've had as many opens as we have closures.
         if (!_commandPort) {
             SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
-            suppressCommandPort("ready to process commands", false);
+            _commandPort = openPort(_args["-serverHost"]);
         }
         if (!_controlPort) {
             SINFO("Opening control port on '" << _args["-controlPort"] << "'");
@@ -1522,10 +1522,10 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
     _suppressCommandPort = suppress;
     int closures;
     if (suppress) {
-        // Close the command port, and all plugin's ports. Won't reopen.
-        SHMMM("Suppressing command port");
         closures = _commandPortClosures.fetch_add(1);
         if (!portList.empty() && !closures) {
+            // Close the command port, and all plugin's ports. Won't reopen.
+            SHMMM("Suppressing command port");
             closePorts({_controlPort});
             _portPluginMap.clear();
             _commandPort = nullptr;
@@ -1539,7 +1539,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
             _commandPort = openPort(_args["-serverHost"]);
         } else if (closures <= 0) {
             SWARN("Trying to decrement command port closures past 0, incrementing it back.");
-            closures = _commandPortClosures.fetch_add(1);
+            _commandPortClosures.fetch_add(1);
         }
 
     }
@@ -1754,7 +1754,7 @@ void BedrockServer::_control(BedrockCommand& command) {
     } else if (SIEquals(command.request.methodLine, "ClearCommandPort")) {
         suppressCommandPort("ClearCommandPort", false, true);
         int closures = _commandPortClosures.load();
-        if (closures > 1) {
+        if (closures >= 1) {
             response.methodLine = "201 Not opening port, " + to_string(closures) + " closures reamining";
         }
     } else if (SIEquals(command.request.methodLine, "ClearCrashCommands")) {
@@ -1984,7 +1984,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
                 commandsCompleted++;
             }
         }
-        
+
         // Now we can erase the transaction, as it's no longer outstanding.
         _outstandingHTTPSRequests.erase(transactionIt);
     }
