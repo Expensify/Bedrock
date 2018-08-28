@@ -505,6 +505,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
+            // Record whether or not this job is scheduling itself in the future. If so, it's not suitable for
+            // immediate scheduling and won't benefit from disk-access-free assignment to waiting workers.
+            if ((!SContains(job, "repeat") || job["repeat"].empty()) && (!SContains(job, "firstRun") && job["firstRun"].empty())) {
+                SINFO("Job has no run time, can be scheduled immediately.");
+            } else {
+                SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
+            }
+
             // If no "firstRun" was provided, use right now
             const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
 
