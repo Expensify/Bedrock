@@ -28,6 +28,36 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
+uint64_t BedrockCore::_getTimeout(const SData& request) {
+    uint64_t timeout = request.isSet("timeout") ? request.calc("timeout") : DEFAULT_TIMEOUT;
+
+    if (timeout > 2'000'000) {
+        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
+        SWARN("[TYLER] old-style timeout found for command: " << request.methodLine);
+        timeout /= 1000;
+    }
+
+    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
+    // starts executing.
+    try {
+        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
+
+        // If this is negative, we're *already* past the timeout, just return early.
+        if (adjustedTimeout <= 0) {
+            STHROW("555 Timeout peeking command");
+        } else {
+            // Otherwise, we can return.
+            return adjustedTimeout;
+        }
+    } catch (const invalid_argument& e) {
+        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    } catch (const out_of_range& e) {
+        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    }
+
+    // This only happens if we hit the catch blocks above.
+    return timeout;
+}
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
@@ -36,32 +66,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
     command.peekCount++;
-    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
-
-    if (timeout > 2'000'000) {
-        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
-        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
-        timeout /= 1000;
-    }
-
-    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
-    // starts executing.
-    try {
-        usleep(1000 * 10);
-        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
-
-        // If this is negative, we're *already* past the timeout, just return early.
-        if (adjustedTimeout <= 0) {
-            STHROW("555 Timeout peeking command");
-        } else {
-            // Otherwise, we adjust our timeout accordingly.
-            timeout = adjustedTimeout;
-        }
-    } catch (const invalid_argument& e) {
-        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    } catch (const out_of_range& e) {
-        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    }
+    uint64_t timeout = _getTimeout(request);
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
@@ -163,32 +168,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     STable& content = command.jsonContent;
     SDEBUG("Processing '" << request.methodLine << "'");
     command.processCount++;
-    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
-
-    if (timeout > 2'000'000) {
-        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
-        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
-        timeout /= 1000;
-    }
-
-    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
-    // starts executing.
-    try {
-        usleep(1000 * 10);
-        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
-
-        // If this is negative, we're *already* past the timeout, just return early.
-        if (adjustedTimeout <= 0) {
-            STHROW("555 Timeout peeking command");
-        } else {
-            // Otherwise, we adjust our timeout accordingly.
-            timeout = adjustedTimeout;
-        }
-    } catch (const invalid_argument& e) {
-        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    } catch (const out_of_range& e) {
-        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    }
+    uint64_t timeout = _getTimeout(request);
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;

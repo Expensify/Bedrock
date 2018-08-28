@@ -46,6 +46,7 @@ class BedrockCore : public SQLiteCore {
   private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
     string _getExceptionName();
+    uint64_t _getTimeout(const SData& request);
     void _handleCommandException(BedrockCommand& command, const SException& e);
     const BedrockServer& _server;
 };
