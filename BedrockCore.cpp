@@ -44,6 +44,25 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         timeout /= 1000;
     }
 
+    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
+    // starts executing.
+    try {
+        usleep(1000 * 10);
+        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
+
+        // If this is negative, we're *already* past the timeout, just return early.
+        if (adjustedTimeout <= 0) {
+            STHROW("555 Timeout peeking command");
+        } else {
+            // Otherwise, we adjust our timeout accordingly.
+            timeout = adjustedTimeout;
+        }
+    } catch (const invalid_argument& e) {
+        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    } catch (const out_of_range& e) {
+        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    }
+
     // We catch any exception and handle in `_handleCommandException`.
     try {
         _db.startTiming(timeout * 1000);
@@ -150,6 +169,25 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
         SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
         timeout /= 1000;
+    }
+
+    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
+    // starts executing.
+    try {
+        usleep(1000 * 10);
+        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
+
+        // If this is negative, we're *already* past the timeout, just return early.
+        if (adjustedTimeout <= 0) {
+            STHROW("555 Timeout peeking command");
+        } else {
+            // Otherwise, we adjust our timeout accordingly.
+            timeout = adjustedTimeout;
+        }
+    } catch (const invalid_argument& e) {
+        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    } catch (const out_of_range& e) {
+        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
     }
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
