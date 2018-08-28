@@ -60,12 +60,16 @@ struct MasteringTest : tpunit::TestFixture {
         int count = 0;
         bool success = false;
         while (count++ < 50) {
-            SData cmd("Status");
-            string response = newMaster->executeWaitVerifyContent(cmd);
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
+            try {
+                SData cmd("Status");
+                string response = newMaster->executeWaitVerifyContent(cmd);
+                STable json = SParseJSONObject(response);
+                if (json["state"] == "MASTERING") {
+                    success = true;
+                    break;
+                }
+            } catch (const SException& e) {
+                    // just try again
             }
 
             // Give it another second...
@@ -116,8 +120,8 @@ struct MasteringTest : tpunit::TestFixture {
             STable json1 = SParseJSONObject(responses[1]);
             STable json2 = SParseJSONObject(responses[2]);
 
-            if (json0["state"] == "MASTERING" && 
-                json1["state"] == "SLAVING" && 
+            if (json0["state"] == "MASTERING" &&
+                json1["state"] == "SLAVING" &&
                 json2["state"] == "SLAVING") {
 
                 break;
