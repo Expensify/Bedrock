@@ -262,7 +262,6 @@ class BedrockServer : public SQLiteServer {
     // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
-    atomic<int> _commandPortClosures;
 
     // Controls whether or not you can call openPort on the command port.
     static recursive_mutex _commandPortMutex;
