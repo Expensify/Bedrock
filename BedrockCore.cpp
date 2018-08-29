@@ -31,12 +31,6 @@ class AutoScopeRewrite {
 uint64_t BedrockCore::_getTimeout(const SData& request) {
     uint64_t timeout = request.isSet("timeout") ? request.calc("timeout") : DEFAULT_TIMEOUT;
 
-    if (timeout > 2'000'000) {
-        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
-        SWARN("[TYLER] old-style timeout found for command: " << request.methodLine);
-        timeout /= 1000;
-    }
-
     // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
     // starts executing.
     try {
@@ -44,7 +38,7 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
 
         // If this is negative, we're *already* past the timeout, just return early.
         if (adjustedTimeout <= 0) {
-            STHROW("555 Timeout peeking command");
+            STHROW("555 Timeout");
         } else {
             // Otherwise, we can return.
             return adjustedTimeout;
