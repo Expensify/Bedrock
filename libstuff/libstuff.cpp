@@ -1594,27 +1594,37 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         }
 
         // Open a socket
-        if (isTCP)
+        if (isTCP) {
             s = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        else
+        } else {
             s = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (!s || s == -1)
+        }
+
+        if (!s || s == -1) {
             STHROW("couldn't open");
+        }
 
         // Enable non-blocking, if requested
         if (!isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
-            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
+            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
                 STHROW("couldn't set non-blocking");
+            }
         }
 
         // If this is a port, bind
         if (isPort) {
-            // Enable port reuse (so we don't have TIME_WAIT binding issues) and
+            // Enable address reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
-            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable))) {
                 STHROW("couldn't set REUSEADDR");
+            }
+
+            // Enable port reuse so we don't have binding issues
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, (char*)&enable, sizeof(enable))) {
+                STHROW("couldn't set REUSEPORT");
+            }
 
             // Bind to the configured port
             sockaddr_in addr;
@@ -1622,13 +1632,14 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             addr.sin_family = AF_INET;
             addr.sin_port = htons(port);
             addr.sin_addr.s_addr = ip;
-            if (::bind(s, (sockaddr*)&addr, sizeof(addr))) {
+            if (bind(s, (sockaddr*)&addr, sizeof(addr))) {
                 STHROW("couldn't bind");
             }
 
             // Start listening, if TCP
-            if (isTCP && listen(s, SOMAXCONN))
+            if (isTCP && listen(s, SOMAXCONN)) {
                 STHROW("couldn't listen");
+            }
         } else {
             // If TCP, connect
             sockaddr_in addr;
@@ -1638,16 +1649,15 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             addr.sin_addr.s_addr = ip;
             if (connect(s, (sockaddr*)&addr, sizeof(addr)) == -1)
                 switch (S_errno) {
-                case S_EWOULDBLOCK:
-                case S_EALREADY:
-                case S_EINPROGRESS:
-                case S_EINTR:
-                case S_EISCONN:
-                    // Not fatal, ignore
-                    break;
-
-                default:
-                    STHROW("couldn't connect");
+                    case S_EWOULDBLOCK:
+                    case S_EALREADY:
+                    case S_EINPROGRESS:
+                    case S_EINTR:
+                    case S_EISCONN:
+                        // Not fatal, ignore
+                        break;
+                    default:
+                        STHROW("couldn't connect");
                 }
         }
 
@@ -1657,8 +1667,10 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // Failed to open
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
                                 << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
-        if (s > 0)
+        if (s > 0) {
             close(s);
+        }
+        
         return -1;
     }
 }
