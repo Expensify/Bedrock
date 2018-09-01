@@ -16,6 +16,7 @@ class SHTTPSManager : public STCPManager {
         int response;
         STable values;
         SHTTPSManager& owner;
+        bool isDelayedSend;
     };
 
     // Constructor/Destructor

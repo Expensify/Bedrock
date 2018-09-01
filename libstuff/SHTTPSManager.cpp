@@ -83,14 +83,20 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     STCPManager::postPoll(fdm);
 
     // Update each of the active requests
-    uint64_t now = STimeNow();
     uint64_t timeout = timeoutMS * 1000;
     list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
     while (nextIt != _activeTransactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
-        uint64_t elapsed = now - active->created;
+        uint64_t sentTime = 0;
+        if (active->isDelayedSend) {
+            // This transaction was created, queued, and then meant to be sent later.
+            // As such we'll use STimeNow() as it's "created" time for time.
+            sentTime = STimeNow();
+        }
+        uint64_t now = STimeNow();
+        uint64_t elapsed =  now - (sentTime ? sentTime : active->created);
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         if (size) {
             // Consume how much we read.
@@ -140,7 +146,8 @@ SHTTPSManager::Transaction::Transaction(SHTTPSManager& owner_) :
     created(STimeNow()),
     finished(0),
     response(0),
-    owner(owner_)
+    owner(owner_),
+    isDelayedSend(false)
 { }
 
 SHTTPSManager::Transaction::~Transaction() {
