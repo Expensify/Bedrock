@@ -89,11 +89,11 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
-        uint64_t sentTime = 0;
-        if (active->isDelayedSend) {
+        if (active->isDelayedSend && !sentTime) {
             // This transaction was created, queued, and then meant to be sent later.
             // As such we'll use STimeNow() as it's "created" time for time.
-            sentTime = STimeNow();
+            SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
+            active->sentTime = STimeNow();
         }
         uint64_t now = STimeNow();
         uint64_t elapsed =  now - (sentTime ? sentTime : active->created);
@@ -145,6 +145,7 @@ SHTTPSManager::Transaction::Transaction(SHTTPSManager& owner_) :
     s(nullptr),
     created(STimeNow()),
     finished(0),
+    sentTime(0),
     response(0),
     owner(owner_),
     isDelayedSend(false)

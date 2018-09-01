@@ -11,6 +11,7 @@ class SHTTPSManager : public STCPManager {
         STCPManager::Socket* s;
         uint64_t created;
         uint64_t finished;
+        uint64_t sentTime;
         SData fullRequest;
         SData fullResponse;
         int response;
