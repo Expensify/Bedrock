@@ -44,8 +44,17 @@ You can build from scratch as follows:
     cd Bedrock
     make
     
-    # Run it
-    ./bedrock -clean
+    # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
+    touch bedrock.db
+    
+    # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
+    ./bedrock
+    
+    # Connect to it in a different terminal using netcat
+    nc localhost 8888
+    
+    # Type "Status" and then enter twice to verify it's working
+    # See here to use the default DB plugin: http://bedrockdb.com/db.html
 
 Or you can install an older binary by copy/pasting this whole section into your terminal:
 
