@@ -1,6 +1,7 @@
 ---
 layout: default
 ---
+*Quick links: [Install](http://www.bedrockdb.com#how-to-get-it) | [Use](http://www.bedrockdb.com#how-to-use-it) | [Plugins](http://www.bedrockdb.com#plugins) | [Contact](http://www.bedrockdb.com##how-to-help-and-get-helped)*
 
 # Bedrock -- Rock-solid distributed data
 Bedrock is a simple, modular, WAN-replicated data foundation for global-scale applications.  Taking each of those in turn:
@@ -26,7 +27,7 @@ If you're building a website or other online service, you've got to use *somethi
 
 Bedrock is not only production ready, but actively used by Expensify's many thousands of customers, and millions of users.  (Curious why an expense reporting company built their own database?  Read what the [First Round Review](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) has to say about it.)
 
-## How to get it
+## [How to get it](#how-to-get-it)
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed with the commands below:
 
 ### Ubuntu Linux
@@ -75,7 +76,7 @@ Copy/paste this command into your terminal:
 
 This will tansparently download the latest version from GitHub, compile it, package it up, and install it.
 
-## How to use it
+## [How to use it](#how-to-use-it)
 Bedrock is so easy to use, you'll think you're missing something.  Once installed, Bedrock listens on `localhost` port 8888, and stores its database in `/var/lib/bedrock`.  The easiest way to talk with Bedrock is using `netcat` as follows:
 
     $ nc localhost 8888
@@ -133,7 +134,7 @@ That also means you can continue using whatever MySQL language binding you alrea
 
 It really can be that easy.
 
-## Bedrock plugins
+## (Bedrock plugins)[#plugins]
 Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procedures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command line parameter.  Current plugins include:
 
 * [Status](http://bedrockdb.com/status.html) - Provides basic status about the health the Bedrock cluster.
@@ -142,7 +143,7 @@ Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  B
 * [Cache](http://bedrockdb.com/cache.html) - Provides a simple replicated cache.
 * [MySQL](http://bedrockdb.com/mysql.html) - Emulates MySQL
 
-## How to help and get helped
+## (How to help and get helped)[#how-to-help-and-get-helped]
 So many ways!
 
 * Run `bedrock -?` on the command line to see all the available [command-line options](http://bedrockdb.com/cli.html)
