@@ -3,7 +3,7 @@ layout: default
 ---
 
 # Blockchain -- Bedrock's secret sauce (before it was cool)
-Though the blockchain hype has largely come and gone, it's worth pointing out that the key to Bedrock's [synchronization engine](http://bedrockdb.com/synchronization.html) is a distributed general ledger -- aka, a blockchain.  So it wouldn't be crazy to say that Bedrock is at is core, a blockchain-based database, built in 2007 (two years before Bitcoin came onto the scene).
+Though the blockchain hype has largely come and gone, it's worth pointing out that the key to Bedrock's [synchronization engine](http://bedrockdb.com/synchronization.html) is a distributed general ledger -- aka, a blockchain.  So it wouldn't be crazy to say that Bedrock is at is core, a blockchain-based database, built in 2007.  (And for those who are keeping score: that's two years before [Bitcoin](https://en.wikipedia.org/wiki/Bitcoin), the first generally recognized blockchain, came onto the scene.  But hey, who's counting.)
 
 ## Public vs Private Blockchains
 To be clear, Bedrock is not a "public" blockchain, like Bitcoin -- it is not designed to synchronize a series of records between thousands or millions of anonymous peers over the open internet.  Rather, Bedrock uses a "private" blockchain, meaning that a small cluster of servers (3-6) operating in a controlled environment connect to each other on an equal footing to synchronize a historical record of commits, and apply them in the same order.
