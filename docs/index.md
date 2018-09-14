@@ -1,7 +1,7 @@
 ---
 layout: default
 ---
-*Quick links: [Install](http://bedrockdb.com#how-to-get-it) | [Use](http://bedrockdb.com#how-to-use-it) | [Plugins](http://bedrockdb.com#bedrock-plugins) | [Contact](http://bedrockdb.com#how-to-help-and-get-helped) | [vs MySQL](http://bedrockdb.com/vs_mysql.html) | [Sync engine](http://bedrockdb.com/synchronization.html) | [Multizone](http://bedrockdb.com/multizone.html)*
+*Quick links: [Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](http://bedrockdb.com#how-to-get-it) | [Use](http://bedrockdb.com#how-to-use-it) | [Jobs](http://bedrockdb.com/jobs.html) | [Cache](http://bedrockdb.com/cache.html) | [Contact](http://bedrockdb.com#how-to-help-and-get-helped) | [vs MySQL](http://bedrockdb.com/vs_mysql.html) | [Sync engine](http://bedrockdb.com/synchronization.html) | [Multizone](http://bedrockdb.com/multizone.html)*
 
 # Bedrock -- Rock-solid distributed data
 Bedrock is a simple, modular, WAN-replicated data foundation for global-scale applications.  Taking each of those in turn:
