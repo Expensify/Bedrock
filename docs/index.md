@@ -1,7 +1,7 @@
 ---
 layout: default
 ---
-*Quick links: [Install](http://www.bedrockdb.com#how-to-get-it) | [Use](http://www.bedrockdb.com#how-to-use-it) | [Plugins](http://www.bedrockdb.com#bedrock-plugins) | [Contact](http://www.bedrockdb.com##how-to-help-and-get-helped)*
+*Quick links: [Install](http://bedrockdb.com#how-to-get-it) | [Use](http://bedrockdb.com#how-to-use-it) | [Plugins](http://bedrockdb.com#bedrock-plugins) | [Contact](http://bedrockdb.com#how-to-help-and-get-helped) | [vs MySQL](http://bedrockdb.com/vs_mysql.html) | [Sync engine](http://bedrockdb.com/synchronization.html) | [Multizone](http://bedrockdb.com/multizone.html)*
 
 # Bedrock -- Rock-solid distributed data
 Bedrock is a simple, modular, WAN-replicated data foundation for global-scale applications.  Taking each of those in turn:
