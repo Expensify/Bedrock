@@ -14,7 +14,7 @@ Under the hood it works like this:
 * There is a internal table named `journal`, that has three columns:
     * `id` - Simple monotonic index
     * `query` - The query to commit to the database
-    * `hash` - A SHA1 hash of this query of the most recent `hash`, combined with the new `query`
+    * `hash` - A SHA1 hash of `query`, combined with the previous `hash`
     
 * Every time a query is committed to the database, a new row is inserted into the journal.  This row records the query, and calculates the new incremental hash -- based on the last row in the database
 
