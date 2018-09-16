@@ -11,7 +11,7 @@ To be clear, Bedrock is not a "public" blockchain, like Bitcoin -- it is not des
 ## The Journal
 Under the hood it works like this:
 
-* There is a internal table named `journal`, that has three columns:
+* There is an internal table named `journal`, that has three columns:
     * `id` - Simple monotonic index
     * `query` - The query to commit to the database
     * `hash` - A SHA1 hash of `query`, combined with the previous `hash`
