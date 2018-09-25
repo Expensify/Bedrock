@@ -1,13 +1,15 @@
 ---
 layout: default
 ---
+*Links: [Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](http://bedrockdb.com#how-to-get-it) | [Use](http://bedrockdb.com#how-to-use-it) | [Jobs](http://bedrockdb.com/jobs.html) | [Cache](http://bedrockdb.com/cache.html) | [vs MySQL](http://bedrockdb.com/vs_mysql.html) | [Replication](http://bedrockdb.com/synchronization.html) | [Blockchain](http://bedrockdb.com/blockchain.html) | [Multizone](http://bedrockdb.com/multizone.html) | [Chat](https://gitter.im/Expensify-Bedrock/Lobby) | [Contact](http://bedrockdb.com#how-to-help-and-get-helped)*
 
 # Bedrock -- Rock-solid distributed data
-Bedrock is a simple, modular, WAN-replicated data foundation for global-scale applications.  Taking each of those in turn:
+Bedrock is a simple, modular, WAN-replicated, Blockchain-based data foundation for global-scale applications.  Taking each of those in turn:
 
 * **Bedrock is simple.** This means it exposes the fewest knobs necessary, with appropriate defaults at every layer.
 * **Bedrock is modular.**  This means its functionality is packaged into separate "plugins" that are decoupled and independently maintainable.
 * **Bedrock is WAN-replicated.**  This means it is designed to endure the myriad real-world problems that occur across slow, unreliable internet connections.
+* **Bedrock is Blockchain-based.** This means it uses a [private blockchain](http://bedrockdb.com/blockchain.html) to synchronize and self organize.
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
@@ -30,7 +32,33 @@ Bedrock is not only production ready, but actively used by Expensify's many thou
 Bedrock can be compiled from source using the [Expensify/Bedrock](https://github.com/Expensify/Bedrock) public repo, or installed with the commands below:
 
 ### Ubuntu Linux
-Copy/paste this whole section into your terminal:
+You can build from scratch as follows:
+
+    # Clone out this repo:
+    git clone https://github.com/Expensify/Bedrock.git
+    
+    # Install some dependencies
+    sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+    sudo apt-get update
+    sudo apt-get install gcc-6 g++-6 libpcre++-dev zlib1g-dev
+    
+    # Build it
+    cd Bedrock
+    make
+    
+    # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
+    touch bedrock.db
+    
+    # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
+    ./bedrock
+    
+    # Connect to it in a different terminal using netcat
+    nc localhost 8888
+    
+    # Type "Status" and then enter twice to verify it's working
+    # See here to use the default DB plugin: http://bedrockdb.com/db.html
+
+Or you can install an older binary by copy/pasting this whole section into your terminal:
 
     # Add the Bedrock repo to apt sources for your distro:
     sudo wget -O /etc/apt/sources.list.d/bedrock.list https://apt.bedrockdb.com/ubuntu/dists/$(lsb_release -cs)/bedrock.list
