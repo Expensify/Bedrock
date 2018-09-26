@@ -1,3 +1,4 @@
+#include <libstuff/libstuff.h>
 #include "SQLiteCommand.h"
 
 SQLiteCommand::SQLiteCommand(SData&& _request) : 
