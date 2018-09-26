@@ -223,7 +223,7 @@ void BedrockServer::sync(SData& args,
             // timeout, minus 5 seconds to allow to clean up afterward.
             int64_t timeAllowed = server._gracefulShutdownTimeout.alarmDuration.load() - server._gracefulShutdownTimeout.elapsed();
             timeAllowed -= 5'000'000;
-            server._syncNode->beginShutdown(max(timeAllowed, 1LL));
+            server._syncNode->beginShutdown(max(timeAllowed, (int64_t)1));
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
