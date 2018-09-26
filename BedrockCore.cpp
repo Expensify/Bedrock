@@ -1,3 +1,4 @@
+#include <libstuff/libstuff.h>
 #include "BedrockCore.h"
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
