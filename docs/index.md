@@ -77,6 +77,34 @@ Copy/paste this command into your terminal:
 
 This will tansparently download the latest version from GitHub, compile it, package it up, and install it.
 
+### MacOSX
+You can build from scratch as follows:
+
+    # Clone out this repo:
+    git clone https://github.com/Expensify/Bedrock.git
+    
+    # Install some dependencies with Brew (see: https://brew.sh/)
+    brew update
+    brew install gcc@6
+    brew install pcre
+    
+    # Build it
+    cd Bedrock
+    make
+    
+    # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
+    touch bedrock.db
+    
+    # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
+    ./bedrock
+    
+    # Connect to it in a different terminal using netcat
+    nc localhost 8888
+    
+    # Type "Status" and then enter twice to verify it's working
+    # See here to use the default DB plugin: http://bedrockdb.com/db.html
+
+
 ## How to use it
 Bedrock is so easy to use, you'll think you're missing something.  Once installed, Bedrock listens on `localhost` port 8888, and stores its database in `/var/lib/bedrock`.  The easiest way to talk with Bedrock is using `netcat` as follows:
 
