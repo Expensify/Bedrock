@@ -17,6 +17,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
                               TEST(CreateJobTest::retryRecurringJobs),
                               TEST(CreateJobTest::retryWithMalformedValue),
+                              TEST(CreateJobTest::retryUnique),
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
                               AFTER(CreateJobTest::tearDown),
@@ -277,6 +278,14 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "test";
         command["retryAfter"] = "10";
         tester->executeWaitVerifyContent(command, "402 Malformed retryAfter");
+    }
+
+    void retryUnique() {
+        SData command("CreateJob");
+        command["name"] = "test";
+        command["retryAfter"] = "+10 HOUR";
+        command["unique"] = "true";
+        tester->executeWaitVerifyContent(command, "200 OK");
     }
 
     void retryLifecycle() {
