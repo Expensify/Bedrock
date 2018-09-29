@@ -21,6 +21,21 @@ SHTTPSManager::~SHTTPSManager() {
     }
 }
 
+SHTTPSManager::Transaction* SHTTPSManager::get(const string& url, const STable& headers) {
+    // Construct the HTTP request based on the URL
+    SData request;
+    request.nameValueMap = headers;
+    string host, path;
+    if (!SParseURI(url, host, path)) {
+        return _createErrorTransaction();
+    }
+    request.methodLine = "GET " + path + " HTTP/1.1";
+    request.nameValueMap["Host"] = host;
+    return _httpsSend(url, request);
+
+    
+}
+
 void SHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction == nullptr) {
         return;
@@ -176,7 +191,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
         return _createErrorTransaction();
     }
     if (!SContains(host, ":")) {
-        host += ":443";
+        host += (SStartsWith(url, "https") ? ":443" : ":80");
     }
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.

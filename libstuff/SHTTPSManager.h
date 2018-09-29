@@ -34,7 +34,8 @@ class SHTTPSManager : public STCPManager {
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 
-    // Close a transaction and remove it from our internal lists.
+    // Open a "GET" transaction, or close it and remove it from our internal lists.
+    Transaction* get(const string& url, const STable& headers);
     void closeTransaction(Transaction* transaction);
 
     static int getHTTPResponseCode(const string& methodLine);
