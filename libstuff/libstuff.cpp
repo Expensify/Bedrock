@@ -954,28 +954,34 @@ bool SParseURIPath(const char* buffer, int length, string& path, STable& nameVal
     while (length > 0) {
         // Get the name
         string name;
-        while (length > 0 && *buffer != '=') {
+        while (length > 0 && (*buffer != '=' && *buffer != '&')) {
             // Consume some characters
             int consume = _SDecodeURIChar(buffer, length, name);
             length -= consume;
             buffer += consume;
         }
 
-        // Skip over the '='
-        --length;
-        ++buffer;
+        // Is this setting a value, or just asserting an attribute?
+        if (*buffer == '=') {
+            // Skip over the '='
+            --length;
+            ++buffer;
 
-        // Get the value
-        string value;
-        while (length > 0 && *buffer != '&') {
-            // Consume some characters
-            int consume = _SDecodeURIChar(buffer, length, value);
-            length -= consume;
-            buffer += consume;
+            // Get the value
+            string value;
+            while (length > 0 && *buffer != '&') {
+                // Consume some characters
+                int consume = _SDecodeURIChar(buffer, length, value);
+                length -= consume;
+                buffer += consume;
+            }
+
+            // Got the name/value, set
+            nameValueMap[name] = value;
+        } else {
+            // Just store the name with an empty value
+            nameValueMap[name] = "";
         }
-
-        // Got the name/value, set
-        nameValueMap[name] = value;
 
         // Skip over the '&'
         --length;
