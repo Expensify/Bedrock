@@ -249,11 +249,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 STHROW("402 Malformed retryAfter");
             }
 
-            // Throw if retryAfter was passed for unique job
-            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && SContains(job, "unique") && job["unique"] == "true") {
-                STHROW("405 Unique jobs can't be retried");
-            }
-
             // Validate that the parentJobID exists and is in the right state if one was passed.
             // Also verify that the parent job doesn't have a retryAfter set.
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;

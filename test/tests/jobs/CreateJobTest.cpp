@@ -285,7 +285,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "test";
         command["retryAfter"] = "+10 HOUR";
         command["unique"] = "true";
-        tester->executeWaitVerifyContent(command, "405 Unique jobs can't be retried");
+        tester->executeWaitVerifyContent(command, "200 OK");
     }
 
     void retryLifecycle() {
