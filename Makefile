@@ -45,7 +45,6 @@ testplugin:
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
 # Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
-UNAME_S := $(shell uname -s)
 PRECOMPILE_D =libstuff/libstuff.d
 PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
