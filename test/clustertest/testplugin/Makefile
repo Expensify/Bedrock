@@ -55,7 +55,7 @@ LIBRARIES =-lpcrecpp -lbedrock -lstuff -ldl -lpthread -lmbedtls -lmbedx509 -lmbe
 
 # The main library depends on all the .o files.
 testplugin.so: $(OBJ)
-	$(GXX) $(CXXFLAGS) -shared -o $@ $(OBJ) -L/usr/local/Cellar/pcre/8.42/lib -lpcrecpp -L../../../ -L../../../mbedtls/library -rdynamic $(LIBRARIES)
+	$(GXX) $(CXXFLAGS) -shared -o $@ $(OBJ) -lpcrecpp -L../../../ -L../../../mbedtls/library -rdynamic $(LIBRARIES)
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only
