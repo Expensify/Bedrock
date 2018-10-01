@@ -86,7 +86,16 @@ You can build from scratch as follows:
     # Install some dependencies with Brew (see: https://brew.sh/)
     brew update
     brew install gcc@6
-    brew install pcre
+    
+    # Configure PCRE to use C++17 and compile from source
+    brew uninstall --ignore-dependencies pcre
+    brew edit pcre
+    # Add these to the end of the `system "./configure"` command:
+    #     "--enable-cpp",
+    #     "--enable-pcre64",
+    #     "CXX=/usr/local/bin/g++-6",
+    #     "CXXFLAGS=--std=gnu++14"
+    brew install --build-from-source pcre
     
     # Build it
     cd Bedrock
