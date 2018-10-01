@@ -51,9 +51,15 @@ ifneq ($(MAKECMDGOALS),clean)
 -include $(DEP)
 endif
 
+# OSX needs to re-link the libraries for some reason
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+LIBRARIES = -L../../../ -L../../../mbedtls/library -rdynamic -lpcrecpp -lbedrock -lstuff -ldl -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+endif
+
 # The main library depends on all the .o files.
 testplugin.so: $(OBJ)
-	$(GXX) $(CXXFLAGS) -shared -o $@ $(OBJ)
+	$(GXX) $(CXXFLAGS) -shared -o $@ $(OBJ) $(LIBRARIES)
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only
