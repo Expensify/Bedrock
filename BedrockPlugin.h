@@ -21,10 +21,6 @@ class BedrockPlugin {
     static constexpr int64_t MAX_SIZE_BLOB = 1024 * 1024;
     static constexpr int64_t MAX_SIZE_SMALL = 255;
 
-    // We were using MAX_SIZE_SMALL in GetJob to check the job name, but now GetJobs accepts more than one job name,
-    // because of that, we need to increase the size of the param to be able to accept around 50 job names.
-    static constexpr int64_t MAX_SIZE_NAME = 255 * 50;
-
     // Utility functions for verifying expected input.
     static void verifyAttributeInt64(const SData& request, const string& name, size_t minSize);
     static void verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize);
