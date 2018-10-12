@@ -96,7 +96,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //     - 303 - Timeout
         //     - 404 - No jobs found
         //
-        verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+        verifyAttributeSize(request, "name", 1, MAX_SIZE_NAME);
         if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
             if (SIEquals(requestVerb, "GetJobs")) {
                 STHROW("402 Missing numResults");
