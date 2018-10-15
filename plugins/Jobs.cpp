@@ -1199,7 +1199,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Requeue a job for which a getJob(s) command could not complete.
     else if (SIEquals(requestVerb, "RequeueJobs")) {
         SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
-        list<string> jobIDs = SParseIntegerList(command.request["jobIDs"]);
+        list<int64_t> jobIDs = SParseIntegerList(command.request["jobIDs"]);
 
         SQResult result;
         string selectQuery = "SELECT jobID, retryAfter FROM jobs WHERE jobID IN(" + SQList(jobIDs)+ ");";
@@ -1211,10 +1211,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             string updateQuery;
             if (retryAfter) {
                 // Reset the nextRun time to now, we don't need to wait for the timeout.
-                updateQuery = "UPDATE jobs SET nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID = " + SQ(jobID) ";";
+                updateQuery = "UPDATE jobs SET nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID = " + SQ(jobID) + ";";
             } else {
                 // Just reset it to queued. We can't reset `lastRun` because we've lost the old value.
-                updateQuery = "UPDATE jobs SET state = 'QUEUED' WHERE jobID = " + SQ(jobID) ";";
+                updateQuery = "UPDATE jobs SET state = 'QUEUED' WHERE jobID = " + SQ(jobID) + ";";
             }
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 Update failed");
