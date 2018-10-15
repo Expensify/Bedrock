@@ -1,4 +1,5 @@
 #include "Jobs.h"
+#include "../BedrockServer.h"
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -1195,6 +1196,34 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         return true;
     }
 
+    // Requeue a job for which a getJob(s) command could not complete.
+    else if (SIEquals(requestVerb, "RequeueJobs")) {
+        SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
+        list<string> jobIDs = SParseIntegerList(command.request["jobIDs"]);
+
+        SQResult result;
+        string selectQuery = "SELECT jobID, retryAfter FROM jobs WHERE jobID IN(" + SQList(jobIDs)+ ");";
+        db.read(selectQuery, result);
+
+        for (auto& row : result.rows) {
+            int64_t jobID = stoll(row[0]);
+            bool retryAfter = !row[1].empty();
+            string updateQuery;
+            if (retryAfter) {
+                // Reset the nextRun time to now, we don't need to wait for the timeout.
+                updateQuery = "UPDATE jobs SET nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID = " + SQ(jobID) ";";
+            } else {
+                // Just reset it to queued. We can't reset `lastRun` because we've lost the old value.
+                updateQuery = "UPDATE jobs SET state = 'QUEUED' WHERE jobID = " + SQ(jobID) ";";
+            }
+            if (!db.writeIdempotent(updateQuery)) {
+                STHROW("502 Update failed");
+            }
+        }
+
+        return true;
+    }
+
     // Didn't recognize this command
     return false;
 }
@@ -1290,3 +1319,41 @@ bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
     // Matched all parts, valid syntax
     return true;
 }
+
+void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
+    if (SIEquals(command.request.methodLine, "GetJob") || SIEquals(command.request.methodLine, "GetJobs")) {
+
+        list<string> jobIDs;
+        if (SIEquals(command.request.methodLine, "GetJob")) {
+            STable jobJSON = SParseJSONObject(command.response.content);
+            if (jobJSON.find("jobID") != jobJSON.end()) {
+                jobIDs.push_back(jobJSON["jobID"]);
+            }
+        } else {
+            STable jobsJSON = SParseJSONObject(command.response.content);
+            list<string> jobs = SParseJSONArray(jobsJSON["jobs"]);
+            for (auto& job : jobs) {
+                STable jobJSON = SParseJSONObject(job);
+                if (jobJSON.find("jobID") != jobJSON.end()) {
+                    jobIDs.push_back(jobJSON["jobID"]);
+                }
+            }
+        }
+        SWARN("Failed sending response to '" << command.request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
+        if(_server) {
+            SData requeue("RequeueJobs");
+            requeue["jobIDs"] = SComposeList(jobIDs);
+
+            // Keep the request ID so we'll be able to associate these in the logs.
+            requeue["requestID"] = command.request["requestID"];
+            SQLiteCommand cmd(move(requeue));
+            cmd.initiatingClientID = -1;
+            _server->acceptCommand(move(cmd));
+        }
+    }
+}
+
+void BedrockPlugin_Jobs::initialize(const SData& args, BedrockServer& server) {
+    _server = &server;
+}
+

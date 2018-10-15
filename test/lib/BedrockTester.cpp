@@ -235,7 +235,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, bool disconnectImmediately) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -305,6 +305,11 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         if (!result) {
                             cout << "Failed to send! Probably disconnected." << endl;
                             break;
+                        }
+                        if (disconnectImmediately) {
+                            ::close(socket);
+                            socket = -1;
+                            return;
                         }
                     }
 

@@ -90,7 +90,9 @@ void BedrockPlugin_Cache::initialize(const SData& args, BedrockServer& server) {
 
     // Save this in a class constant, to enable us to access it safely in an
     // unsynchronized manner from other threads.
-    *((int64_t*)&_maxCacheSize) = maxCacheSize;
+    //*((int64_t*)&_maxCacheSize) = maxCacheSize;
+    int64_t* mutableMaxCacheSize = const_cast<int64_t*>(&_maxCacheSize);
+    *mutableMaxCacheSize = maxCacheSize;
 }
 
 #undef SLOGPREFIX

@@ -1802,6 +1802,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         case S_EINPROGRESS:
         case S_EWOULDBLOCK:
         case S_ESHUTDOWN:
+            SHMMM(logPrefix << "(" << peer << ") 333 failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
             return true; // Socket still alive
     }
 }

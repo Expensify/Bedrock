@@ -94,3 +94,7 @@ BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
     // Didn't find it.
     return nullptr;
 }
+
+void BedrockPlugin::handleFailedReply(const BedrockCommand& command) {
+    // Default implementation does nothing.
+}

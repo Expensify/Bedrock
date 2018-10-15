@@ -89,6 +89,10 @@ class BedrockPlugin {
 
     virtual bool preventAttach();
 
+    // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
+    // Note that it gets no reference to the DB, this happens after the transaction is already complete.
+    virtual void handleFailedReply(const BedrockCommand& command);
+
   public:
     // A global static list of all registered plugins.
     static list<BedrockPlugin*>* g_registeredPluginList;
