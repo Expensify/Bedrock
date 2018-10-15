@@ -234,7 +234,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
-            if (SContains(job, "data") && SParseJSONObject(job["data"]).empty()) {
+            if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
                 STHROW("402 Data is not a valid JSON Object");
             }
 
