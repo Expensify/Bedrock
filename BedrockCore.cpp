@@ -58,12 +58,13 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
-    command.peekCount++;
-    uint64_t timeout = _getTimeout(request);
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
+        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
+        uint64_t timeout = _getTimeout(request);
+        command.peekCount++;
+
         _db.startTiming(timeout * 1000);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
@@ -160,13 +161,14 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Processing '" << request.methodLine << "'");
-    command.processCount++;
-    uint64_t timeout = _getTimeout(request);
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
+        SDEBUG("Processing '" << request.methodLine << "'");
+        uint64_t timeout = _getTimeout(request);
+        command.processCount++;
+
         // Time in US.
         _db.startTiming(timeout * 1000);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
