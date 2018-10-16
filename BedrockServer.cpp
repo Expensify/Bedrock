@@ -1511,10 +1511,8 @@ void BedrockServer::_reply(BedrockCommand& command) {
     }
 
     // If we didn't actually send the response, let the plugin know about that.
-    if (!replySent) {
-        if (command.processedBy) {
-            command.processedBy->handleFailedReply(command);
-        }
+    if (!replySent && command.processedBy) {
+        command.processedBy->handleFailedReply(command);
     }
     _commandsInProgress--;
 }

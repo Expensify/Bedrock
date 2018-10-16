@@ -1339,7 +1339,7 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
                 }
             }
         }
-        SWARN("Failed sending response to '" << command.request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
+        SINFO("Failed sending response to '" << command.request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
         if(_server) {
             SData requeue("RequeueJobs");
             requeue["jobIDs"] = SComposeList(jobIDs);
@@ -1349,6 +1349,8 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
             SQLiteCommand cmd(move(requeue));
             cmd.initiatingClientID = -1;
             _server->acceptCommand(move(cmd));
+        } else {
+            SWARN("No server, can't re-queue jobs: " << SComposeList(jobIDs));
         }
     }
 }
