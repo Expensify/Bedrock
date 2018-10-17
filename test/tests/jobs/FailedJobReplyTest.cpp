@@ -72,7 +72,6 @@ struct FailedJobReplyTest : tpunit::TestFixture {
                     }
                     jobs.push_back(SComposeJSONObject(j));
                 }
-                STable body;
                 command["jobs"] = SComposeJSONArray(jobs);
                 string response = tester->executeWaitVerifyContent(command);
 

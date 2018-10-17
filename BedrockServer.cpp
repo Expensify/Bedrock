@@ -1464,10 +1464,6 @@ void BedrockServer::_reply(BedrockCommand& command) {
         return;
     }
 
-    // Keep track of whether we actually send a response for this command. Note: ideally this should also keep track of
-    // the case above where we return early due to a psuedo-client, but it wouldn't currently be used anywhere.
-    bool replySent = false;
-
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
@@ -1494,7 +1490,6 @@ void BedrockServer::_reply(BedrockCommand& command) {
         } else {
             // Otherwise we send the standard response.
             socketIt->second->send(command.response.serialize());
-            replySent = true;
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
@@ -1504,14 +1499,15 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // We only keep track of sockets with pending commands.
         _socketIDMap.erase(socketIt);
-    }
-    else if (!SIEquals(command.request["Connection"], "forget")) {
-        SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
-    }
+    } else {
+        if (!SIEquals(command.request["Connection"], "forget")) {
+            SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
+        }
 
-    // If we didn't actually send the response, let the plugin know about that.
-    if (!replySent && command.processedBy) {
-        command.processedBy->handleFailedReply(command);
+        // If the command was processed, tell the plugin we couldn't send the response.
+        if (command.processedBy) {
+            command.processedBy->handleFailedReply(command);
+        }
     }
     _commandsInProgress--;
 }
