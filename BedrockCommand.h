@@ -1,6 +1,8 @@
 #pragma once
 #include <sqlitecluster/SQLiteCommand.h>
 
+class BedrockPlugin;
+
 class BedrockCommand : public SQLiteCommand {
   public:
     enum Priority {
@@ -64,6 +66,10 @@ class BedrockCommand : public SQLiteCommand {
     // We track how many times we `peek` and `process` each command.
     int peekCount;
     int processCount;
+
+    // Keep track of who peeked and processed this command.
+    BedrockPlugin* peekedBy;
+    BedrockPlugin* processedBy;
 
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;

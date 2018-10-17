@@ -1499,9 +1499,15 @@ void BedrockServer::_reply(BedrockCommand& command) {
 
         // We only keep track of sockets with pending commands.
         _socketIDMap.erase(socketIt);
-    }
-    else if (!SIEquals(command.request["Connection"], "forget")) {
-        SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
+    } else {
+        if (!SIEquals(command.request["Connection"], "forget")) {
+            SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
+        }
+
+        // If the command was processed, tell the plugin we couldn't send the response.
+        if (command.processedBy) {
+            command.processedBy->handleFailedReply(command);
+        }
     }
     _commandsInProgress--;
 }
