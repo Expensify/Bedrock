@@ -1493,9 +1493,8 @@ void BedrockServer::_reply(BedrockCommand& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            if (socketIt->second->send(command.response.serialize())) {
-                replySent = true;
-            }
+            socketIt->second->send(command.response.serialize());
+            replySent = true;
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
