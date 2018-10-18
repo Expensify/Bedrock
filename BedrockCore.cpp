@@ -29,43 +29,24 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getTimeout(const SData& request) {
-    uint64_t timeout = request.isSet("timeout") ? request.calc("timeout") : DEFAULT_TIMEOUT;
-
-    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
-    // starts executing.
-    try {
-        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
-
-        // If this is negative, we're *already* past the timeout, just return early.
-        if (adjustedTimeout <= 0) {
-            STHROW("555 Timeout");
-        } else {
-            // Otherwise, we can return.
-            return adjustedTimeout;
-        }
-    } catch (const invalid_argument& e) {
-        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    } catch (const out_of_range& e) {
-        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    }
-
-    // This only happens if we hit the catch blocks above.
-    return timeout;
-}
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
+    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
+    command.peekCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
+
+    if (timeout > 2'000'000) {
+        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
+        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
+        timeout /= 1000;
+    }
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
-        uint64_t timeout = _getTimeout(request);
-        command.peekCount++;
-
         _db.startTiming(timeout * 1000);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
@@ -163,14 +144,19 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
+    SDEBUG("Processing '" << request.methodLine << "'");
+    command.processCount++;
+    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
+
+    if (timeout > 2'000'000) {
+        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
+        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
+        timeout /= 1000;
+    }
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
-        SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getTimeout(request);
-        command.processCount++;
-
         // Time in US.
         _db.startTiming(timeout * 1000);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
