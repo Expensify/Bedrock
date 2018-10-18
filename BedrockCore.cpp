@@ -39,6 +39,7 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
 
         // If this is negative, we're *already* past the timeout, just return early.
         if (adjustedTimeout <= 0) {
+            SALERT("Command " << request.methodLine << " timed out after " << (timeout - adjustedTimeout) << "ms.");
             STHROW("555 Timeout");
         } else {
             // Otherwise, we can return.
