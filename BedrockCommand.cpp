@@ -6,8 +6,6 @@ BedrockCommand::BedrockCommand() :
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0)
 { }
@@ -23,8 +21,6 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0)
 {
@@ -37,8 +33,6 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     priority(from.priority),
     peekCount(from.peekCount),
     processCount(from.processCount),
-    peekedBy(from.peekedBy),
-    processedBy(from.processedBy),
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(move(from.crashIdentifyingValues)),
@@ -55,8 +49,6 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0)
 {
@@ -68,8 +60,6 @@ BedrockCommand::BedrockCommand(SData _request) :
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0)
 {
@@ -92,8 +82,6 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         // Update our other properties.
         peekCount = from.peekCount;
         processCount = from.processCount;
-        peekedBy = from.peekedBy;
-        processedBy = from.processedBy;
         priority = from.priority;
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;

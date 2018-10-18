@@ -90,7 +90,6 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 // Try to peek the command.
                 if (plugin->peekCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                    command.peekedBy = plugin;
                     pluginPeeked = true;
                     break;
                 }
@@ -194,7 +193,6 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
                 if (plugin->processCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
-                    command.processedBy = plugin;
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {
