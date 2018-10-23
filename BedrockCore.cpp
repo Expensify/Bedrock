@@ -30,7 +30,17 @@ class AutoScopeRewrite {
 };
 
 uint64_t BedrockCore::_getTimeout(const SData& request) {
-    uint64_t timeout = request.isSet("timeout") ? request.calc("timeout") : DEFAULT_TIMEOUT;
+
+    // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
+    uint64_t timeout =  DEFAULT_TIMEOUT;
+    if (request.isSet("timeout")) {
+        timeout = request.calc("timeout");
+    } else if (SIEquals(request["connection"], "forget")) {
+        timeout = DEFAULT_TIMEOUT_FORGET;
+    }
+
+    // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
+    int64_t processTimeout = request.isSet("processTimeout") ? request.calc("processTimeout") : DEFAULT_PROCESS_TIMEOUT;
 
     // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
     // starts executing.
@@ -38,12 +48,12 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
         int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
 
         // If this is negative, we're *already* past the timeout, just return early.
-        if (adjustedTimeout <= 0) {
+        if (adjustedTimeout <= 0 || processTimeout <= 0) {
             SALERT("Command " << request.methodLine << " timed out after " << (timeout - adjustedTimeout) << "ms.");
             STHROW("555 Timeout");
         } else {
-            // Otherwise, we can return.
-            return adjustedTimeout;
+            // Otherwise, we can return the shorter of our two timeouts.
+            return min(adjustedTimeout, processTimeout);
         }
     } catch (const invalid_argument& e) {
         SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
@@ -51,8 +61,8 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
         SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
     }
 
-    // This only happens if we hit the catch blocks above.
-    return timeout;
+    // This only happens if we hit the catch blocks above. Default to a low value.
+    return min(DEFAULT_TIMEOUT, DEFAULT_PROCESS_TIMEOUT);
 }
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
