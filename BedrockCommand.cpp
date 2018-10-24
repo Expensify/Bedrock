@@ -1,6 +1,31 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
 
+mutex BedrockCommand::timeoutMutex;
+multimap<uint64_t, const BedrockCommand*> BedrockCommand::commandTimeouts;
+
+void BedrockCommand::_addCommandTimeout(const BedrockCommand* cmd) {
+    // Insert in timeout info.
+    lock_guard<mutex> lock(timeoutMutex);
+    commandTimeouts.insert(make_pair(cmd->_timeout, cmd));
+}
+
+int64_t BedrockCommand::_getTimeout(const SData& request) {
+    // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
+    int64_t timeout =  DEFAULT_TIMEOUT;
+    if (request.isSet("timeout")) {
+        timeout = request.calc("timeout");
+    } else if (SIEquals(request["connection"], "forget")) {
+        timeout = DEFAULT_TIMEOUT_FORGET;
+    }
+
+    // Convert to microseconds.
+    timeout *= 1000;
+
+    int64_t start = request.isSet("commandExecuteTime") ? request.calc64("commandExecuteTime") : STimeNow();
+    return timeout + start;
+}
+
 BedrockCommand::BedrockCommand() :
     SQLiteCommand(),
     priority(PRIORITY_NORMAL),
@@ -9,12 +34,33 @@ BedrockCommand::BedrockCommand() :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0)
-{ }
+    dead(false),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
+{
+    _addCommandTimeout(this);
+}
 
 BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->owner.closeTransaction(request);
+    }
+
+    // Remove in timeout info.
+    lock_guard<mutex> lock(timeoutMutex);
+    auto items = commandTimeouts.equal_range(_timeout);
+
+    int count = 0;
+    for (auto it = items.first; it != items.second; ++it) {
+        count++;
+        if (it->second == this) {
+            // delete this item an be done.
+            commandTimeouts.erase(it);
+            break;
+        }
+    }
+    if (!count) {
+        SWARN("No items found in timeout map to remove!");
     }
 }
 
@@ -26,7 +72,9 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0)
+    dead(false),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
 {
     _init();
 }
@@ -42,12 +90,16 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(move(from.crashIdentifyingValues)),
-    _inProgressTiming(from._inProgressTiming)
+    dead(from.dead.load()),
+    _inProgressTiming(from._inProgressTiming),
+    _timeout(from._timeout)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy these pointer values, but
     // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
     // closed.
     from.httpsRequests.clear();
+
+    _addCommandTimeout(this);
 }
 
 BedrockCommand::BedrockCommand(SData&& _request) :
@@ -58,7 +110,9 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0)
+    dead(false),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
 {
     _init();
 }
@@ -71,7 +125,9 @@ BedrockCommand::BedrockCommand(SData _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0)
+    dead(false),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
 {
     _init();
 }
@@ -98,10 +154,13 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
         crashIdentifyingValues = move(from.crashIdentifyingValues);
+        dead.store(from.dead.load());
         _inProgressTiming = from._inProgressTiming;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
+
+        _addCommandTimeout(this);
     }
 
     return *this;
@@ -127,6 +186,7 @@ void BedrockCommand::_init() {
                 break;
         }
     }
+    _addCommandTimeout(this);
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {
@@ -165,7 +225,6 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     }
     return true;
 }
-
 
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t peekTotal = 0;

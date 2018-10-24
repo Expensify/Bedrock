@@ -23,6 +23,11 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
     };
 
+    // Times in *milliseconds*.
+    static const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
+    static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
+    static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
+
     // Constructor to make an empty object.
     BedrockCommand();
 
@@ -85,10 +90,45 @@ class BedrockCommand : public SQLiteCommand {
     // cause a crash, and not processed.
     set<string> crashIdentifyingValues;
 
+    // TODO: Change this name?
+    // This value indicates that this command has timed out and should not be responded to.
+    atomic<bool> dead;
+
+    // Return the timestamp by which this command must finish executing.
+    uint64_t timeout() const { return _timeout; }
+
+    // Returns the next timed out command that exists for the given timestamp, or throws std::out_of_range if there are
+    // none. This is returned by copying the existing command and marking the existing one as dead.
+    // There's no copy assignment operator, but maybe I need one.
+    // What we want to do is:
+    // Lock the timeout mutex. This prevents the command being destroyed.
+    // Copy the command.
+    // Mark the original command as dead.
+    // Return the copy.
+    // Unlock.
+    // I n this special case, we probably *don't* want this command to exist in the timeout map, since it's already
+    // timed out.
+    // We also have to decide how to handle https requests. Are they transferred to the timed out command? Probably.
+    static BedrockCommand getTimedOutCommand(uint64_t timestamp);
+
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
 
     // used as a temporary variable for startTiming and stopTiming.
     tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
+
+    // We store a map of timeouts to commands that need to timeout at that time.
+    static mutex timeoutMutex;
+    static multimap<uint64_t, const BedrockCommand*> commandTimeouts;
+    
+    // Let commands register themselves in the global list of command timeouts. All constructors for a command need to
+    // call this.
+    static void _addCommandTimeout(const BedrockCommand* cmd);
+
+    // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
+    static int64_t _getTimeout(const SData& request);
+
+    // This is a timestamp in *microseconds* for when this command should timeout.
+    uint64_t _timeout;
 };
