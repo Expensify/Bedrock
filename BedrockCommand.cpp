@@ -158,6 +158,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         crashIdentifyingValues = move(from.crashIdentifyingValues);
         dead.store(from.dead.load());
         _inProgressTiming = from._inProgressTiming;
+        _timeout = from._timeout;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
