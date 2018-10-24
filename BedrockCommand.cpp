@@ -42,12 +42,14 @@ BedrockCommand::BedrockCommand() :
 }
 
 BedrockCommand::~BedrockCommand() {
+    // Lock before doing any cleanup, this way if timing out occurs right at destruction, there's no ambiguity as to
+    // who cleaned this up.
+    lock_guard<mutex> lock(timeoutMutex);
     for (auto request : httpsRequests) {
         request->owner.closeTransaction(request);
     }
 
     // Remove in timeout info.
-    lock_guard<mutex> lock(timeoutMutex);
     auto items = commandTimeouts.equal_range(_timeout);
 
     int count = 0;
