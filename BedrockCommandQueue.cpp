@@ -176,9 +176,15 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
     // Look at the front of _timeouts. If it's before now, we need to move commands to the _timedOut queue.
     // We do this by walking all the commands, moving them to _timedOut, and removing their timeout() value from
     // _timeouts.
+    //
+    // As an optimization, we only start timing things out when they've actually timed out over a 0.1s ago. This
+    // means that we only look at the set of _timeouts when at least one command has been timed out for 100ms, but we
+    // move everything that's timed out to that list, meaning that we'll have to wait at least 100ms until the first
+    // item in _timeouts can time out and cause us to walk the list again. The worry is we'd end up walking the list on
+    // every single command when a lot of commands were on the verge of timing out in a row.
     if (_timeouts.size()) {
         uint64_t firstTimeout = *(_timeouts.begin());
-        if (firstTimeout <= now) {
+        if (firstTimeout <= (now - 100'000)) {
             int64_t countOfInspected = 0;
             int64_t countOfRemoved = 0;
             // Walk the list of queues.
