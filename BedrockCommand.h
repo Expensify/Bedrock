@@ -93,27 +93,6 @@ class BedrockCommand : public SQLiteCommand {
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 
-    // Returns the next timed out command that exists for the given timestamp, or throws std::out_of_range if there are
-    // none. This is returned by copying the existing command and marking the existing one as dead.
-    // There's no copy assignment operator, but maybe I need one.
-    // What we want to do is:
-    // Lock the timeout mutex. This prevents the command being destroyed.
-    // Copy the command.
-    // Mark the original command as dead.
-    // IMPORTANT: We can't change anything else here since other threads can modify the command concurrently. This
-    // poses a problem if we want to steal the existing https requests for the command. We actually can't *read*
-    // anything, either, unless we lock somewhere. We could potentially add another atomic member. If
-    // `initiatingPeerId` and `initiatingClientID` are atomic, we can copy those values, which might be enough to let
-    // us fail the command.
-    // We could also potentially store this information in the map of timeouts - if we had a copy of the methodline
-    // there, we could at least know the name of the command we were responding to (assuming nobody changed it).
-    // Return the copy.
-    // Unlock.
-    // In this special case, we probably *don't* want this command to exist in the timeout map, since it's already
-    // timed out.
-    // We also have to decide how to handle https requests. Are they transferred to the timed out command? Probably.
-    static BedrockCommand getTimedOutCommand(uint64_t timestamp);
-
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
