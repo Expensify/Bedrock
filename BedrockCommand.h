@@ -90,10 +90,6 @@ class BedrockCommand : public SQLiteCommand {
     // cause a crash, and not processed.
     set<string> crashIdentifyingValues;
 
-    // TODO: Change this name?
-    // This value indicates that this command has timed out and should not be responded to.
-    atomic<bool> dead;
-
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 
@@ -124,14 +120,6 @@ class BedrockCommand : public SQLiteCommand {
 
     // used as a temporary variable for startTiming and stopTiming.
     tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
-
-    // We store a map of timeouts to commands that need to timeout at that time.
-    static mutex timeoutMutex;
-    static multimap<uint64_t, const BedrockCommand*> commandTimeouts;
-    
-    // Let commands register themselves in the global list of command timeouts. All constructors for a command need to
-    // call this.
-    static void _addCommandTimeout(const BedrockCommand* cmd);
 
     // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
     static int64_t _getTimeout(const SData& request);

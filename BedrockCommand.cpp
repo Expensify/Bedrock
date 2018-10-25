@@ -1,15 +1,6 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
 
-mutex BedrockCommand::timeoutMutex;
-multimap<uint64_t, const BedrockCommand*> BedrockCommand::commandTimeouts;
-
-void BedrockCommand::_addCommandTimeout(const BedrockCommand* cmd) {
-    // Insert in timeout info.
-    lock_guard<mutex> lock(timeoutMutex);
-    commandTimeouts.insert(make_pair(cmd->_timeout, cmd));
-}
-
 int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
     int64_t timeout =  DEFAULT_TIMEOUT;
@@ -34,35 +25,14 @@ BedrockCommand::BedrockCommand() :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    dead(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
-    _addCommandTimeout(this);
 }
 
 BedrockCommand::~BedrockCommand() {
-    // Lock before doing any cleanup, this way if timing out occurs right at destruction, there's no ambiguity as to
-    // who cleaned this up.
-    lock_guard<mutex> lock(timeoutMutex);
     for (auto request : httpsRequests) {
         request->owner.closeTransaction(request);
-    }
-
-    // Remove in timeout info.
-    auto items = commandTimeouts.equal_range(_timeout);
-
-    int count = 0;
-    for (auto it = items.first; it != items.second; ++it) {
-        count++;
-        if (it->second == this) {
-            // delete this item an be done.
-            commandTimeouts.erase(it);
-            break;
-        }
-    }
-    if (!count) {
-        SWARN("No items found in timeout map to remove!");
     }
 }
 
@@ -74,7 +44,6 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    dead(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
@@ -92,7 +61,6 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(move(from.crashIdentifyingValues)),
-    dead(from.dead.load()),
     _inProgressTiming(from._inProgressTiming),
     _timeout(from._timeout)
 {
@@ -100,8 +68,6 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
     // closed.
     from.httpsRequests.clear();
-
-    _addCommandTimeout(this);
 }
 
 BedrockCommand::BedrockCommand(SData&& _request) :
@@ -112,7 +78,6 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    dead(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
@@ -127,7 +92,6 @@ BedrockCommand::BedrockCommand(SData _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
-    dead(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
@@ -156,14 +120,11 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
         crashIdentifyingValues = move(from.crashIdentifyingValues);
-        dead.store(from.dead.load());
         _inProgressTiming = from._inProgressTiming;
         _timeout = from._timeout;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
-
-        _addCommandTimeout(this);
     }
 
     return *this;
@@ -189,7 +150,6 @@ void BedrockCommand::_init() {
                 break;
         }
     }
-    _addCommandTimeout(this);
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {
