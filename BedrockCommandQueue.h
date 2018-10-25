@@ -57,4 +57,10 @@ class BedrockCommandQueue {
     // The priority queue in which we store commands. This is a map of integer priorities to their respective maps.
     // Each of those maps maps timestamps to commands.
     map<int, multimap<uint64_t, BedrockCommand>> _commandQueue;
+
+    // Set of all the times at which commands will time out.
+    set<uint64_t> _timeouts;
+
+    // Queue of timed out commands.
+    list<BedrockCommand> _timedOut;
 };
