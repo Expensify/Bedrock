@@ -190,10 +190,12 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
             int64_t countOfInspected = 0;
             int64_t countOfRemoved = 0;
             // Walk the list of queues.
-            for (auto queueMapIt = _commandQueue.begin(); queueMapIt != _commandQueue.end(); ++queueMapIt) {
+            auto queueMapIt = _commandQueue.begin();
+            while (queueMapIt != _commandQueue.end()) {
                 // Walk the commands in this queue.
                 auto& queue =  queueMapIt->second;
-                for (auto queueIt = queue.begin(); queueIt != queue.end(); ++queueIt) {
+                auto queueIt = queue.begin();
+                while (queueIt != queue.end()) {
                     countOfInspected++;
                     if (queueIt->second.timeout() < now) {
                         // This command has timed out, remove it's entry from the _timeouts map.
@@ -203,12 +205,16 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
                         _timedOut.push_back(move(queueIt->second));
                         queueIt = queue.erase(queueIt);
                         countOfRemoved++;
+                    } else {
+                        ++queueIt;
                     }
                 }
 
                 // If we deleted everything in the sub-queue, remove the whole thing.
                 if (queue.empty()) {
                     queueMapIt = _commandQueue.erase(queueMapIt);
+                } else {
+                    ++queueMapIt;
                 }
             }
             uint64_t finished = STimeNow();
@@ -219,6 +225,7 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
     // Now, if there are any commands in the timed out list, we can return the first one.
     if (_timedOut.size()) {
         BedrockCommand command = move(_timedOut.front());
+        command.stopTiming(BedrockCommand::QUEUE_WORKER);
         _timedOut.pop_front();
         return command;
     }
