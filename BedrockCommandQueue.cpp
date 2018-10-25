@@ -4,12 +4,13 @@
 
 void BedrockCommandQueue::clear()  {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.clear();
+    _commandQueue.clear();
+    _timedOut.clear();
 }
 
 bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.empty();
+    return _commandQueue.empty() && _timedOut.empty();
 }
 
 size_t BedrockCommandQueue::size()  {
@@ -18,6 +19,7 @@ size_t BedrockCommandQueue::size()  {
     for (const auto& queue : _commandQueue) {
         size += queue.second.size();
     }
+    size += _timedOut.size();
     return size;
 }
 
@@ -230,6 +232,7 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
         if (commandMapIt->first <= now) {
             // Pull out the command we want to return.
             BedrockCommand command = move(commandMapIt->second);
+            _timeouts.erase(command.timeout()); // TODO: This can be wrong if another command had this timeout.
 
             // Make sure we increment this counter before we actually dequeue, so this commands will never be not in
             // the queue and also not counted by the counter.
