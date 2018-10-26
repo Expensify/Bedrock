@@ -5,12 +5,11 @@
 void BedrockCommandQueue::clear()  {
     SAUTOLOCK(_queueMutex);
     _commandQueue.clear();
-    _timedOut.clear();
 }
 
 bool BedrockCommandQueue::empty()  {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.empty() && _timedOut.empty();
+    return _commandQueue.empty();
 }
 
 size_t BedrockCommandQueue::size()  {
@@ -19,7 +18,6 @@ size_t BedrockCommandQueue::size()  {
     for (const auto& queue : _commandQueue) {
         size += queue.second.size();
     }
-    size += _timedOut.size();
     return size;
 }
 
@@ -95,8 +93,9 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     item.startTiming(BedrockCommand::QUEUE_WORKER);
-    _timeouts.insert(item.timeout());
-    queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
+    uint64_t executeTime = item.request.calcU64("commandExecuteTime");
+    _lookupByTimeout.insert(make_pair(item.timeout(), make_pair(item.priority, executeTime)));
+    queue.emplace(executeTime, move(item));
     _queueCondition.notify_one();
 }
 
@@ -174,60 +173,37 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
     // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 
-    // Before we look at out main queue, check for timed out commands.
-    // Look at the front of _timeouts. If it's before now, we need to move commands to the _timedOut queue.
-    // We do this by walking all the commands, moving them to _timedOut, and removing their timeout() value from
-    // _timeouts.
-    //
-    // As an optimization, we only start timing things out when they've actually timed out over a 0.1s ago. This
-    // means that we only look at the set of _timeouts when at least one command has been timed out for 100ms, but we
-    // move everything that's timed out to that list, meaning that we'll have to wait at least 100ms until the first
-    // item in _timeouts can time out and cause us to walk the list again. The worry is we'd end up walking the list on
-    // every single command when a lot of commands were on the verge of timing out in a row.
-    if (_timeouts.size()) {
-        uint64_t firstTimeout = *(_timeouts.begin());
-        if (firstTimeout <= (now - 100'000)) {
-            int64_t countOfInspected = 0;
-            int64_t countOfRemoved = 0;
-            // Walk the list of queues.
-            auto queueMapIt = _commandQueue.begin();
-            while (queueMapIt != _commandQueue.end()) {
-                // Walk the commands in this queue.
-                auto& queue =  queueMapIt->second;
-                auto queueIt = queue.begin();
-                while (queueIt != queue.end()) {
-                    countOfInspected++;
-                    if (queueIt->second.timeout() < now) {
-                        // This command has timed out, remove it's entry from the _timeouts map.
-                        _timeouts.erase(queueIt->second.timeout());
+    // If anything has timed out, pul lthat out of the queue, and return that first.
+    if (_lookupByTimeout.size()) {
+        auto timeoutIt = _lookupByTimeout.begin();
+        uint64_t timeout = timeoutIt->first;
+        if (timeout < now) {
+            //this command has timed out.
+            int priority = timeoutIt->second.first;
+            uint64_t executeTime = timeoutIt->second.second;
 
-                        // And move the command to the _timedOut, erasing it from this queue.
-                        _timedOut.push_back(move(queueIt->second));
-                        queueIt = queue.erase(queueIt);
-                        countOfRemoved++;
-                    } else {
-                        ++queueIt;
+            auto individualQueueIt = _commandQueue.find(priority);
+            if (individualQueueIt != _commandQueue.end()) {
+                auto itPair = individualQueueIt->second.equal_range(executeTime);
+                for (auto it = itPair.first; it != itPair.second; it++) {
+                    if (it->second.timeout() == timeout) {
+                        // This is the command that timed out.
+                        BedrockCommand command = move(it->second);
+                        individualQueueIt->second.erase(it);
+                        if (individualQueueIt->second.empty()) {
+                            _commandQueue.erase(individualQueueIt);
+                        }
+                        _lookupByTimeout.erase(timeoutIt);
+                        command.stopTiming(BedrockCommand::QUEUE_WORKER);
+                        return command;
                     }
                 }
-
-                // If we deleted everything in the sub-queue, remove the whole thing.
-                if (queue.empty()) {
-                    queueMapIt = _commandQueue.erase(queueMapIt);
-                } else {
-                    ++queueMapIt;
-                }
             }
-            uint64_t finished = STimeNow();
-            SINFO("Inspected " << countOfInspected << " to remove " << countOfRemoved << " timed out commands in " << (finished - now) << "us.");
-        }
-    }
 
-    // Now, if there are any commands in the timed out list, we can return the first one.
-    if (_timedOut.size()) {
-        BedrockCommand command = move(_timedOut.front());
-        command.stopTiming(BedrockCommand::QUEUE_WORKER);
-        _timedOut.pop_front();
-        return command;
+            // We shouldn't have gotten here.
+            SWARN("Timeout (" << timeout << ") before now, but couldn't find a command for it?");
+            _lookupByTimeout.erase(timeoutIt);
+        }
     }
 
     // Look at each priority queue, starting from the highest priority.
@@ -239,7 +215,6 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
         if (commandMapIt->first <= now) {
             // Pull out the command we want to return.
             BedrockCommand command = move(commandMapIt->second);
-            _timeouts.erase(command.timeout()); // TODO: This can be wrong if another command had this timeout.
 
             // Make sure we increment this counter before we actually dequeue, so this commands will never be not in
             // the queue and also not counted by the counter.
@@ -252,6 +227,16 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
             if (queueMapIt->second.empty()) {
                 // The odd syntax in the argument converts a reverse to forward iterator.
                 _commandQueue.erase(next(queueMapIt).base());
+            }
+
+            // Remove from the timing map, too.
+            uint64_t executeTime = command.request.calcU64("commandExecuteTime");
+            auto itPair = _lookupByTimeout.equal_range(command.timeout());
+            for (auto it = itPair.first; it != itPair.second; it++) {
+                if (it->second.first == command.priority && it->second.second == executeTime) {
+                    _lookupByTimeout.erase(it);
+                    break;
+                }
             }
 
             // Done!

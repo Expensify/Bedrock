@@ -58,9 +58,6 @@ class BedrockCommandQueue {
     // Each of those maps maps timestamps to commands.
     map<int, multimap<uint64_t, BedrockCommand>> _commandQueue;
 
-    // Set of all the times at which commands will time out.
-    set<uint64_t> _timeouts;
-
-    // Queue of timed out commands.
-    list<BedrockCommand> _timedOut;
+    // This is a map of timeouts to the queue/timestamp we'll need to find the command with this timestamp.
+    multimap<uint64_t, pair<int, uint64_t>> _lookupByTimeout;
 };
