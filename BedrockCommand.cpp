@@ -13,7 +13,13 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Convert to microseconds.
     timeout *= 1000;
 
-    int64_t start = request.isSet("commandExecuteTime") ? request.calc64("commandExecuteTime") : STimeNow();
+    int64_t start;
+    if (request.isSet("commandExecuteTime")) {
+        start = request.calc64("commandExecuteTime");
+    } else {
+        SWARN("BedrockCommand created with no commandExecuteTime, should be done in base constructor!");
+        start = STimeNow();
+    }
     return timeout + start;
 }
 
@@ -289,6 +295,11 @@ void BedrockCommand::finalizeTimingInfo() {
 template<>
 BedrockCommand SSynchronizedQueue<BedrockCommand>::pop() {
     SAUTOLOCK(_queueMutex);
+
+    // TODO: Return timed out commands first. Might require subclassing this.
+    // As long as we only actually set the `555 timeout response in `peek` and `process`, we should see reasonable
+    // responses all down the chain, even if we return completed commands slightly late. This keeps us from doing
+    // something like completing a command on master but returning a timed out response on a slave.
     if (!_queue.empty()) {
         BedrockCommand item = move(_queue.front());
         _queue.pop_front();
