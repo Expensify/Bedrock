@@ -258,6 +258,12 @@ void BedrockServer::sync(SData& args,
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
+
+            // TODO: kill any transactions associated with timed-out commands in _outstandingHTTPSCommands.
+            // Then we throw the commands back in the pool to time out on `process`.
+            // We do this *after* _postPollPlugins just in case that manages to finish anything, though the expected
+            // behavior is they will time out in process anyway, just after a successful read from the network.
+
             server._syncNode->postPoll(fdm, nextActivity);
             syncNodeQueuedCommands.postPoll(fdm);
             completedCommands.postPoll(fdm);

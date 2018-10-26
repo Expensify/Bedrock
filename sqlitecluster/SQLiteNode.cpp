@@ -2238,7 +2238,6 @@ bool SQLiteNode::_majoritySubscribed() {
     return (numFullSlaves * 2 >= numFullPeers);
 }
 
-
 bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
 {
     Peer* peer = nullptr;

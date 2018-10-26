@@ -402,7 +402,12 @@ class BedrockServer : public SQLiteServer {
 
     // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
     // copy of each command, even if it has multiple requests.
-    set<BedrockCommand*> _outstandingHTTPSCommands;
+    struct compareCommandByTimeout {
+        bool operator() (BedrockCommand* a, BedrockCommand* b) const {
+            return a->timeout() < b->timeout();
+        }
+    };
+    set<BedrockCommand*, compareCommandByTimeout> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.
