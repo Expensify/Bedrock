@@ -258,12 +258,6 @@ void BedrockServer::sync(SData& args,
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
-
-            // TODO: kill any transactions associated with timed-out commands in _outstandingHTTPSCommands.
-            // Then we throw the commands back in the pool to time out on `process`.
-            // We do this *after* _postPollPlugins just in case that manages to finish anything, though the expected
-            // behavior is they will time out in process anyway, just after a successful read from the network.
-
             server._syncNode->postPoll(fdm, nextActivity);
             syncNodeQueuedCommands.postPoll(fdm);
             completedCommands.postPoll(fdm);
@@ -1812,16 +1806,22 @@ void BedrockServer::_prePollPlugins(fd_map& fdm) {
 }
 
 void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
+    // Maybe there's a more efficient way to do this.
+    map<SHTTPSManager::Transaction*, uint64_t> transactionTimeouts;
+    for (auto& t : _outstandingHTTPSRequests) {
+        transactionTimeouts[t.first] = t.second->timeout();
+    }
+
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
             auto _syncNodeCopy = _syncNode;
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
                 // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5000);
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
             } else {
                 // Otherwise, use the default timeout.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts);
             }
 
             // Move any fully completed commands back to the main queue, and decrement the number of commands in

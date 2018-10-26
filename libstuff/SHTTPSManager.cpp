@@ -73,10 +73,11 @@ void SHTTPSManager::prePoll(fd_map& fdm) {
 
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     list<SHTTPSManager::Transaction*> completedRequests;
-    postPoll(fdm, nextActivity, completedRequests);
+    map<Transaction*, uint64_t> transactionTimeouts;
+    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, uint64_t timeoutMS) {
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -99,6 +100,9 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         uint64_t now = STimeNow();
         uint64_t elapsed = now - timeoutFromTime;
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
+
+        auto timeoutIt = transactionTimeouts.find(active);
+        bool specificallyTimedOut = (timeoutIt != transactionTimeouts.end() && timeoutIt->second < now);
         if (size) {
             // Consume how much we read.
             SConsumeFront(active->s->recvBuffer, size);
@@ -117,7 +121,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
                 SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
                 active->response = 500;
             }
-        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout) {
+        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout || specificallyTimedOut) {
             // Net problem. Did this transaction end in an inconsistent state?
             SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;

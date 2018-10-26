@@ -60,6 +60,7 @@ struct TimeoutTest : tpunit::TestFixture {
 
         SData https("httpstimeout");
         https["timeout"] = "5000"; // 5s.
+        https["neversend"] = "1";
         brtester->executeWaitVerifyContent(https, "555 Timeout");
     }
 } __TimeoutTest;

@@ -75,12 +75,14 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         request["Host"] = "www.google.com";
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
         command.httpsRequests.push_back(transaction);
-        thread([transaction, request](){
-            SINFO("Sleeping 35 seconds for httpstimeout");
-            sleep(35);
-            SINFO("Done Sleeping 35 seconds for httpstimeout");
-            transaction->s->send(request.serialize());
-        }).detach();
+        if (command.request["neversend"].empty()) {
+            thread([transaction, request](){
+                SINFO("Sleeping 35 seconds for httpstimeout");
+                sleep(35);
+                SINFO("Done Sleeping 35 seconds for httpstimeout");
+                transaction->s->send(request.serialize());
+            }).detach();
+        }
     } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
         throw 1;
     } else if (SStartsWith(command.request.methodLine, "generatesegfaultpeek")) {

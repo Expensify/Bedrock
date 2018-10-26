@@ -30,7 +30,7 @@ class SHTTPSManager : public STCPManager {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, uint64_t timeoutMS = (5 * 60 * 1000));
+    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS = (5 * 60 * 1000));
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 
