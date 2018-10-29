@@ -162,7 +162,13 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     while ((messageSize = message.deserialize(peer->s->recvBuffer))) {
                         // Which message?
                         SConsumeFront(peer->s->recvBuffer, messageSize);
-                        PDEBUG("Received '" << message.methodLine << "'.");
+                        if (peer->s->recvBuffer.size() > 10'000) {
+                            // Make in known if this buffer ever gets big.
+                            PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 
+                                  << (peer->s->recvBuffer.size()) << " bytes remaining in message buffer.");
+                        } else {
+                            PDEBUG("Received '" << message.methodLine << "'.");
+                        }
                         if (SIEquals(message.methodLine, "PING")) {
                             // Let's not delay on flushing the PING PONG
                             // exchanges in case we get blocked before we
