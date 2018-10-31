@@ -207,6 +207,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         return;
     }
     auto transactions = _db.getCommittedTransactions();
+    string sendTime = to_string(STimeNow());
     for (auto& i : transactions) {
         uint64_t id = i.first;
         if (id <= _lastSentTransactionID) {
@@ -218,6 +219,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
+        transaction["masterSendTime"] = sendTime;
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
@@ -880,6 +882,7 @@ bool SQLiteNode::update() {
                   << _db.getUncommittedHash() << ")");
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("masterSendTime", to_string(STimeNow()));
             if (_commitConsistency == ASYNC) {
                 transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
@@ -1402,6 +1405,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                   << _db.getUncommittedHash() << ")");
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("masterSendTime", to_string(STimeNow()));
             transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);
@@ -1436,6 +1440,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // **FIXME**: What happens if MASTER steps down before sending BEGIN?
         // **FIXME**: What happens if MASTER steps down or disconnects after BEGIN?
         bool success = true;
+        uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
+        uint64_t slaveDequeueTimestamp = STimeNow();
         if (!message.isSet("ID")) {
             STHROW("missing ID");
         }
@@ -1512,6 +1518,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Master is processing our command " << message["ID"] << " (" << message["Command"] << ")");
             commandIt->second.transaction = message;
         }
+
+        uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
+        uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
+        float transitTimeMS = (float)transitTimeUS / 1000.0;
+        float applyTimeMS = (float)applyTimeUS / 1000.0;
+        PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+              << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the master by a slave when it confirms it was able to begin a transaction and
