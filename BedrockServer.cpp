@@ -194,21 +194,66 @@ void BedrockServer::sync(SData& args,
         // end up lost in the ether.
         {
             SAUTOLOCK(server._futureCommitCommandMutex);
+
+            // First, see if anything has timed out, and move that back to the main queue.
+            if (server._futureCommitCommandTimeouts.size()) {
+                uint64_t now = STimeNow();
+                auto it =  server._futureCommitCommandTimeouts.begin();
+                while (it != server._futureCommitCommandTimeouts.end() && it->first < now) {
+                    // Find commands depending on this commit.
+                    auto itPair =  server._futureCommitCommands.equal_range(it->second);
+                    for (auto cmdIt = itPair.first; cmdIt != itPair.second; cmdIt++) {
+                        // Check for one with this timeout.
+                        if (cmdIt->second.timeout() == it->first) {
+                            // This command has the right commit count *and* timeout, return it.
+                            SINFO("Returning command (" << cmdIt->second.request.methodLine << ") waiting on commit " << cmdIt->first
+                                  << " to queue, timed out at: " << now << ", timeout was: " << it->first << ".");
+
+                            // Remove the commit count requirement so this can get timed out.
+                            cmdIt->second.request.erase("commitCount");
+                            server._commandQueue.push(move(cmdIt->second));
+                            server._commandsInProgress--;
+
+                            // And delete it, it's gone.
+                             server._futureCommitCommands.erase(cmdIt);
+
+                            // Done.
+                            break;
+                        }
+                    }
+
+                    it++;
+                }
+
+                // And remove everything we just iterated through.
+                if (it != server._futureCommitCommandTimeouts.begin()) {
+                    server._futureCommitCommandTimeouts.erase(server._futureCommitCommandTimeouts.begin(), it);
+                }
+            }
+
+            // Anything that hasn't timed out might be ready to return because the commit count is up-to-date.
             if (!server._futureCommitCommands.empty()) {
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
-                auto& eraseTo = it;
                 while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState.load() != RUNNING)) {
                     SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
                     server._commandsInProgress--;
 
-                    eraseTo = it;
+                    // Remove it from the timed out list as well.
+                    auto itPair = server._futureCommitCommandTimeouts.equal_range(it->second.timeout());
+                    for (auto timeoutIt = itPair.first; timeoutIt != itPair.second; timeoutIt++) {
+                        if (timeoutIt->second == it->first) {
+                             server._futureCommitCommandTimeouts.erase(timeoutIt);
+                            break;
+                        }
+                    }
+
                     it++;
                 }
-                if (eraseTo != server._futureCommitCommands.begin()) {
-                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), eraseTo);
+                if (it != server._futureCommitCommands.begin()) {
+                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), it);
                 }
             }
         }
@@ -679,8 +724,9 @@ void BedrockServer::worker(SData& args,
             if (commandCommitCount > commitCount) {
                 SAUTOLOCK(server._futureCommitCommandMutex);
                 auto newQueueSize = server._futureCommitCommands.size() + 1;
-                SINFO("Command (" << command.request.methodLine << ") depends on future commit(" << commandCommitCount
+                SINFO("Command (" << command.request.methodLine << ") depends on future commit (" << commandCommitCount
                       << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+                server._futureCommitCommandTimeouts.insert(make_pair(command.timeout() ,commandCommitCount));
                 server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
                 if (newQueueSize > 100) {
                     SHMMM("server._futureCommitCommands.size() == " << newQueueSize);

@@ -356,6 +356,9 @@ class BedrockServer : public SQLiteServer {
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
     // we catch up, and then move them back to the regular command queue.
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
+
+    // Map of command timeouts to the indexes into _futureCommitCommands where those commands live.
+    multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
     // This is a shared mutex. It can be locked by many readers at once, but if the writer (the sync thread) locks it,
