@@ -20,13 +20,13 @@ class SSynchronizedQueue {
 
     // Return a const reference to the front item in the list, for inspection.
     // throws out_of_range if nothing is available.
-    const T& front() const;
+    virtual const T& front() const;
 
     // Get an item off the queue.
-    T pop();
+    virtual T pop();
 
     // Push an item onto the queue, by move.
-    void push(T&& rhs);
+    virtual void push(T&& rhs);
 
     // Returns the queue's size.
     size_t size() const;

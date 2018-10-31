@@ -4,6 +4,7 @@
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
+#include "BedrockTimeoutCommandQueue.h"
 
 class BedrockServer : public SQLiteServer {
   public:
@@ -148,10 +149,6 @@ class BedrockServer : public SQLiteServer {
     // initialized at construction based on the arguments passed in.
     list<BedrockPlugin*> plugins;
 
-    // A command queue is just a SSynchronizedQueue of BedrockCommands. This is distinct from a `BedrockCommandQueue`,
-    // which is a more complex data structure.
-    typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
-
     // Our only constructor.
     BedrockServer(const SData& args);
 
@@ -257,7 +254,7 @@ class BedrockServer : public SQLiteServer {
     // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
     // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
     // sync thread. A reference is passed to the sync thread.
-    CommandQueue _syncNodeQueuedCommands;
+    BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
 
     // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
@@ -290,7 +287,7 @@ class BedrockServer : public SQLiteServer {
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
-                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Wraps the sync thread main function to make it easy to add exception handling.
@@ -298,7 +295,7 @@ class BedrockServer : public SQLiteServer {
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
-                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
@@ -306,8 +303,8 @@ class BedrockServer : public SQLiteServer {
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& masterVersion,
-                       CommandQueue& syncNodeQueuedCommands,
-                       CommandQueue& syncNodeCompletedCommands,
+                       BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
+                       BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
                        int threadId,
                        int threadCount);
@@ -426,7 +423,7 @@ class BedrockServer : public SQLiteServer {
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
     // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
     // endless loop of always having new unfinished commands.
-    CommandQueue _standDownQueue;
+    BedrockTimeoutCommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if

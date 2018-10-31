@@ -80,7 +80,7 @@ void BedrockServer::syncWrapper(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& masterVersion,
-                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
     // Initialize the thread.
@@ -117,7 +117,7 @@ void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& masterVersion,
-                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
     // We currently have no commands in progress.
@@ -150,7 +150,7 @@ void BedrockServer::sync(SData& args,
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
-    CommandQueue completedCommands;
+    BedrockTimeoutCommandQueue completedCommands;
 
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
@@ -212,7 +212,6 @@ void BedrockServer::sync(SData& args,
                             // Remove the commit count requirement so this can get timed out.
                             cmdIt->second.request.erase("commitCount");
                             server._commandQueue.push(move(cmdIt->second));
-                            server._commandsInProgress--;
 
                             // And delete it, it's gone.
                              server._futureCommitCommands.erase(cmdIt);
@@ -239,7 +238,6 @@ void BedrockServer::sync(SData& args,
                     SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
-                    server._commandsInProgress--;
 
                     // Remove it from the timed out list as well.
                     auto itPair = server._futureCommitCommandTimeouts.equal_range(it->second.timeout());
@@ -459,8 +457,15 @@ void BedrockServer::sync(SData& args,
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
+            SINFO("Sync thread dequeued command " <<  command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
+
+            if (command.timeout() < STimeNow()) {
+                SINFO("Command '" << command.request.methodLine << "' timed out in sync thread queue, sending back to main queue.");
+                server._commandQueue.push(move(command));
+                server._commandsInProgress--;
+                continue;
+            }
 
             // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
             // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
@@ -626,8 +631,8 @@ void BedrockServer::worker(SData& args,
                            atomic<SQLiteNode::State>& replicationState,
                            atomic<bool>& upgradeInProgress,
                            atomic<string>& masterVersion,
-                           CommandQueue& syncNodeQueuedCommands,
-                           CommandQueue& syncNodeCompletedCommands,
+                           BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
+                           BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                            BedrockServer& server,
                            int threadId,
                            int threadCount)
@@ -728,6 +733,9 @@ void BedrockServer::worker(SData& args,
                       << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
                 server._futureCommitCommandTimeouts.insert(make_pair(command.timeout() ,commandCommitCount));
                 server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+
+                // Don't count this as `in progress`, it's just sitting there.
+                server._commandsInProgress--;
                 if (newQueueSize > 100) {
                     SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
                 }
