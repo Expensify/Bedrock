@@ -1,5 +1,8 @@
 #include "TestPlugin.h"
 
+mutex BedrockPlugin_TestPlugin::dataLock;
+map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
+
 extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
     // Register the global instance
     new BedrockPlugin_TestPlugin();
@@ -35,6 +38,32 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             command.response.methodLine = "200 OK";
         }
         command.response.content = "this is a test response";
+        return true;
+    } else if (SStartsWith(command.request.methodLine, "broadcastwithtimeouts")) {
+        // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
+        SData subCommand("storeboradcasttimeouts");
+        subCommand["processTimeout"] = to_string(5001);
+        subCommand["timeout"] = to_string(5002);
+        subCommand["not_special"] = "whatever";
+        if (_server) {
+            _server->broadcastCommand(subCommand);
+        }
+        return true;
+    } else if (SStartsWith(command.request.methodLine, "storeboradcasttimeouts")) {
+        // This is the command that will be broadcast to peers, it will store some data.
+        lock_guard<mutex> lock(dataLock);
+        arbitraryData["timeout"] = command.request["timeout"];
+        arbitraryData["processTimeout"] = command.request["processTimeout"];
+        arbitraryData["commandExecuteTime"] = command.request["commandExecuteTime"];
+        arbitraryData["not_special"] = command.request["not_special"];
+        return true;
+    } else if (SStartsWith(command.request.methodLine, "getboradcasttimeouts")) {
+        // Finally, the caller can send this command to the peers to make sure they received the correct timeout data.
+        lock_guard<mutex> lock(dataLock);
+        command.response["stored_timeout"] = arbitraryData["timeout"];
+        command.response["stored_processTimeout"] = arbitraryData["processTimeout"];
+        command.response["stored_commandExecuteTime"] = arbitraryData["commandExecuteTime"];
+        command.response["stored_not_special"] = arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
         if (_server->getState() != SQLiteNode::MASTERING && _server->getState() != SQLiteNode::STANDINGDOWN) {

@@ -27,4 +27,10 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     TestHTTPSMananager httpsManager;
     BedrockServer* _server;
     bool shouldPreventAttach = false;
+
+    // This is a hack, but it lets one command store data for another command to read. This lets us inspect the output
+    // of one command from another, even if the first command never sends a response.
+    static mutex dataLock;
+    static map<string, string> arbitraryData;
+
 };
