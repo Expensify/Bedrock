@@ -25,34 +25,35 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
-        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
+        BedrockCommand newCommand(move(command));
+        if (SIEquals(newCommand.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
-            newRequest.deserialize(command.request.content);
-            command.request = newRequest;
-            command.initiatingClientID = -1;
-            command.initiatingPeerID = 0;
+            newRequest.deserialize(newCommand.request.content);
+            newCommand = BedrockCommand(newRequest);
+            newCommand.initiatingClientID = -1;
+            newCommand.initiatingPeerID = 0;
         }
         // Add a request ID if one was missing.
-        _addRequestID(command.request);
-        SAUTOPREFIX(command.request["requestID"]);
-        if (command.writeConsistency != SQLiteNode::QUORUM
-            && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
+        _addRequestID(newCommand.request);
+        SAUTOPREFIX(newCommand.request["requestID"]);
+        if (newCommand.writeConsistency != SQLiteNode::QUORUM
+            && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
-            command.writeConsistency = SQLiteNode::QUORUM;
-            SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
+            newCommand.writeConsistency = SQLiteNode::QUORUM;
+            SINFO("Forcing QUORUM consistency for command " << newCommand.request.methodLine);
         }
-        SINFO("Queued new '" << command.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
+        SINFO("Queued new '" << newCommand.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
               << " commands already queued.");
 
-        auto it = command.request.nameValueMap.find("Connection");
-        if (it != command.request.nameValueMap.end() && SIEquals(it->second, "forget")) {
+        auto it = newCommand.request.nameValueMap.find("Connection");
+        if (it != newCommand.request.nameValueMap.end() && SIEquals(it->second, "forget")) {
             // Forgotten commands are always "new". This is because when we escalate one of these commands, we assume
             // we'll never see a response to it, so we no longer consider it a command in progress. However, if master
             // is standing down when this happens, the command will be returned to BedrockServer to be re-queued later
             // on, and we need to make sure we don't double-decrement the _commandsInProgress counter.
             isNew = true;
         }
-        _commandQueue.push(BedrockCommand(move(command)));
+        _commandQueue.push(move(newCommand));
         if (!isNew) {
             // If the command isn't new, then we already think it's in progress, but it's been returned to us, so reset
             // that.
