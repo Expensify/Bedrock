@@ -48,7 +48,7 @@ uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
         SALERT("Command " << command.request.methodLine << " timed out after " << (timeout - adjustedTimeout) << "ms.");
         STHROW("555 Timeout");
     }
-     
+
     // Both of these are positive, return the lowest remaining.
     return min(processTimeout, adjustedTimeout);
 }

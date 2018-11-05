@@ -221,7 +221,6 @@ void BedrockServer::sync(SData& args,
                             break;
                         }
                     }
-
                     it++;
                 }
 
@@ -248,7 +247,6 @@ void BedrockServer::sync(SData& args,
                             break;
                         }
                     }
-
                     it++;
                 }
                 if (it != server._futureCommitCommands.begin()) {
@@ -458,7 +456,7 @@ void BedrockServer::sync(SData& args,
 
             // We got a command to work on! Set our log prefix to the request ID.
             SAUTOPREFIX(command.request["requestID"]);
-            SINFO("Sync thread dequeued command " <<  command.request.methodLine << ". Sync thread has "
+            SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
             if (command.timeout() < STimeNow()) {
