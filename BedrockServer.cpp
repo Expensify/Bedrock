@@ -1859,12 +1859,16 @@ void BedrockServer::_prePollPlugins(fd_map& fdm) {
 }
 
 void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
-    // Maybe there's a more efficient way to do this.
-    // Since we've sorted _outstandingHTTPSCommands by timeout, we could look at that instead, only adding requests
-    // from timed out commands here.
+    // Only pass timeouts for transactions belonging to timed out commands.
+    uint64_t now = STimeNow();
     map<SHTTPSManager::Transaction*, uint64_t> transactionTimeouts;
-    for (auto& t : _outstandingHTTPSRequests) {
-        transactionTimeouts[t.first] = t.second->timeout();
+    auto timeoutIt = _outstandingHTTPSCommands.begin();
+    while (timeoutIt != _outstandingHTTPSCommands.end() && (*timeoutIt)->timeout() < now) {
+        // Add all the transactions for this command, even if some are already complete, they'll just get ignored.
+        for (auto transaction : (*timeoutIt)->httpsRequests) {
+            transactionTimeouts[transaction] = (*timeoutIt)->timeout();
+        }
+        timeoutIt++;
     }
 
     for (auto plugin : plugins) {
