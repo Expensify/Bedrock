@@ -332,7 +332,7 @@ class BedrockServer : public SQLiteServer {
     shared_ptr<SQLiteNode> _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
-    recursive_mutex _syncMutex;
+    recursive_timed_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(BedrockCommand& command);

@@ -1553,14 +1553,16 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
 }
 
 list<STable> BedrockServer::getPeerInfo() {
-    SAUTOLOCK(_syncMutex);
     list<STable> peerData;
-    auto _syncNodeCopy = _syncNode;
-    if (_syncNodeCopy) {
-        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-            peerData.emplace_back(peer->nameValueMap);
-            peerData.back()["host"] = peer->host;
-            peerData.back()["name"] = peer->name;
+    if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
+        lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
+        auto _syncNodeCopy = _syncNode;
+        if (_syncNodeCopy) {
+            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
+                peerData.emplace_back(peer->nameValueMap);
+                peerData.back()["host"] = peer->host;
+                peerData.back()["name"] = peer->name;
+            }
         }
     }
     return peerData;
@@ -1653,20 +1655,24 @@ void BedrockServer::_status(BedrockCommand& command) {
         list<STable> peerData = getPeerInfo();
         list<string> escalated;
         {
-            SAUTOLOCK(_syncMutex);
+            if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
+                lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
 
-            // There's no syncNode when the server is detached, so we can't get this data.
-            auto _syncNodeCopy = _syncNode;
-            if (_syncNodeCopy) {
-                content["syncNodeAvailable"] = "true";
-                // Set some information about this node.
-                content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
-                content["priority"] = to_string(_syncNodeCopy->getPriority());
+                // There's no syncNode when the server is detached, so we can't get this data.
+                auto _syncNodeCopy = _syncNode;
+                if (_syncNodeCopy) {
+                    content["syncNodeAvailable"] = "true";
+                    // Set some information about this node.
+                    content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
+                    content["priority"] = to_string(_syncNodeCopy->getPriority());
 
-                // Get any escalated commands that are waiting to be processed.
-                escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
+                    // Get any escalated commands that are waiting to be processed.
+                    escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
+                } else {
+                    content["syncNodeAvailable"] = "false";
+                }
             } else {
-                content["syncNodeAvailable"] = "false";
+                content["syncNodeBlocked"] = "true";
             }
         }
 
@@ -1877,7 +1883,7 @@ SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
 void BedrockServer::broadcastCommand(const SData& cmd) {
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
-    lock_guard<recursive_mutex> lock(_syncMutex);
+    lock_guard<decltype(_syncMutex)> lock(_syncMutex);
     auto _syncNodeCopy = _syncNode;
     if (_syncNodeCopy) {
         _syncNodeCopy->broadcast(message);
