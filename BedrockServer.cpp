@@ -304,8 +304,10 @@ void BedrockServer::sync(SData& args,
         // worker threads know that a DB upgrade is in progress, and start the upgrade process, which works basically
         // like a regular distributed commit.
         if (preUpdateState != SQLiteNode::MASTERING && nodeState == SQLiteNode::MASTERING) {
+            // Store this before we start writing to the DB, which can take a while depending on what changes were made
+            // (for instance, adding an index).
+            upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
-                upgradeInProgress.store(true);
                 server._syncThreadCommitMutex.lock();
                 committingCommand = true;
                 server._commandsInProgress++;
@@ -314,7 +316,9 @@ void BedrockServer::sync(SData& args,
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
             } else {
-                // If we're not doing an upgrade, we don't need to keep suppressing multi-write.
+                // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
+                // the upgradeInProgress flag.
+                upgradeInProgress.store(false);
                 server._suppressMultiWrite.store(false);
             }
         } else if ((preUpdateState == SQLiteNode::MASTERING || preUpdateState == SQLiteNode::STANDINGDOWN)
