@@ -173,7 +173,7 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
     // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 
-    // If anything has timed out, pul lthat out of the queue, and return that first.
+    // If anything has timed out, pull that out of the queue, and return that first.
     if (_lookupByTimeout.size()) {
         auto timeoutIt = _lookupByTimeout.begin();
         uint64_t timeout = timeoutIt->first;

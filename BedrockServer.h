@@ -400,13 +400,16 @@ class BedrockServer : public SQLiteServer {
     map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
 
-    // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
-    // copy of each command, even if it has multiple requests.
+    // Comparison class to sort command pointers based on their timeout rather than pointer address. This lets us keep
+    // commands ordered such that the first ones to time out are at the front.
     struct compareCommandByTimeout {
         bool operator() (BedrockCommand* a, BedrockCommand* b) const {
             return a->timeout() < b->timeout();
         }
     };
+
+    // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
+    // copy of each command, even if it has multiple requests. Sorted with the above `compareCommandByTimeout`.
     set<BedrockCommand*, compareCommandByTimeout> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
