@@ -37,7 +37,7 @@ uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
     int64_t adjustedTimeout = timeout - now;
 
     // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
-    int64_t processTimeout = command.request.isSet("processTimeout") ? (command.request.calc("processTimeout")) : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+    int64_t processTimeout = command.request.isSet("processTimeout") ? command.request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 
     // Since timeouts are specified in ms, we convert to us.
     processTimeout *= 1000;

@@ -101,7 +101,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
         uint64_t elapsed = now - timeoutFromTime;
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
         auto timeoutIt = transactionTimeouts.find(active);
-        bool specificallyTimedOut = (timeoutIt != transactionTimeouts.end() && timeoutIt->second < now);
+        bool specificallyTimedOut = timeoutIt != transactionTimeouts.end() && timeoutIt->second < now;
         if (size) {
             // Consume how much we read.
             SConsumeFront(active->s->recvBuffer, size);

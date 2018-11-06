@@ -730,7 +730,7 @@ void BedrockServer::worker(SData& args,
                 auto newQueueSize = server._futureCommitCommands.size() + 1;
                 SINFO("Command (" << command.request.methodLine << ") depends on future commit (" << commandCommitCount
                       << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
-                server._futureCommitCommandTimeouts.insert(make_pair(command.timeout() ,commandCommitCount));
+                server._futureCommitCommandTimeouts.insert(make_pair(command.timeout(), commandCommitCount));
                 server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
 
                 // Don't count this as `in progress`, it's just sitting there.

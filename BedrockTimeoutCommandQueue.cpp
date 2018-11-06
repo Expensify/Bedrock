@@ -2,16 +2,16 @@
 
 const BedrockCommand& BedrockTimeoutCommandQueue::front() const {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    if (!_queue.empty()) {
-        // has anything timed out?
-        if (_timeoutMap.begin()->first < STimeNow()) {
-            // first item has timed out, that's the effective front.
-            return *(_timeoutMap.begin()->second);
-        } else {
-            return _queue.front();
-        }
+    if (_queue.empty()) {
+        throw out_of_range("No commands");
     }
-    throw out_of_range("No commands");
+
+    // has anything timed out?
+    if (_timeoutMap.begin()->first < STimeNow()) {
+        // first item has timed out, that's the effective front.
+        return *(_timeoutMap.begin()->second);
+    }
+    return _queue.front();
 }
 
 void BedrockTimeoutCommandQueue::push(BedrockCommand&& rhs) {
@@ -32,27 +32,27 @@ void BedrockTimeoutCommandQueue::push(BedrockCommand&& rhs) {
 
 BedrockCommand BedrockTimeoutCommandQueue::pop() {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    if (!_queue.empty()) {
-        if (_timeoutMap.begin()->first < STimeNow()) {
-            BedrockCommand item = move(*(_timeoutMap.begin()->second));
-            _queue.erase(_timeoutMap.begin()->second);
-            _timeoutMap.erase(_timeoutMap.begin());
-            return item;
-        } else {
-            // We need to remove the reference in the timeout map for this item as well.a
-            auto firstCommandIt = _queue.begin();
-            auto itPair = _timeoutMap.equal_range(firstCommandIt->timeout());
-            for (auto it = itPair.first; it != itPair.second; it++) {
-                if (it->second == firstCommandIt) {
-                    // This one points at this command, remove it.
-                    _timeoutMap.erase(it);
-                    break;
-                }
-            }
-            BedrockCommand item = move(*firstCommandIt);
-            _queue.pop_front();
-            return item;
+    if (_queue.empty()) {
+        throw out_of_range("No commands");
+    }
+    if (_timeoutMap.begin()->first < STimeNow()) {
+        BedrockCommand item = move(*(_timeoutMap.begin()->second));
+        _queue.erase(_timeoutMap.begin()->second);
+        _timeoutMap.erase(_timeoutMap.begin());
+        return item;
+    }
+
+    // We need to remove the reference in the timeout map for this item as well.
+    auto firstCommandIt = _queue.begin();
+    auto itPair = _timeoutMap.equal_range(firstCommandIt->timeout());
+    for (auto it = itPair.first; it != itPair.second; it++) {
+        if (it->second == firstCommandIt) {
+            // This one points at this command, remove it.
+            _timeoutMap.erase(it);
+            break;
         }
     }
-    throw out_of_range("No commands");
+    BedrockCommand item = move(*firstCommandIt);
+    _queue.pop_front();
+    return item;
 }
