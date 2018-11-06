@@ -238,12 +238,6 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                 STHROW("402 Data is not a valid JSON Object");
             }
 
-            // Recurring auto-retrying jobs open the doors to a whole new world of potential bugs
-            // so we're intentionally not adding support for them them yet
-            if (SContains(job, "repeat") && SContains(job, "retryAfter")) {
-                STHROW("402 Recurring auto-retrying jobs are not supported");
-            }
-
             // Validate retryAfter
             if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
                 STHROW("402 Malformed retryAfter");
