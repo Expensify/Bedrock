@@ -102,7 +102,13 @@ struct FailedJobReplyTest : tpunit::TestFixture {
                 command["numResults"] = to_string(createdJobIds.size());
             }
             command["name"] = job["name"];
-            string response = tester->executeWaitVerifyContent(command);
+            string response;
+            try {
+                response = tester->executeWaitVerifyContent(command);
+            } catch (...) {
+                cout << "Failed on 'GetJobs'" << endl;
+                throw;
+            }
 
             // Verify this looks correct.
             STable responseJSON = SParseJSONObject(response);
@@ -124,7 +130,13 @@ struct FailedJobReplyTest : tpunit::TestFixture {
                 command.nameValueMap.clear();
                 command["jobID"] = id;
                 command.methodLine = "FinishJob";
-                tester->executeWaitVerifyContent(command);
+                try {
+                    tester->executeWaitVerifyContent(command);
+                } catch (...) {
+                    cout << "Failed on 'FinishJob'" << endl;
+                    throw;
+                }
+
             }
         }
     }
