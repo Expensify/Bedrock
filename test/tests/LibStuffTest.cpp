@@ -20,7 +20,6 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSData),
                                     TEST(LibStuff::testSTable),
                                     TEST(LibStuff::testFileIO),
-                                    TEST(LibStuff::testSTimeNow),
                                     TEST(LibStuff::testCurrentTimestamp),
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
@@ -432,34 +431,18 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFileSize(path), 0);
     }
 
-    void testSTimeNow() {
-        // This is a super-awful test.
-        uint64_t prev = STimeNow();
-        uint64_t next;
-        int failures = 0;
-        for (int i = 0; i < 10000; i++) {
-            next = STimeNow();
-            if (next < prev) {
-                failures++;
-            }
-            prev = next;
-        }
-        ASSERT_EQUAL(failures, 0);
-    }
-
     void testCurrentTimestamp() {
         // This is also a super-awful test.
         string prev = SCURRENT_TIMESTAMP();
         string next;
-        int failures = 0;
         for (int i = 0; i < 10000; i++) {
             next = SCURRENT_TIMESTAMP();
             if (next < prev) {
-                failures++;
+                cout << "'" << next << "', '" << prev << "'" << endl;
+                ASSERT_TRUE(false);
             }
             prev = next;
         }
-        ASSERT_EQUAL(failures, 0);
     }
 
     void testSQList() {

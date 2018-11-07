@@ -225,7 +225,9 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
         STHROW("Empty response");
     }
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
-        STHROW("Expected " + expectedResult + ", but got: " + results[0].methodLine);
+        STable temp;
+        temp["originalMethod"] = results[0].methodLine;
+        STHROW("Expected " + expectedResult + ", but got: " + results[0].methodLine, temp);
     }
     return results[0].content;
 }

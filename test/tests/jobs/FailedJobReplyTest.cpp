@@ -103,11 +103,28 @@ struct FailedJobReplyTest : tpunit::TestFixture {
             }
             command["name"] = job["name"];
             string response;
-            try {
-                response = tester->executeWaitVerifyContent(command);
-            } catch (...) {
-                cout << "Failed on 'GetJobs'" << endl;
-                throw;
+
+            // Give it a few tries for the command to get requeued.
+            int retries = 3;
+            while (retries) {
+                try {
+                    response = tester->executeWaitVerifyContent(command);
+
+                    // If it doesn't throw, we're done.
+                    break;
+                } catch (const SException& e) {
+                    // We'll retry 404s a few times waiting for the command to requeue.
+                    auto it = e.headers.find("originalMethod");
+                    if (retries && it != e.headers.end() && it->second.substr(0,3) == "404") {
+                        // Retry in a second.
+                        retries--;
+                        sleep(1);
+                        continue;
+                    }
+
+                    // But if we're out of retries, or we failed in any other way, re-throw the exception.
+                    throw;
+                }
             }
 
             // Verify this looks correct.

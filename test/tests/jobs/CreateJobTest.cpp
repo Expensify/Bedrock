@@ -292,7 +292,7 @@ struct CreateJobTest : tpunit::TestFixture {
         // Create a retryable job
         SData command("CreateJob");
         string jobName = "testRetryable";
-        string retryValue = "+1 SECOND";
+        string retryValue = "+5 SECONDS";
         command["name"] = jobName;
         command["retryAfter"] = retryValue;
 
@@ -329,13 +329,13 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 5);
 
         // Get the job, confirm error
         tester->executeWaitVerifyContent(command, "404 No job found");
 
-        // Wait 1 second, get the job, confirm no error
-        sleep(1);
+        // Wait a bit, get the job, confirm no error
+        sleep(6);
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["data"], "{}");
         ASSERT_EQUAL(response["jobID"], jobID);
