@@ -533,14 +533,12 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
-        // Sleep for two seconds and then confirm that all jobs but high_1 have the same nextRun time
-        sleep(2);
 
         // What we need to confirm is that the next run time of the two jobs we got above is correct.
         tester->readDB("SELECT nextRun, jobID FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL AND jobID IN (" + SQ(jobID1) + ", " + SQ(jobID2) + ")", result);
         ASSERT_EQUAL(result.size(), 2);
 
-        // The lastRun time can be anything from start to end, inclusive.
+        // The nextRun time can be anything from start to end, inclusive.
         set<string> allowableRunTimes;
         uint64_t testTime = start + 2'000'000;
         while (true) {
@@ -558,6 +556,9 @@ struct GetJobTest : tpunit::TestFixture {
         // Make sure both run times are in the allowable set.
         ASSERT_TRUE(allowableRunTimes.find(result[0][0]) != allowableRunTimes.end());
         ASSERT_TRUE(allowableRunTimes.find(result[1][0]) != allowableRunTimes.end());
+
+        // This should push us past the time when high_1 and medium_4 are re-queued.
+        sleep(3);
 
         // GetJob and confirm that the jobs are returned in high, medium, low order
         command.clear();
