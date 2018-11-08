@@ -488,7 +488,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "high_1";
         command["priority"] = "1000";
-        command["retryAfter"] = "+1 SECONDS";
+        command["retryAfter"] = "+2 SECONDS";
         tester->executeWaitVerifyContent(command);
 
         // Medium
@@ -519,9 +519,13 @@ struct GetJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "high_1";
-        tester->executeWaitVerifyContent(command);
+        uint64_t start = STimeNow();
+        STable data1 = tester->executeWaitVerifyContentTable(command);
+        uint64_t jobID1 = stoull(data1["jobID"]);
         command["name"] = "medium_4";
-        tester->executeWaitVerifyContent(command);
+        STable data2 = tester->executeWaitVerifyContentTable(command);
+        uint64_t jobID2 = stoull(data2["jobID"]);
+        uint64_t end = STimeNow();
 
         // Confirm they are in the RUNQUEUED state
         SQResult result;
@@ -531,20 +535,38 @@ struct GetJobTest : tpunit::TestFixture {
 
         // Sleep for two seconds and then confirm that all jobs but high_1 have the same nextRun time
         sleep(2);
-        tester->readDB("SELECT DISTINCT nextRun, GROUP_CONCAT(name) FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL GROUP BY nextRun;", result);
+
+        // What we need to confirm is that the next run time of the two jobs we got above is correct.
+        tester->readDB("SELECT nextRun, jobID FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL AND jobID IN (" + SQ(jobID1) + ", " + SQ(jobID2) + ")", result);
         ASSERT_EQUAL(result.size(), 2);
-        ASSERT_EQUAL(SParseList(result[0][1]).size(), 1);
-        ASSERT_EQUAL(result[0][1], "high_1");
-        ASSERT_EQUAL(SParseList(result[1][1]).size(), 4);
+
+        // The lastRun time can be anything from start to end, inclusive.
+        set<string> allowableRunTimes;
+        uint64_t testTime = start + 2'000'000;
+        while (true) {
+            string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
+            allowableRunTimes.insert(testTimeString);
+            if (testTime >= end + 2'000'000) {
+                break;
+            }
+            testTime += 1'000'000; // next second.
+            if (testTime > end + 2'000'000) {
+                testTime = end + 2'000'000;
+            }
+        }
+
+        // Make sure both run times are in the allowable set.
+        ASSERT_TRUE(allowableRunTimes.find(result[0][0]) != allowableRunTimes.end());
+        ASSERT_TRUE(allowableRunTimes.find(result[1][0]) != allowableRunTimes.end());
 
         // GetJob and confirm that the jobs are returned in high, medium, low order
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_1");
+        ASSERT_TRUE(response["name"] == "high_1" || response["name"] == "high_2");
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["name"], "high_2");
+        ASSERT_TRUE(response["name"] == "high_1" || response["name"] == "high_2");
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
