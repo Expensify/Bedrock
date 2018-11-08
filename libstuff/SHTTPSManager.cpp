@@ -77,6 +77,11 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
 }
 
+void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
+    map<Transaction*, uint64_t> transactionTimeouts;
+    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
+}
+
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
 
