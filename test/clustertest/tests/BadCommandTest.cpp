@@ -54,7 +54,14 @@ struct BadCommandTest : tpunit::TestFixture {
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
+            // TODO 1
+            string response;
+            try {
+                response = master->executeWaitVerifyContent(cmd);
+            } catch (...) {
+                cout << "Failed at point 1." << endl;
+                throw;
+            }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
                 success = true;
@@ -86,7 +93,14 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
+            // TODO 2
+            string response;
+            try {
+                response = master->executeWaitVerifyContent(cmd);
+            } catch (...) {
+                cout << "Failed at point 2." << endl;
+                throw;
+            }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
                 success = true;
@@ -112,7 +126,14 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = slave->executeWaitVerifyContent(cmd);
+            // TODO 3
+            string response;
+            try {
+                response = slave->executeWaitVerifyContent(cmd);
+            } catch (...) {
+                cout << "Failed at point 3." << endl;
+                throw;
+            }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
                 success = true;
@@ -133,7 +154,14 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = master->executeWaitVerifyContent(cmd);
+            // TODO 4
+            string response;
+            try {
+                response = master->executeWaitVerifyContent(cmd);
+            } catch (...) {
+                cout << "Failed at point 4." << endl;
+                throw;
+            }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
                 success = true;
