@@ -20,7 +20,6 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSData),
                                     TEST(LibStuff::testSTable),
                                     TEST(LibStuff::testFileIO),
-                                    TEST(LibStuff::testCurrentTimestamp),
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion),
@@ -429,20 +428,6 @@ struct LibStuff : tpunit::TestFixture {
 
         // The non-existent file's size is reported as zero
         ASSERT_EQUAL(SFileSize(path), 0);
-    }
-
-    void testCurrentTimestamp() {
-        // This is also a super-awful test.
-        string prev = SCURRENT_TIMESTAMP();
-        string next;
-        for (int i = 0; i < 10000; i++) {
-            next = SCURRENT_TIMESTAMP();
-            if (next < prev) {
-                cout << "'" << next << "', '" << prev << "'" << endl;
-                ASSERT_TRUE(false);
-            }
-            prev = next;
-        }
     }
 
     void testSQList() {

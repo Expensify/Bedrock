@@ -45,7 +45,9 @@ struct GetJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = jobName;
+        uint64_t start = STimeNow();
         response = tester->executeWaitVerifyContentTable(command);
+        uint64_t end = STimeNow();
 
         ASSERT_EQUAL(response.size(), 4);
         ASSERT_EQUAL(response["jobID"], jobID);
@@ -61,7 +63,28 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(currentJob[0][2], "RUNNING");
         ASSERT_EQUAL(currentJob[0][3], jobName);
         ASSERT_EQUAL(currentJob[0][4], originalJob[0][4]);
-        ASSERT_EQUAL(currentJob[0][5], SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow()));
+
+        // The lastRun time can be anything from start to end, inclusive.
+        bool saneRunTime = false;
+        uint64_t testTime = start;
+        while (true) {
+            string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
+            if (currentJob[0][5] == testTimeString) {
+                saneRunTime = true;
+                break;
+            }
+            if (testTime == end) {
+                // We already tried everything.
+                break;
+            }
+            testTime += 1'000'000; // next second.
+            if (testTime > end) {
+                // this is the last possible test.
+                testTime = end;
+            }
+        }
+        ASSERT_TRUE(saneRunTime);
+
         ASSERT_EQUAL(currentJob[0][6], originalJob[0][6]);
         ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
         ASSERT_EQUAL(currentJob[0][8], originalJob[0][8]);
@@ -229,7 +252,7 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = "low";
         command["priority"] = "0";
         const uint64_t time = STimeNow();
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 5'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 1'000'000);
         STable response = tester->executeWaitVerifyContentTable(command);
         list<string> jobList;
         jobList.push_back(response["jobID"]);
@@ -237,21 +260,21 @@ struct GetJobTest : tpunit::TestFixture {
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 6'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 3'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 7'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 5'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 10'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 11'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
@@ -265,7 +288,7 @@ struct GetJobTest : tpunit::TestFixture {
         // Low
         command["name"] = "low";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 8'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 7'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
@@ -275,22 +298,17 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result.size(), 6);
 
         // Make sure we finished this fast enough that we can still dequeue commands in the order we expect.
-        // We require the above to have finished in 3 seconds or less.
+        // We require the above to have finished in 2 seconds or less.
         uint64_t createdBy = STimeNow();
-        ASSERT_LESS_THAN(createdBy, startAt + 3'000'000);
-
-        // Now we sleep until it's nearly (but not too close) time to get the first command. This will sleep the
-        // remainder of the three seconds above.
-        usleep(3'000'000 - (createdBy - startAt));
+        ASSERT_LESS_THAN(createdBy, startAt + 2'000'000);
 
         // Get jobs in the order they become available. Make sure the first three we get are in the order low, medium,
         // high, as that's when they were scheduled to run. This test can fail if timing is off, as we expect
         // everything to happen correctly over 1-second intervals.
         vector<string> names;
 
-        // Now we allow 10 seconds to get all the commands. This is 13 seconds from the start, giving us a 3-second
-        // margin.
-        uint64_t timeout = STimeNow() + 10'000'000;
+        // Now we allow 15 seconds to get all the commands, giving us a 4-second margin.
+        uint64_t timeout = STimeNow() + 15'000'000;
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
@@ -336,7 +354,7 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(names[2], "high");
 
         // GetJob and confirm that the last 3 jobs are returned in priority order since now is past nextRun for all of them
-        sleep(5);
+        sleep(11);
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "high");
         response = tester->executeWaitVerifyContentTable(command);
