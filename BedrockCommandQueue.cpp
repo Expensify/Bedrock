@@ -4,7 +4,7 @@
 
 void BedrockCommandQueue::clear()  {
     SAUTOLOCK(_queueMutex);
-    return _commandQueue.clear();
+    _commandQueue.clear();
 }
 
 bool BedrockCommandQueue::empty()  {
@@ -93,7 +93,9 @@ void BedrockCommandQueue::push(BedrockCommand&& item) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     item.startTiming(BedrockCommand::QUEUE_WORKER);
-    queue.emplace(item.request.calcU64("commandExecuteTime"), move(item));
+    uint64_t executeTime = item.request.calcU64("commandExecuteTime");
+    _lookupByTimeout.insert(make_pair(item.timeout(), make_pair(item.priority, executeTime)));
+    queue.emplace(executeTime, move(item));
     _queueCondition.notify_one();
 }
 
@@ -171,6 +173,39 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
     // We check to see if a command is going to occur in the future, if so, we won't dequeue it yet.
     uint64_t now = STimeNow();
 
+    // If anything has timed out, pull that out of the queue, and return that first.
+    if (_lookupByTimeout.size()) {
+        auto timeoutIt = _lookupByTimeout.begin();
+        uint64_t timeout = timeoutIt->first;
+        if (timeout < now) {
+            //this command has timed out.
+            int priority = timeoutIt->second.first;
+            uint64_t executeTime = timeoutIt->second.second;
+
+            auto individualQueueIt = _commandQueue.find(priority);
+            if (individualQueueIt != _commandQueue.end()) {
+                auto itPair = individualQueueIt->second.equal_range(executeTime);
+                for (auto it = itPair.first; it != itPair.second; it++) {
+                    if (it->second.timeout() == timeout) {
+                        // This is the command that timed out.
+                        BedrockCommand command = move(it->second);
+                        individualQueueIt->second.erase(it);
+                        if (individualQueueIt->second.empty()) {
+                            _commandQueue.erase(individualQueueIt);
+                        }
+                        _lookupByTimeout.erase(timeoutIt);
+                        command.stopTiming(BedrockCommand::QUEUE_WORKER);
+                        return command;
+                    }
+                }
+            }
+
+            // We shouldn't have gotten here.
+            SWARN("Timeout (" << timeout << ") before now, but couldn't find a command for it?");
+            _lookupByTimeout.erase(timeoutIt);
+        }
+    }
+
     // Look at each priority queue, starting from the highest priority.
     for (auto queueMapIt = _commandQueue.rbegin(); queueMapIt != _commandQueue.rend(); ++queueMapIt) {
         
@@ -192,6 +227,16 @@ BedrockCommand BedrockCommandQueue::_dequeue(atomic<int>& incrementBeforeDequeue
             if (queueMapIt->second.empty()) {
                 // The odd syntax in the argument converts a reverse to forward iterator.
                 _commandQueue.erase(next(queueMapIt).base());
+            }
+
+            // Remove from the timing map, too.
+            uint64_t executeTime = command.request.calcU64("commandExecuteTime");
+            auto itPair = _lookupByTimeout.equal_range(command.timeout());
+            for (auto it = itPair.first; it != itPair.second; it++) {
+                if (it->second.first == command.priority && it->second.second == executeTime) {
+                    _lookupByTimeout.erase(it);
+                    break;
+                }
             }
 
             // Done!
