@@ -93,13 +93,17 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            // TODO 2
             string response;
             try {
                 response = master->executeWaitVerifyContent(cmd);
-            } catch (...) {
-                cout << "Failed at point 2." << endl;
-                throw;
+            } catch (const SException& e) {
+                auto it = e.headers.find("originalMethod");
+                if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
+                    // Socket not up yet. Try again.
+                    cout << "Socket not up on try " << count << endl;
+                    sleep(1);
+                    continue;
+                }
             }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
