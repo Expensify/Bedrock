@@ -192,6 +192,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                     break;
                 }
             }
+            sleep(1);
         }
         ASSERT_TRUE(success);
 
