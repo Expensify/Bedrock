@@ -61,10 +61,12 @@
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
+string s_processName;
 
 void SInitialize(string threadName, const char* processName) {
     // If a specific process name has been supplied, initialize syslog with it.
     if (processName) {
+        s_processName = processName;
         openlog(processName, 0, 0);
     }
 
