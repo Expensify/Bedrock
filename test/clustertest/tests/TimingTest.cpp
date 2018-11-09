@@ -50,6 +50,12 @@ struct TimingTest : tpunit::TestFixture {
                 ASSERT_EQUAL(processTime, 0);
             }
 
+            if (peekTime + processTime >= totalTime) {
+                cout << "peekTime: " << peekTime << endl;
+                cout << "processTime: " << processTime << endl;
+                cout << "totalTime: " << totalTime << endl;
+            }
+
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
 
             if (i != 0) {

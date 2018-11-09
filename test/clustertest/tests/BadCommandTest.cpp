@@ -54,7 +54,6 @@ struct BadCommandTest : tpunit::TestFixture {
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            // TODO 1
             string response;
             try {
                 response = master->executeWaitVerifyContent(cmd);
@@ -88,7 +87,7 @@ struct BadCommandTest : tpunit::TestFixture {
         response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Bring master back up.
-        tester->startNode(0);
+        tester->startNode(0, true);
         count = 0;
         success = false;
         while (count++ < 50) {
@@ -132,7 +131,6 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            // TODO 3
             string response;
             try {
                 response = slave->executeWaitVerifyContent(cmd);
@@ -160,7 +158,6 @@ struct BadCommandTest : tpunit::TestFixture {
         success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            // TODO 4
             string response;
             try {
                 response = master->executeWaitVerifyContent(cmd);
@@ -170,6 +167,7 @@ struct BadCommandTest : tpunit::TestFixture {
             }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
+                cout << "MASTERING, can return." << endl;
                 success = true;
                 break;
             }

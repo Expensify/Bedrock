@@ -137,7 +137,7 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-string BedrockTester::startServer(bool dontWait) {
+string BedrockTester::startServer(bool dontWait, bool logToConsole) {
     string serverName = getServerName();
     int childPID = fork();
     if (!childPID) {
@@ -150,6 +150,9 @@ string BedrockTester::startServer(bool dontWait) {
             if (!row.second.empty()) {
                 args.push_back(row.second);
             }
+        }
+        if (logToConsole) {
+            args.push_back("-logToConsole");
         }
 
         // Convert our c++ strings to old-school C strings for exec.
