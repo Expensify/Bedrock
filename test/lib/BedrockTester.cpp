@@ -139,6 +139,7 @@ BedrockTester::~BedrockTester() {
 
 string BedrockTester::startServer(bool dontWait) {
     string serverName = getServerName();
+    cout << "Starting server " << serverName << endl;
     int childPID = fork();
     if (!childPID) {
         // We are the child!
@@ -163,11 +164,18 @@ string BedrockTester::startServer(bool dontWait) {
         }
         cargs[count] = 0;
 
+        string argString;
+        for(string arg : args) {
+            argString += arg +  " ";
+        }
+
         // And then start the new server!
+        cout << "Child is new server, calling execvp with " << serverName << " and args: " << argString << endl;
         execvp(serverName.c_str(), cargs);
     } else {
         // We'll kill this later.
         _serverPID = childPID;
+        cout << "Forked, parent still running, child server is PID: " << _serverPID << endl;
 
         // Wait for the server to start up.
         // TODO: Make this not take so long, particularly in Travis. This probably really requires making the server
@@ -179,12 +187,14 @@ string BedrockTester::startServer(bool dontWait) {
             count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
             if (count > 60 * 10) {
+                cout << "Giving up after " << count << " tries." << endl;
                 break;
             }
             if (needSocket) {
                 int socket = 0;
                 socket = S_socket(dontWait ? _controlAddr : _serverAddr, true, false, true);
                 if (socket == -1) {
+                    cout << "S_socket returned -1 " << " using " << (dontWait ? _controlAddr : _serverAddr) << endl;
                     usleep(100000); // 0.1 seconds.
                     continue;
                 }
@@ -199,6 +209,7 @@ string BedrockTester::startServer(bool dontWait) {
             if (result[0].methodLine == "200 OK") {
                 return result[0].content;
             }
+            cout << "Socket is open but no 200 OK yet" << endl;
             // This will happen if the server's not up yet. We'll just try again.
             usleep(100000); // 0.1 seconds.
             continue;

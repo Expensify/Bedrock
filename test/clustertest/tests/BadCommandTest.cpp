@@ -113,6 +113,8 @@ struct BadCommandTest : tpunit::TestFixture {
             sleep(1);
         }
         ASSERT_TRUE(success);
+        // TODO this still fails with:
+        //      ]    assertion #1 at test/clustertest/tests/BadCommandTest.cpp:115
 
         // Segfault in process.
         diedCorrectly = false;
