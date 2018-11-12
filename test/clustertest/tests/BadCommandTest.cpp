@@ -106,6 +106,7 @@ struct BadCommandTest : tpunit::TestFixture {
             }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
+                cout << "MASTERING, can return." << endl;
                 success = true;
                 break;
             }
@@ -167,7 +168,6 @@ struct BadCommandTest : tpunit::TestFixture {
             }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
-                cout << "MASTERING, can return." << endl;
                 success = true;
                 break;
             }
