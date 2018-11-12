@@ -2429,16 +2429,29 @@ string SGetCurrentExceptionName()
     // exception name.
     int status = 0;
     size_t length = 1000;
-    char buffer[length] = {0};
+    char *buffer;
+    string exceptionName;
+    buffer = static_cast<char*>(malloc(length));
 
-    // Demangle the name of the current exception.
-    // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
-    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
-    string exceptionName = buffer;
+    if(NULL == buffer) {
+        SALERT("OOM");
+        abort();
+    } else {
+        for(size_t i=0; i < length; i++) {
+            buffer[i] = 0;
+        }
 
-    // If it failed, use the original name instead.
-    if (status) {
-        exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        // Demangle the name of the current exception.
+        // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
+        // Notice `buffer` must be allocate by `malloc` per the docs.
+        abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+        exceptionName = buffer;
+        free(buffer);
+
+        // If it failed, use the original name instead.
+        if (status) {
+            exceptionName = "(mangled) "s + abi::__cxa_current_exception_type()->name();
+        }
     }
     return exceptionName;
 }
