@@ -1,10 +1,10 @@
 # # Set the compiler, if it's not set by the environment.
 ifndef GXX
-	GXX = g++-6
+	GXX = g++
 endif
 
 ifndef CC
-	CC = gcc-6
+	CC = gcc
 endif
 
 # We use our project directory as a search path so we don't need "../../../.." all over the place.
