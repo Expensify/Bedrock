@@ -17,7 +17,7 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     if (request.isSet("commandExecuteTime")) {
         start = request.calc64("commandExecuteTime");
     } else {
-        SWARN("BedrockCommand created with no commandExecuteTime, should be done in base constructor!");
+        SWARN("BedrockCommand '" + request.methodLine + "' created with no commandExecuteTime, should be done in base constructor!");
         start = STimeNow();
     }
     return timeout + start;
