@@ -172,7 +172,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data "
+        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -189,6 +189,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         content["lastRun"] = result[0][5];
         content["repeat"] = result[0][6];
         content["data"] = result[0][7];
+        content["retryAfter"] = result[0][8];
         return true; // Successfully processed
     }
 
