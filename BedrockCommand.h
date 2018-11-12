@@ -23,6 +23,11 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
     };
 
+    // Times in *milliseconds*.
+    static const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
+    static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
+    static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
+
     // Constructor to make an empty object.
     BedrockCommand();
 
@@ -85,10 +90,19 @@ class BedrockCommand : public SQLiteCommand {
     // cause a crash, and not processed.
     set<string> crashIdentifyingValues;
 
+    // Return the timestamp by which this command must finish executing.
+    uint64_t timeout() const { return _timeout; }
+
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
 
     // used as a temporary variable for startTiming and stopTiming.
     tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
+
+    // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
+    static int64_t _getTimeout(const SData& request);
+
+    // This is a timestamp in *microseconds* for when this command should timeout.
+    uint64_t _timeout;
 };

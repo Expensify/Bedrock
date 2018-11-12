@@ -29,41 +29,30 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getTimeout(const SData& request) {
+uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
+    int64_t timeout = command.timeout();
+    int64_t now = STimeNow();
 
-    // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
-    uint64_t timeout =  DEFAULT_TIMEOUT;
-    if (request.isSet("timeout")) {
-        timeout = request.calc("timeout");
-    } else if (SIEquals(request["connection"], "forget")) {
-        timeout = DEFAULT_TIMEOUT_FORGET;
-    }
+    // This is what's left for the "absolute" time. If it's negative, we've already timed out.
+    int64_t adjustedTimeout = timeout - now;
 
     // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
-    int64_t processTimeout = request.isSet("processTimeout") ? request.calc("processTimeout") : DEFAULT_PROCESS_TIMEOUT;
+    int64_t processTimeout = command.request.isSet("processTimeout") ? command.request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 
-    // See when the command was scheduled to run. The timeout is from *this* start time, not from when the command
-    // starts executing.
-    try {
-        int64_t adjustedTimeout = (int64_t)timeout - (int64_t)((STimeNow() - stoull(request["commandExecuteTime"])) / 1000);
+    // Since timeouts are specified in ms, we convert to us.
+    processTimeout *= 1000;
 
-        // If this is negative, we're *already* past the timeout, just return early.
-        if (adjustedTimeout <= 0 || processTimeout <= 0) {
-            SALERT("Command " << request.methodLine << " timed out after " << (timeout - adjustedTimeout) << "ms.");
-            STHROW("555 Timeout");
-        } else {
-            // Otherwise, we can return the shorter of our two timeouts.
-            return min(adjustedTimeout, processTimeout);
-        }
-    } catch (const invalid_argument& e) {
-        SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
-    } catch (const out_of_range& e) {
-        SWARN("Invalid commandExecuteTime: " << request["commandExecuteTime"] << "'.");
+    // Already expired.
+    if (adjustedTimeout <= 0 || processTimeout <= 0) {
+        // TODO: The actual timeout number in this line is wrong.
+        SALERT("Command " << command.request.methodLine << " timed out after " << (timeout - adjustedTimeout) << "ms.");
+        STHROW("555 Timeout");
     }
 
-    // This only happens if we hit the catch blocks above. Default to a low value.
-    return min(DEFAULT_TIMEOUT, DEFAULT_PROCESS_TIMEOUT);
+    // Both of these are positive, return the lowest remaining.
+    return min(processTimeout, adjustedTimeout);
 }
+
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
@@ -74,10 +63,10 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     // We catch any exception and handle in `_handleCommandException`.
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
-        uint64_t timeout = _getTimeout(request);
+        uint64_t timeout = _getRemainingTime(command);
         command.peekCount++;
 
-        _db.startTiming(timeout * 1000);
+        _db.startTiming(timeout);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
@@ -179,11 +168,11 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getTimeout(request);
+        uint64_t timeout = _getRemainingTime(command);
         command.processCount++;
 
         // Time in US.
-        _db.startTiming(timeout * 1000);
+        _db.startTiming(timeout);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.

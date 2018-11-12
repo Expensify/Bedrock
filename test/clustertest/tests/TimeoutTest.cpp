@@ -8,7 +8,8 @@ struct TimeoutTest : tpunit::TestFixture {
                               AFTER_CLASS(TimeoutTest::teardown),
                               TEST(TimeoutTest::test),
                               TEST(TimeoutTest::testprocess),
-                              TEST(TimeoutTest::totalTimeout)) { }
+                              TEST(TimeoutTest::totalTimeout),
+                              TEST(TimeoutTest::futureCommitTimeout)) { }
 
     BedrockClusterTester* tester;
 
@@ -60,7 +61,19 @@ struct TimeoutTest : tpunit::TestFixture {
 
         SData https("httpstimeout");
         https["timeout"] = "5000"; // 5s.
+        https["neversend"] = "1";
         brtester->executeWaitVerifyContent(https, "555 Timeout");
     }
+
+    void futureCommitTimeout() {
+        // Test total timeout, not process timeout.
+        BedrockTester* brtester = tester->getBedrockTester(0);
+
+        SData https("Query");
+        https["timeout"] = "5000"; // 5s.
+        https["commitCount"] = "10000000000";
+        brtester->executeWaitVerifyContent(https, "555 Timeout");
+    }
+
 } __TimeoutTest;
 

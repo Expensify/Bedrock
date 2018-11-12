@@ -81,7 +81,7 @@ void BedrockServer::syncWrapper(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& masterVersion,
-                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
     // Initialize the thread.
@@ -118,7 +118,7 @@ void BedrockServer::sync(SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& masterVersion,
-                         CommandQueue& syncNodeQueuedCommands,
+                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
     // We currently have no commands in progress.
@@ -151,7 +151,7 @@ void BedrockServer::sync(SData& args,
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
-    CommandQueue completedCommands;
+    BedrockTimeoutCommandQueue completedCommands;
 
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
     // our worker threads now. We don't wait until the node is `MASTERING` or `SLAVING`, as it's state can change while
@@ -195,21 +195,62 @@ void BedrockServer::sync(SData& args,
         // end up lost in the ether.
         {
             SAUTOLOCK(server._futureCommitCommandMutex);
+
+            // First, see if anything has timed out, and move that back to the main queue.
+            if (server._futureCommitCommandTimeouts.size()) {
+                uint64_t now = STimeNow();
+                auto it =  server._futureCommitCommandTimeouts.begin();
+                while (it != server._futureCommitCommandTimeouts.end() && it->first < now) {
+                    // Find commands depending on this commit.
+                    auto itPair =  server._futureCommitCommands.equal_range(it->second);
+                    for (auto cmdIt = itPair.first; cmdIt != itPair.second; cmdIt++) {
+                        // Check for one with this timeout.
+                        if (cmdIt->second.timeout() == it->first) {
+                            // This command has the right commit count *and* timeout, return it.
+                            SINFO("Returning command (" << cmdIt->second.request.methodLine << ") waiting on commit " << cmdIt->first
+                                  << " to queue, timed out at: " << now << ", timeout was: " << it->first << ".");
+
+                            // Remove the commit count requirement so this can get timed out.
+                            cmdIt->second.request.erase("commitCount");
+                            server._commandQueue.push(move(cmdIt->second));
+
+                            // And delete it, it's gone.
+                             server._futureCommitCommands.erase(cmdIt);
+
+                            // Done.
+                            break;
+                        }
+                    }
+                    it++;
+                }
+
+                // And remove everything we just iterated through.
+                if (it != server._futureCommitCommandTimeouts.begin()) {
+                    server._futureCommitCommandTimeouts.erase(server._futureCommitCommandTimeouts.begin(), it);
+                }
+            }
+
+            // Anything that hasn't timed out might be ready to return because the commit count is up-to-date.
             if (!server._futureCommitCommands.empty()) {
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
-                auto& eraseTo = it;
                 while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState.load() != RUNNING)) {
                     SINFO("Returning command (" << it->second.request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
-                    server._commandsInProgress--;
 
-                    eraseTo = it;
+                    // Remove it from the timed out list as well.
+                    auto itPair = server._futureCommitCommandTimeouts.equal_range(it->second.timeout());
+                    for (auto timeoutIt = itPair.first; timeoutIt != itPair.second; timeoutIt++) {
+                        if (timeoutIt->second == it->first) {
+                             server._futureCommitCommandTimeouts.erase(timeoutIt);
+                            break;
+                        }
+                    }
                     it++;
                 }
-                if (eraseTo != server._futureCommitCommands.begin()) {
-                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), eraseTo);
+                if (it != server._futureCommitCommands.begin()) {
+                    server._futureCommitCommands.erase(server._futureCommitCommands.begin(), it);
                 }
             }
         }
@@ -304,8 +345,10 @@ void BedrockServer::sync(SData& args,
         // worker threads know that a DB upgrade is in progress, and start the upgrade process, which works basically
         // like a regular distributed commit.
         if (preUpdateState != SQLiteNode::MASTERING && nodeState == SQLiteNode::MASTERING) {
+            // Store this before we start writing to the DB, which can take a while depending on what changes were made
+            // (for instance, adding an index).
+            upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
-                upgradeInProgress.store(true);
                 server._syncThreadCommitMutex.lock();
                 committingCommand = true;
                 server._commandsInProgress++;
@@ -314,7 +357,9 @@ void BedrockServer::sync(SData& args,
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
             } else {
-                // If we're not doing an upgrade, we don't need to keep suppressing multi-write.
+                // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
+                // the upgradeInProgress flag.
+                upgradeInProgress.store(false);
                 server._suppressMultiWrite.store(false);
             }
         } else if ((preUpdateState == SQLiteNode::MASTERING || preUpdateState == SQLiteNode::STANDINGDOWN)
@@ -417,6 +462,13 @@ void BedrockServer::sync(SData& args,
             SAUTOPREFIX(command.request["requestID"]);
             SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
+
+            if (command.timeout() < STimeNow()) {
+                SINFO("Command '" << command.request.methodLine << "' timed out in sync thread queue, sending back to main queue.");
+                server._commandQueue.push(move(command));
+                server._commandsInProgress--;
+                continue;
+            }
 
             // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
             // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
@@ -582,8 +634,8 @@ void BedrockServer::worker(SData& args,
                            atomic<SQLiteNode::State>& replicationState,
                            atomic<bool>& upgradeInProgress,
                            atomic<string>& masterVersion,
-                           CommandQueue& syncNodeQueuedCommands,
-                           CommandQueue& syncNodeCompletedCommands,
+                           BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
+                           BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                            BedrockServer& server,
                            int threadId,
                            int threadCount)
@@ -680,9 +732,13 @@ void BedrockServer::worker(SData& args,
             if (commandCommitCount > commitCount) {
                 SAUTOLOCK(server._futureCommitCommandMutex);
                 auto newQueueSize = server._futureCommitCommands.size() + 1;
-                SINFO("Command (" << command.request.methodLine << ") depends on future commit(" << commandCommitCount
+                SINFO("Command (" << command.request.methodLine << ") depends on future commit (" << commandCommitCount
                       << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+                server._futureCommitCommandTimeouts.insert(make_pair(command.timeout(), commandCommitCount));
                 server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+
+                // Don't count this as `in progress`, it's just sitting there.
+                server._commandsInProgress--;
                 if (newQueueSize > 100) {
                     SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
                 }
@@ -1553,14 +1609,16 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
 }
 
 list<STable> BedrockServer::getPeerInfo() {
-    SAUTOLOCK(_syncMutex);
     list<STable> peerData;
-    auto _syncNodeCopy = _syncNode;
-    if (_syncNodeCopy) {
-        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-            peerData.emplace_back(peer->nameValueMap);
-            peerData.back()["host"] = peer->host;
-            peerData.back()["name"] = peer->name;
+    if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
+        lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
+        auto _syncNodeCopy = _syncNode;
+        if (_syncNodeCopy) {
+            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
+                peerData.emplace_back(peer->nameValueMap);
+                peerData.back()["host"] = peer->host;
+                peerData.back()["name"] = peer->name;
+            }
         }
     }
     return peerData;
@@ -1653,20 +1711,24 @@ void BedrockServer::_status(BedrockCommand& command) {
         list<STable> peerData = getPeerInfo();
         list<string> escalated;
         {
-            SAUTOLOCK(_syncMutex);
+            if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
+                lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
 
-            // There's no syncNode when the server is detached, so we can't get this data.
-            auto _syncNodeCopy = _syncNode;
-            if (_syncNodeCopy) {
-                content["syncNodeAvailable"] = "true";
-                // Set some information about this node.
-                content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
-                content["priority"] = to_string(_syncNodeCopy->getPriority());
+                // There's no syncNode when the server is detached, so we can't get this data.
+                auto _syncNodeCopy = _syncNode;
+                if (_syncNodeCopy) {
+                    content["syncNodeAvailable"] = "true";
+                    // Set some information about this node.
+                    content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
+                    content["priority"] = to_string(_syncNodeCopy->getPriority());
 
-                // Get any escalated commands that are waiting to be processed.
-                escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
+                    // Get any escalated commands that are waiting to be processed.
+                    escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
+                } else {
+                    content["syncNodeAvailable"] = "false";
+                }
             } else {
-                content["syncNodeAvailable"] = "false";
+                content["syncNodeBlocked"] = "true";
             }
         }
 
@@ -1807,16 +1869,28 @@ void BedrockServer::_prePollPlugins(fd_map& fdm) {
 }
 
 void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
+    // Only pass timeouts for transactions belonging to timed out commands.
+    uint64_t now = STimeNow();
+    map<SHTTPSManager::Transaction*, uint64_t> transactionTimeouts;
+    auto timeoutIt = _outstandingHTTPSCommands.begin();
+    while (timeoutIt != _outstandingHTTPSCommands.end() && (*timeoutIt)->timeout() < now) {
+        // Add all the transactions for this command, even if some are already complete, they'll just get ignored.
+        for (auto transaction : (*timeoutIt)->httpsRequests) {
+            transactionTimeouts[transaction] = (*timeoutIt)->timeout();
+        }
+        timeoutIt++;
+    }
+
     for (auto plugin : plugins) {
         for (auto manager : plugin->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
             auto _syncNodeCopy = _syncNode;
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
                 // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, 5000);
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
             } else {
                 // Otherwise, use the default timeout.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests);
+                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts);
             }
 
             // Move any fully completed commands back to the main queue, and decrement the number of commands in
@@ -1877,7 +1951,7 @@ SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
 void BedrockServer::broadcastCommand(const SData& cmd) {
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
-    lock_guard<recursive_mutex> lock(_syncMutex);
+    lock_guard<decltype(_syncMutex)> lock(_syncMutex);
     auto _syncNodeCopy = _syncNode;
     if (_syncNodeCopy) {
         _syncNodeCopy->broadcast(message);
