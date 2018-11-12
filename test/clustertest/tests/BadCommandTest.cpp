@@ -90,7 +90,7 @@ struct BadCommandTest : tpunit::TestFixture {
         tester->startNode(0, true);
         count = 0;
         success = false;
-        while (count++ < 50) {
+        while (count++ < 10) {
             SData cmd("Status");
             string response;
             try {
@@ -100,6 +100,18 @@ struct BadCommandTest : tpunit::TestFixture {
                 if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
                     // Socket not up yet. Try again.
                     cout << "Socket not up on try " << count << endl;
+
+                    // See if the server died (typically because a socket it needs is still bound).
+                    int serverPID = master->getServerPID();
+                    int result = kill(serverPID, 0);
+                    if (result) {
+                        if (errno == ESRCH) {
+                            cout << "Looks like the process died, let's restart it." << endl;
+                            tester->startNode(0, true);
+                        } else {
+                            cout << "Something weird happened." << endl;
+                        }
+                    }
                     sleep(1);
                     continue;
                 }
