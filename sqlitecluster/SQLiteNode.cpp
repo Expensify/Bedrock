@@ -1298,23 +1298,25 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIOZATION messages.
+        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIZATION messages.
         if (_state == MASTERING || _state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
-            SQLiteCommand command;
-            command.request = message;
-            command.initiatingPeerID = peer->id;
-            command.request["peerCommitCount"] = (*peer)["CommitCount"];
-            command.request["peerHash"] = (*peer)["Hash"];
-            command.request["peerID"] = to_string(getIDByPeer(peer));
-            command.request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
+            SData request = message;
+            request["peerCommitCount"] = (*peer)["CommitCount"];
+            request["peerHash"] = (*peer)["Hash"];
+            request["peerID"] = to_string(getIDByPeer(peer));
+            request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
             // The following properties are only used to expand out our log macros.
-            command.request["state"] = to_string(_state);
-            command.request["name"] = name;
-            command.request["peerName"] = peer->name;
+            request["state"] = to_string(_state);
+            request["name"] = name;
+            request["peerName"] = peer->name;
+
+            // Create a command from this request and pass it on to the server to handle.
+            SQLiteCommand command(move(request));
+            command.initiatingPeerID = peer->id;
             _server.acceptCommand(move(command), true);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
