@@ -793,7 +793,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 string updateQuery = "UPDATE jobs "
                                      "SET state='RUNQUEUED', "
                                          "lastRun=" + currentTime + ", "
-                                         "nextRun=MIN(DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + "), COALESCE(NULLIF(" + (nextRunDateTime != "" ? nextRunDateTime : "''") + ", ''), 'z'))" + " "
+                                         "nextRun=MIN(DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + "), COALESCE(" + (nextRunDateTime != "" ? nextRunDateTime : "NULL") + ", 'z'))" + " "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
