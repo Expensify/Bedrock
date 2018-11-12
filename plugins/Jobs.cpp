@@ -789,11 +789,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             SINFO("Updating jobs with retryAfter");
             for (auto job : retriableJobs) {
                 string currentTime = SCURRENT_TIMESTAMP();
-                string nextRunDateTime = _constructNextRunDATETIME(job["nextRun"], job["lastRun"] != "" ? job["lastRun"] : job["nextRun"], job["repeat"]);
+                string retryAfterDateTime = "DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + ")";
+                string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], job["lastRun"] != "" ? job["lastRun"] : job["nextRun"], job["repeat"]);
+                string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
                 string updateQuery = "UPDATE jobs "
                                      "SET state='RUNQUEUED', "
                                          "lastRun=" + currentTime + ", "
-                                         "nextRun=MIN(DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + "), COALESCE(" + (nextRunDateTime != "" ? nextRunDateTime : "NULL") + ", 'z'))" + " "
+                                         "nextRun=" + nextRunDateTime + " "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
