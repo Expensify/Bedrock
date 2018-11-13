@@ -90,7 +90,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                             }
                             completed++;
                         } else {
-                            // Got a disconnection. try on the next node.
+                            // Got a disconnection. Try on the next node.
                             break;
                         }
                     }
@@ -108,7 +108,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
         int count = 0;
         int success = false;
-        while (count++ < 50) {
+        while (count++ < 90) {
             SData cmd("Status");
             try {
                 string response = node->executeWaitVerifyContent(cmd);

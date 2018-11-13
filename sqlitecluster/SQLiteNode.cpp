@@ -26,7 +26,7 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
-const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_M;
+const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
 atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
@@ -1369,7 +1369,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
+                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
             }
         } catch (const SException& e) {
             // Transaction failed
@@ -1957,7 +1957,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } else if (newState == SEARCHING || newState == SUBSCRIBING) {
             timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         } else if (newState == SYNCHRONIZING) {
-            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
+            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         } else {
             timeout = 0;
         }
