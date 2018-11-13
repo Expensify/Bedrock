@@ -80,7 +80,9 @@ struct BadCommandTest : tpunit::TestFixture {
             try {
                 response = slave->executeWaitVerifyContent(cmd, "500 Refused");
             } catch (const SException& e) {
-                if ((e.what() == "Empty response"s)) {
+                auto it = e.headers.find("originalMethod");
+                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
+                if ((e.what() == "Empty response"s) || wasSocketFailed) {
                     // Try again, sometimes things get disconnected.
                     retries--;
                     cout << "Failed to get a response to generatesegfaultpeek from promoted slave, retrying." << endl;
@@ -135,7 +137,9 @@ struct BadCommandTest : tpunit::TestFixture {
             try {
                 response = slave->executeWaitVerifyContent(cmd, "500 Refused");
             } catch (const SException& e) {
-                if ((e.what() == "Empty response"s)) {
+                auto it = e.headers.find("originalMethod");
+                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
+                if ((e.what() == "Empty response"s) || wasSocketFailed) {
                     // Try again, sometimes things get disconnected.
                     retries--;
                     cout << "Failed to get a response to generateassertpeek from promoted slave, retrying." << endl;
@@ -232,7 +236,9 @@ struct BadCommandTest : tpunit::TestFixture {
             try {
                 response = slave->executeWaitVerifyContent(cmd, "500 Refused");
             } catch (const SException& e) {
-                if ((e.what() == "Empty response"s)) {
+                auto it = e.headers.find("originalMethod");
+                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
+                if ((e.what() == "Empty response"s) || wasSocketFailed) {
                     // Try again, sometimes things get disconnected.
                     retries--;
                     cout << "Failed to get a response to generatesegfaultprocess from promoted slave, retrying." << endl;
