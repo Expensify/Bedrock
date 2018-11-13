@@ -78,6 +78,7 @@ struct BadCommandTest : tpunit::TestFixture {
         response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Bring master back up.
+        ASSERT_FALSE(checksock(11113));
         tester->startNode(0);
         int count = 0;
         bool success = false;
