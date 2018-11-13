@@ -125,8 +125,6 @@ struct BadCommandTest : tpunit::TestFixture {
             sleep(1);
         }
         ASSERT_TRUE(success);
-        // TODO this still fails with:
-        //      ]    assertion #1 at test/clustertest/tests/BadCommandTest.cpp:115
 
         // Segfault in process.
         diedCorrectly = false;
@@ -166,20 +164,38 @@ struct BadCommandTest : tpunit::TestFixture {
         response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Try and bring master back up, just because the next test will expect it.
-        tester->startNode(0);
+        tester->startNode(0, true);
         count = 0;
         success = false;
-        while (count++ < 50) {
+        while (count++ < 10) {
             SData cmd("Status");
             string response;
             try {
                 response = master->executeWaitVerifyContent(cmd);
-            } catch (...) {
-                cout << "Failed at point 4." << endl;
-                throw;
+            } catch (const SException& e) {
+                auto it = e.headers.find("originalMethod");
+                if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
+                    // Socket not up yet. Try again.
+                    cout << "Socket not up on try " << count << endl;
+
+                    // See if the server died (typically because a socket it needs is still bound).
+                    int serverPID = master->getServerPID();
+                    int result = kill(serverPID, 0);
+                    if (result) {
+                        if (errno == ESRCH) {
+                            cout << "Looks like the process died, let's restart it." << endl;
+                            tester->startNode(0, true);
+                        } else {
+                            cout << "Something weird happened." << endl;
+                        }
+                    }
+                    sleep(1);
+                    continue;
+                }
             }
             STable json = SParseJSONObject(response);
             if (json["state"] == "MASTERING") {
+                cout << "MASTERING, can return." << endl;
                 success = true;
                 break;
             }
