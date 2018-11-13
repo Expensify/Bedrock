@@ -573,6 +573,12 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_TRUE(response["name"] == "medium_4" || response["name"] == "medium_3"); // Because we don't order by jobID, the order of these jobs depends on the table/index used to retrieve them
         response = tester->executeWaitVerifyContentTable(command);
+        if (response["name"] != "low_5") {
+            cout << "This will fail:" << endl;
+            for (auto& row : response) {
+                cout << row.first << ": '" << row.second << "'." << endl;
+            }
+        }
         ASSERT_EQUAL(response["name"], "low_5");
     }
 
