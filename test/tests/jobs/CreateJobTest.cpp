@@ -323,7 +323,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
 
-        // Query the db and confirm that state, nextRun and lastRun are 1 second apart
+        // Query the db and confirm that state, nextRun and lastRun are 5 seconds apart
         SQResult jobData;
         tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
@@ -332,17 +332,37 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 5);
 
         // Get the job, confirm error
-        tester->executeWaitVerifyContent(command, "404 No job found");
+        try {
+            // This needs to run less than 5 seconds after the first `GetJob` or it doesn't work.
+            tester->executeWaitVerifyContent(command, "404 No job found");
+        } catch (...) {
+            cout << "CreateJobTest failed at point 1." << endl;
+            throw;
+        }
 
-        // Wait a bit, get the job, confirm no error
-        sleep(6);
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["data"], "{}");
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
+        // This will fail with 404's until the job re-queues.
+        int retries = 100; // 100 tenths of a second.
+        while (retries) {
+            try {
+                response = tester->executeWaitVerifyContentTable(command);
+            } catch (...) {
+                retries--;
+                usleep(100'000);
+                continue;
+            }
+            ASSERT_EQUAL(response["data"], "{}");
+            ASSERT_EQUAL(response["jobID"], jobID);
+            ASSERT_EQUAL(response["name"], jobName);
+            break;
+        }
 
-        // Get the job, confirm error
-        tester->executeWaitVerifyContent(command, "404 No job found");
+        // try again immediately and it should be not found.
+        try {
+            tester->executeWaitVerifyContent(command, "404 No job found");
+        } catch (...) {
+            cout << "CreateJobTest failed at point 2." << endl;
+            throw;
+        }
 
         // Finish the job
         command.clear();
