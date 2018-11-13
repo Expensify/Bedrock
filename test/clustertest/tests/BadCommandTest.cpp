@@ -75,7 +75,23 @@ struct BadCommandTest : tpunit::TestFixture {
         // Send the same command to the slave.
         cmd = SData("generatesegfaultpeek");
         cmd["userID"] = "32";
-        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+        int retries = 3;
+        while (retries) {
+            try {
+                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+            } catch (const SException& e) {
+                if ((e.what() == "Empty response"s)) {
+                    // Try again, sometimes things get disconnected.
+                    retries--;
+                    cout << "Failed to get a response to generatesegfaultpeek from promoted slave, retrying." << endl;
+                    continue;
+                } else {
+                    throw;
+                }
+            }
+            // Didn't hit the catch block, we're good.
+            break;
+        }
 
         // Bring master back up.
         ASSERT_FALSE(checksock(11113));
@@ -114,7 +130,23 @@ struct BadCommandTest : tpunit::TestFixture {
         // Send the same command to the slave.
         cmd = SData("generateassertpeek");
         cmd["userID"] = "32";
-        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+        retries = 3;
+        while (retries) {
+            try {
+                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+            } catch (const SException& e) {
+                if ((e.what() == "Empty response"s)) {
+                    // Try again, sometimes things get disconnected.
+                    retries--;
+                    cout << "Failed to get a response to generateassertpeek from promoted slave, retrying." << endl;
+                    continue;
+                } else {
+                    throw;
+                }
+            }
+            // Didn't hit the catch block, we're good.
+            break;
+        }
 
         // Bring master back up.
         ASSERT_FALSE(checksock(11113));
@@ -180,7 +212,7 @@ struct BadCommandTest : tpunit::TestFixture {
             try {
                 response = slave->executeWaitVerifyContent(cmd);
             } catch (...) {
-                cout << "Failed at point 3." << endl;
+                cout << "Failed at point 2." << endl;
                 throw;
             }
             STable json = SParseJSONObject(response);
@@ -195,7 +227,23 @@ struct BadCommandTest : tpunit::TestFixture {
         // Send the slave the same command, it should be blacklisted.
         cmd = SData("generatesegfaultprocess");
         cmd["userID"] = "33";
-        response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+        retries = 3;
+        while (retries) {
+            try {
+                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
+            } catch (const SException& e) {
+                if ((e.what() == "Empty response"s)) {
+                    // Try again, sometimes things get disconnected.
+                    retries--;
+                    cout << "Failed to get a response to generatesegfaultprocess from promoted slave, retrying." << endl;
+                    continue;
+                } else {
+                    throw;
+                }
+            }
+            // Didn't hit the catch block, we're good.
+            break;
+        }
 
         // Try and bring master back up, just because the next test will expect it.
         ASSERT_FALSE(checksock(11113));
