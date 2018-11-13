@@ -101,10 +101,10 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-    bool waitFor(bool start, int nodeNumber, string state) {
+    bool waitFor(bool start, int nodeNumber, string state, bool logToConsole = false) {
         BedrockTester* node = tester->getBedrockTester(nodeNumber);
         if (start) {
-            tester->startNode(nodeNumber);
+            tester->startNode(nodeNumber, logToConsole);
         }
         int count = 0;
         int success = false;
@@ -232,7 +232,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // Now bring master back up.
         sleep(2);
-        ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
+        ASSERT_TRUE(waitFor(true, 0, "MASTERING", true));
 
         // Blow up a slave.
         sleep(2);
