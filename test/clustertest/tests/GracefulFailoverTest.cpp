@@ -232,7 +232,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // Now bring master back up.
         sleep(2);
-        ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
+        ASSERT_TRUE(waitFor(true, 0, "MASTERING", true));
 
         // Blow up a slave.
         sleep(2);
