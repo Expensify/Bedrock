@@ -266,11 +266,75 @@ struct CreateJobTest : tpunit::TestFixture {
     }
 
     void retryRecurringJobs() {
+        // Create a job with both retry and repeat
         SData command("CreateJob");
-        command["name"] = "test";
-        command["repeat"] = "SCHEDULED, +1 HOUR";
-        command["retryAfter"] = "10";
-        tester->executeWaitVerifyContent(command, "402 Recurring auto-retrying jobs are not supported");
+        string jobName = "testRetryable";
+        string retryValue = "+1 SECOND";
+        string repeatValue = "SCHEDULED, +10 SECONDS";
+        command["name"] = jobName;
+        command["repeat"] = repeatValue;
+        command["retryAfter"] = retryValue;
+
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        SQResult originalJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
+
+        ASSERT_EQUAL(originalJob[0][1], jobID);
+        ASSERT_EQUAL(originalJob[0][2], "QUEUED");
+        ASSERT_EQUAL(originalJob[0][3], jobName);
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
+        ASSERT_EQUAL(originalJob[0][5], "");
+        ASSERT_EQUAL(originalJob[0][6], repeatValue);
+        ASSERT_EQUAL(originalJob[0][7], "{}");
+        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
+        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(originalJob[0][10], retryValue);
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = jobName;
+        response = tester->executeWaitVerifyContentTable(command);
+
+        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+
+        // Query the db and confirm that state, nextRun and lastRun are 1 second apart because of retryAfter
+        SQResult jobData;
+        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
+        time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
+        time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
+
+        // Get the job, confirm error because 1 second hasn't passed
+        tester->executeWaitVerifyContent(command, "404 No job found");
+
+        // Wait 1 second, get the job, confirm no error
+        sleep(1);
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+
+        // Get the job, confirm error
+        tester->executeWaitVerifyContent(command, "404 No job found");
+
+        // Finish the job
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Query db and confirm job still exists
+        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
+        lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
+        ASSERT_EQUAL(jobData[0][0], "QUEUED");
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 11);
     }
 
     void retryWithMalformedValue() {
