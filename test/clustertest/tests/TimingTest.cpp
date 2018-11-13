@@ -43,6 +43,12 @@ struct TimingTest : tpunit::TestFixture {
 
             // Only master is expected to have these set.
             if (i == 0) {
+                if (peekTime <= 0 || processTime <= 0) {
+                    cout << "peekTime: " << peekTime << endl;
+                    cout << "processTime: " << processTime << endl;
+                    cout << "totalTime: " << totalTime << endl;
+                    cout << result.serialize() << endl;
+                }
                 ASSERT_GREATER_THAN(peekTime, 0);
                 ASSERT_GREATER_THAN(processTime, 0);
             } else {
@@ -54,6 +60,7 @@ struct TimingTest : tpunit::TestFixture {
                 cout << "peekTime: " << peekTime << endl;
                 cout << "processTime: " << processTime << endl;
                 cout << "totalTime: " << totalTime << endl;
+                cout << result.serialize() << endl;
             }
 
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
