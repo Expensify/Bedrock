@@ -190,6 +190,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                     // It's off. We can start it back up.
                     success = true;
                     break;
+                } else if (peerInfo["name"] == "brcluster_node_2") {
+                    cout << "brcluster_node_2 state is still '" << peerInfo["State"] << "'." << endl;
                 }
             }
             sleep(1);
