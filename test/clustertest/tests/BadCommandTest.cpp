@@ -1,5 +1,34 @@
 #include "../BedrockClusterTester.h"
 
+int checksock(int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int i = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
+    sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    unsigned int ip = inet_addr("127.0.0.1");
+    addr.sin_addr.s_addr = ip;
+
+    int result = 0;
+    int count = 0;
+    do {
+        result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
+        if (result) {
+            cout << "Couldn't bind, errno: " << errno << ", '" << strerror(errno) << "'." << endl;
+            count++;
+            sleep(1);
+        } else {
+            shutdown(sock, 2);
+            close(sock);
+            return 0;
+        }
+    } while (result && count < 30);
+
+    return 1;
+}
+
 struct BadCommandTest : tpunit::TestFixture {
     BadCommandTest()
         : tpunit::TestFixture("BadCommand",
@@ -87,6 +116,7 @@ struct BadCommandTest : tpunit::TestFixture {
         response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Bring master back up.
+        ASSERT_FALSE(checksock(11113));
         tester->startNode(0, true);
         count = 0;
         success = false;
@@ -100,6 +130,7 @@ struct BadCommandTest : tpunit::TestFixture {
                 if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
                     // Socket not up yet. Try again.
                     cout << "Socket not up on try " << count << endl;
+
 
                     // See if the server died (typically because a socket it needs is still bound).
                     int serverPID = master->getServerPID();
@@ -166,6 +197,7 @@ struct BadCommandTest : tpunit::TestFixture {
         response = slave->executeWaitVerifyContent(cmd, "500 Refused");
 
         // Try and bring master back up, just because the next test will expect it.
+        ASSERT_FALSE(checksock(11113));
         tester->startNode(0, true);
         count = 0;
         success = false;
@@ -179,6 +211,7 @@ struct BadCommandTest : tpunit::TestFixture {
                 if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
                     // Socket not up yet. Try again.
                     cout << "Socket not up on try " << count << endl;
+
 
                     // See if the server died (typically because a socket it needs is still bound).
                     int serverPID = master->getServerPID();
