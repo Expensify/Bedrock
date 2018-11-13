@@ -111,6 +111,8 @@ struct BadCommandTest : tpunit::TestFixture {
                         } else {
                             cout << "Something weird happened." << endl;
                         }
+                    } else {
+                        cout << "Server seems to still be running." << endl;
                     }
                     sleep(1);
                     continue;
@@ -188,6 +190,8 @@ struct BadCommandTest : tpunit::TestFixture {
                         } else {
                             cout << "Something weird happened." << endl;
                         }
+                    } else {
+                        cout << "Server seems to still be running." << endl;
                     }
                     sleep(1);
                     continue;
