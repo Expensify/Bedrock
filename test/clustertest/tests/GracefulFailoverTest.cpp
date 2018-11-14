@@ -194,6 +194,9 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                     cout << "brcluster_node_2 state is still '" << peerInfo["State"] << "'." << endl;
                 }
             }
+            if (peers.size() == 0) {
+                cout << "No peers to inspect. Maybe peer failed to stop." << endl;
+            }
             sleep(1);
         }
         ASSERT_TRUE(success);
