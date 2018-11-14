@@ -28,12 +28,22 @@ struct BadCommandTest : tpunit::TestFixture {
         // Make sure unhandled exceptions send an error response, but don't crash the server.
         SData cmd("exceptioninpeek");
         cmd["userID"] = to_string(userID++);
-        string response = master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
+        try {
+            master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
+        } catch (...) {
+            cout << "failing in first block." << endl;
+            throw;
+        }
 
         // Same in process.
         cmd = SData("exceptioninprocess");
         cmd["userID"] = to_string(userID++);
-        response = master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
+        try {
+            master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
+        } catch (...) {
+            cout << "failing in second block." << endl;
+            throw;
+        }
 
         // Then for three other commands, verify they kill the master, but the slave then refuses the same command.
         // This tests cases where keeping master alive isn't feasible.

@@ -240,13 +240,10 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     if (results.size() == 0) {
         STHROW("No result.");
     }
-    if (results[0].methodLine == "") {
-        STHROW("Empty response");
-    }
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STable temp;
         temp["originalMethod"] = results[0].methodLine;
-        STHROW("Expected " + expectedResult + ", but got: " + results[0].methodLine, temp);
+        STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'.", temp);
     }
     return results[0].content;
 }
@@ -281,6 +278,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
             int socket = 0;
 
             // This continues until there are no more requests to process.
+            bool timedOut = false;
+            int timeoutAutoRetries = 3;
+            size_t myIndex = 0;
+            SData myRequest;
             while (true) {
 
                 // This tries to create a socket to Bedrock on the correct port.
@@ -293,8 +294,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                     // If that failed, we'll continue our main loop and try again.
                     if (socket == -1) {
-                        // Return if we've specified to return on failure, or if it's been 60 seconds.
-                        if (returnOnDisconnect || (sendStart + 60'000'000 < STimeNow())) {
+                        // Return if we've specified to return on failure, or if it's been 20 seconds.
+                        if (returnOnDisconnect || (sendStart + 20'000'000 < STimeNow())) {
                             if (returnOnDisconnect && errorCode) {
                                 *errorCode = 1;
                             } else if (errorCode) {
@@ -312,10 +313,12 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     break;
                 }
 
-                // Get a request to work on.
-                size_t myIndex = 0;
-                SData myRequest;
-                {
+                // If we timed out, reuse the last request.
+                if (timedOut && timeoutAutoRetries--) {
+                    // reuse last request.
+                    cout << "Timed out a request, auto-retrying. Might work." << endl;
+                } else {
+                    // Get a request to work on.
                     SAUTOLOCK(listLock);
                     myIndex = currentIndex;
                     currentIndex++;
@@ -325,7 +328,11 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     } else {
                         myRequest = requests[myIndex];
                     }
+
+                    // Reset this for the next request that might need it.
+                    timeoutAutoRetries = 3;
                 }
+                timedOut = false;
 
                 // See if we need to send mock requests.
                 size_t count = 1;
@@ -364,7 +371,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     string recvBuffer = "";
                     string methodLine, content;
                     STable headers;
-                    bool timedOut = false;
                     int count = 0;
                     uint64_t recvStart = STimeNow();
                     while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
@@ -380,7 +386,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
-                                cout << "Failure in S_recvappend" << endl;
                                 ::shutdown(socket, SHUT_RDWR);
                                 ::close(socket);
                                 socket = -1;
@@ -416,7 +421,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // Lock to avoid log lines writing over each other.
                     {
                         SAUTOLOCK(listLock);
-                        if (timedOut) {
+                        if (timedOut && !timeoutAutoRetries) {
                             SData responseData = myRequest;
                             responseData.nameValueMap = headers;
                             responseData.methodLine = "000 Timeout";
@@ -424,7 +429,11 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             if (!mockCount) {
                                 results[myIndex] = move(responseData);
                             }
-                        } else {
+                            ::shutdown(socket, SHUT_RDWR);
+                            ::close(socket);
+                            socket = 0;
+                            break;
+                        } else if (!timedOut) {
                             // Ok, done, let's lock again and insert this in the results.
                             SData responseData;
                             responseData.nameValueMap = headers;
