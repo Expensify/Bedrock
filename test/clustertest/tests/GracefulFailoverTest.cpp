@@ -101,24 +101,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-    string getProp(int nodeNumber, string propName) {
-        BedrockTester* node = tester->getBedrockTester(nodeNumber);
-        int count = 0;
-        while (count++ < 50) {
-            try {
-                SData cmd("Status");
-                string response = node->executeWaitVerifyContent(cmd);
-                STable json = SParseJSONObject(response);
-                return json[propName];
-            } catch (const SException& e) {
-                // Just try again.
-            }
-            // Give it another second...
-            sleep(1);
-        }
-        return "";
-    }
-
     void test() {
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
@@ -153,26 +135,25 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Now let's  stop a slave and make sure everything keeps working.
         tester->stopNode(2);
 
-        // Wait for master to think the slave is down.
-        int count = 0;
+        // Wait up to 90 seconds for master to think the slave is down.
+        uint64_t start = STimeNow();
         bool success = false;
-        while (count++ < 50) {
-            string peerList = getProp(0, "peerList");
+        while (STimeNow() < start + 90'000'000) {
+            string response = tester->getBedrockTester(0)->executeWaitVerifyContent(SData("Status"));
+            STable json = SParseJSONObject(response);
+            string peerList = json["peerList"];
             list<string> peers = SParseJSONArray(peerList);
             for (auto& peer : peers) {
                 STable peerInfo = SParseJSONObject(peer);
                 if (peerInfo["name"] == "brcluster_node_2" && peerInfo["State"] == "") {
-                    // It's off. We can start it back up.
                     success = true;
                     break;
-                } else if (peerInfo["name"] == "brcluster_node_2") {
-                    cout << "brcluster_node_2 state is still '" << peerInfo["State"] << "'." << endl;
                 }
             }
-            if (peers.size() == 0) {
-                cout << "No peers to inspect. Maybe peer failed to stop." << endl;
+            if (success) {
+                break;
             }
-            sleep(1);
+            usleep(100'000);
         }
         ASSERT_TRUE(success);
 
