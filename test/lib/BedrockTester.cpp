@@ -99,9 +99,9 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
 
     // And reset the ports from the arguments in case they were supplied there.
     string ignore;
-    SParseHost(args.find("-serverHost")->second, ignore, _serverPort);
-    SParseHost(args.find("-nodeHost")->second, ignore, _nodePort);
-    SParseHost(args.find("-controlPort")->second, ignore, _controlPort);
+    SParseHost(_args.at("-serverHost"), ignore, _serverPort);
+    SParseHost(_args.at("-nodeHost"), ignore, _nodePort);
+    SParseHost(_args.at("-controlPort"), ignore, _controlPort);
 
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
