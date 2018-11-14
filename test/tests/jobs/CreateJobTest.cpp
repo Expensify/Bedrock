@@ -269,7 +269,7 @@ struct CreateJobTest : tpunit::TestFixture {
         // Create a job with both retry and repeat
         SData command("CreateJob");
         string jobName = "testRetryable";
-        string retryValue = "+1 SECOND";
+        string retryValue = "+5 SECOND";
         string repeatValue = "SCHEDULED, +10 SECONDS";
         command["name"] = jobName;
         command["repeat"] = repeatValue;
@@ -308,20 +308,43 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 1);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 5);
 
         // Get the job, confirm error because 1 second hasn't passed
-        tester->executeWaitVerifyContent(command, "404 No job found");
+        try {
+            tester->executeWaitVerifyContent(command, "404 No job found");
+        } catch (...) {
+            cout << "retryRecurringJobs failed at point 1." << endl;
+            throw;
+        }
 
-        // Wait 1 second, get the job, confirm no error
-        sleep(1);
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["data"], "{}");
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
+        // Try and get it repeatedly. Should fail a couple times and then succeed.
+        int retries = 9;
+        bool success = false;
+        while (retries--) {
+            try {
+                // Let it repeat until it works or we run out of retries.
+                response = tester->executeWaitVerifyContentTable(command);
+                ASSERT_EQUAL(response["data"], "{}");
+                ASSERT_EQUAL(response["jobID"], jobID);
+                ASSERT_EQUAL(response["name"], jobName);
+            } catch (...) {
+                sleep(1);
+                continue;
+            }
 
-        // Get the job, confirm error
-        tester->executeWaitVerifyContent(command, "404 No job found");
+            // Now it should fail again.
+            while (retries--) {
+                try {
+                    tester->executeWaitVerifyContent(command, "404 No job found");
+                } catch (...) {
+                    sleep(1);
+                    continue;
+                }
+                success = true;
+            }
+        }
+        ASSERT_TRUE(success);
 
         // Finish the job
         command.clear();
