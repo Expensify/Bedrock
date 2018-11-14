@@ -335,7 +335,7 @@ void SLogStackTrace();
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
             for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
-                if (logToConsole && remainingConsoleLogLines-- > 0) {cout << s_processName << " " << (SWHEREAMI + __s.substr(__i, 1500)) << endl;}                    \
+                if (logToConsole && remainingConsoleLogLines-- > 0) {cout << s_processName << " " << (SWHEREAMI + __s.substr(__i, 1500));}                    \
                 else {syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());}   \
         }                                                                                                              \
     } while (false)

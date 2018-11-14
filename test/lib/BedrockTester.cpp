@@ -347,7 +347,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             break;
                         } else {
                             timeouts++;
-                            if (timeouts == 600) {
+                            usleep(100'000);
+                            if (timeouts == 90) {
                                 break;
                             }
                         }
@@ -356,7 +357,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // Lock to avoid log lines writing over each other.
                     {
                         SAUTOLOCK(listLock);
-                        if (timeouts == 600) {
+                        if (timeouts == 90) {
                             SData responseData = myRequest;
                             responseData.nameValueMap = headers;
                             responseData.methodLine = "000 Timeout";
