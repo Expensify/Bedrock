@@ -172,6 +172,16 @@ string BedrockTester::startServer(bool dontWait, bool logToConsole) {
         }
         cargs[count] = 0;
 
+        // Make sure the ports we need are free.
+        int portsFree = 0;
+        portsFree |= waitForPort(serverPort());
+        portsFree |= waitForPort(nodePort());
+        portsFree |= waitForPort(controlPort());
+
+        if (portsFree) {
+            cout << "At least one port wasn't free to start server, things will probably fail." << endl;
+        }
+
         // And then start the new server!
         execvp(serverName.c_str(), cargs);
     } else {
@@ -500,3 +510,33 @@ bool BedrockTester::waitForState(string state, uint64_t timeoutUS)
     }
     return false;
 }
+
+int BedrockTester::waitForPort(int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int i = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
+    sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    int result = 0;
+    int count = 0;
+    do {
+        result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
+        if (result) {
+            cout << "Couldn't bind, errno: " << errno << ", '" << strerror(errno) << "'." << endl;
+            count++;
+            usleep(100'000);
+        } else {
+            shutdown(sock, 2);
+            close(sock);
+            return 0;
+        }
+    // Wait up to 300 10ths of a second (30 seconds).
+    } while (result && count++ < 300);
+
+    return 1;
+}
+
+

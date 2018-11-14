@@ -1,35 +1,5 @@
 #include "../BedrockClusterTester.h"
 
-// Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes it
-// takes the OS a few seconds to make the port available again.
-int waitForPort(int port) {
-    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    int i = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
-    sockaddr_in addr = {0};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
-    int result = 0;
-    int count = 0;
-    do {
-        result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
-        if (result) {
-            cout << "Couldn't bind, errno: " << errno << ", '" << strerror(errno) << "'." << endl;
-            count++;
-            usleep(100'000);
-        } else {
-            shutdown(sock, 2);
-            close(sock);
-            return 0;
-        }
-    // Wait up to 300 10ths of a second (30 seconds).
-    } while (result && count++ < 300);
-
-    return 1;
-}
-
 struct BadCommandTest : tpunit::TestFixture {
     BadCommandTest()
         : tpunit::TestFixture("BadCommand",
@@ -89,10 +59,7 @@ struct BadCommandTest : tpunit::TestFixture {
             // refused. We don't currently do this because these commands will kill the slave. We could handle that as
             // the expected case as well, though.
 
-            // Makes sure all it's ports are free and then bring master back up.
-            ASSERT_FALSE(waitForPort(master->serverPort()));
-            ASSERT_FALSE(waitForPort(master->nodePort()));
-            ASSERT_FALSE(waitForPort(master->controlPort()));
+            // Bring master back up.
             master->startServer();
             ASSERT_TRUE(master->waitForState("MASTERING"));
         }

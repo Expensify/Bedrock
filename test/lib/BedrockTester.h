@@ -77,6 +77,10 @@ class BedrockTester {
     // false if the timeout is hit.
     bool waitForState(string state, uint64_t timeoutUS = 60'000'000);
 
+    // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
+    // it takes the OS a few seconds to make the port available again.
+    static int waitForPort(int port);
+
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.

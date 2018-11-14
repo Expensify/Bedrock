@@ -28,7 +28,7 @@ struct TimeoutTest : tpunit::TestFixture {
 
         // Run one long query.
         SData slow("slowquery");
-        slow["processTimeout"] = "5000"; // 5s
+        slow["processTimeout"] = "1000"; // 1s
         brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
 
         // And a bunch of faster ones.

@@ -260,35 +260,35 @@ struct GetJobTest : tpunit::TestFixture {
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 3'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 4'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 5'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 7'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // High
         command["name"] = "high";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 11'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 15'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Medium
         command["name"] = "medium";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 9'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 13'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
         // Low
         command["name"] = "low";
         command["priority"] = "0";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 7'000'000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 10'000'000);
         response = tester->executeWaitVerifyContentTable(command);
         jobList.push_back(response["jobID"]);
 
@@ -300,15 +300,15 @@ struct GetJobTest : tpunit::TestFixture {
         // Make sure we finished this fast enough that we can still dequeue commands in the order we expect.
         // We require the above to have finished in 2 seconds or less.
         uint64_t createdBy = STimeNow();
-        ASSERT_LESS_THAN(createdBy, startAt + 2'000'000);
+        ASSERT_LESS_THAN(createdBy, startAt + 3'500'000);
 
         // Get jobs in the order they become available. Make sure the first three we get are in the order low, medium,
         // high, as that's when they were scheduled to run. This test can fail if timing is off, as we expect
         // everything to happen correctly over 1-second intervals.
         vector<string> names;
 
-        // Now we allow 15 seconds to get all the commands, giving us a 4-second margin.
-        uint64_t timeout = STimeNow() + 15'000'000;
+        // Now we allow 20 seconds to get all the commands, giving us a margin.
+        uint64_t timeout = STimeNow() + 20'000'000;
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "*";
