@@ -28,8 +28,19 @@ struct TimingTest : tpunit::TestFixture {
             SData query("idcollision h");
             query["writeConsistency"] = "ASYNC";
             query["value"] = "default";
-            auto results = brtester->executeWaitMultipleData({query});
-            auto result = results[0];
+            int retries = 3;
+            SData result;
+            while (retries) {
+                auto results = brtester->executeWaitMultipleData({query});
+                result = results[0];
+                if (result.isSet("totalTime")) {
+                    break;
+                } else {
+                    sleep(1);
+                    retries--;
+                    continue;
+                }
+            }
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {
                 cout << row.first << ":" << row.second << endl;
@@ -57,6 +68,7 @@ struct TimingTest : tpunit::TestFixture {
             }
 
             if (peekTime + processTime >= totalTime) {
+                // These are just blank in the failure case.
                 cout << "peekTime: " << peekTime << endl;
                 cout << "processTime: " << processTime << endl;
                 cout << "totalTime: " << totalTime << endl;
