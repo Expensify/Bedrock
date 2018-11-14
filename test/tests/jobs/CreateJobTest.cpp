@@ -321,10 +321,11 @@ struct CreateJobTest : tpunit::TestFixture {
         // Try and get it repeatedly. Should fail a couple times and then succeed.
         int retries = 9;
         bool success = false;
-        while (retries--) {
+        while (retries-- > 0) {
             try {
                 // Let it repeat until it works or we run out of retries.
                 response = tester->executeWaitVerifyContentTable(command);
+                cout << "Get should be ok" << endl;
                 ASSERT_EQUAL(response["data"], "{}");
                 ASSERT_EQUAL(response["jobID"], jobID);
                 ASSERT_EQUAL(response["name"], jobName);
@@ -334,14 +335,16 @@ struct CreateJobTest : tpunit::TestFixture {
             }
 
             // Now it should fail again.
-            while (retries--) {
+            while (retries-- > 0) {
                 try {
+                cout << "Get should fail" << endl;
                     tester->executeWaitVerifyContent(command, "404 No job found");
+                    success = true;
+                    break;
                 } catch (...) {
                     sleep(1);
                     continue;
                 }
-                success = true;
             }
         }
         ASSERT_TRUE(success);
@@ -357,7 +360,8 @@ struct CreateJobTest : tpunit::TestFixture {
         nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(jobData[0][0], "QUEUED");
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 11);
+        cout << "next: " << nextRunTime << ", last: " << lastRunTime << endl;
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 15);
     }
 
     void retryWithMalformedValue() {
