@@ -482,3 +482,21 @@ int BedrockTester::nodePort() {
 int BedrockTester::controlPort() {
     return _controlPort;
 }
+
+bool BedrockTester::waitForState(string state, uint64_t timeoutUS)
+{
+    uint64_t start = STimeNow();
+    while (STimeNow() < start + timeoutUS) {
+        try {
+            STable json = SParseJSONObject(executeWaitVerifyContent(SData("Status")));
+            if (json["state"] == state) {
+                return true;
+            }
+            // It's still not there, let it try again.
+        } catch (...) {
+            // Doesn't do anything, we'll fall through to the sleep and try again.
+        }
+        usleep(100'000);
+    }
+    return false;
+}

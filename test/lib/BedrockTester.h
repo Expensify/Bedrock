@@ -73,6 +73,10 @@ class BedrockTester {
     int nodePort();
     int controlPort();
 
+    // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
+    // false if the timeout is hit.
+    bool waitForState(string state, uint64_t timeoutUS = 60'000'000);
+
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.

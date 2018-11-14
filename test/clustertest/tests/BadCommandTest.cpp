@@ -89,29 +89,12 @@ struct BadCommandTest : tpunit::TestFixture {
             // refused. We don't currently do this because these commands will kill the slave. We could handle that as
             // the expected case as well, though.
 
-            // Makes ure all it's ports are free and then bring master back up.
-            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->serverPort()));
-            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->nodePort()));
-            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->controlPort()));
-            tester->startNode(0);
-
-            // Give it up to a minute to be mastering.
-            uint64_t start = STimeNow();
-            bool success = false;
-            while (STimeNow() < start + 60'000'000) {
-                try {
-                    STable json = SParseJSONObject(master->executeWaitVerifyContent(SData("Status")));
-                    if (json["state"] == "MASTERING") {
-                        success = true;
-                        break;
-                    }
-                    // it's not mastering, let it try again.
-                } catch (...) {
-                    // Doesn't do anything, we'll fall through to the sleep and try again.
-                }
-                usleep(100'000);
-            }
-            ASSERT_TRUE(success);
+            // Makes sure all it's ports are free and then bring master back up.
+            ASSERT_FALSE(waitForPort(master->serverPort()));
+            ASSERT_FALSE(waitForPort(master->nodePort()));
+            ASSERT_FALSE(waitForPort(master->controlPort()));
+            master->startServer();
+            ASSERT_TRUE(master->waitForState("MASTERING"));
         }
     }
 

@@ -101,32 +101,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-    bool waitFor(bool start, int nodeNumber, string state, bool logToConsole = false) {
-        BedrockTester* node = tester->getBedrockTester(nodeNumber);
-        if (start) {
-            tester->startNode(nodeNumber, logToConsole);
-        }
-        int count = 0;
-        int success = false;
-        while (count++ < 90) {
-            SData cmd("Status");
-            try {
-                string response = node->executeWaitVerifyContent(cmd);
-                STable json = SParseJSONObject(response);
-                if (json["state"] == state) {
-                    success = true;
-                    break;
-                }
-            } catch (const SException& e) {
-                // Just try again.
-            }
-
-            // Give it another second...
-            sleep(1);
-        }
-        return success;
-    }
-
     string getProp(int nodeNumber, string propName) {
         BedrockTester* node = tester->getBedrockTester(nodeNumber);
         int count = 0;
@@ -146,7 +120,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        ASSERT_TRUE(waitFor(false, 0, "MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread>* threads = new list<thread>();
@@ -166,13 +140,14 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->stopNode(0);
 
         // Wait for node 1 to be master.
-        ASSERT_TRUE(waitFor(false, 1, "MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Let the spammers keep spamming on the new master.
         sleep(3);
 
         // Bring master back up.
-        ASSERT_TRUE(waitFor(true, 0, "MASTERING"));
+        tester->getBedrockTester(0)->startServer();
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
         sleep(15);
 
         // Now let's  stop a slave and make sure everything keeps working.
@@ -202,7 +177,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
 
         // And bring it back up.
-        ASSERT_TRUE(waitFor(true, 2, "SLAVING"));
+        tester->getBedrockTester(2)->startServer();
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
 
         // We're done, let spammers finish.
         done.store(true);
@@ -231,11 +207,12 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be master.
-        ASSERT_TRUE(waitFor(false, 1, "MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Now bring master back up.
         sleep(2);
-        ASSERT_TRUE(waitFor(true, 0, "MASTERING", true));
+        tester->getBedrockTester(0)->startServer();
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
         // Blow up a slave.
         sleep(2);
@@ -243,7 +220,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // And bring it back up.
         sleep(2);
-        ASSERT_TRUE(waitFor(true, 2, "SLAVING"));
+        tester->getBedrockTester(2)->startServer();
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
 
         // We're really done, let everything finish a last time.
         done.store(true);
