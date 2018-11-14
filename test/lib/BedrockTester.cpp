@@ -257,16 +257,27 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&, i](){
-
-            // Create a socket.
             int socket = 0;
-
-            int socketSendCount = 0;
             while (true) {
+                uint64_t sendStart = STimeNow();
+                // If there's no socket, create a socket.
                 if (socket <= 0) {
                     socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
-                    socketSendCount = 0;
                 }
+
+                // If that failed, we'll continue our main loop and try again.
+                if (socket == -1) {
+                    // Return if we've specified to return on failure, or if it's been 60 seconds.
+                    if (returnOnDisconnect || (sendStart + 60'000'000 < STimeNow())) {
+                        return;
+                    }
+
+                    // Otherwise, try again, but wait 1/10th second to avoid spamming too badly.
+                    usleep(100'000);
+                    continue;
+                }
+
+                // Get a request to work on.
                 size_t myIndex = 0;
                 SData myRequest;
                 {
@@ -281,44 +292,37 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
                 }
 
+                // See if we need to send mock requests.
                 size_t count = 1;
                 if (mockRequestMode > 1) {
                     count = mockRequestMode;
                 }
-
-                // If the socket failed to open, don't bother trying with it.
-                if (socket == -1) {
-                    SAUTOLOCK(listLock);
-                    SData responseData("002 Socket Failed");
-                    results[myIndex] = move(responseData);
-                    if (returnOnDisconnect) {
-                        return;
-                    }
-                    continue;
-                }
-
+                
+                // Send all of the requests, including mocked ones.
                 for (size_t mockCount = 0; mockCount < count; mockCount++) {
+                    // For every request but the first one, mark it mocked.
                     if (mockCount) {
                         myRequest["mockRequest"] = "true";
                     }
 
-                    // Send some stuff on our socket.
+                    // Send until there's nothing left in the buffer.
                     string sendBuffer = myRequest.serialize();
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
-                        socketSendCount++;
                         if (!result) {
-                            cout << "Failed to send! Probably disconnected." << endl;
+                            // So, if it fails, we just give up on this request. Maybe we should retry.
+                            cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
                             break;
                         }
                     }
 
-                    // Receive some stuff on our socket.
+                    // Now we wait for the response.
                     string recvBuffer = "";
                     string methodLine, content;
                     STable headers;
-                    int timeouts = 0;
+                    bool timedOut = false;
                     int count = 0;
+                    uint64_t recvStart = STimeNow();
                     while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                         // Poll the socket, so we get a timeout.
                         pollfd readSock;
@@ -332,6 +336,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         if (readSock.revents & POLLIN) {
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
+                                cout << "Failure in S_recvappend" << endl;
                                 sockaddr_in addr = {0};
                                 socklen_t size = 0;
                                 getsockname(socket, (sockaddr*)&addr, &size);
@@ -341,14 +346,15 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 break;
                             }
                         } else if (readSock.revents & POLLHUP) {
+                            cout << "Failure in readSock.revents & POLLHUP" << endl;
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
                             break;
                         } else {
-                            timeouts++;
-                            usleep(100'000);
-                            if (timeouts == 90) {
+                            // If it's been over 60s, give up.
+                            if (recvStart + 60'000'000 < STimeNow()) {
+                                timedOut = true;
                                 break;
                             }
                         }
@@ -357,7 +363,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // Lock to avoid log lines writing over each other.
                     {
                         SAUTOLOCK(listLock);
-                        if (timeouts == 90) {
+                        if (timedOut) {
                             SData responseData = myRequest;
                             responseData.nameValueMap = headers;
                             responseData.methodLine = "000 Timeout";
@@ -386,6 +392,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
                 }
             }
+
+            // Close our socket if it's not already an error code.
             if (socket != -1) {
                 ::shutdown(socket, SHUT_RDWR);
                 ::close(socket);
