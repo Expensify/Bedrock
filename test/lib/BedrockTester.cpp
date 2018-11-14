@@ -53,9 +53,9 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     }
 
     // Set the ports.
-    int serverPort = 8989 + threadID;
-    int hostPort = 9889 + threadID;
-    int controlPort = 19999 + threadID;
+    _serverPort = 8989 + threadID;
+    _nodePort = 9889 + threadID;
+    _controlPort = 19999 + threadID;
 
     // Set these values from the arguments if provided, or the defaults if not.
     try {
@@ -66,15 +66,15 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     try {
         _serverAddr = args.at("-serverHost");
     } catch (...) {
-        _serverAddr = "127.0.0.1:" + to_string(serverPort);
+        _serverAddr = "127.0.0.1:" + to_string(_serverPort);
     }
 
     map <string, string> defaultArgs = {
         {"-db",               _dbName},
         {"-serverHost",       _serverAddr},
         {"-nodeName",         "bedrock_test"},
-        {"-nodeHost",         "localhost:" + to_string(hostPort)},
-        {"-controlPort",      "localhost:" + to_string(controlPort)},
+        {"-nodeHost",         "localhost:" + to_string(_nodePort)},
+        {"-controlPort",      "localhost:" + to_string(_controlPort)},
         {"-priority",         "200"},
         {"-plugins",          "db"},
         {"-workerThreads",    "8"},
@@ -96,6 +96,12 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     }
     
     _controlAddr = _args["-controlPort"];
+
+    // And reset the ports from the arguments in case they were supplied there.
+    string ignore;
+    SParseHost(args.find("-serverHost")->second, ignore, _serverPort);
+    SParseHost(args.find("-nodeHost")->second, ignore, _nodePort);
+    SParseHost(args.find("-controlPort")->second, ignore, _controlPort);
 
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
@@ -463,4 +469,16 @@ string BedrockTester::readDB(const string& query)
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
     return getSQLiteDB().read(query, result);
+}
+
+int BedrockTester::serverPort() {
+    return _serverPort;
+}
+
+int BedrockTester::nodePort() {
+    return _nodePort;
+}
+
+int BedrockTester::controlPort() {
+    return _controlPort;
 }

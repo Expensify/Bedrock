@@ -1,15 +1,15 @@
 #include "../BedrockClusterTester.h"
 
-int checksock(int port) {
+// Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes it
+// takes the OS a few seconds to make the port available again.
+int waitForPort(int port) {
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     int i = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-
-    unsigned int ip = inet_addr("127.0.0.1");
-    addr.sin_addr.s_addr = ip;
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     int result = 0;
     int count = 0;
@@ -18,13 +18,14 @@ int checksock(int port) {
         if (result) {
             cout << "Couldn't bind, errno: " << errno << ", '" << strerror(errno) << "'." << endl;
             count++;
-            sleep(1);
+            usleep(100'000);
         } else {
             shutdown(sock, 2);
             close(sock);
             return 0;
         }
-    } while (result && count < 30);
+    // Wait up to 300 10ths of a second (30 seconds).
+    } while (result && count++ < 300);
 
     return 1;
 }
@@ -34,8 +35,7 @@ struct BadCommandTest : tpunit::TestFixture {
         : tpunit::TestFixture("BadCommand",
                               BEFORE_CLASS(BadCommandTest::setup),
                               AFTER_CLASS(BadCommandTest::teardown),
-                              TEST(BadCommandTest::test)
-                             ) { }
+                              TEST(BadCommandTest::test)) { }
 
     BedrockClusterTester* tester;
 
@@ -52,239 +52,67 @@ struct BadCommandTest : tpunit::TestFixture {
         BedrockTester* master = tester->getBedrockTester(0);
         BedrockTester* slave = tester->getBedrockTester(1);
 
-        // Make sure unhandled exceptions send the right response.
-        SData cmd("dieinpeek");
-        cmd["userID"] = "31";
+        // This is here because we can use it to test crashIdentifyingValues, though that isn't currently implemented.
+        int userID = 31;
+
+        // Make sure unhandled exceptions send an error response, but don't crash the server.
+        SData cmd("exceptioninpeek");
+        cmd["userID"] = to_string(userID++);
         string response = master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
 
-        cmd = SData("dieinprocess");
-        cmd["userID"] = "31";
+        // Same in process.
+        cmd = SData("exceptioninprocess");
+        cmd["userID"] = to_string(userID++);
         response = master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
 
-        // Segfault in peek.
-        cmd.clear();
-        cmd.methodLine = "generatesegfaultpeek";
-        cmd["userID"] = "32";
-        int error = 0;
-        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
-        ASSERT_EQUAL(error, 4);
+        // Then for three other commands, verify they kill the master, but the slave then refuses the same command.
+        // This tests cases where keeping master alive isn't feasible.
+        for (auto cammandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
+            
+            // Create the command with the current userID.
+            userID++;
+            SData command(cammandName);
+            command.methodLine = cammandName;
+            command["userID"] = to_string(userID);
+            int error = 0;
+            master->executeWaitMultipleData({command}, 1, false, true, &error);
 
-        // Send the same command to the slave.
-        cmd = SData("generatesegfaultpeek");
-        cmd["userID"] = "32";
-        int retries = 3;
-        while (retries) {
-            try {
-                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
-            } catch (const SException& e) {
-                auto it = e.headers.find("originalMethod");
-                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
-                if ((e.what() == "Empty response"s) || wasSocketFailed) {
-                    // Try again, sometimes things get disconnected.
-                    retries--;
-                    cout << "Failed to get a response to generatesegfaultpeek from promoted slave, retrying." << endl;
-                    continue;
-                } else {
-                    throw;
-                }
-            }
-            // Didn't hit the catch block, we're good.
-            break;
-        }
+            // This error indicates we couldn't read a response after sending a command. We assume this means the
+            // server died. Even if it didn't and we just had a weird flaky network connection,  we'll still fail this
+            // test if the slave doesn't refuse the same command.
+            ASSERT_EQUAL(error, 4);
 
-        // Bring master back up.
-        ASSERT_FALSE(checksock(11113));
-        tester->startNode(0);
-        int count = 0;
-        bool success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response;
-            try {
-                response = master->executeWaitVerifyContent(cmd);
-            } catch (...) {
-                cout << "Failed at point 1." << endl;
-                throw;
-            }
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
-            sleep(1);
-        }
-        ASSERT_TRUE(success);
+            // Now send the command to the slave and verify the command was refused.
+            slave->executeWaitVerifyContent(command, "500 Refused");
 
-        // ASSERT in peek.
-        cmd.clear();
-        cmd.methodLine = "generateassertpeek";
-        cmd["userID"] = "32";
-        error = 0;
-        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
-        ASSERT_EQUAL(error, 4);
+            // TODO: This is where we could send the command with a different userID to the slave and verify it's not
+            // refused. We don't currently do this because these commands will kill the slave. We could handle that as
+            // the expected case as well, though.
 
-        // Send the same command to the slave.
-        cmd = SData("generateassertpeek");
-        cmd["userID"] = "32";
-        retries = 3;
-        while (retries) {
-            try {
-                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
-            } catch (const SException& e) {
-                auto it = e.headers.find("originalMethod");
-                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
-                if ((e.what() == "Empty response"s) || wasSocketFailed) {
-                    // Try again, sometimes things get disconnected.
-                    retries--;
-                    cout << "Failed to get a response to generateassertpeek from promoted slave, retrying." << endl;
-                    continue;
-                } else {
-                    throw;
-                }
-            }
-            // Didn't hit the catch block, we're good.
-            break;
-        }
+            // Makes ure all it's ports are free and then bring master back up.
+            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->serverPort()));
+            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->nodePort()));
+            ASSERT_FALSE(waitForPort(tester->getBedrockTester(0)->controlPort()));
+            tester->startNode(0);
 
-        // Bring master back up.
-        ASSERT_FALSE(checksock(11113));
-        tester->startNode(0, true);
-        count = 0;
-        success = false;
-        while (count++ < 10) {
-            SData cmd("Status");
-            string response;
-            try {
-                response = master->executeWaitVerifyContent(cmd);
-            } catch (const SException& e) {
-                auto it = e.headers.find("originalMethod");
-                if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
-                    // Socket not up yet. Try again.
-                    cout << "Socket not up on try " << count << endl;
-
-
-                    // See if the server died (typically because a socket it needs is still bound).
-                    int serverPID = master->getServerPID();
-                    int result = kill(serverPID, 0);
-                    if (result) {
-                        if (errno == ESRCH) {
-                            cout << "Looks like the process died, let's restart it." << endl;
-                            tester->startNode(0, true);
-                        } else {
-                            cout << "Something weird happened." << endl;
-                        }
-                    } else {
-                        cout << "Server seems to still be running." << endl;
+            // Give it up to a minute to be mastering.
+            uint64_t start = STimeNow();
+            bool success = false;
+            while (STimeNow() < start + 60'000'000) {
+                try {
+                    STable json = SParseJSONObject(master->executeWaitVerifyContent(SData("Status")));
+                    if (json["state"] == "MASTERING") {
+                        success = true;
+                        break;
                     }
-                    sleep(1);
-                    continue;
+                    // it's not mastering, let it try again.
+                } catch (...) {
+                    // Doesn't do anything, we'll fall through to the sleep and try again.
                 }
+                usleep(100'000);
             }
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                cout << "MASTERING, can return." << endl;
-                success = true;
-                break;
-            }
-            sleep(1);
+            ASSERT_TRUE(success);
         }
-        ASSERT_TRUE(success);
-
-        // Segfault in process.
-        cmd.clear();
-        cmd.methodLine = "generatesegfaultprocess";
-        cmd["userID"] = "33";
-        error = 0;
-        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
-        ASSERT_EQUAL(error, 4);
-
-        // Verify the slave is now mastering.
-        count = 0;
-        success = false;
-        while (count++ < 50) {
-            SData cmd("Status");
-            string response;
-            try {
-                response = slave->executeWaitVerifyContent(cmd);
-            } catch (...) {
-                cout << "Failed at point 2." << endl;
-                throw;
-            }
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                success = true;
-                break;
-            }
-            sleep(1);
-        }
-        ASSERT_TRUE(success);
-
-        // Send the slave the same command, it should be blacklisted.
-        cmd = SData("generatesegfaultprocess");
-        cmd["userID"] = "33";
-        retries = 3;
-        while (retries) {
-            try {
-                response = slave->executeWaitVerifyContent(cmd, "500 Refused");
-            } catch (const SException& e) {
-                auto it = e.headers.find("originalMethod");
-                bool wasSocketFailed = it != e.headers.end() && it->second == "002 Socket Failed";
-                if ((e.what() == "Empty response"s) || wasSocketFailed) {
-                    // Try again, sometimes things get disconnected.
-                    retries--;
-                    cout << "Failed to get a response to generatesegfaultprocess from promoted slave, retrying." << endl;
-                    continue;
-                } else {
-                    throw;
-                }
-            }
-            // Didn't hit the catch block, we're good.
-            break;
-        }
-
-        // Try and bring master back up, just because the next test will expect it.
-        ASSERT_FALSE(checksock(11113));
-        tester->startNode(0, true);
-        count = 0;
-        success = false;
-        while (count++ < 10) {
-            SData cmd("Status");
-            string response;
-            try {
-                response = master->executeWaitVerifyContent(cmd);
-            } catch (const SException& e) {
-                auto it = e.headers.find("originalMethod");
-                if (it != e.headers.end() && it->second.substr(0, 3) == "002") {
-                    // Socket not up yet. Try again.
-                    cout << "Socket not up on try " << count << endl;
-
-
-                    // See if the server died (typically because a socket it needs is still bound).
-                    int serverPID = master->getServerPID();
-                    int result = kill(serverPID, 0);
-                    if (result) {
-                        if (errno == ESRCH) {
-                            cout << "Looks like the process died, let's restart it." << endl;
-                            tester->startNode(0, true);
-                        } else {
-                            cout << "Something weird happened." << endl;
-                        }
-                    } else {
-                        cout << "Server seems to still be running." << endl;
-                    }
-                    sleep(1);
-                    continue;
-                }
-            }
-            STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
-                cout << "MASTERING, can return." << endl;
-                success = true;
-                break;
-            }
-            sleep(1);
-        }
-        ASSERT_TRUE(success);
     }
 
 } __BadCommandTest;

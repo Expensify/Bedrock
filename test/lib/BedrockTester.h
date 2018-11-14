@@ -68,6 +68,11 @@ class BedrockTester {
 
     int getServerPID() { return _serverPID; }
 
+    // Expose the ports that the server is listening on.
+    int serverPort();
+    int nodePort();
+    int controlPort();
+
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.
@@ -93,4 +98,9 @@ class BedrockTester {
 
     // For locking around changes to the _testers list.
     static mutex _testersMutex;
+
+    // The ports the server will listen on.
+    uint16_t _serverPort;
+    uint16_t _nodePort;
+    uint16_t _controlPort;
 };
