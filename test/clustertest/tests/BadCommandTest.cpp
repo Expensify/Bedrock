@@ -62,15 +62,12 @@ struct BadCommandTest : tpunit::TestFixture {
         response = master->executeWaitVerifyContent(cmd, "500 Unhandled Exception");
 
         // Segfault in peek.
-        bool diedCorrectly = false;
-        try {
-            SData cmd("generatesegfaultpeek");
-            cmd["userID"] = "32";
-            string response = master->executeWaitVerifyContent(cmd);
-        } catch (const SException& e) {
-            diedCorrectly = (e.what() == "Empty response"s);
-        }
-        ASSERT_TRUE(diedCorrectly);
+        cmd.clear();
+        cmd.methodLine = "generatesegfaultpeek";
+        cmd["userID"] = "32";
+        int error = 0;
+        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
+        ASSERT_EQUAL(error, 4);
 
         // Send the same command to the slave.
         cmd = SData("generatesegfaultpeek");
@@ -119,15 +116,12 @@ struct BadCommandTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
 
         // ASSERT in peek.
-        diedCorrectly = false;
-        try {
-            SData cmd("generateassertpeek");
-            cmd["userID"] = "32";
-            string response = master->executeWaitVerifyContent(cmd);
-        } catch (const SException& e) {
-            diedCorrectly = (e.what() == "Empty response"s);
-        }
-        ASSERT_TRUE(diedCorrectly);
+        cmd.clear();
+        cmd.methodLine = "generateassertpeek";
+        cmd["userID"] = "32";
+        error = 0;
+        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
+        ASSERT_EQUAL(error, 4);
 
         // Send the same command to the slave.
         cmd = SData("generateassertpeek");
@@ -197,15 +191,12 @@ struct BadCommandTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
 
         // Segfault in process.
-        diedCorrectly = false;
-        try {
-            SData cmd("generatesegfaultprocess");
-            cmd["userID"] = "33";
-            string response = master->executeWaitVerifyContent(cmd);
-        } catch (const SException& e) {
-            diedCorrectly = (e.what() == "Empty response"s);
-        }
-        ASSERT_TRUE(diedCorrectly);
+        cmd.clear();
+        cmd.methodLine = "generatesegfaultprocess";
+        cmd["userID"] = "33";
+        error = 0;
+        master->executeWaitMultipleData({cmd}, 1, false, true, &error);
+        ASSERT_EQUAL(error, 4);
 
         // Verify the slave is now mastering.
         count = 0;

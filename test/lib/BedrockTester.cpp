@@ -240,7 +240,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -254,27 +254,46 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     // This is the list of threads that we'll use for each connection.
     list <thread> threads;
 
+    //reset the error code.
+    if (errorCode) {
+        *errorCode = 0;
+    }
+
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&, i](){
             int socket = 0;
-            while (true) {
-                uint64_t sendStart = STimeNow();
-                // If there's no socket, create a socket.
-                if (socket <= 0) {
-                    socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
-                }
 
-                // If that failed, we'll continue our main loop and try again.
-                if (socket == -1) {
-                    // Return if we've specified to return on failure, or if it's been 60 seconds.
-                    if (returnOnDisconnect || (sendStart + 60'000'000 < STimeNow())) {
-                        return;
+            // This continues until there are no more requests to process.
+            while (true) {
+
+                // This tries to create a socket to Bedrock on the correct port.
+                uint64_t sendStart = STimeNow();
+                while (true) {
+                    // If there's no socket, create a socket.
+                    if (socket <= 0) {
+                        socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
                     }
 
-                    // Otherwise, try again, but wait 1/10th second to avoid spamming too badly.
-                    usleep(100'000);
-                    continue;
+                    // If that failed, we'll continue our main loop and try again.
+                    if (socket == -1) {
+                        // Return if we've specified to return on failure, or if it's been 60 seconds.
+                        if (returnOnDisconnect || (sendStart + 60'000'000 < STimeNow())) {
+                            if (returnOnDisconnect && errorCode) {
+                                *errorCode = 1;
+                            } else if (errorCode) {
+                                *errorCode = 2;
+                            }
+                            return;
+                        }
+
+                        // Otherwise, try again, but wait 1/10th second to avoid spamming too badly.
+                        usleep(100'000);
+                        continue;
+                    }
+                    
+                    // Socket is successfully created. We can exit this loop.
+                    break;
                 }
 
                 // Get a request to work on.
@@ -310,8 +329,17 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
                         if (!result) {
-                            // So, if it fails, we just give up on this request. Maybe we should retry.
                             cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
+                            ::shutdown(socket, SHUT_RDWR);
+                            ::close(socket);
+                            socket = -1;
+                            if (returnOnDisconnect) {
+                                if (errorCode) {
+                                    *errorCode = 3;
+                                }
+                                return;
+                            }
+
                             break;
                         }
                     }
@@ -337,12 +365,15 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             bool result = S_recvappend(socket, recvBuffer);
                             if (!result) {
                                 cout << "Failure in S_recvappend" << endl;
-                                sockaddr_in addr = {0};
-                                socklen_t size = 0;
-                                getsockname(socket, (sockaddr*)&addr, &size);
                                 ::shutdown(socket, SHUT_RDWR);
                                 ::close(socket);
                                 socket = -1;
+                                if (returnOnDisconnect) {
+                                    if (errorCode) {
+                                        *errorCode = 4;
+                                    }
+                                    return;
+                                }
                                 break;
                             }
                         } else if (readSock.revents & POLLHUP) {
@@ -350,6 +381,12 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
+                            if (returnOnDisconnect) {
+                                if (errorCode) {
+                                    *errorCode = 5;
+                                }
+                                return;
+                            }
                             break;
                         } else {
                             // If it's been over 60s, give up.
