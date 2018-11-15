@@ -1,5 +1,25 @@
 #include <test/lib/BedrockTester.h>
 
+bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, string timestampString) {
+    uint64_t testTime = startTimestamp;
+    while (true) {
+        string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
+        if (timestampString == testTimeString) {
+            return true;
+        }
+        if (testTime == endTimestamp) {
+            // We already tried everything.
+            break;
+        }
+        testTime += 1'000'000; // next second.
+        if (testTime > endTimestamp) {
+            // this is the last possible test.
+            testTime = endTimestamp;
+        }
+    }
+    return false;
+}
+
 struct GetJobTest : tpunit::TestFixture {
     GetJobTest()
         : tpunit::TestFixture("GetJob",
@@ -65,25 +85,7 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(currentJob[0][4], originalJob[0][4]);
 
         // The lastRun time can be anything from start to end, inclusive.
-        bool saneRunTime = false;
-        uint64_t testTime = start;
-        while (true) {
-            string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
-            if (currentJob[0][5] == testTimeString) {
-                saneRunTime = true;
-                break;
-            }
-            if (testTime == end) {
-                // We already tried everything.
-                break;
-            }
-            testTime += 1'000'000; // next second.
-            if (testTime > end) {
-                // this is the last possible test.
-                testTime = end;
-            }
-        }
-        ASSERT_TRUE(saneRunTime);
+        ASSERT_TRUE(isBetweenSecondsInclusive(start, end, currentJob[0][5]));
 
         ASSERT_EQUAL(currentJob[0][6], originalJob[0][6]);
         ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
@@ -128,25 +130,7 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(currentJob[0][4], originalJob[0][4]);
 
         // The lastRun time can be anything from start to end, inclusive.
-        bool saneRunTime = false;
-        uint64_t testTime = start;
-        while (true) {
-            string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
-            if (currentJob[0][5] == testTimeString) {
-                saneRunTime = true;
-                break;
-            }
-            if (testTime == end) {
-                // We already tried everything.
-                break;
-            }
-            testTime += 1'000'000; // next second.
-            if (testTime > end) {
-                // this is the last possible test.
-                testTime = end;
-            }
-        }
-        ASSERT_TRUE(saneRunTime);
+        ASSERT_TRUE(isBetweenSecondsInclusive(start, end, currentJob[0][5]));
 
         ASSERT_EQUAL(currentJob[0][6], originalJob[0][6]);
         ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
@@ -538,24 +522,9 @@ struct GetJobTest : tpunit::TestFixture {
         tester->readDB("SELECT nextRun, jobID FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL AND jobID IN (" + SQ(jobID1) + ", " + SQ(jobID2) + ")", result);
         ASSERT_EQUAL(result.size(), 2);
 
-        // The nextRun time can be anything from start to end, inclusive.
-        set<string> allowableRunTimes;
-        uint64_t testTime = start + 2'000'000;
-        while (true) {
-            string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
-            allowableRunTimes.insert(testTimeString);
-            if (testTime >= end + 2'000'000) {
-                break;
-            }
-            testTime += 1'000'000; // next second.
-            if (testTime > end + 2'000'000) {
-                testTime = end + 2'000'000;
-            }
-        }
-
-        // Make sure both run times are in the allowable set.
-        ASSERT_TRUE(allowableRunTimes.find(result[0][0]) != allowableRunTimes.end());
-        ASSERT_TRUE(allowableRunTimes.find(result[1][0]) != allowableRunTimes.end());
+        // Make sure both run times are in the allowable range.
+        ASSERT_TRUE(isBetweenSecondsInclusive(start + 2'000'000, end + 2'000'000, result[0][0]));
+        ASSERT_TRUE(isBetweenSecondsInclusive(start + 2'000'000, end + 2'000'000, result[1][0]));
 
         // This should push us past the time when high_1 and medium_4 are re-queued.
         sleep(3);
