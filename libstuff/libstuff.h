@@ -42,10 +42,6 @@ using namespace std;
 // Custom libraries.
 #include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
-extern string s_processName;
-extern bool logToConsole;
-extern atomic<int> remainingConsoleLogLines;
-
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "", const char* processName = 0);
 
@@ -335,8 +331,7 @@ void SLogStackTrace();
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
             for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
-                if (logToConsole && remainingConsoleLogLines-- > 0) {cout << s_processName << " " << (SWHEREAMI + __s.substr(__i, 1500));}                    \
-                else {syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());}   \
+                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());                        \
         }                                                                                                              \
     } while (false)
 

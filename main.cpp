@@ -13,8 +13,6 @@
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
 
-extern bool logToConsole;
-
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 void RetrySystem(const string& command) {
@@ -249,9 +247,6 @@ int main(int argc, char* argv[]) {
              << endl;
         cout << endl;
         return 1;
-    }
-    if (args.isSet("-logToConsole")) {
-        logToConsole = true;
     }
     if (args.isSet("-v")) {
         // Verbose logging
