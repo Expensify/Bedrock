@@ -389,10 +389,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 ::shutdown(socket, SHUT_RDWR);
                                 ::close(socket);
                                 socket = -1;
+                                if (errorCode) {
+                                    *errorCode = 4;
+                                }
                                 if (returnOnDisconnect) {
-                                    if (errorCode) {
-                                        *errorCode = 4;
-                                    }
                                     return;
                                 }
                                 break;
@@ -402,10 +402,10 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
+                            if (errorCode) {
+                                *errorCode = 5;
+                            }
                             if (returnOnDisconnect) {
-                                if (errorCode) {
-                                    *errorCode = 5;
-                                }
                                 return;
                             }
                             break;

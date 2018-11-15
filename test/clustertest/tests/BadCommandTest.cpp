@@ -47,12 +47,12 @@ struct BadCommandTest : tpunit::TestFixture {
 
         // Then for three other commands, verify they kill the master, but the slave then refuses the same command.
         // This tests cases where keeping master alive isn't feasible.
-        for (auto cammandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
+        for (auto commandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
             
             // Create the command with the current userID.
             userID++;
-            SData command(cammandName);
-            command.methodLine = cammandName;
+            SData command(commandName);
+            command.methodLine = commandName;
             command["userID"] = to_string(userID);
             int error = 0;
             master->executeWaitMultipleData({command}, 1, false, true, &error);
@@ -63,7 +63,12 @@ struct BadCommandTest : tpunit::TestFixture {
             ASSERT_EQUAL(error, 4);
 
             // Now send the command to the slave and verify the command was refused.
-            slave->executeWaitVerifyContent(command, "500 Refused");
+            error = 0;
+            vector<SData> results = slave->executeWaitMultipleData({command}, 1, false, false, &error);
+            if (results[0].methodLine != "500 Refused") {
+                cout << "Didn't get '500 refused testing '" << commandName << "', error code was set to: " << error << endl;
+                ASSERT_TRUE(false);
+            }
 
             // TODO: This is where we could send the command with a different userID to the slave and verify it's not
             // refused. We don't currently do this because these commands will kill the slave. We could handle that as
