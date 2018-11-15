@@ -762,6 +762,12 @@ void BedrockServer::worker(SData& args,
                 SWARN("Found " << (command.complete ? "" : "in") << "complete " << "command "
                       << command.request.methodLine << " from peer, but not mastering. Too late for it, discarding.");
                 server._commandsInProgress--;
+
+                // If the command was processed, tell the plugin we couldn't send the response.
+                if (command.processedBy) {
+                    command.processedBy->handleFailedReply(command);
+                }
+
                 continue;
             }
 
