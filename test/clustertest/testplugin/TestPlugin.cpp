@@ -57,7 +57,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         arbitraryData["commandExecuteTime"] = command.request["commandExecuteTime"];
         arbitraryData["not_special"] = command.request["not_special"];
         return true;
-    } else if (SStartsWith(command.request.methodLine, "getboradcasttimeouts")) {
+    } else if (SStartsWith(command.request.methodLine, "getbroadcasttimeouts")) {
         // Finally, the caller can send this command to the peers to make sure they received the correct timeout data.
         lock_guard<mutex> lock(dataLock);
         command.response["stored_timeout"] = arbitraryData["timeout"];
@@ -112,7 +112,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
                 transaction->s->send(request.serialize());
             }).detach();
         }
-    } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
+    } else if (SStartsWith(command.request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(command.request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
@@ -224,7 +224,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             query += ";";
             db.read(query, result);
         }
-    } else if (SStartsWith(command.request.methodLine, "dieinprocess")) {
+    } else if (SStartsWith(command.request.methodLine, "exceptioninprocess")) {
         throw 2;
     } else if (SStartsWith(command.request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;

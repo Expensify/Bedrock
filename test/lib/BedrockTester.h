@@ -51,7 +51,7 @@ class BedrockTester {
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false);
+    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
@@ -67,6 +67,19 @@ class BedrockTester {
     SQLite& getSQLiteDB();
 
     int getServerPID() { return _serverPID; }
+
+    // Expose the ports that the server is listening on.
+    int serverPort();
+    int nodePort();
+    int controlPort();
+
+    // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
+    // false if the timeout is hit.
+    bool waitForState(string state, uint64_t timeoutUS = 60'000'000);
+
+    // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
+    // it takes the OS a few seconds to make the port available again.
+    static int waitForPort(int port);
 
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
@@ -93,4 +106,9 @@ class BedrockTester {
 
     // For locking around changes to the _testers list.
     static mutex _testersMutex;
+
+    // The ports the server will listen on.
+    uint16_t _serverPort;
+    uint16_t _nodePort;
+    uint16_t _controlPort;
 };

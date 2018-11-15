@@ -51,7 +51,6 @@ struct WriteTest : tpunit::TestFixture {
     void parallelInsert() {
         vector<SData> requests;
         int numCommands = 50;
-        cout << "Testing with " << numCommands << " commands." << endl;
         for (int i = 0; i < numCommands; i++) {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";

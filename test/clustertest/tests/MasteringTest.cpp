@@ -133,7 +133,7 @@ struct MasteringTest : tpunit::TestFixture {
         tester->stopNode(1);
 
         // Create a bunch of commands.
-        vector<SData> requests(1000);
+        vector<SData> requests(5000);
         int count = 0;
         for (auto& request : requests) {
             if (!count) {
@@ -154,6 +154,7 @@ struct MasteringTest : tpunit::TestFixture {
 
         // Start the slave back up.
         bool wasSynchronizing = false;
+        bool wasSlaving = false;
         string startstatus = tester->startNodeDontWait(1);
         STable json = SParseJSONObject(startstatus);
         if (json["state"] == "SYNCHRONIZING") {
@@ -175,6 +176,9 @@ struct MasteringTest : tpunit::TestFixture {
                 }
             }
             if(json["state"] == "SLAVING") {
+                // Make sure it was slaving before it was synchronizing.
+                ASSERT_TRUE(wasSynchronizing);
+                wasSlaving = true;
                 break;
             }
             tries++;
@@ -184,6 +188,7 @@ struct MasteringTest : tpunit::TestFixture {
             usleep(10'000); // 1/100th of a second
         }
         ASSERT_TRUE(wasSynchronizing);
+        ASSERT_TRUE(wasSlaving);
     }
 
 } __MasteringTest;
