@@ -531,7 +531,6 @@ int BedrockTester::waitForPort(int port) {
     do {
         result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
         if (result) {
-            cout << "Couldn't bind, errno: " << errno << ", '" << strerror(errno) << "'." << endl;
             count++;
             usleep(100'000);
         } else {
