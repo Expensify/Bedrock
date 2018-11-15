@@ -176,7 +176,8 @@ string BedrockTester::startServer(bool dontWait) {
         portsFree |= waitForPort(controlPort());
 
         if (portsFree) {
-            cout << "At least one port wasn't free to start server, things will probably fail." << endl;
+            cout << "At least one port wasn't free (of: " << serverPort() << ", " << nodePort() << ", "
+                 << controlPort() << ") to start server, things will probably fail." << endl;
         }
 
         // And then start the new server!
