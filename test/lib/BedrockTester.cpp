@@ -171,13 +171,13 @@ string BedrockTester::startServer(bool dontWait) {
 
         // Make sure the ports we need are free.
         int portsFree = 0;
-        portsFree |= waitForPort(serverPort());
-        portsFree |= waitForPort(nodePort());
-        portsFree |= waitForPort(controlPort());
+        portsFree |= waitForPort(getServerPort());
+        portsFree |= waitForPort(getNodePort());
+        portsFree |= waitForPort(getControlPort());
 
         if (portsFree) {
-            cout << "At least one port wasn't free (of: " << serverPort() << ", " << nodePort() << ", "
-                 << controlPort() << ") to start server, things will probably fail." << endl;
+            cout << "At least one port wasn't free (of: " << getServerPort() << ", " << getNodePort() << ", "
+                 << getControlPort() << ") to start server, things will probably fail." << endl;
         }
 
         // And then start the new server!
@@ -488,15 +488,15 @@ bool BedrockTester::readDB(const string& query, SQResult& result)
     return getSQLiteDB().read(query, result);
 }
 
-int BedrockTester::serverPort() {
+int BedrockTester::getServerPort() {
     return _serverPort;
 }
 
-int BedrockTester::nodePort() {
+int BedrockTester::getNodePort() {
     return _nodePort;
 }
 
-int BedrockTester::controlPort() {
+int BedrockTester::getControlPort() {
     return _controlPort;
 }
 
@@ -529,6 +529,7 @@ int BedrockTester::waitForPort(int port) {
 
     int result = 0;
     int count = 0;
+    uint64_t start = STimeNow();
     do {
         result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
         if (result) {
@@ -539,8 +540,8 @@ int BedrockTester::waitForPort(int port) {
             close(sock);
             return 0;
         }
-    // Wait up to 300 10ths of a second (30 seconds).
-    } while (result && count++ < 300);
+    // Wait up to 30 seconds.
+    } while (result && STimeNow() < start + 30'000'000);
 
     return 1;
 }

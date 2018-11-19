@@ -429,20 +429,22 @@ struct CreateJobTest : tpunit::TestFixture {
         }
 
         // This will fail with 404's until the job re-queues.
-        int retries = 100; // 100 tenths of a second.
-        while (retries) {
+        uint64_t start = STimeNow();
+        bool assertionsChecked = false;
+        while (STimeNow() < start + 10'000'000) {
             try {
                 response = tester->executeWaitVerifyContentTable(command);
             } catch (...) {
-                retries--;
                 usleep(100'000);
                 continue;
             }
             ASSERT_EQUAL(response["data"], "{}");
             ASSERT_EQUAL(response["jobID"], jobID);
             ASSERT_EQUAL(response["name"], jobName);
+            assertionsChecked = true;
             break;
         }
+        ASSERT_TRUE(assertionsChecked);
 
         // try again immediately and it should be not found.
         try {

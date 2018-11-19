@@ -69,9 +69,9 @@ class BedrockTester {
     int getServerPID() { return _serverPID; }
 
     // Expose the ports that the server is listening on.
-    int serverPort();
-    int nodePort();
-    int controlPort();
+    int getServerPort();
+    int getNodePort();
+    int getControlPort();
 
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
