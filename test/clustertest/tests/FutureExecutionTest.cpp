@@ -43,9 +43,20 @@ struct FutureExecutionTest : tpunit::TestFixture {
         // Then sleep three more seconds, it *should* be there now.
         sleep(3);
 
-        // And now it should be there.
-        result = brtester->executeWaitVerifyContent(query);
-        ASSERT_TRUE(SContains(result, "50011"));
+        // And now it should be there, but we'll give it a couple tries.
+        int retries = 3;
+        bool success = false;
+        while (retries) {
+            result = brtester->executeWaitVerifyContent(query);
+            if (SContains(result, "50011")) {
+                success = true;
+                break;
+            } else {
+                sleep(1);
+                retries--;
+            }
+        }
+        ASSERT_TRUE(success);
     }
 
 } __FutureExecutionTest;

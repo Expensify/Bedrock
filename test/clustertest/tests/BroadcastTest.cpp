@@ -28,13 +28,24 @@ struct BroadcastCommandTest : tpunit::TestFixture {
 
         // Make sure unhandled exceptions send the right response.
         SData cmd("broadcastwithtimeouts");
-        master->executeWaitVerifyContent(cmd);
+        try {
+            master->executeWaitVerifyContent(cmd);
+        } catch (...) {
+            cout << "Couldn't send broadcastwithtimeouts" << endl;
+            throw;
+        }
 
         // Now wait for the slave to have received and run the command.
         sleep(5);
 
-        SData cmd2("getboradcasttimeouts");
-        vector<SData> results = slave->executeWaitMultipleData({cmd2});
+        SData cmd2("getbroadcasttimeouts");
+        vector<SData> results;
+        try {
+            results = slave->executeWaitMultipleData({cmd2});
+        } catch (...) {
+            cout << "Couldn't send getbroadcasttimeouts" << endl;
+            throw;
+        }
 
         // The commandExecuteTime of the command should be between the time we stored as `now` above, and 3 seconds
         // after that
