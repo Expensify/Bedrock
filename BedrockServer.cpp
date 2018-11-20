@@ -1106,7 +1106,8 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _maxPendingCommits(3)
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3),
+    _maxPendingCommits(args.isSet("-maxPendingCommits") ? args.calc("-maxPendingCommits") : 5)
 {
     _version = SVERSION;
 
@@ -1873,6 +1874,21 @@ void BedrockServer::_control(BedrockCommand& command) {
             response.methodLine = "204 ATTACHING";
             _detach = false;
         }
+    } else if (SIEquals(command.request.methodLine, "SetConflictParams")) {
+        int64_t oldMaxPendingCommits = _maxPendingCommits.load();
+        if (command.request.isSet("maxPendingCommits")) {
+            response["oldMaxPendingCommits"] = to_string(oldMaxPendingCommits);
+            int64_t newMaxPendingCommits = command.request.calc64("maxPendingCommits");
+            if (newMaxPendingCommits < 1) {
+                newMaxPendingCommits = 1;
+            }
+            if (newMaxPendingCommits > 1'000'000) {
+                newMaxPendingCommits = 1'000'000;
+            }
+            _maxPendingCommits.store(newMaxPendingCommits);
+            response["newMaxPendingCommits"] = to_string(newMaxPendingCommits);
+        }
+
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
         response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
