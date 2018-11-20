@@ -5,6 +5,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
+#include "BedrockWaitCounter.h"
 
 class BedrockServer : public SQLiteServer {
   public:
@@ -447,6 +448,11 @@ class BedrockServer : public SQLiteServer {
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
+
+    // Keep track of the number of commands waiting to commit.
+    BedrockWaitCounter _pendingCommitCount;
+
+    atomic<int64_t> _maxPendingCommits;
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);

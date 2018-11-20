@@ -805,10 +805,19 @@ void BedrockServer::worker(SData& args,
 
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
+            bool blocking = false;
 
-            while (retry) {
+            while (retry || blocking) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
+
+                // Wait until _pendingCommitCount is low enough.
+                if (!blocking) {
+                    server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
+                }
+
+                // If we're in blocking mode, lock the sync mutex.
+                lock_guard_if<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, blocking);
 
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
@@ -897,10 +906,27 @@ void BedrockServer::worker(SData& args,
                             // to the minimum time required.
                             bool commitSuccess = false;
                             {
+                                // Don't increment if we're blocking, we've already done it when we set the flag.
+                                if (!blocking) {
+                                    // Increment this *before* we lock, we want to know how many are waiting, only one will
+                                    // ever actually have the lock.
+                                    int64_t newPendingCount =  ++server._pendingCommitCount;
+                                    if (newPendingCount > server._maxPendingCommits.load()) {
+                                        SINFO("Would have attempted commit, but have " << newPendingCount
+                                              << " pending commits already, of max " << server._maxPendingCommits.load()
+                                              << ", will retry later.");
+                                        --server._pendingCommitCount;
+                                        core.rollback();
+                                        continue;
+                                    }
+                                }
+
                                 uint64_t preLockTime = STimeNow();
-                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
-                                SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
-                                      << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                shared_lock_if<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, !blocking);
+                                if (!blocking) {
+                                    SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
+                                          << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                }
 
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
@@ -924,9 +950,13 @@ void BedrockServer::worker(SData& args,
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
                                     commitSuccess = core.commit();
                                 }
+
+                                // And we're done with the commit, drop our count back down.
+                                server._pendingCommitCount--;
                             }
                             if (commitSuccess) {
-                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread in "
+                                      << (blocking ? "blocking" : "non-blocking") << " mode." );
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
                                 command.response["commitCount"] = to_string(db.getCommitCount());
@@ -952,16 +982,24 @@ void BedrockServer::worker(SData& args,
                     // Don't need to retry.
                     break;
                 }
+                if (blocking) {
+                    // Done.
+                    SINFO("Disabling blocking.");
+                    blocking = false;
+                    break;
+                }
 
                 // We're about to retry, decrement the retry count.
                 --retry;
-            }
 
-            // We ran out of retries without finishing! We give it to the sync thread.
-            if (!retry) {
-                SINFO("Max retries hit in worker, forwarding command " << command.request.methodLine
-                      << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+                // We ran out of retries without finishing! We give it to the sync thread.
+                if (!retry) {
+                    SINFO("No retries left for command '" << command.request.methodLine << "', setting blocking mode.");
+                    
+                    // We're already a "pending commit" if we're in blocking mode.
+                    ++server._pendingCommitCount;
+                    blocking = true;
+                }
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
@@ -1068,7 +1106,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _maxPendingCommits(3)
 {
     _version = SVERSION;
 
