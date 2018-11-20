@@ -1317,7 +1317,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Create a command from this request and pass it on to the server to handle.
             SQLiteCommand command(move(request));
             command.initiatingPeerID = peer->id;
-            _server.acceptCommand(move(command), true);
+            //_server.acceptCommand(move(command), true);
+            // TODO: See if we can re-enable this. We needed to turn it off, because in the case where the main queue
+            // can remain backlogged, then these commands might never get handled when synchronizing from master.
+            SQLiteNode::peekPeerCommand(this, _db, command);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
             // stood up.
