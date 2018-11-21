@@ -817,7 +817,10 @@ void BedrockServer::worker(SData& args,
                 }
 
                 // If we're in blocking mode, lock the sync mutex.
-                lock_guard_if<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, blocking);
+                unique_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, defer_lock);
+                if (blocking) {
+                    lock.lock();
+                }
 
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
@@ -921,9 +924,12 @@ void BedrockServer::worker(SData& args,
                                     }
                                 }
 
-                                uint64_t preLockTime = STimeNow();
-                                shared_lock_if<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, !blocking);
+                                // Create the lock object, but defer the lock. We won't grab this lock if we're in
+                                // blocking mode, because we're already holding an exclusive lock on this mutex.
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
                                 if (!blocking) {
+                                    uint64_t preLockTime = STimeNow();
+                                    lock1.lock();
                                     SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
                                           << ((STimeNow() - preLockTime)/1000) << "ms.");
                                 }
@@ -982,17 +988,16 @@ void BedrockServer::worker(SData& args,
                     // Don't need to retry.
                     break;
                 }
+
+                // If we're in blocking mode already, we're done and can go on to the next command.
                 if (blocking) {
-                    // Done.
-                    SINFO("Disabling blocking.");
-                    blocking = false;
                     break;
                 }
 
                 // We're about to retry, decrement the retry count.
                 --retry;
 
-                // We ran out of retries without finishing! We give it to the sync thread.
+                // We ran out of retries without finishing! Set blocking mode and force it to succeed.
                 if (!retry) {
                     SINFO("No retries left for command '" << command.request.methodLine << "', setting blocking mode.");
                     

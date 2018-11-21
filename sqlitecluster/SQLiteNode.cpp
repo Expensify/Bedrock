@@ -1298,8 +1298,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIZATION messages.
-        if (_state == MASTERING || _state == SLAVING) {
+        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't do this when mastering,
+        // because these commands may not be handled quickly, if a commit is in progress. The catastrophic case for
+        // this means that these messages are all handled late, and the synchronizing peer never catches up. We don't
+        // do it in any other state, as the server isn't expected to be able to process commands except when MASTERING
+        // or SLAVING.
+        if (_state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
@@ -1317,10 +1321,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Create a command from this request and pass it on to the server to handle.
             SQLiteCommand command(move(request));
             command.initiatingPeerID = peer->id;
-            //_server.acceptCommand(move(command), true);
-            // TODO: See if we can re-enable this. We needed to turn it off, because in the case where the main queue
-            // can remain backlogged, then these commands might never get handled when synchronizing from master.
-            SQLiteNode::peekPeerCommand(this, _db, command);
+            _server.acceptCommand(move(command), true);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
             // stood up.

@@ -1,9 +1,9 @@
-#include "BedrockWaitCounter.h"
+#include "SWaitCounter.h"
 
-BedrockWaitCounter::BedrockWaitCounter(int64_t startValue) : _value(startValue) {
+SWaitCounter::SWaitCounter(int64_t startValue) : _value(startValue) {
 }
 
-int64_t BedrockWaitCounter::waitUntilLessThan(int64_t value) {
+int64_t SWaitCounter::waitUntilLessThan(int64_t value) {
     while (true) {
         unique_lock<mutex> lock(_m);
         if (_value < value) {
@@ -16,7 +16,7 @@ int64_t BedrockWaitCounter::waitUntilLessThan(int64_t value) {
     }
 };
 
-int64_t BedrockWaitCounter::waitUntilLessThanOrEqual(int64_t value) {
+int64_t SWaitCounter::waitUntilLessThanOrEqual(int64_t value) {
     while (true) {
         unique_lock<mutex> lock(_m);
         if (_value <= value) {
@@ -29,7 +29,7 @@ int64_t BedrockWaitCounter::waitUntilLessThanOrEqual(int64_t value) {
     }
 };
 
-int64_t BedrockWaitCounter::waitUntilGreaterThan(int64_t value) {
+int64_t SWaitCounter::waitUntilGreaterThan(int64_t value) {
     while (true) {
         unique_lock<mutex> lock(_m);
         if (_value > value) {
@@ -42,7 +42,7 @@ int64_t BedrockWaitCounter::waitUntilGreaterThan(int64_t value) {
     }
 };
 
-int64_t BedrockWaitCounter::waitUntilGreaterThanOrEqual(int64_t value) {
+int64_t SWaitCounter::waitUntilGreaterThanOrEqual(int64_t value) {
     while (true) {
         unique_lock<mutex> lock(_m);
         if (_value >= value) {
@@ -56,7 +56,7 @@ int64_t BedrockWaitCounter::waitUntilGreaterThanOrEqual(int64_t value) {
 };
 
 // Pre-increment
-int64_t BedrockWaitCounter::operator++() {
+int64_t SWaitCounter::operator++() {
     int64_t retVal;
     {
         lock_guard<mutex> lock(_m);
@@ -68,7 +68,7 @@ int64_t BedrockWaitCounter::operator++() {
 }
 
 // Pre-decrement
-int64_t BedrockWaitCounter::operator--() {
+int64_t SWaitCounter::operator--() {
     int64_t retVal;
     {
         lock_guard<mutex> lock(_m);
@@ -80,7 +80,7 @@ int64_t BedrockWaitCounter::operator--() {
 }
 
 // Post-increment
-int64_t BedrockWaitCounter::operator++(int ignore) {
+int64_t SWaitCounter::operator++(int ignore) {
     int64_t retVal;
     {
         lock_guard<mutex> lock(_m);
@@ -92,7 +92,7 @@ int64_t BedrockWaitCounter::operator++(int ignore) {
 }
 
 // Post-decrement
-int64_t BedrockWaitCounter::operator--(int ignore) {
+int64_t SWaitCounter::operator--(int ignore) {
     int64_t retVal;
     {
         lock_guard<mutex> lock(_m);
@@ -103,7 +103,7 @@ int64_t BedrockWaitCounter::operator--(int ignore) {
     return retVal;
 }
 
-int64_t BedrockWaitCounter::value() {
+int64_t SWaitCounter::value() {
     lock_guard<mutex> lock(_m);
     return _value;
 }

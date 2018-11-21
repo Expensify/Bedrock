@@ -1,11 +1,11 @@
 #pragma once
 #include <libstuff/libstuff.h>
+#include <libstuff/SWaitCounter.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
-#include "BedrockWaitCounter.h"
 
 class BedrockServer : public SQLiteServer {
   public:
@@ -450,7 +450,7 @@ class BedrockServer : public SQLiteServer {
     bool _wouldCrash(const BedrockCommand& command);
 
     // Keep track of the number of commands waiting to commit.
-    BedrockWaitCounter _pendingCommitCount;
+    SWaitCounter _pendingCommitCount;
 
     atomic<int64_t> _maxPendingCommits;
 
