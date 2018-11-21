@@ -814,15 +814,16 @@ void BedrockServer::worker(SData& args,
                 db.waitForCheckpoint();
 
                 // We create this lock outside the `if` block so that it's scoped correctly, but we only lock it in
-                // blocking mode.
+                // blocking mode. The scoped increment works the same way, as the scoped locking.
                 unique_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, defer_lock);
+                SWaitCounterScopedIncrement pendingCommitIncrement(server._pendingCommitCount, true);
                 if (retries) {
                     // We only wait for the number of pending commits in non-blocking mode. There's no point in waiting
                     // in blocking mode, since we have to get to the front of the line in order to lock the mutex.
                     server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
                 } else {
                     // No retries left, lock for blocking mode.
-                    ++server._pendingCommitCount;
+                    pendingCommitIncrement.inc();
                     SINFO("No retries left for command '" << command.request.methodLine << "', will complete in blocking mode.");
                     lock.lock();
                 }
@@ -925,12 +926,11 @@ void BedrockServer::worker(SData& args,
                                     // It's important this is incremented before the lock, since this counts the number
                                     // of threads waiting on the lock. There will only ever be one thread with the
                                     // lock.
-                                    int64_t newPendingCount =  ++server._pendingCommitCount;
+                                    int64_t newPendingCount = pendingCommitIncrement.inc();
                                     if (newPendingCount > server._maxPendingCommits.load()) {
                                         SINFO("Would have attempted commit, but have " << newPendingCount
                                               << " pending commits already, of max " << server._maxPendingCommits.load()
                                               << ", will retry later.");
-                                        --server._pendingCommitCount;
                                         core.rollback();
                                         continue;
                                     }
@@ -964,8 +964,8 @@ void BedrockServer::worker(SData& args,
                                     commitSuccess = core.commit();
                                 }
 
-                                // And we're done with the commit, drop our count back down.
-                                server._pendingCommitCount--;
+                                // The commit is done, decrement this as soon as possible.
+                                pendingCommitIncrement.dec();
                             }
                             if (commitSuccess) {
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread in "
