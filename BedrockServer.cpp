@@ -817,8 +817,8 @@ void BedrockServer::worker(SData& args,
                 // blocking mode.
                 unique_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, defer_lock);
                 if (retries) {
-                    // We only wait for the number of pending commits in non-blocking mode. We've already incremented
-                    // it if we're entering blocking mode, so it may not drop until we complete.
+                    // We only wait for the number of pending commits in non-blocking mode. There's no point in waiting
+                    // in blocking mode, since we have to get to the front of the line in order to lock the mutex.
                     server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
                 } else {
                     // No retries left, lock for blocking mode.
@@ -1886,7 +1886,6 @@ void BedrockServer::_control(BedrockCommand& command) {
             _maxPendingCommits.store(newMaxPendingCommits);
             response["newMaxPendingCommits"] = to_string(newMaxPendingCommits);
         }
-
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
         response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
