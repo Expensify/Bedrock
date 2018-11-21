@@ -922,12 +922,11 @@ void BedrockServer::worker(SData& args,
                                 // In blocking mode, we've already incremented _pendingCommitCount (at the end of the
                                 // last loop) and locked the mutex (at the top if this loop), so we only need to do
                                 // this in non-blocking mode.
-                                SWaitCounterScopedIncrement pendingCommitIncrement1(server._pendingCommitCount, true);
                                 if (retries) {
                                     // It's important this is incremented before the lock, since this counts the number
                                     // of threads waiting on the lock. There will only ever be one thread with the
                                     // lock.
-                                    int64_t newPendingCount = pendingCommitIncrement1.inc();
+                                    int64_t newPendingCount = pendingCommitIncrement.inc();
                                     if (newPendingCount > server._maxPendingCommits.load()) {
                                         SINFO("Would have attempted commit, but have " << newPendingCount
                                               << " pending commits already, of max " << server._maxPendingCommits.load()
@@ -963,6 +962,9 @@ void BedrockServer::worker(SData& args,
                                 } else {
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
                                     commitSuccess = core.commit();
+
+                                    // The commit is done, decrement this as soon as possible.
+                                    pendingCommitIncrement.dec();
                                 }
                             }
                             if (commitSuccess) {

@@ -53,7 +53,17 @@ class SWaitCounterScopedIncrement {
     // Increments the counter if it wasn't already incremented.
     int64_t inc() {
         if (!_incremented) {
+            _incremented = true;
             return ++_counter;
+        }
+        return _counter.value();
+    }
+
+    // Increments the counter if it was already incremented.
+    int64_t dec() {
+        if (_incremented) {
+            _incremented = false;
+            return --_counter;
         }
         return _counter.value();
     }
