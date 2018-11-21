@@ -804,21 +804,26 @@ void BedrockServer::worker(SData& args,
             }
 
             // We'll retry on conflict up to this many times.
-            int retry = server._maxConflictRetries.load();
-            bool blocking = false;
+            int retries = server._maxConflictRetries.load();
 
-            while (retry || blocking) {
+            // This will repeat until retries is 0, then it will run a final time in blocking mode - where we lock
+            // _syncThreadCommitMutex for the duration of the command, guaranteeing that no conflicts will occur, but
+            // blocking all other threads from committing.
+            while (true) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
 
-                // Wait until _pendingCommitCount is low enough.
-                if (!blocking) {
-                    server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
-                }
-
-                // If we're in blocking mode, lock the sync mutex.
+                // We create this lock outside the `if` block so that it's scoped correctly, but we only lock it in
+                // blocking mode.
                 unique_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, defer_lock);
-                if (blocking) {
+                if (retries) {
+                    // We only wait for the number of pending commits in non-blocking mode. We've already incremented
+                    // it if we're entering blocking mode, so it may not drop until we complete.
+                    server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
+                } else {
+                    // No retries left, lock for blocking mode.
+                    ++server._pendingCommitCount;
+                    SINFO("No retries left for command '" << command.request.methodLine << "', will complete in blocking mode.");
                     lock.lock();
                 }
 
@@ -909,10 +914,17 @@ void BedrockServer::worker(SData& args,
                             // to the minimum time required.
                             bool commitSuccess = false;
                             {
-                                // Don't increment if we're blocking, we've already done it when we set the flag.
-                                if (!blocking) {
-                                    // Increment this *before* we lock, we want to know how many are waiting, only one will
-                                    // ever actually have the lock.
+                                // Create the lock object, but defer the lock. We won't grab this lock if we're in
+                                // blocking mode, because we're already holding an exclusive lock on this mutex.
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
+
+                                // In blocking mode, we've already incremented _pendingCommitCount (at the end of the
+                                // last loop) and locked the mutex (at the top if this loop), so we only need to do
+                                // this in non-blocking mode.
+                                if (retries) {
+                                    // It's important this is incremented before the lock, since this counts the number
+                                    // of threads waiting on the lock. There will only ever be one thread with the
+                                    // lock.
                                     int64_t newPendingCount =  ++server._pendingCommitCount;
                                     if (newPendingCount > server._maxPendingCommits.load()) {
                                         SINFO("Would have attempted commit, but have " << newPendingCount
@@ -922,12 +934,7 @@ void BedrockServer::worker(SData& args,
                                         core.rollback();
                                         continue;
                                     }
-                                }
 
-                                // Create the lock object, but defer the lock. We won't grab this lock if we're in
-                                // blocking mode, because we're already holding an exclusive lock on this mutex.
-                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
-                                if (!blocking) {
                                     uint64_t preLockTime = STimeNow();
                                     lock1.lock();
                                     SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
@@ -962,21 +969,21 @@ void BedrockServer::worker(SData& args,
                             }
                             if (commitSuccess) {
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread in "
-                                      << (blocking ? "blocking" : "non-blocking") << " mode." );
+                                      << (retries ? "non-blocking" : "blocking") << " mode." );
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
                                 command.response["commitCount"] = to_string(db.getCommitCount());
                                 command.complete = true;
                             } else {
                                 SINFO("Conflict or state change committing " << command.request.methodLine
-                                      << " on worker thread with " << retry << " retries remaining.");
+                                      << " on worker thread with " << retries << " retries remaining.");
                             }
                         }
                     }
                 }
 
                 // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-                // a conflict, and we'll retry.
+                // a conflict, and we'll retry. This is *ALWAYS* the case when in blocking mode.
                 if (command.complete) {
                     if (command.initiatingPeerID) {
                         // Escalated command. Give it back to the sync thread to respond.
@@ -989,22 +996,8 @@ void BedrockServer::worker(SData& args,
                     break;
                 }
 
-                // If we're in blocking mode already, we're done and can go on to the next command.
-                if (blocking) {
-                    break;
-                }
-
-                // We're about to retry, decrement the retry count.
-                --retry;
-
-                // We ran out of retries without finishing! Set blocking mode and force it to succeed.
-                if (!retry) {
-                    SINFO("No retries left for command '" << command.request.methodLine << "', setting blocking mode.");
-                    
-                    // We're already a "pending commit" if we're in blocking mode.
-                    ++server._pendingCommitCount;
-                    blocking = true;
-                }
+                // If the command didn't complete (because of a conflict), decrement the retry count and try again.
+                --retries;
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
