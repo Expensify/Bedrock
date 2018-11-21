@@ -927,7 +927,7 @@ void BedrockServer::worker(SData& args,
                                     // It's important this is incremented before the lock, since this counts the number
                                     // of threads waiting on the lock. There will only ever be one thread with the
                                     // lock.
-                                    int64_t newPendingCount = pendingCommitIncrement.inc();
+                                    int64_t newPendingCount = pendingCommitIncrement1.inc();
                                     if (newPendingCount > server._maxPendingCommits.load()) {
                                         SINFO("Would have attempted commit, but have " << newPendingCount
                                               << " pending commits already, of max " << server._maxPendingCommits.load()
