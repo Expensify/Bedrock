@@ -33,3 +33,32 @@ class SWaitCounter {
     mutex _m;
     condition_variable _cv;
 };
+
+// Increments the counter either at construction, or if deferred, when `inc()` is called.
+// Decrements the counter on destruction, if it was ever incremented.
+class SWaitCounterScopedIncrement {
+  public:
+    SWaitCounterScopedIncrement(SWaitCounter& counter, bool defer = false) : _counter(counter), _incremented(!defer) {
+        if (_incremented) {
+            ++_counter;
+        }
+    }
+
+    ~SWaitCounterScopedIncrement() {
+        if (_incremented) {
+            --_counter;
+        }
+    }
+
+    // Increments the counter if it wasn't already incremented.
+    int64_t inc() {
+        if (!_incremented) {
+            return ++_counter;
+        }
+        return _counter.value();
+    }
+
+  private:
+    SWaitCounter& _counter;
+    bool _incremented;
+};
