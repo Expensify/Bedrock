@@ -962,10 +962,10 @@ void BedrockServer::worker(SData& args,
                                 } else {
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
                                     commitSuccess = core.commit();
-
-                                    // The commit is done, decrement this as soon as possible.
-                                    pendingCommitIncrement.dec();
                                 }
+
+                                // The commit is done, decrement this as soon as possible.
+                                pendingCommitIncrement.dec();
                             }
                             if (commitSuccess) {
                                 SINFO("Successfully committed " << command.request.methodLine << " on worker thread in "
