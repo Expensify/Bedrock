@@ -293,7 +293,15 @@ int main(int argc, char *argv[]) {
         testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
             "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_querySize) + ");";
     }
-    cout << "Testing: " << testQuery << endl;
+    cout << "global_bMmap: " << global_bMmap << endl;
+    cout << "global_dbFilename: " << global_dbFilename << endl;
+    cout << "global_cacheSize: " << global_cacheSize << endl;
+    cout << "global_querySize: " << global_querySize << endl;
+    cout << "global_numa: " << global_numa << endl;
+    cout << "global_testSeconds: " << global_testSeconds << endl;
+    cout << "global_linear: " << global_linear << endl;
+    cout << "global_csv: " << global_csv << endl;
+    cout << "testQuery: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
     if (global_csv) {
