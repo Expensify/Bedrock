@@ -370,7 +370,7 @@ class SQLite {
     void _checkTiming(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
-    int _authorize(int actionCode, const char* table, const char* column);
+    int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:
     // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
@@ -389,4 +389,5 @@ class SQLite {
     int64_t _cacheHits;
     bool _useCache;
     string _note;
+    bool _deterministic;
 };

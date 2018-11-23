@@ -34,7 +34,8 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _enableFullCheckpoints(enableFullCheckpoints),
     _queryCount(0),
     _cacheHits(0),
-    _useCache(false)
+    _useCache(false),
+    _deterministic(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -471,17 +472,7 @@ string SQLite::read(const string& query) {
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
     _queryCount++;
-    // TODO: Come up with a less hacky method for this.
-    bool deterministicQueryHack = true;
-    string lowerCaseQeruy = SToLower(query);
-    if (SContains(query, "date") ||
-        SContains(query, "time") ||
-        SContains(query, "julianday") ||
-        SContains(query, "strftime") ||
-        SContains(query, "random")) {
-        deterministicQueryHack = false;
-    }
-    if (_useCache && deterministicQueryHack) {
+    if (_useCache) {
         auto foundQuery = _queryCache.find(query);
         if (foundQuery != _queryCache.end()) {
             result = foundQuery->second;
@@ -489,8 +480,9 @@ bool SQLite::read(const string& query, SQResult& result) {
             return true;
         }
     }
+    _deterministic = true;
     bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_useCache && queryResult) {
+    if (_useCache && _deterministic && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
     _checkTiming("timeout in SQLite::read"s);
@@ -878,14 +870,30 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
                                       const char* detail3, const char* detail4)
 {
     SQLite* db = static_cast<SQLite*>(pUserData);
-    return db->_authorize(actionCode, detail1, detail2);
+    return db->_authorize(actionCode, detail1, detail2, detail3, detail4);
 }
 
-int SQLite::_authorize(int actionCode, const char* table, const char* column) {
+int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
     // If we've enabled re-writing, see if we need to re-write this query.
-    if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, table, _rewrittenQuery)) {
+    if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
         return SQLITE_DENY;
+    }
+
+    // Here's where we can check for non-deterministic functions for the cache.
+    if (actionCode == SQLITE_FUNCTION && detail2) {
+        if (!strcmp(detail2, "random") ||
+            !strcmp(detail2, "date") ||
+            !strcmp(detail2, "time") ||
+            !strcmp(detail2, "datetime") ||
+            !strcmp(detail2, "julianday") ||
+            !strcmp(detail2, "strftime") ||
+            !strcmp(detail2, "changes") ||
+            !strcmp(detail2, "last_insert_rowid") ||
+            !strcmp(detail2, "sqlite3_version")
+        ) {
+            _deterministic = false;
+        }
     }
 
     // If the whitelist isn't set, we always return OK.
@@ -935,13 +943,13 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
             break;
         case SQLITE_PRAGMA:
         {
-            string normalizedTable = SToLower(table);
+            string normalizedTable = SToLower(detail1);
             // We allow this particularly because we call it ourselves in `write`, and so if it's not allowed, all
             // write queries will always fail. We specifically check that `column` is empty, because if it's set, that
             // means the caller has tried to specify a schema version, which we disallow, as it can cause DB
             // corruption. Note that this still allows `PRAGMA schema_version = 1;` to crash the process. This needs to
             // get caught sooner.
-            if (normalizedTable == "schema_version" && column == 0) {
+            if (normalizedTable == "schema_version" && detail2 == 0) {
                 return SQLITE_OK;
             } else {
                 return SQLITE_DENY;
@@ -951,10 +959,10 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
         case SQLITE_READ:
         {
             // See if there's an entry in the whitelist for this table.
-            auto tableIt = whitelist->find(table);
+            auto tableIt = whitelist->find(detail1);
             if (tableIt != whitelist->end()) {
                 // If so, see if there's an entry for this column.
-                auto columnIt = tableIt->second.find(column);
+                auto columnIt = tableIt->second.find(detail2);
                 if (columnIt != tableIt->second.end()) {
                     // If so, then this column is whitelisted.
                     return SQLITE_OK;
@@ -962,7 +970,7 @@ int SQLite::_authorize(int actionCode, const char* table, const char* column) {
             }
 
             // If we didn't find it, not whitelisted.
-            SWARN("[security] Non-whitelisted column: " << column << " in table " << table << ".");
+            SWARN("[security] Non-whitelisted column: " << detail2 << " in table " << detail1 << ".");
             return SQLITE_IGNORE;
         }
     }
