@@ -33,7 +33,8 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _noopUpdateMode(false),
     _enableFullCheckpoints(enableFullCheckpoints),
     _queryCount(0),
-    _cacheHits(0)
+    _cacheHits(0),
+    _useCache(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -470,13 +471,22 @@ string SQLite::read(const string& query) {
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
     _queryCount++;
-    // TODO: Figure out if this query contains any non-deterministic functions, and if so, skip the cache.
-    if (_useCache) {
+    // TODO: Come up with a less hacky method for this.
+    bool deterministicQueryHack = true;
+    string lowerCaseQeruy = SToLower(query);
+    if (SContains(query, "date") ||
+        SContains(query, "time") ||
+        SContains(query, "julianday") ||
+        SContains(query, "strftime") ||
+        SContains(query, "random")) {
+        deterministicQueryHack = false;
+    }
+    if (_useCache && deterministicQueryHack) {
         auto foundQuery = _queryCache.find(query);
         if (foundQuery != _queryCache.end()) {
-            //result = foundQuery->second;
+            result = foundQuery->second;
             _cacheHits++;
-            //return true;
+            return true;
         }
     }
     bool queryResult = !SQuery(_db, "read only query", query, result);
