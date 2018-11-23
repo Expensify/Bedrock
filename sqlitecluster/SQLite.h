@@ -51,10 +51,10 @@ class SQLite {
     string read(const string& query);
 
     // Begins a new transaction. Returns true on success.
-    bool beginTransaction();
+    bool beginTransaction(bool useCache = false, const string& note = "");
 
     // Begins a new concurrent transaction. Returns true on success.
-    bool beginConcurrentTransaction();
+    bool beginConcurrentTransaction(bool useCache = false, const string& note = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -383,4 +383,10 @@ class SQLite {
     bool _noopUpdateMode;
 
     bool _enableFullCheckpoints;
+
+    map<string, SQResult> _queryCache;
+    int64_t _queryCount;
+    int64_t _cacheHits;
+    bool _useCache;
+    string _note;
 };

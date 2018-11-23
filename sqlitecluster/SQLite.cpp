@@ -31,7 +31,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _timeoutLimit(0),
     _autoRolledBack(false),
     _noopUpdateMode(false),
-    _enableFullCheckpoints(enableFullCheckpoints)
+    _enableFullCheckpoints(enableFullCheckpoints),
+    _queryCount(0),
+    _cacheHits(0)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -354,7 +356,7 @@ void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction() {
+bool SQLite::beginTransaction(bool useCache, const string& note) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -366,6 +368,11 @@ bool SQLite::beginTransaction() {
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
+    _queryCache.clear();
+    _note = note;
+    _useCache = useCache;
+    _queryCount = 0;
+    _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -375,7 +382,7 @@ bool SQLite::beginTransaction() {
     return _insideTransaction;
 }
 
-bool SQLite::beginConcurrentTransaction() {
+bool SQLite::beginConcurrentTransaction(bool useCache, const string& note) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -387,6 +394,11 @@ bool SQLite::beginConcurrentTransaction() {
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _queryCache.clear();
+    _note = note;
+    _useCache = useCache;
+    _queryCount = 0;
+    _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
     _writeElapsed = 0;
@@ -457,7 +469,20 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
+    _queryCount++;
+    // TODO: Figure out if this query contains any non-deterministic functions, and if so, skip the cache.
+    if (_useCache) {
+        auto foundQuery = _queryCache.find(query);
+        if (foundQuery != _queryCache.end()) {
+            //result = foundQuery->second;
+            _cacheHits++;
+            //return true;
+        }
+    }
     bool queryResult = !SQuery(_db, "read only query", query, result);
+    if (_useCache && queryResult) {
+        _queryCache.emplace(make_pair(query, result));
+    }
     _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
@@ -508,6 +533,8 @@ bool SQLite::writeUnmodified(const string& query) {
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
+    _queryCache.clear();
+    _queryCount++;
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
 
@@ -665,6 +692,13 @@ int SQLite::commit() {
         }
         _sharedData->blockNewTransactionsCV.notify_one();
         g_commitLock.unlock();
+        _queryCache.clear();
+        if (_useCache) {
+            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _note << "'.");
+        }
+        _useCache = false;
+        _queryCount = 0;
+        _cacheHits = 0;
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
@@ -736,6 +770,13 @@ void SQLite::rollback() {
     } else {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
+    _queryCache.clear();
+    if (_useCache) {
+        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _note << "'.");
+    }
+    _useCache = false;
+    _queryCount = 0;
+    _cacheHits = 0;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
