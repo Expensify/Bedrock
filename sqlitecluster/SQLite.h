@@ -50,11 +50,14 @@ class SQLite {
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
-    // Begins a new transaction. Returns true on success.
-    bool beginTransaction();
+    // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
+    // the transaction can be named so that log lines about cache success can be associated to the transaction.
+    bool beginTransaction(bool useCache = false, const string& transactionName = "");
 
-    // Begins a new concurrent transaction. Returns true on success.
-    bool beginConcurrentTransaction();
+    // Begins a new concurrent transaction. Returns true on success. Can optionally be instructed to use the query
+    // cache, if so the transaction can be named so that log lines about cache success can be associated to the
+    // transaction.
+    bool beginConcurrentTransaction(bool useCache = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -370,7 +373,7 @@ class SQLite {
     void _checkTiming(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
-    int _authorize(int actionCode, const char* table, const char* column);
+    int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:
     // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
@@ -383,4 +386,25 @@ class SQLite {
     bool _noopUpdateMode;
 
     bool _enableFullCheckpoints;
+
+    // This section enables caching of query results.
+
+    // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
+    // write, rollback, or commit.
+    map<string, SQResult> _queryCache;
+
+    // Number of queries that have been attempted in this transaction (for metrics only).
+    int64_t _queryCount;
+
+    // Number of queries found in cache in this transaction (for metrics only).
+    int64_t _cacheHits;
+
+    // Set to true if the cache is in use for this transaction.
+    bool _useCache;
+
+    // A string indicating the name of the transaction (typically a command name) for metric purposes.
+    string _transactionName;
+
+    // Will be set to false while running a non-deterministic query to prevent it's result being cached.
+    bool _isDeterministicQuery;
 };

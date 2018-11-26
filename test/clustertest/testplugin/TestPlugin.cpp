@@ -90,7 +90,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             count = SToInt(command.request["count"]);
         }
         for (int i = 0; i < count; i++) {
-            string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
+            string query = "WITH RECURSIVE cnt(x) AS ( SELECT random() UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
             SQResult result;
             db.read(query, result);
         }
