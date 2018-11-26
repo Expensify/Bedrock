@@ -35,7 +35,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
-    _deterministicQuery(false)
+    _isDeterministicQuery(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -480,9 +480,9 @@ bool SQLite::read(const string& query, SQResult& result) {
             return true;
         }
     }
-    _deterministicQuery = true;
+    _isDeterministicQuery = true;
     bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_useCache && _deterministicQuery && queryResult) {
+    if (_useCache && _isDeterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
     _checkTiming("timeout in SQLite::read"s);
@@ -892,7 +892,7 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "last_insert_rowid") ||
             !strcmp(detail2, "sqlite3_version")
         ) {
-            _deterministicQuery = false;
+            _isDeterministicQuery = false;
         }
     }
 

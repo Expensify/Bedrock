@@ -406,5 +406,5 @@ class SQLite {
     string _transactionName;
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
-    bool _deterministicQuery;
+    bool _isDeterministicQuery;
 };
