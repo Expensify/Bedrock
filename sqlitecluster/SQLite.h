@@ -50,11 +50,14 @@ class SQLite {
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
-    // Begins a new transaction. Returns true on success.
-    bool beginTransaction(bool useCache = false, const string& note = "");
+    // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
+    // the transaction can be named so that log lines about cache success can be associated to the transaction.
+    bool beginTransaction(bool useCache = false, const string& transactionName = "");
 
-    // Begins a new concurrent transaction. Returns true on success.
-    bool beginConcurrentTransaction(bool useCache = false, const string& note = "");
+    // Begins a new concurrent transaction. Returns true on success. Can optionally be instructed to use the query
+    // cache, if so the transaction can be named so that log lines about cache success can be associated to the
+    // transaction.
+    bool beginConcurrentTransaction(bool useCache = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -384,10 +387,24 @@ class SQLite {
 
     bool _enableFullCheckpoints;
 
+    // This section enables caching of query results.
+
+    // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
+    // write, rollback, or commit.
     map<string, SQResult> _queryCache;
+
+    // Number of queries that have been attempted in this transaction (for metrics only).
     int64_t _queryCount;
+
+    // Number of queries found in cache in this transaction (for metrics only).
     int64_t _cacheHits;
+
+    // Set to true if the cache is in use for this transaction.
     bool _useCache;
-    string _note;
-    bool _deterministic;
+
+    // A string indicating the name of the transaction (typically a command name) for metric purposes.
+    string _transactionName;
+
+    // Will be set to false while running a non-deterministic query to prevent it's result being cached.
+    bool _deterministicQuery;
 };

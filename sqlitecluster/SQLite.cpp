@@ -35,7 +35,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
-    _deterministic(false)
+    _deterministicQuery(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -358,7 +358,7 @@ void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction(bool useCache, const string& note) {
+bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -371,7 +371,7 @@ bool SQLite::beginTransaction(bool useCache, const string& note) {
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
     _queryCache.clear();
-    _note = note;
+    _transactionName = transactionName;
     _useCache = useCache;
     _queryCount = 0;
     _cacheHits = 0;
@@ -384,7 +384,7 @@ bool SQLite::beginTransaction(bool useCache, const string& note) {
     return _insideTransaction;
 }
 
-bool SQLite::beginConcurrentTransaction(bool useCache, const string& note) {
+bool SQLite::beginConcurrentTransaction(bool useCache, const string& transactionName) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -397,7 +397,7 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& note) {
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
     _queryCache.clear();
-    _note = note;
+    _transactionName = transactionName;
     _useCache = useCache;
     _queryCount = 0;
     _cacheHits = 0;
@@ -480,9 +480,9 @@ bool SQLite::read(const string& query, SQResult& result) {
             return true;
         }
     }
-    _deterministic = true;
+    _deterministicQuery = true;
     bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_useCache && _deterministic && queryResult) {
+    if (_useCache && _deterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
     _checkTiming("timeout in SQLite::read"s);
@@ -696,7 +696,7 @@ int SQLite::commit() {
         g_commitLock.unlock();
         _queryCache.clear();
         if (_useCache) {
-            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _note << "'.");
+            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
         }
         _useCache = false;
         _queryCount = 0;
@@ -774,7 +774,7 @@ void SQLite::rollback() {
     }
     _queryCache.clear();
     if (_useCache) {
-        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _note << "'.");
+        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
     }
     _useCache = false;
     _queryCount = 0;
@@ -892,7 +892,7 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "last_insert_rowid") ||
             !strcmp(detail2, "sqlite3_version")
         ) {
-            _deterministic = false;
+            _deterministicQuery = false;
         }
     }
 
