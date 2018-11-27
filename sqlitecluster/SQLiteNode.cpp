@@ -814,7 +814,7 @@ bool SQLiteNode::update() {
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
-                    
+
                     // clear the unsent transactions, we've sent them all (including this one);
                     _db.getCommittedTransactions();
 
@@ -1738,7 +1738,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << command.request.methodLine);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         // ESCALATE_RESPONSE: Sent when the master aborts processing an escalated command. Re-submit to the new master.
@@ -2181,7 +2181,7 @@ void SQLiteNode::_updateSyncPeer()
             newSyncPeer = peer;
         }
     }
-    
+
     // Log that we've changed peers.
     if (_syncPeer != newSyncPeer) {
         string from, to;
