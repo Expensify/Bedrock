@@ -1,20 +1,12 @@
 #include <libstuff/libstuff.h>
 #include "S3.h"
 
-S3::S3(const string& awsAccessKey, const string& awsSecretKey, const string& awsBucketName, bool live) :
-        _live(live)
+S3::S3(const string& awsAccessKey, const string& awsSecretKey, const string& awsBucketName)
 {
-    if (_live) {
-        _keys["awsAccessKey"] = awsAccessKey;
-        _keys["awsSecretKey"] = awsSecretKey;
-        _keys["awsBucketName"] = awsBucketName;
-        SDEBUG("Created an S3 object in live mode.");
-    } else{
-        _keys["awsAccessKey"] = TEST_AWS_ACESS_KEY;
-        _keys["awsSecretKey"] = TEST_AWS_SECRET_KEY;
-        _keys["awsBucketName"] = TEST_AWS_BUCKET_NAME;
-        SDEBUG("Created an S3 object in debug mode.");
-    }
+    _keys["awsAccessKey"] = awsAccessKey;
+    _keys["awsSecretKey"] = awsSecretKey;
+    _keys["awsBucketName"] = awsBucketName;
+    SDEBUG("Created an S3 object.");
     SASSERT(!_keys["awsAccessKey"].empty());
     SASSERT(!_keys["awsSecretKey"].empty());
     SASSERT(!_keys["awsBucketName"].empty());

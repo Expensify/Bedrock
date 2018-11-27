@@ -30,6 +30,19 @@
 #include <algorithm>
 using namespace std;
 
+#undef SSYSLOG
+#define SSYSLOG(_PRI_, _MSG_)                                                                                          \
+    do {                                                                                                               \
+        ostringstream __out;                                                                                           \
+        __out << _MSG_ << endl;                                                                                        \
+        const string& __s = __out.str();                                                                               \
+        for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                          \
+            syslog(LOG_WARNING, "%s", __s.substr(__i, 1500).c_str());                                                  \
+    } while (false)
+
+#undef SWHEREAMI
+#define SWHEREAMI "(" << basename((char*)__FILE__) << ":" << __LINE__ << ") " << __FUNCTION__
+
 /**
  * This version string has been updated to MAJOR_VERSION 2 by Expensify, as this library has been forked and
  * significantly diverged from the original library. This is basically our own code at that point.
@@ -308,7 +321,7 @@ namespace tpunit {
           * Determine if two binary32 single precision IEEE 754 floating-point
           * numbers are equal using unit in the last place (ULP) analysis.
           *
-          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm 
+          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
           */
          static bool tpunit_detail_fp_equal(float lhs, float rhs, unsigned char ulps);
 
@@ -316,7 +329,7 @@ namespace tpunit {
           * Determine if two binary64 double precision IEEE 754 floating-point
           * numbers are equal using unit in the last place (ULP) analysis.
           *
-          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm 
+          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
 

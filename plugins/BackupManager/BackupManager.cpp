@@ -11,7 +11,7 @@ STable BedrockPlugin_BackupManager::fileManifest;
 SData BedrockPlugin_BackupManager::localArgs;
 bool BedrockPlugin_BackupManager::operationInProgress = false;
 mutex BedrockPlugin_BackupManager::operationMutex;
-SData BedrockPlugin_BackupManager::keys;
+STable BedrockPlugin_BackupManager::keys;
 atomic<bool> BedrockPlugin_BackupManager::shouldExit(false);
 
 BedrockPlugin_BackupManager::BedrockPlugin_BackupManager() :
@@ -41,21 +41,31 @@ void BedrockPlugin_BackupManager::initialize(const SData& args, BedrockServer& s
     string awsAccessKey, awsSecretKey, awsBucketName, manifestKey;
     string keyFile = args["-backupKeyFile"];
 
-    if (localArgs.isSet("-live")) {
-        // Load our backup keys from a file on disk.
-        if (SFileExists(keyFile)) {
-            // Read the whole file into our key
-            string fileContents = SFileLoad(keyFile);
-            keys.deserialize(fileContents);
+    // Load our backup keys from a file on disk.
+    // Note that not having a key file is not catastrophic, this is because
+    // we are loading this plugin as a default plugin, and we want to support
+    // the case where people don't want to use it. We instead check for an empty
+    // key object before doing a backup or restore, and exit if that's the case.
+    if (SFileExists(keyFile)) {
+        // Read the whole file into our key
+        if (SParseConfigFile(keyFile, keys)) {
             SINFO("Loaded key file " << keyFile);
         } else {
-            SERROR("No secure data file " << keyFile << " found for backupManager.");
+            SHMMM("Unable to load key file " << keyFile << " as new key file, trying legacy format.");
+            // Read the whole file into our key
+            string fileContents = SFileLoad(keyFile);
+            SData tempKey;
+            tempKey.deserialize(fileContents);
+            keys = tempKey.nameValueMap;
         }
-        manifestKey = keys["manifestKey"];
+
+        if (keys.empty()) {
+            SHMMM("Unable to load any keys from key file: " << keyFile);
+        }
     } else {
-        SINFO("Running in debug mode");
-        manifestKey = "0000000000000000000000000000000000000000000000000000000000000000";
+        SHMMM("No secure data file " << keyFile << " found for backupManager.");
     }
+    manifestKey = keys["manifestKey"];
 
     // If no db arg is set we won't know where to get a db from or where to put one.
     SASSERT(args.isSet("-db"));
@@ -75,6 +85,11 @@ void BedrockPlugin_BackupManager::initialize(const SData& args, BedrockServer& s
             // It's an error to bootstrap with no given manifest. With no
             // manifest, we have no way of knowing what to download.
             SERROR("Loading into bootstrap mode with no manifest, exiting.");
+        }
+
+        // Make sure we have keys, otherwise everything will fail.
+        if (keys.empty()) {
+            SERROR("Loading into bootstrap mode with no keys, exiting.");
         }
 
         if (SFileExists(details["databasePath"])) {
@@ -101,6 +116,11 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
         if (!request["_source"].empty()) {
             SWARN("Got command " << request.getVerb() << " from non-localhost source: " << request["_source"]);
             STHROW("401 Unauthorized");
+        }
+
+        if (keys.empty()) {
+            SALERT("Trying to run a backup with no keys, exiting early.");
+            STHROW("404 Missing keyfile");
         }
 
         // We require a 64 char length encryption key
@@ -216,7 +236,7 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
             SINFO("Successfully opened " << fileName << " for reading.");
 
             // Create an S3 connection to poll for data.
-            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"], localArgs.isSet("-live"));
+            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
 
             char* buf = new char[chunkSize];
             while (!shouldExit) {
@@ -319,7 +339,7 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
             SInitialize("downloadWorker" + to_string(threadId));
 
             // Create an S3 connection to poll for data.
-            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"], localArgs.isSet("-live"));
+            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
 
             // Each thread needs it's own file handle, or else another thread could call seek
             // before we call fwrite, causing this thread to write to a location other than where it seeked.
@@ -428,7 +448,7 @@ void BedrockPlugin_BackupManager::_downloadManifest() {
     string manifestIV = SAfterUpTo(fileName, "IV-", "-");
 
     // Create an S3 connection to poll for data.
-    S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"], localArgs.isSet("-live"));
+    S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
 
     // Download our manifest
     SHTTPSManager::Transaction* downloadRequest = s3.download(fileName);
@@ -492,7 +512,7 @@ void BedrockPlugin_BackupManager::_saveManifest() {
     string finalManifestJSON = SComposeJSONObject(finalManifest);
 
     // Create an S3 connection to poll for data.
-    S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"], localArgs.isSet("-live"));
+    S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
 
     SHTTPSManager::Transaction* uploadRequest = s3.upload(details["manifestFileName"], SAESEncrypt(finalManifestJSON, details["manifestIV"], details["manifestKey"]));
 

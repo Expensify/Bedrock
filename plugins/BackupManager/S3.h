@@ -5,7 +5,7 @@ class S3 : public SHTTPSManager
 {
 
 public:
-    S3(const string& awsAccessKey, const string& awsSecretKey,  const string& awsBucketName, bool live);
+    S3(const string& awsAccessKey, const string& awsSecretKey,  const string& awsBucketName);
     virtual ~S3();
 
     // Get a given object from S3
@@ -13,11 +13,6 @@ public:
 
     // Add a given object to S3
     virtual Transaction* upload(const string& fileName, const string& file);
-
-    // The test keys to use to make S3 requests when testing.
-    static constexpr auto TEST_AWS_ACESS_KEY = "KEY";
-    static constexpr auto TEST_AWS_SECRET_KEY = "SECRET";
-    static constexpr auto TEST_AWS_BUCKET_NAME = "NEW BUCKET";
 
 private:
     static constexpr auto S3_URL = "s3.amazonaws.com";
@@ -32,7 +27,6 @@ private:
     // Mutex to lock around our map of file names and transactions.
     mutex _activeFileNameTransactionsMutex;
 
-    const bool _live;
     const string BUCKET_URL;
 
     // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that

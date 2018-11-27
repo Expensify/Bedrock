@@ -31,8 +31,8 @@ tpunit::TestFixture::perFixtureStats::perFixtureStats()
     , _traces(0)
     {}
 
-tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4, 
-                         method* m5,  method* m6,  method* m7,  method* m8,  method* m9, 
+tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
+                         method* m5,  method* m6,  method* m7,  method* m8,  method* m9,
                          method* m10, method* m11, method* m12, method* m13, method* m14,
                          method* m15, method* m16, method* m17, method* m18, method* m19,
                          method* m20, method* m21, method* m22, method* m23, method* m24,
@@ -104,7 +104,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     // Make local, mutable copies of the include and exclude lists.
     set<string> _include = include;
     set<string> _exclude = exclude;
-    
+
     // Create a list of threads, and have them each pull tests of the queue.
     list<thread> threadList;
     recursive_mutex m;
@@ -232,6 +232,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         printf("[==============]\n");
         printf("[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
         printf("[==============]\n");
+        SDEBUG("COLE Passed: " << tpunit_detail_stats()._passes);
         return tpunit_detail_stats()._failures;
     }
     return 1;

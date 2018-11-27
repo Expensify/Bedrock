@@ -7,7 +7,7 @@ struct BackupTest : tpunit::TestFixture
                                             TEST(BackupTest::download),
                                             AFTER_CLASS(BackupTest::tearDownClass))
     {
-        NAME(UploadBackup);
+        NAME(CompleteBackup);
     }
 
     BedrockTester* uploadTester;
@@ -19,8 +19,7 @@ struct BackupTest : tpunit::TestFixture
         // Load our SQL file and run the queries from inside of it
         string dbSql = SFileLoad("data/db.sql");
         const list<string>& queries = SParseList(dbSql, ';');
-        uploadTester = new BedrockTester({{"-plugins", "../expensifyBackupManager.so"},
-                                          {"-db", "/tmp/ebmtest_upload.db"},
+        uploadTester = new BedrockTester({{"-db", "/tmp/ebmtest_upload.db"},
                                           {"-backupKeyFile", "data/key.key"}}, queries);
     }
 
@@ -32,7 +31,7 @@ struct BackupTest : tpunit::TestFixture
     void upload()
     {
         // Do the backup
-        SData command("BeginExpensifyBackup");
+        SData command("BeginBackup");
         command["key"] = "a77477f1609c0e184427f8b39a02eb1c8c1fa3d509b131ba101d7b4019eb81a1";
         command["threads"] = "4";
         command["chunkSize"] = "1048576";
@@ -67,8 +66,7 @@ struct BackupTest : tpunit::TestFixture
     {
         // Delete and recreate our tester with the bootstrap flag.
         delete uploadTester;
-        downloadTester = new BedrockTester({{"-plugins", "../expensifyBackupManager.so"},
-                                            {"-db", "/tmp/ebmtest_download.db"},
+        downloadTester = new BedrockTester({{"-db", "/tmp/ebmtest_download.db"},
                                             {"-backupKeyFile", "data/key.key"},
                                             {"-bootstrap", manifestFileName}}, {});
 

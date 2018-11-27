@@ -6,7 +6,7 @@
 #include <libstuff/version.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
-#include "plugins/BackupManager.h"
+#include "plugins/BackupManager/BackupManager.h"
 #include "plugins/Cache.h"
 #include "plugins/DB.h"
 #include "plugins/Jobs.h"

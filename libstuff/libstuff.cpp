@@ -2168,6 +2168,49 @@ uint64_t SFileSize(const string& path) {
     return out.st_size;
 }
 
+// --------------------------------------------------------------------------
+bool SParseConfigFile(const string& path, STable& nameValueMap) {
+    // Clear the output
+    nameValueMap.clear();
+
+    // Load the file and loop over every line
+    ifstream file(path.c_str());
+    if (file.is_open()) {
+        string line;
+        while (getline(file, line)) {
+            // Strip any whitespace off of the line
+            line.erase(remove_if(line.begin(), line.end(), ::isspace), line.end());
+
+            // If this line is a comment or empty, skip it
+            if (line[0] == '#' || line.empty()) {
+                continue;
+            }
+
+            size_t pos = line.find("=");
+            // Split our name and values up
+            if (pos != string::npos) {
+                string name = line.substr(0, pos);
+                nameValueMap[name] = line.substr(pos + 1);
+            } else {
+                SWARN("Found a line that wasn't a comment but wasn't an NVP, skipping.");
+                continue;
+            }
+
+        }
+        file.close();
+
+        // Success only if we read something into the map.
+        if (nameValueMap.size()) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    else {
+         SALERT("Unable to open file: " << path);
+    }
+    return false;
+}
 /////////////////////////////////////////////////////////////////////////////
 // Cryptography stuff
 /////////////////////////////////////////////////////////////////////////////

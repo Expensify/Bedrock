@@ -1,8 +1,8 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include "../BedrockPlugin.h"
-#include "../BedrockServer.h"
-#include "../libs/S3.h"
+#include "../../BedrockPlugin.h"
+#include "../../BedrockServer.h"
+#include "S3.h"
 
 
 class BedrockPlugin_BackupManager : public BedrockPlugin {
@@ -30,7 +30,7 @@ class BedrockPlugin_BackupManager : public BedrockPlugin {
         BedrockServer* _server;
 
         static SData localArgs;
-        static SData keys;
+        static STable keys;
 
         // Instance of ourselves.
         static BedrockPlugin_BackupManager* _instance;
