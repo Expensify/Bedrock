@@ -233,10 +233,10 @@ struct RetryJobTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Get the nextRun value
+        // Get a timestamp from before we update nextRun.
         SQResult result;
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        string originalNextRun = result[0][0];
+        string minimumLastRun = result[0][0];
 
         // Get the job
         command.clear();
@@ -250,12 +250,27 @@ struct RetryJobTest : tpunit::TestFixture {
         command["jobID"] = jobID;
         command["delay"] = "5";
         tester->executeWaitVerifyContent(command);
+            
+        // Get a timestamp from after we update nextRun.
+        tester->readDB("SELECT DATETIME();", result);
+        string maximumLastRun = result[0][0];
 
-        // Assert the new nextRun value is correct
+        // Get the actual value of nextRun.
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        time_t currentNextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
-        time_t originalNextRunTime = JobTestHelper::getTimestampForDateTimeString(originalNextRun);
-        ASSERT_EQUAL(difftime(currentNextRunTime, originalNextRunTime), 5);
+        string actualNextRun = result[0][0];
+
+        // Because nextRun is updated during RetryJob based on the *current time*, we don't know exactly what it should
+        // be, but we do have two values that can't be more/less than this, so make sure it falls in this range.
+        time_t minimumLastRunTime = JobTestHelper::getTimestampForDateTimeString(minimumLastRun);
+        time_t maximumLastRunTime = JobTestHelper::getTimestampForDateTimeString(maximumLastRun);
+        time_t actualNextRunTime = JobTestHelper::getTimestampForDateTimeString(actualNextRun);
+
+        double timeFromStart = difftime(actualNextRunTime, minimumLastRunTime);
+        double timeFromEnd = difftime(actualNextRunTime, maximumLastRunTime);
+
+        // Time from end must be <= 5, time from start must be >= 5.
+        ASSERT_TRUE(timeFromStart >= 5);
+        ASSERT_TRUE(timeFromEnd <= 5);
     }
 
     // Retry with too large of a delay

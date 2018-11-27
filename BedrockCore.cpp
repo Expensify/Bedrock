@@ -29,25 +29,44 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
+uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
+    int64_t timeout = command.timeout();
+    int64_t now = STimeNow();
+
+    // This is what's left for the "absolute" time. If it's negative, we've already timed out.
+    int64_t adjustedTimeout = timeout - now;
+
+    // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
+    int64_t processTimeout = command.request.isSet("processTimeout") ? command.request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+
+    // Since timeouts are specified in ms, we convert to us.
+    processTimeout *= 1000;
+
+    // Already expired.
+    if (adjustedTimeout <= 0 || processTimeout <= 0) {
+        SALERT("Command " << command.request.methodLine << " timed out after "
+               << ((now - command.request.calc64("commandExecuteTime")) / 1000) << "ms.");
+        STHROW("555 Timeout");
+    }
+
+    // Both of these are positive, return the lowest remaining.
+    return min(processTimeout, adjustedTimeout);
+}
+
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
-    command.peekCount++;
-    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
-
-    if (timeout > 2'000'000) {
-        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
-        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
-        timeout /= 1000;
-    }
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        _db.startTiming(timeout * 1000);
+        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
+        uint64_t timeout = _getRemainingTime(command);
+        command.peekCount++;
+
+        _db.startTiming(timeout);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
         // through process. This allows for consistency through this two-phase process. I.e., anything checked in
         // peek is guaranteed to still be valid in process, because they're done together as one transaction.
@@ -57,7 +76,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         bool shouldSuppressTimeoutWarnings = false;
 
         try {
-            if (!_db.beginConcurrentTransaction()) {
+            if (!_db.beginConcurrentTransaction(true, command.request.methodLine)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
 
@@ -71,6 +90,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 // Try to peek the command.
                 if (plugin->peekCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
+                    command.peekedBy = plugin;
                     pluginPeeked = true;
                     break;
                 }
@@ -143,25 +163,20 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     SData& request = command.request;
     SData& response = command.response;
     STable& content = command.jsonContent;
-    SDEBUG("Processing '" << request.methodLine << "'");
-    command.processCount++;
-    uint64_t timeout = command.request.isSet("timeout") ? command.request.calc("timeout") : DEFAULT_TIMEOUT;
-
-    if (timeout > 2'000'000) {
-        // Old microsecond timeout. Update caller to use milliseconds. Remove this line once we no longer see this.
-        SWARN("[TYLER] old-style timeout found for command: " << command.request.methodLine);
-        timeout /= 1000;
-    }
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
+        SDEBUG("Processing '" << request.methodLine << "'");
+        uint64_t timeout = _getRemainingTime(command);
+        command.processCount++;
+
         // Time in US.
-        _db.startTiming(timeout * 1000);
+        _db.startTiming(timeout);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
-        if (!_db.insideTransaction() && !_db.beginConcurrentTransaction()) {
+        if (!_db.insideTransaction() && !_db.beginConcurrentTransaction(true, command.request.methodLine)) {
             STHROW("501 Failed to begin concurrent transaction");
         }
 
@@ -179,6 +194,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
                 if (plugin->processCommand(_db, command)) {
                     SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
+                    command.processedBy = plugin;
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {

@@ -1,5 +1,8 @@
 #include "TestPlugin.h"
 
+mutex BedrockPlugin_TestPlugin::dataLock;
+map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
+
 extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
     // Register the global instance
     new BedrockPlugin_TestPlugin();
@@ -36,6 +39,32 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         }
         command.response.content = "this is a test response";
         return true;
+    } else if (SStartsWith(command.request.methodLine, "broadcastwithtimeouts")) {
+        // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
+        SData subCommand("storeboradcasttimeouts");
+        subCommand["processTimeout"] = to_string(5001);
+        subCommand["timeout"] = to_string(5002);
+        subCommand["not_special"] = "whatever";
+        if (_server) {
+            _server->broadcastCommand(subCommand);
+        }
+        return true;
+    } else if (SStartsWith(command.request.methodLine, "storeboradcasttimeouts")) {
+        // This is the command that will be broadcast to peers, it will store some data.
+        lock_guard<mutex> lock(dataLock);
+        arbitraryData["timeout"] = command.request["timeout"];
+        arbitraryData["processTimeout"] = command.request["processTimeout"];
+        arbitraryData["commandExecuteTime"] = command.request["commandExecuteTime"];
+        arbitraryData["not_special"] = command.request["not_special"];
+        return true;
+    } else if (SStartsWith(command.request.methodLine, "getbroadcasttimeouts")) {
+        // Finally, the caller can send this command to the peers to make sure they received the correct timeout data.
+        lock_guard<mutex> lock(dataLock);
+        command.response["stored_timeout"] = arbitraryData["timeout"];
+        command.response["stored_processTimeout"] = arbitraryData["processTimeout"];
+        command.response["stored_commandExecuteTime"] = arbitraryData["commandExecuteTime"];
+        command.response["stored_not_special"] = arbitraryData["not_special"];
+        return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
         if (_server->getState() != SQLiteNode::MASTERING && _server->getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on master, otherwise, we'll escalate.
@@ -61,7 +90,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             count = SToInt(command.request["count"]);
         }
         for (int i = 0; i < count; i++) {
-            string query = "WITH RECURSIVE cnt(x) AS ( SELECT 1 UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
+            string query = "WITH RECURSIVE cnt(x) AS ( SELECT random() UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
             SQResult result;
             db.read(query, result);
         }
@@ -75,8 +104,15 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         request["Host"] = "www.google.com";
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
         command.httpsRequests.push_back(transaction);
-        thread([transaction, request](){sleep(35);transaction->s->send(request.serialize());}).detach();
-    } else if (SStartsWith(command.request.methodLine, "dieinpeek")) {
+        if (command.request["neversend"].empty()) {
+            thread([transaction, request](){
+                SINFO("Sleeping 35 seconds for httpstimeout");
+                sleep(35);
+                SINFO("Done Sleeping 35 seconds for httpstimeout");
+                transaction->s->send(request.serialize());
+            }).detach();
+        }
+    } else if (SStartsWith(command.request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(command.request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
@@ -188,7 +224,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             query += ";";
             db.read(query, result);
         }
-    } else if (SStartsWith(command.request.methodLine, "dieinprocess")) {
+    } else if (SStartsWith(command.request.methodLine, "exceptioninprocess")) {
         throw 2;
     } else if (SStartsWith(command.request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;

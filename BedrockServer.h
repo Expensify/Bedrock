@@ -1,9 +1,11 @@
 #pragma once
 #include <libstuff/libstuff.h>
+#include <libstuff/SWaitCounter.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
+#include "BedrockTimeoutCommandQueue.h"
 
 class BedrockServer : public SQLiteServer {
   public:
@@ -148,10 +150,6 @@ class BedrockServer : public SQLiteServer {
     // initialized at construction based on the arguments passed in.
     list<BedrockPlugin*> plugins;
 
-    // A command queue is just a SSynchronizedQueue of BedrockCommands. This is distinct from a `BedrockCommandQueue`,
-    // which is a more complex data structure.
-    typedef SSynchronizedQueue<BedrockCommand> CommandQueue;
-
     // Our only constructor.
     BedrockServer(const SData& args);
 
@@ -257,7 +255,7 @@ class BedrockServer : public SQLiteServer {
     // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
     // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
     // sync thread. A reference is passed to the sync thread.
-    CommandQueue _syncNodeQueuedCommands;
+    BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
 
     // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
@@ -290,7 +288,7 @@ class BedrockServer : public SQLiteServer {
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
-                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Wraps the sync thread main function to make it easy to add exception handling.
@@ -298,7 +296,7 @@ class BedrockServer : public SQLiteServer {
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
-                     CommandQueue& syncNodeQueuedCommands,
+                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
@@ -306,8 +304,8 @@ class BedrockServer : public SQLiteServer {
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& masterVersion,
-                       CommandQueue& syncNodeQueuedCommands,
-                       CommandQueue& syncNodeCompletedCommands,
+                       BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
+                       BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
                        int threadId,
                        int threadCount);
@@ -332,7 +330,7 @@ class BedrockServer : public SQLiteServer {
     shared_ptr<SQLiteNode> _syncNode;
 
     // Because status will access internal sync node data, we lock in both places that will access the pointer above.
-    recursive_mutex _syncMutex;
+    recursive_timed_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(BedrockCommand& command);
@@ -356,6 +354,9 @@ class BedrockServer : public SQLiteServer {
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
     // we catch up, and then move them back to the regular command queue.
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
+
+    // Map of command timeouts to the indexes into _futureCommitCommands where those commands live.
+    multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
     // This is a shared mutex. It can be locked by many readers at once, but if the writer (the sync thread) locks it,
@@ -400,9 +401,17 @@ class BedrockServer : public SQLiteServer {
     map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
 
+    // Comparison class to sort command pointers based on their timeout rather than pointer address. This lets us keep
+    // commands ordered such that the first ones to time out are at the front.
+    struct compareCommandByTimeout {
+        bool operator() (BedrockCommand* a, BedrockCommand* b) const {
+            return a->timeout() < b->timeout();
+        }
+    };
+
     // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
-    // copy of each command, even if it has multiple requests.
-    set<BedrockCommand*> _outstandingHTTPSCommands;
+    // copy of each command, even if it has multiple requests. Sorted with the above `compareCommandByTimeout`.
+    set<BedrockCommand*, compareCommandByTimeout> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.
@@ -418,7 +427,7 @@ class BedrockServer : public SQLiteServer {
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
     // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
     // endless loop of always having new unfinished commands.
-    CommandQueue _standDownQueue;
+    BedrockTimeoutCommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
@@ -439,6 +448,13 @@ class BedrockServer : public SQLiteServer {
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
+
+    // Keep track of the number of threads waiting to commit changes.
+    SWaitCounter _pendingCommitCount;
+
+    // This is the maximum number of threads we'll allow to wait for the commit lock. It's configurable via command
+    // line or control command.
+    atomic<int64_t> _maxPendingCommits;
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);

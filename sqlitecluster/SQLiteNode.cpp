@@ -26,7 +26,7 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
-const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_M;
+const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
 atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
@@ -207,6 +207,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         return;
     }
     auto transactions = _db.getCommittedTransactions();
+    string sendTime = to_string(STimeNow());
     for (auto& i : transactions) {
         uint64_t id = i.first;
         if (id <= _lastSentTransactionID) {
@@ -218,6 +219,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         transaction["Command"] = "ASYNC";
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
+        transaction["masterSendTime"] = sendTime;
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
@@ -880,6 +882,7 @@ bool SQLiteNode::update() {
                   << _db.getUncommittedHash() << ")");
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("masterSendTime", to_string(STimeNow()));
             if (_commitConsistency == ASYNC) {
                 transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
@@ -1295,23 +1298,29 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIOZATION messages.
-        if (_state == MASTERING || _state == SLAVING) {
+        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't do this when mastering,
+        // because these commands may not be handled quickly, if a commit is in progress. The catastrophic case for
+        // this means that these messages are all handled late, and the synchronizing peer never catches up. We don't
+        // do it in any other state, as the server isn't expected to be able to process commands except when MASTERING
+        // or SLAVING.
+        if (_state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
-            SQLiteCommand command;
-            command.request = message;
-            command.initiatingPeerID = peer->id;
-            command.request["peerCommitCount"] = (*peer)["CommitCount"];
-            command.request["peerHash"] = (*peer)["Hash"];
-            command.request["peerID"] = to_string(getIDByPeer(peer));
-            command.request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
+            SData request = message;
+            request["peerCommitCount"] = (*peer)["CommitCount"];
+            request["peerHash"] = (*peer)["Hash"];
+            request["peerID"] = to_string(getIDByPeer(peer));
+            request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
             // The following properties are only used to expand out our log macros.
-            command.request["state"] = to_string(_state);
-            command.request["name"] = name;
-            command.request["peerName"] = peer->name;
+            request["state"] = to_string(_state);
+            request["name"] = name;
+            request["peerName"] = peer->name;
+
+            // Create a command from this request and pass it on to the server to handle.
+            SQLiteCommand command(move(request));
+            command.initiatingPeerID = peer->id;
             _server.acceptCommand(move(command), true);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
@@ -1364,7 +1373,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
+                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
             }
         } catch (const SException& e) {
             // Transaction failed
@@ -1402,6 +1411,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                   << _db.getUncommittedHash() << ")");
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
+            transaction.set("masterSendTime", to_string(STimeNow()));
             transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);
@@ -1436,6 +1446,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // **FIXME**: What happens if MASTER steps down before sending BEGIN?
         // **FIXME**: What happens if MASTER steps down or disconnects after BEGIN?
         bool success = true;
+        uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
+        uint64_t slaveDequeueTimestamp = STimeNow();
         if (!message.isSet("ID")) {
             STHROW("missing ID");
         }
@@ -1512,6 +1524,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Master is processing our command " << message["ID"] << " (" << message["Command"] << ")");
             commandIt->second.transaction = message;
         }
+
+        uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
+        uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
+        float transitTimeMS = (float)transitTimeUS / 1000.0;
+        float applyTimeMS = (float)applyTimeUS / 1000.0;
+        PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+              << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the master by a slave when it confirms it was able to begin a transaction and
@@ -1942,7 +1961,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } else if (newState == SEARCHING || newState == SUBSCRIBING) {
             timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         } else if (newState == SYNCHRONIZING) {
-            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_M * 5;
+            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         } else {
             timeout = 0;
         }
@@ -2237,7 +2256,6 @@ bool SQLiteNode::_majoritySubscribed() {
     // Done!
     return (numFullSlaves * 2 >= numFullPeers);
 }
-
 
 bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
 {
