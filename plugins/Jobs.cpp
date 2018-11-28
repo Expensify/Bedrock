@@ -1224,6 +1224,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 // ==========================================================================
 string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun,
                                                      const string& repeat) {
+    if (repeat.empty()) {
+        return "";
+    }
+
     // Some "canned" times for convenience
     if (SIEquals(repeat, "HOURLY"))
         return "STRFTIME( '%Y-%m-%d %H:00:00', DATETIME( " + SCURRENT_TIMESTAMP() + ", '+1 HOUR' ) )";
