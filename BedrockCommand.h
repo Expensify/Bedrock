@@ -28,9 +28,6 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
-    // Constructor to make an empty object.
-    BedrockCommand();
-
     // Constructor to convert from an existing SQLiteCommand (by move).
     BedrockCommand(SQLiteCommand&& from);
 
