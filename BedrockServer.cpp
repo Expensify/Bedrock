@@ -173,7 +173,7 @@ void BedrockServer::sync(SData& args,
 
     // Now we jump into our main command processing loop.
     uint64_t nextActivity = STimeNow();
-    BedrockCommand command;
+    BedrockCommand command(move(SQLiteCommand(SData())));
     bool committingCommand = false;
 
     // We hold a lock here around all operations on `syncNode`, because `SQLiteNode` isn't thread-safe, but we need
@@ -646,7 +646,7 @@ void BedrockServer::worker(SData& args,
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
-    BedrockCommand command;
+    BedrockCommand command(move(SQLiteCommand(SData())));
 
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
