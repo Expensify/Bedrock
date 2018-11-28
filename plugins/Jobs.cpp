@@ -1235,7 +1235,9 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
     // Not canned, split the advanced repeat into its parts
     list<string> parts = SParseList(SToUpper(repeat));
     if (parts.size() < 2) {
-        SWARN("Syntax error, failed parsing repeat '" << repeat << "': too short.");
+        if (repeat != "") {
+            SWARN("Syntax error, failed parsing repeat '" << repeat << "': too short.");
+        }
         return "";
     }
 
