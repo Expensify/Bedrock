@@ -23,19 +23,6 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     return timeout + start;
 }
 
-BedrockCommand::BedrockCommand() :
-    SQLiteCommand(),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-}
-
 BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->owner.closeTransaction(request);
