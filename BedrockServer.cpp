@@ -804,11 +804,29 @@ void BedrockServer::worker(SData& args,
             }
 
             // We'll retry on conflict up to this many times.
-            int retry = server._maxConflictRetries.load();
+            int retries = server._maxConflictRetries.load();
 
-            while (retry) {
+            // This will repeat until retries is 0, then it will run a final time in blocking mode - where we lock
+            // _syncThreadCommitMutex for the duration of the command, guaranteeing that no conflicts will occur, but
+            // blocking all other threads from committing.
+            while (true) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
+
+                // We create this lock outside the `if` block so that it's scoped correctly, but we only lock it in
+                // blocking mode. The scoped increment works the same way, as the scoped locking.
+                unique_lock<decltype(server._syncThreadCommitMutex)> lock(server._syncThreadCommitMutex, defer_lock);
+                SWaitCounterScopedIncrement pendingCommitIncrement(server._pendingCommitCount, true);
+                if (retries) {
+                    // We only wait for the number of pending commits in non-blocking mode. There's no point in waiting
+                    // in blocking mode, since we have to get to the front of the line in order to lock the mutex.
+                    server._pendingCommitCount.waitUntilLessThan(server._maxPendingCommits.load());
+                } else {
+                    // No retries left, lock for blocking mode.
+                    pendingCommitIncrement.inc();
+                    SINFO("No retries left for command '" << command.request.methodLine << "', will complete in blocking mode.");
+                    lock.lock();
+                }
 
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
@@ -897,10 +915,31 @@ void BedrockServer::worker(SData& args,
                             // to the minimum time required.
                             bool commitSuccess = false;
                             {
-                                uint64_t preLockTime = STimeNow();
-                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
-                                SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
-                                      << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                // Create the lock object, but defer the lock. We won't grab this lock if we're in
+                                // blocking mode, because we're already holding an exclusive lock on this mutex.
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
+
+                                // In blocking mode, we've already incremented _pendingCommitCount (at the end of the
+                                // last loop) and locked the mutex (at the top if this loop), so we only need to do
+                                // this in non-blocking mode.
+                                if (retries) {
+                                    // It's important this is incremented before the lock, since this counts the number
+                                    // of threads waiting on the lock. There will only ever be one thread with the
+                                    // lock.
+                                    int64_t newPendingCount = pendingCommitIncrement.inc();
+                                    if (newPendingCount > server._maxPendingCommits.load()) {
+                                        SINFO("Would have attempted commit, but have " << newPendingCount
+                                              << " pending commits already, of max " << server._maxPendingCommits.load()
+                                              << ", will retry later.");
+                                        core.rollback();
+                                        continue;
+                                    }
+
+                                    uint64_t preLockTime = STimeNow();
+                                    lock1.lock();
+                                    SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
+                                          << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                }
 
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
@@ -924,23 +963,27 @@ void BedrockServer::worker(SData& args,
                                     BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
                                     commitSuccess = core.commit();
                                 }
+
+                                // The commit is done, decrement this as soon as possible.
+                                pendingCommitIncrement.dec();
                             }
                             if (commitSuccess) {
-                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread in "
+                                      << (retries ? "non-blocking" : "blocking") << " mode." );
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
                                 command.response["commitCount"] = to_string(db.getCommitCount());
                                 command.complete = true;
                             } else {
                                 SINFO("Conflict or state change committing " << command.request.methodLine
-                                      << " on worker thread with " << retry << " retries remaining.");
+                                      << " on worker thread with " << retries << " retries remaining.");
                             }
                         }
                     }
                 }
 
                 // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-                // a conflict, and we'll retry.
+                // a conflict, and we'll retry. This is *ALWAYS* the case when in blocking mode.
                 if (command.complete) {
                     if (command.initiatingPeerID) {
                         // Escalated command. Give it back to the sync thread to respond.
@@ -953,15 +996,8 @@ void BedrockServer::worker(SData& args,
                     break;
                 }
 
-                // We're about to retry, decrement the retry count.
-                --retry;
-            }
-
-            // We ran out of retries without finishing! We give it to the sync thread.
-            if (!retry) {
-                SINFO("Max retries hit in worker, forwarding command " << command.request.methodLine
-                      << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+                // If the command didn't complete (because of a conflict), decrement the retry count and try again.
+                --retries;
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
@@ -1068,7 +1104,8 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3),
+    _maxPendingCommits(args.isSet("-maxPendingCommits") ? args.calc("-maxPendingCommits") : 5)
 {
     _version = SVERSION;
 
@@ -1834,6 +1871,20 @@ void BedrockServer::_control(BedrockCommand& command) {
         } else {
             response.methodLine = "204 ATTACHING";
             _detach = false;
+        }
+    } else if (SIEquals(command.request.methodLine, "SetConflictParams")) {
+        int64_t oldMaxPendingCommits = _maxPendingCommits.load();
+        if (command.request.isSet("maxPendingCommits")) {
+            response["oldMaxPendingCommits"] = to_string(oldMaxPendingCommits);
+            int64_t newMaxPendingCommits = command.request.calc64("maxPendingCommits");
+            if (newMaxPendingCommits < 1) {
+                newMaxPendingCommits = 1;
+            }
+            if (newMaxPendingCommits > 1'000'000) {
+                newMaxPendingCommits = 1'000'000;
+            }
+            _maxPendingCommits.store(newMaxPendingCommits);
+            response["newMaxPendingCommits"] = to_string(newMaxPendingCommits);
         }
     } else if (SIEquals(command.request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());

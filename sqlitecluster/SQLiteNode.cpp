@@ -814,7 +814,7 @@ bool SQLiteNode::update() {
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
-                    
+
                     // clear the unsent transactions, we've sent them all (including this one);
                     _db.getCommittedTransactions();
 
@@ -1298,8 +1298,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIZATION messages.
-        if (_state == MASTERING || _state == SLAVING) {
+        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't do this when mastering,
+        // because these commands may not be handled quickly, if a commit is in progress. The catastrophic case for
+        // this means that these messages are all handled late, and the synchronizing peer never catches up. We don't
+        // do it in any other state, as the server isn't expected to be able to process commands except when MASTERING
+        // or SLAVING.
+        if (_state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
@@ -1738,7 +1742,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         // ESCALATE_RESPONSE: Sent when the master aborts processing an escalated command. Re-submit to the new master.
@@ -2181,7 +2185,7 @@ void SQLiteNode::_updateSyncPeer()
             newSyncPeer = peer;
         }
     }
-    
+
     // Log that we've changed peers.
     if (_syncPeer != newSyncPeer) {
         string from, to;
