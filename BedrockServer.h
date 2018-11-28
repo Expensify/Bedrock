@@ -1,6 +1,5 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include <libstuff/SWaitCounter.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
@@ -448,13 +447,6 @@ class BedrockServer : public SQLiteServer {
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
-
-    // Keep track of the number of threads waiting to commit changes.
-    SWaitCounter _pendingCommitCount;
-
-    // This is the maximum number of threads we'll allow to wait for the commit lock. It's configurable via command
-    // line or control command.
-    atomic<int64_t> _maxPendingCommits;
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
