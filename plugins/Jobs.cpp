@@ -1224,6 +1224,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 // ==========================================================================
 string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun,
                                                      const string& repeat) {
+    if (repeat.empty()) {
+        return "";
+    }
+
     // Some "canned" times for convenience
     if (SIEquals(repeat, "HOURLY"))
         return "STRFTIME( '%Y-%m-%d %H:00:00', DATETIME( " + SCURRENT_TIMESTAMP() + ", '+1 HOUR' ) )";
@@ -1235,9 +1239,7 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
     // Not canned, split the advanced repeat into its parts
     list<string> parts = SParseList(SToUpper(repeat));
     if (parts.size() < 2) {
-        if (repeat != "") {
-            SWARN("Syntax error, failed parsing repeat '" << repeat << "': too short.");
-        }
+        SWARN("Syntax error, failed parsing repeat '" << repeat << "': too short.");
         return "";
     }
 
