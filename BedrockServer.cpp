@@ -943,8 +943,8 @@ void BedrockServer::worker(SData& args,
                 // a conflict, and we'll retry.
                 if (command.complete) {
                     if (command.initiatingPeerID) {
-                        // Escalated command. Give it back to the sync thread to respond.
-                        syncNodeCompletedCommands.push(move(command));
+                        // Escalated command. Send it back to the peer.
+                        server._finishPeerCommand(command);
                     } else {
                         server._reply(command);
                     }
