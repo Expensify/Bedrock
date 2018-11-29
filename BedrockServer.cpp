@@ -147,7 +147,7 @@ void BedrockServer::sync(SData& args,
     // Initialize the shared pointer to our sync node object.
     server._syncNode = make_shared<SQLiteNode>(server, db, args["-nodeName"], args["-nodeHost"],
                                                args["-peerList"], args.calc("-priority"), firstTimeout,
-                                               server._version, args.calc("-quorumCheckpoint"));
+                                               server._version, (args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60));
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.

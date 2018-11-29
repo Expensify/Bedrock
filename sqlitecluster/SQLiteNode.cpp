@@ -45,7 +45,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
-                       int quorumCheckpoint)
+                       int quorumCheckpointSeconds)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
     {
@@ -56,8 +56,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _masterPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
-    _commitsSinceCheckpoint = 0;
-    _quorumCheckpoint = quorumCheckpoint;
+    _lastQuorumTime = 0;
+    _quorumCheckpointSeconds = quorumCheckpointSeconds;
 
     // Get this party started
     _changeState(SEARCHING);
@@ -233,9 +233,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         commit["Hash"] = hash;
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
-
-        // Commits made by other threads are implicitly not quorum commits. We'll update our counter.
-        _commitsSinceCheckpoint++;
     }
     unsentTransactions.store(false);
 }
@@ -752,7 +749,7 @@ bool SQLiteNode::update() {
                    << ", consistencyRequired="    << consistencyLevelNames[_commitConsistency]
                    << ", consistentEnough="       << consistentEnough
                    << ", everybodyResponded="     << everybodyResponded
-                   << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
+                   << ", lastQuorumTime="         << _lastQuorumTime);
 
             // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
             // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
@@ -801,9 +798,8 @@ bool SQLiteNode::update() {
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed master transaction for '"
                           << _db.getCommitCount() << " (" << _db.getCommittedHash() << "). "
-                          << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
-                          << consistencyLevelNames[_commitConsistency] << "), " << numFullApproved << " of "
-                          << numFullPeers << " approved (" << peerList.size() << " total) in "
+                          << " (consistencyRequired=" << consistencyLevelNames[_commitConsistency] << "), "
+                          << numFullApproved << " of " << numFullPeers << " approved (" << peerList.size() << " total) in "
                           << totalElapsed / 1000 << " ms ("
                           << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
                           << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
@@ -823,9 +819,7 @@ bool SQLiteNode::update() {
 
                     // If this was a quorum commit, we'll reset our counter, otherwise, we'll update it.
                     if (_commitConsistency == QUORUM) {
-                        _commitsSinceCheckpoint = 0;
-                    } else {
-                        _commitsSinceCheckpoint++;
+                        _lastQuorumTime = STimeNow();
                     }
 
                     // Done!
@@ -833,8 +827,7 @@ bool SQLiteNode::update() {
                 }
             } else {
                 // Not consistent enough, but not everyone's responded yet, so we'll wait.
-                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[_commitConsistency]
-                      << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
+                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[_commitConsistency]);
 
                 // We're going to need to read from the network to finish this.
                 return false;
@@ -856,7 +849,7 @@ bool SQLiteNode::update() {
 
             // Figure out how much consistency we need. Go with whatever the caller specified, unless we're over our
             // checkpoint limit.
-            if (_commitsSinceCheckpoint >= _quorumCheckpoint) {
+            if (STimeNow() > _lastQuorumTime + (_quorumCheckpointSeconds * 1'000'000)) {
                 _commitConsistency = QUORUM;
             }
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
