@@ -805,10 +805,19 @@ void BedrockServer::worker(SData& args,
 
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
-
-            while (retry) {
+            bool forceCommit = false;
+            while (retry || forceCommit) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
+
+                // If we're going to force a blocking commit, we lock now.
+                unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
+                if (forceCommit) {
+                    uint64_t preLockTime = STimeNow();
+                    blockingLock.lock();
+                    SINFO("_syncThreadCommitMutex (unique) acquired in worker in " << fixed << setprecision(2)
+                          << ((STimeNow() - preLockTime)/1000) << "ms.");
+                }
 
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
                 // now. We don't duplicate peeks for commands that make https requests.
@@ -897,10 +906,13 @@ void BedrockServer::worker(SData& args,
                             // to the minimum time required.
                             bool commitSuccess = false;
                             {
-                                uint64_t preLockTime = STimeNow();
-                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex);
-                                SINFO("_syncThreadCommitMutex acquired in worker in " << fixed << setprecision(2)
-                                      << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
+                                if (!forceCommit) {
+                                    uint64_t preLockTime = STimeNow();
+                                    lock1.lock();
+                                    SINFO("_syncThreadCommitMutex (shared) acquired in worker in " << fixed << setprecision(2)
+                                          << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                }
 
                                 // This is the first place we get really particular with the state of the node from a
                                 // worker thread. We only want to do this commit if we're *SURE* we're mastering, and
@@ -926,7 +938,8 @@ void BedrockServer::worker(SData& args,
                                 }
                             }
                             if (commitSuccess) {
-                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread.");
+                                SINFO("Successfully committed " << command.request.methodLine << " on worker thread. forceCommit: "
+                                      << (forceCommit ? "true" : "false"));
                                 // So we must still be mastering, and at this point our commit has succeeded, let's
                                 // mark it as complete. We add the currentCommit count here as well.
                                 command.response["commitCount"] = to_string(db.getCommitCount());
@@ -955,13 +968,11 @@ void BedrockServer::worker(SData& args,
 
                 // We're about to retry, decrement the retry count.
                 --retry;
-            }
 
-            // We ran out of retries without finishing! We give it to the sync thread.
-            if (!retry) {
-                SINFO("Max retries hit in worker, forwarding command " << command.request.methodLine
-                      << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+                if (!retry) {
+                    SINFO("Max retries hit in worker, setting forceCommit for " << command.request.methodLine << ".");
+                   forceCommit = true;
+                }
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
