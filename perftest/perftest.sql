@@ -7,7 +7,7 @@ WITH RECURSIVE
         SELECT RANDOM(), RANDOM()
             UNION ALL
         SELECT RANDOM(), RANDOM() FROM randdata
-        LIMIT 1000*1000*1000*10
+        LIMIT 1000*1000*1000*30
     )
 
 INSERT INTO perfTest ( indexedColumn, nonIndexedColumn )
