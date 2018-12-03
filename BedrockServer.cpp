@@ -816,7 +816,6 @@ void BedrockServer::worker(SData& args,
             // More checks for parallel writing.
             canWriteParallel = canWriteParallel && !server._suppressMultiWrite.load();
             canWriteParallel = canWriteParallel && SQLiteNode::MASTERING;
-            canWriteParallel = canWriteParallel && !command.onlyProcessOnSyncThread;
             canWriteParallel = canWriteParallel && (command.writeConsistency == SQLiteNode::ASYNC);
 
             // We'll retry on conflict up to this many times.
@@ -879,7 +878,10 @@ void BedrockServer::worker(SData& args,
                     }
 
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
-                    if (!canWriteParallel) {
+                    // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
+                    // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
+                    // called to check it.
+                    if (command.onlyProcessOnSyncThread || !canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
 
