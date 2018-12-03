@@ -65,7 +65,7 @@ void _prePoll(fd_map& fdm, SimpleHTTPSManager& httpsManager)
 
 void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
     SData request("Query");
-    request["query"] = "SELECT 1;"
+    request["query"] = "SELECT 1;";
     SHTTPSManager::Transaction* transaction = httpsManager.send(host, request);
     _poll(httpsManager, transaction);
     SINFO("Received " << transaction->response);
