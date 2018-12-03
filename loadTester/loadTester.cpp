@@ -7,8 +7,8 @@ bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
     // Just need to parse bedrock style method lines
-    if (methodLine) {
-        transaction->response = atoi(SBefore(methodLine, " "));
+    if (!methodLine.empty()) {
+        transaction->response = stoi(SBefore(methodLine, " "));
     }
     if (!transaction->response) {
         transaction->response = 400;
