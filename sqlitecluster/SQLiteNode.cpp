@@ -1291,8 +1291,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're MASTERING or SLAVING, we'll let worker threads handle SYNCHRONIZATION messages.
-        if (_state == MASTERING || _state == SLAVING) {
+        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't on master, because if
+        // there's a backlog of commands, these can get stale, and by the time they reach the slave, it's already
+        // behind, thus never catching up.
+        if (_state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
