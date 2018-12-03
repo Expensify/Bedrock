@@ -1,9 +1,9 @@
 #include "loadTester.h"
 
-TestHTTPSMananager::TestHTTPSMananager() {}
-TestHTTPSMananager::~TestHTTPSMananager() {}
+SimpleHTTPSManager::SimpleHTTPSManager() {}
+SimpleHTTPSManager::~SimpleHTTPSManager() {}
 
-bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
+bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
     // Just need to parse bedrock style method lines
@@ -18,7 +18,7 @@ bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     return false;
 }
 
-TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
+SimpleHTTPSManager::Transaction* SimpleHTTPSManager::send(const string& url, const SData& request) {
     // Open a non https socket, bedrock doesn't use https
     Socket* s = openSocket(url, nullptr);
     if (!s) {
@@ -40,7 +40,7 @@ TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, con
     return transaction;
 }
 
-void _poll(TestHTTPSMananager& httpsManager, SHTTPSManager::Transaction* request)
+void _poll(SimpleHTTPSManager& httpsManager, SHTTPSManager::Transaction* request)
 {
     while (!request->response) {
         // Our fdm holds a list of all sockets we could need to read or write to
@@ -52,19 +52,18 @@ void _poll(TestHTTPSMananager& httpsManager, SHTTPSManager::Transaction* request
     }
 }
 
-void _postPoll(fd_map& fdm, uint64_t nextActivity, TestHTTPSMananager& httpsManager)
+void _postPoll(fd_map& fdm, uint64_t nextActivity, SimpleHTTPSManager& httpsManager)
 {
     list<SHTTPSManager::Transaction*> completedHTTPSRequests;
     httpsManager.postPoll(fdm, nextActivity, completedHTTPSRequests);
 }
 
-void _prePoll(fd_map& fdm, TestHTTPSMananager& httpsManager)
+void _prePoll(fd_map& fdm, SimpleHTTPSManager& httpsManager)
 {
     httpsManager.prePoll(fdm);
 }
 
-void _sendQueryRequest(string host) {
-    TestHTTPSMananager httpsManager;
+void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
     SData request("Query: SELECT 1;");
     SHTTPSManager::Transaction* transaction = httpsManager.send(host, request);
     _poll(httpsManager, transaction);
@@ -77,10 +76,43 @@ void _sendQueryRequest(string host) {
 }
 
 int main(int argc, char *argv[]) {
+    // Parse our command line for easy adding of options
     SData args = SParseCommandLine(argc, argv);
 
-    _sendQueryRequest("bedrock1:8888");
-    cout << "[INFO] Sent query!" << endl;
+    // Init arg values
+    int threads = 1;
+    int queryCount = 1;
+
+    // Change our default values if their CLI counterpart is set
+    if (args.isSet("-threads")) {
+        threads = stoi(args["-threads"]);
+    }
+    if (args.isSet("-queryCount")) {
+        queryCount = stoi(args["-queryCount"]);
+    }
+
+    list<thread> threadList;
+    for (size_t i = 0; i < threads; i++) {
+        threadList.emplace_back([&, i]() {
+            SInitialize("thread" + to_string(i));
+            // Create our https manager, it's name is a misnomer because it can't
+            // actually send https anything, it only sends to hosts that don't actually
+            // start with http or https
+            SimpleHTTPSManager httpsManager;
+
+            for (size_t i = 0; i < queryCount; i++) {
+                _sendQueryRequest("bedrock1:8888", httpsManager);
+                cout << "[INFO] Sent query!" << endl;
+            }
+        });
+    }
+
+    int threadId = 0;
+    for (auto& thread : threadList) {
+        // cout << "[INFO] Joining thread " << threadId << endl;;
+        threadId++;
+        thread.join();
+    }
 
     return 0;
 }
