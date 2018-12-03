@@ -6,13 +6,9 @@ TestHTTPSMananager::~TestHTTPSMananager() {}
 bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
-    size_t offset = methodLine.find_first_of(' ', 0);
-    offset = methodLine.find_first_not_of(' ', offset);
-    if (offset != string::npos) {
-        int status = SToInt(methodLine.substr(offset));
-        if (status) {
-            transaction->response = status;
-        }
+    // Just need to parse bedrock style method lines
+    if (methodLine) {
+        transaction->response = atoi(SBefore(methodLine, " "));
     }
     if (!transaction->response) {
         transaction->response = 400;
