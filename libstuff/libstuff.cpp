@@ -1630,6 +1630,11 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             if (isTCP && listen(s, SOMAXCONN))
                 STHROW("couldn't listen");
         } else {
+            // Enable port reuse (so we don't have TIME_WAIT binding issues) and
+            u_long enable = 1;
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
+                STHROW("couldn't set REUSEADDR");
+                
             // If TCP, connect
             sockaddr_in addr;
             memset(&addr, 0, sizeof(addr));
