@@ -76,6 +76,10 @@ void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
 }
 
 int main(int argc, char *argv[]) {
+    // Init and set log level so we can get system logging from libraries
+    SInitialize("main");
+    SLogLevel(LOG_INFO);
+    
     // Parse our command line for easy adding of options
     SData args = SParseCommandLine(argc, argv);
 
