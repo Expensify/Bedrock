@@ -994,7 +994,6 @@ void BedrockServer::worker(SData& args,
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
             if  (server._shutdownState.load() == DONE) {
-                // This does weird things in the blocking queue.
                 SINFO("No commands found in queue and DONE.");
                 return;
             }
