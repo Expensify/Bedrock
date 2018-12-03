@@ -629,7 +629,7 @@ void BedrockServer::sync(SData& args,
         server._commandQueue.clear();
     }
 
-    // If there's anything left in the *blocking* command queue here, we'll discard it, because we have no way of processing it.
+    // Same for the blocking queue.
     if (server._blockingCommandQueue.size()) {
         SWARN("Sync thread shut down with " << server._blockingCommandQueue.size() << " blocking queued commands. Commands were: "
               << SComposeList(server._blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
@@ -1219,26 +1219,35 @@ bool BedrockServer::shutdownComplete() {
     // (_syncThreadComplete) in the next loop or two.
     if (_gracefulShutdownTimeout.ringing()) {
         // Timing out. Log some info and return true.
-        map<string, int> commandsInQueue;
-        auto methods = _commandQueue.getRequestMethodLines();
-        for (auto method : methods) {
-            auto it = commandsInQueue.find(method);
-            if (it != commandsInQueue.end()) {
-                (it->second)++;
-            } else {
-                commandsInQueue[method] = 1;
-            }
-        }
         string commandCounts;
-        for (auto cmdPair : commandsInQueue) {
-            commandCounts += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+        string blockingCommandCounts;
+        list<pair<string*, BedrockCommandQueue*>> queuesToCount = {
+            {&commandCounts, &_commandQueue},
+            {&blockingCommandCounts, &_blockingCommandQueue}
+        };
+        for (auto queueCountPair : queuesToCount) {
+            map<string, int> commandsInQueue;
+            auto methods = queueCountPair.second->getRequestMethodLines();
+            for (auto method : methods) {
+                auto it = commandsInQueue.find(method);
+                if (it != commandsInQueue.end()) {
+                    (it->second)++;
+                } else {
+                    commandsInQueue[method] = 1;
+                }
+            }
+            for (auto cmdPair : commandsInQueue) {
+                *(queueCountPair.first) += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+            }
         }
         SWARN("Graceful shutdown timed out. "
               << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
               << "Command queue size: " << _commandQueue.size() << ". "
               << "Blocking command queue size: " << _blockingCommandQueue.size() << ". "
               << "Commands in progress: " << _commandsInProgress.load() << ". "
-              << "Command Counts: " << commandCounts << "killing non gracefully.");
+              << "Commands queued: " << commandCounts << ". "
+              << "Blocking commands queued: " << blockingCommandCounts << ". "
+              << "Killing non-gracefully.");
     }
 
     // We wait until the sync thread returns.
