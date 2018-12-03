@@ -124,6 +124,6 @@ int main(int argc, char *argv[]) {
         threadId++;
         thread.join();
     }
-    cout << "Run time: " << ((startTime - STimeNow()) / 1000) << "ms" << endl;
+    cout << "Run time: " << (STimeNow() - startTime) / 1'000 << "ms" << endl;
     return 0;
 }
