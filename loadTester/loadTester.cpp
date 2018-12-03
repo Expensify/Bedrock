@@ -67,9 +67,7 @@ void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
     SData request("Query: SELECT 1;");
     SHTTPSManager::Transaction* transaction = httpsManager.send(host, request);
     _poll(httpsManager, transaction);
-
-    int httpsResponseCode = transaction->response;
-    cout << "[INFO] Received " << httpsResponseCode << endl;
+    SINFO("Received " << transaction->response);
 
     // Close and free the transaction.
     httpsManager.closeTransaction(transaction);
@@ -78,14 +76,16 @@ void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
 int main(int argc, char *argv[]) {
     // Init and set log level so we can get system logging from libraries
     SInitialize("main");
-    SLogLevel(LOG_INFO);
-    
+    SLogLevel(LOG_WARNING);
+
     // Parse our command line for easy adding of options
     SData args = SParseCommandLine(argc, argv);
 
     // Init arg values
-    int threads = 1;
-    int queryCount = 1;
+    uint64_t threads = 1;
+    uint64_t queryCount = 1;
+    bool noop = false;
+    bool verbose = false;
 
     // Change our default values if their CLI counterpart is set
     if (args.isSet("-threads")) {
@@ -93,6 +93,10 @@ int main(int argc, char *argv[]) {
     }
     if (args.isSet("-queryCount")) {
         queryCount = stoi(args["-queryCount"]);
+    }
+    if (args.test("-v")) {
+        verbose = true;
+        SLogLevel(LOG_DEBUG);
     }
 
     list<thread> threadList;
@@ -106,7 +110,9 @@ int main(int argc, char *argv[]) {
 
             for (size_t i = 0; i < queryCount; i++) {
                 _sendQueryRequest("bedrock1:8888", httpsManager);
-                cout << "[INFO] Sent query!" << endl;
+                if (verbose) {
+                    cout << "[INFO] Sent query!" << endl;
+                }
             }
         });
     }
