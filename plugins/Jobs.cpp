@@ -452,6 +452,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If this is a mock request, we insert that into the data.
             string originalData = job["data"];
             if (command.request.isSet("mockRequest")) {
+                // Mocked jobs should never repeat.
+                job.erase("repeat");
+
                 if (job["data"].empty()) {
                     job["data"] = "{\"mockRequest\":true}";
                 } else {
