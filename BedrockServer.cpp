@@ -654,7 +654,8 @@ void BedrockServer::worker(SData& args,
                            int threadId,
                            int threadCount)
 {
-    SInitialize("worker" + to_string(threadId));
+    // Worker 0 is the "blockingCommit" thread.
+    SInitialize(threadId ? "worker" + to_string(threadId) : "");
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
     SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], mmapSizeGB);
     BedrockCore core(db, server);
@@ -662,7 +663,7 @@ void BedrockServer::worker(SData& args,
     // Command to work on. This default command is replaced when we find work to do.
     BedrockCommand command(move(SQLiteCommand(SData())));
 
-    // Which command queue do we use? worker 0 is special and does blocking commits from the blocking queue.
+    // Which command queue do we use? The blockingCommit thread special and does blocking commits from the blocking queue.
     BedrockCommandQueue& commandQueue = threadId ? server._commandQueue : server._blockingCommandQueue;
 
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
