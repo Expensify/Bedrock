@@ -68,9 +68,11 @@ void BedrockServer::cancelCommand(const string& commandID) {
 
 bool BedrockServer::canStandDown() {
     int count = _commandsInProgress.load();
-    int size = _commandQueue.size();
-    if (count || size) {
-        SINFO("Can't stand down with " << count << " commands in progress and " << size << " commands queued.");
+    int queueSize = _commandQueue.size();
+    int blockingQueueSize = _blockingCommandQueue.size();
+    if (count || queueSize || blockingQueueSize) {
+        SINFO("Can't stand down with " << count << " commands in progress, " << queueSize << " commands queued, and "
+              << blockingQueueSize << " blocking commands queued.");
         return false;
     } else {
         return true;
@@ -133,6 +135,11 @@ void BedrockServer::sync(SData& args,
 
     // If still no value, use the number of cores on the machine, if available.
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
+
+    // A minumum of *2* worker threads are required. One for blocking writes, one for other commands.
+    if (workerThreads < 2) { 
+        workerThreads = 2;
+    }
 
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
@@ -622,6 +629,13 @@ void BedrockServer::sync(SData& args,
         server._commandQueue.clear();
     }
 
+    // If there's anything left in the *blocking* command queue here, we'll discard it, because we have no way of processing it.
+    if (server._blockingCommandQueue.size()) {
+        SWARN("Sync thread shut down with " << server._blockingCommandQueue.size() << " blocking queued commands. Commands were: "
+              << SComposeList(server._blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+        server._blockingCommandQueue.clear();
+    }
+
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     server._syncNode = nullptr;
@@ -648,6 +662,9 @@ void BedrockServer::worker(SData& args,
     // Command to work on. This default command is replaced when we find work to do.
     BedrockCommand command(move(SQLiteCommand(SData())));
 
+    // Which command queue do we use? worker 0 is special and does blocking commits from the blocking queue.
+    BedrockCommandQueue& commandQueue = threadId ? server._commandQueue : server._blockingCommandQueue;
+
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
@@ -661,11 +678,11 @@ void BedrockServer::worker(SData& args,
             // us before returning the command that it is dequeuing. We don't update _commandsInProgress before calling
             // this, as it can spend up to a second finding out that there is no command to dequeue, which makes our
             // count wrong while we wait.
-            command = server._commandQueue.getSynchronized(1000000, server._commandsInProgress);
+            command = commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
             SAUTOPREFIX(command.request["requestID"]);
             SINFO("Dequeued command " << command.request.methodLine << " in worker, "
-                  << server._commandQueue.size() << " commands in queue.");
+                  << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -821,14 +838,13 @@ void BedrockServer::worker(SData& args,
 
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
-            bool forceCommit = false;
-            while (retry || forceCommit) {
+            while (retry) {
                 // Block if a checkpoint is happening so we don't interrupt it.
                 db.waitForCheckpoint();
 
                 // If we're going to force a blocking commit, we lock now.
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
-                if (forceCommit) {
+                if (threadId == 0) {
                     uint64_t preLockTime = STimeNow();
                     blockingLock.lock();
                     SINFO("_syncThreadCommitMutex (unique) acquired in worker in " << fixed << setprecision(2)
@@ -908,7 +924,7 @@ void BedrockServer::worker(SData& args,
                         bool commitSuccess = false;
                         {
                             shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
-                            if (!forceCommit) {
+                            if (threadId) {
                                 uint64_t preLockTime = STimeNow();
                                 lock1.lock();
                                 SINFO("_syncThreadCommitMutex (shared) acquired in worker in " << fixed << setprecision(2)
@@ -939,8 +955,8 @@ void BedrockServer::worker(SData& args,
                             }
                         }
                         if (commitSuccess) {
-                            SINFO("Successfully committed " << command.request.methodLine << " on worker thread. forceCommit: "
-                                  << (forceCommit ? "true" : "false"));
+                            SINFO("Successfully committed " << command.request.methodLine << " on worker thread. blocking: "
+                                  << (threadId ? "false" : "true"));
                             // So we must still be mastering, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
                             command.response["commitCount"] = to_string(db.getCommitCount());
@@ -970,14 +986,15 @@ void BedrockServer::worker(SData& args,
                 --retry;
 
                 if (!retry) {
-                    SINFO("Max retries hit in worker, setting forceCommit for " << command.request.methodLine << ".");
-                   forceCommit = true;
+                    SINFO("Max retries hit in worker, sending '" << command.request.methodLine << "' to blocking queue.");
+                   server._blockingCommandQueue.push(move(command));
                 }
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
             if  (server._shutdownState.load() == DONE) {
+                // This does weird things in the blocking queue.
                 SINFO("No commands found in queue and DONE.");
                 return;
             }
@@ -1219,6 +1236,7 @@ bool BedrockServer::shutdownComplete() {
         SWARN("Graceful shutdown timed out. "
               << "Replication State: " << SQLiteNode::stateNames[_replicationState.load()] << ". "
               << "Command queue size: " << _commandQueue.size() << ". "
+              << "Blocking command queue size: " << _blockingCommandQueue.size() << ". "
               << "Commands in progress: " << _commandsInProgress.load() << ". "
               << "Command Counts: " << commandCounts << "killing non gracefully.");
     }
@@ -1944,7 +1962,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _portPluginMap.clear();
         _commandPort = nullptr;
         _shutdownState.store(START_SHUTDOWN);
-        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
+        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
+              << ", blocking commands queued: " << _blockingCommandQueue.size());
     }
 }
 
