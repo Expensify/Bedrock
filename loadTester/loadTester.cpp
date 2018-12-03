@@ -96,10 +96,11 @@ int main(int argc, char *argv[]) {
     }
     if (args.test("-v")) {
         verbose = true;
-        SLogLevel(LOG_DEBUG);
+        SLogLevel(0);
     }
 
     list<thread> threadList;
+    uint64_t startTime = STimeNow();
     for (size_t i = 0; i < threads; i++) {
         threadList.emplace_back([&, i]() {
             SInitialize("thread" + to_string(i));
@@ -123,6 +124,6 @@ int main(int argc, char *argv[]) {
         threadId++;
         thread.join();
     }
-
+    cout << "Run time: " << ((startTime - STimeNow()) / 1000) << "ms" << endl;
     return 0;
 }
