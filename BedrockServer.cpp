@@ -1124,6 +1124,11 @@ BedrockServer::BedrockServer(const SData& args)
         _version = SComposeList(versionStrings, ":");
     }
 
+    // Allow enabling tracing at startup.
+    if (args.isSet("-enableSQLTracing")) {
+        SQLite::enableTrace.store(true);
+    }
+
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
@@ -1811,7 +1816,8 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
         SIEquals(command.request.methodLine, "Detach")                 ||
         SIEquals(command.request.methodLine, "Attach")                 ||
         SIEquals(command.request.methodLine, "SetConflictParams")      ||
-        SIEquals(command.request.methodLine, "SetCheckpointIntervals")
+        SIEquals(command.request.methodLine, "SetCheckpointIntervals") ||
+        SIEquals(command.request.methodLine, "EnableSQLTracing")
         ) {
         return true;
     }
@@ -1863,6 +1869,12 @@ void BedrockServer::_control(BedrockCommand& command) {
                 SINFO("Updating _maxConflictRetries to: " << retries);
                 _maxConflictRetries.store(retries);
             }
+        }
+    } else if (SIEquals(command.request.methodLine, "EnableSQLTracing")) {
+        response["oldValue"] = SQLite::enableTrace ? "true" : "false";
+        if (command.request.isSet("enable")) {
+            SQLite::enableTrace.store(command.request.test("enable"));
+            response["newValue"] = SQLite::enableTrace ? "true" : "false";
         }
     }
 }

@@ -15,6 +15,9 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
+// Tracing can only be enabled or disabled globally, not per object.
+atomic<bool> SQLite::enableTrace(false);
+
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
     whitelist(nullptr),
@@ -133,6 +136,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // Do our own checkpointing.
     sqlite3_wal_hook(_db, _sqliteWALCallback, this);
 
+    // Enable tracing for performance analysis.
+    sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
+
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
     SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
@@ -221,6 +227,13 @@ int SQLite::_progressHandlerCallback(void* arg) {
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
+}
+
+int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
+    if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
+        SINFO("NORMALIZED_SQL:" << sqlite3_sql((sqlite3_stmt*)p));
+    }
+    return 0;
 }
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
