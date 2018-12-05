@@ -231,7 +231,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
     if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
-        SINFO("NORMALIZED_SQL:" << sqlite3_sql((sqlite3_stmt*)p));
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
     }
     return 0;
 }
