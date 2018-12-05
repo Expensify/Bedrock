@@ -363,7 +363,7 @@ class SQLite {
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten;
 
-    // 
+    // Callback to trace internal sqlite state (used for logging normalized queries).
     static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
 
     // Handles running checkpointing operations.
