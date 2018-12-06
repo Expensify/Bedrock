@@ -222,6 +222,9 @@ class BedrockServer : public SQLiteServer {
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
 
+    // These are commands that will be processed in a blacking fashion.
+    BedrockCommandQueue _blockingCommandQueue;
+
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
 
