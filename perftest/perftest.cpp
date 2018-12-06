@@ -23,6 +23,8 @@ static int global_testSeconds = 10;
 static int global_secondsRemaining = 0;
 static int global_linear = 0;
 static int global_csv = 0;
+static const char* global_vms = "unix";
+static const char* global_locking_mode = "NORMAL";
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -139,11 +141,13 @@ sqlite3* openDatabase(int threadNum) {
 
     // Open it per the global settings
     sqlite3* db = 0;
-    if (SQLITE_OK != sqlite3_open_v2(global_dbFilename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, "unix-none")) {
+    if (SQLITE_OK != sqlite3_open_v2(global_dbFilename, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, global_vms)) {
         cout << "Error: Can't open '" << global_dbFilename << "'." << endl;
         exit(1);
     }
-    sqlite3_exec(db, "PRAGMA locking_mode=EXCLUSIVE;", 0, 0, 0);
+    char locking_mode[256];
+    sprintf(locking_mode, "PRAGMA locking_mode=%s", global_locking_mode);
+    sqlite3_exec(db, locking_mode, 0, 0, 0);
     sqlite3_exec(db, "PRAGMA legacy_file_format = OFF;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA journal_mode = WAL;", 0, 0, 0);
     sqlite3_exec(db, "PRAGMA synchronous = OFF;", 0, 0, 0);
@@ -259,6 +263,15 @@ int main(int argc, char *argv[]) {
         if (z == string("-dbFilename")) {
           global_dbFilename = argv[++i];
         } else
+        if (z == string("-vms")) {
+          global_vms = argv[++i];
+        } else
+        if (z == string("-locking_mode")) {
+          global_locking_mode = argv[++i];
+        } else
+        if (z == string("-dbFilename")) {
+          global_dbFilename = argv[++i];
+        } else
         if (z == string("-customQuery")) {
           customQuery = argv[++i];
         } else
@@ -301,6 +314,8 @@ int main(int argc, char *argv[]) {
     cout << "global_testSeconds: " << global_testSeconds << endl;
     cout << "global_linear: " << global_linear << endl;
     cout << "global_csv: " << global_csv << endl;
+    cout << "global_vms: " << global_vms << endl;
+    cout << "global_locking_mode: " << global_locking_mode << endl;
     cout << "testQuery: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
