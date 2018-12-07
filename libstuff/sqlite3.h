@@ -123,9 +123,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.26.0"
-#define SQLITE_VERSION_NUMBER 3026000
-#define SQLITE_SOURCE_ID      "2018-11-30 16:26:39 81e626f4a44be75425cf916ec61b6b36df0907ebac4adbf6786f87ad4f3a0674"
+#define SQLITE_VERSION        "3.27.0"
+#define SQLITE_VERSION_NUMBER 3027000
+#define SQLITE_SOURCE_ID      "2018-12-06 20:26:13 3aead209b4040c6c682fb892ee593219e52f766cd8da49bd7ad2994645e58433"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -2991,9 +2991,9 @@ SQLITE_API int sqlite3_set_authorizer(
 ** time is in units of nanoseconds, however the current implementation
 ** is only capable of millisecond resolution so the six least significant
 ** digits in the time are meaningless.  Future versions of SQLite
-** might provide greater resolution on the profiler callback.  The
-** sqlite3_profile() function is considered experimental and is
-** subject to change in future versions of SQLite.
+** might provide greater resolution on the profiler callback.  Invoking
+** either [sqlite3_trace()] or [sqlite3_trace_v2()] will cancel the
+** profile callback.
 */
 SQLITE_API SQLITE_DEPRECATED void *sqlite3_trace(sqlite3*,
    void(*xTrace)(void*,const char*), void*);
@@ -3633,7 +3633,7 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** <dd>The SQLITE_PREPARE_NORMALIZE flag indicates that a normalized
 ** representation of the SQL statement should be calculated and then
 ** associated with the prepared statement, which can be obtained via
-** the [sqlite3_normalized_sql()] interface.  The semantics used to
+** the [sqlite3_normalized_sql()] interface.)^  The semantics used to
 ** normalize a SQL statement are unspecified and subject to change.
 ** At a minimum, literal values will be replaced with suitable
 ** placeholders.
@@ -7242,6 +7242,7 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_OPTIMIZATIONS           15
 #define SQLITE_TESTCTRL_ISKEYWORD               16  /* NOT USED */
 #define SQLITE_TESTCTRL_SCRATCHMALLOC           17  /* NOT USED */
+#define SQLITE_TESTCTRL_INTERNAL_FUNCTIONS      17
 #define SQLITE_TESTCTRL_LOCALTIME_FAULT         18
 #define SQLITE_TESTCTRL_EXPLAIN_STMT            19  /* NOT USED */
 #define SQLITE_TESTCTRL_ONCE_RESET_THRESHOLD    19
@@ -9449,7 +9450,7 @@ struct sqlite3_rtree_query_info {
   sqlite3_int64 iRowid;             /* Rowid for current entry */
   sqlite3_rtree_dbl rParentScore;   /* Score of parent node */
   int eParentWithin;                /* Visibility of parent node */
-  int eWithin;                      /* OUT: Visiblity */
+  int eWithin;                      /* OUT: Visibility */
   sqlite3_rtree_dbl rScore;         /* OUT: Write the score here */
   /* The following fields are only available in 3.8.11 and later */
   sqlite3_value **apSqlParam;       /* Original SQL values of parameters */
