@@ -41,7 +41,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string jobName = "testCreate";
         command["name"] = jobName;
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+        ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
@@ -55,8 +55,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
     void createWithHttp() {
@@ -64,7 +64,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string jobName = "testCreate";
         command["name"] = jobName;
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+        ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
@@ -78,8 +78,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
     void createWithPriority() {
@@ -89,7 +89,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["priority"] = priority;
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+        ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
@@ -104,7 +104,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
         ASSERT_EQUAL(originalJob[0][8], priority);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
     void createWithData() {
@@ -114,7 +114,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["data"] = data;
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+        ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
@@ -128,8 +128,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], data);
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
     void createWithRepeat() {
@@ -139,7 +139,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["repeat"] = repeat;
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_GREATER_THAN(SToInt(response["jobID"]), 0);
+        ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
@@ -153,8 +153,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], repeat);
         ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
     // Create a unique job
@@ -167,7 +167,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         command["unique"] = "true";
         STable response = tester->executeWaitVerifyContentTable(command);
-        int jobID = SToInt(response["jobID"]);
+        int64_t jobID = stol(response["jobID"]);
         ASSERT_GREATER_THAN(jobID, 0);
 
         SQResult originalJob;
@@ -175,13 +175,13 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Try to recreate the job with the same data.
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
+        ASSERT_EQUAL(stol(response["jobID"]), jobID);
 
         // Try to recreate the job with new data, it should get updated.
         string data = "{\"blabla\":\"test\"}";
         command["data"] = data;
         response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(SToInt(response["jobID"]), jobID);
+        ASSERT_EQUAL(stol(response["jobID"]), jobID);
 
         SQResult updatedJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", updatedJob);
@@ -288,8 +288,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], repeatValue);
         ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
         ASSERT_EQUAL(originalJob[0][10], retryValue);
 
         // Get the job
@@ -397,8 +397,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
-        ASSERT_EQUAL(SToInt(originalJob[0][8]), 500);
-        ASSERT_EQUAL(SToInt(originalJob[0][9]), 0);
+        ASSERT_EQUAL(stol(originalJob[0][8]), 500);
+        ASSERT_EQUAL(stol(originalJob[0][9]), 0);
         ASSERT_EQUAL(originalJob[0][10], retryValue);
 
         // Get the job

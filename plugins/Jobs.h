@@ -17,7 +17,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual void handleFailedReply(const BedrockCommand& command);
 
   private:
-    atomic<uint64_t> lastJobID;
+    static int64_t getNextID(SQLite& db);
 
     // Helper functions
     string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
