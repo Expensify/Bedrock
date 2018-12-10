@@ -11,7 +11,7 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
 
     // Each node gets three + uniquePorts ports. The lowest port we'll use is 11111. To make sure each thread gets it's
     // own port space, we'll add enough to this base port.
-    int portCount = 3 + uniquePorts.size();
+    int portCount = 3 + (int)uniquePorts.size();
     int nodePortBase = 11111 + (threadID * portCount * size);
 
     // Each node gets three ports.
