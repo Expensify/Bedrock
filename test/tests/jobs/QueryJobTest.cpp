@@ -32,7 +32,7 @@ struct QueryJobTest : tpunit::TestFixture {
         command["priority"] = "1000";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
-        ASSERT_GREATER_THAN(SToInt(jobID), 0);
+        ASSERT_GREATER_THAN(stol(jobID), 0);
 
         command.clear();
         command.methodLine = "QueryJob";

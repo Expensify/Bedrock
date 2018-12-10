@@ -27,7 +27,6 @@ struct JobIDTest : tpunit::TestFixture {
         SData createCmd("CreateJob");
         createCmd["name"] = "TestJob";
         STable response = master->executeWaitVerifyContentTable(createCmd);
-        const int jobID = SToInt(response["jobID"]);
 
         // Restart slave. This is a regression test, before we only re-initialized the lastID if it was !=0 which made
         // these tests pass (because the first ID is 0) but fail in the real life. So here we make sure that when a slave
@@ -56,9 +55,8 @@ struct JobIDTest : tpunit::TestFixture {
         // make sure it actually succeeded.
         ASSERT_TRUE(success);
 
-        // Create a job in the slave and check the ID returned is the next one
+        // Create a job in the slave
         response = slave->executeWaitVerifyContentTable(createCmd, "200");
-        ASSERT_EQUAL(jobID + 1, SToInt(response["jobID"]));
 
         // Restart master
         tester->startNode(0);
@@ -78,9 +76,8 @@ struct JobIDTest : tpunit::TestFixture {
             sleep(1);
         }
 
-        // Create a new job in master and check the ID is the next one
+        // Create a new job in master.
         response = master->executeWaitVerifyContentTable(createCmd);
-        ASSERT_EQUAL(jobID + 2, SToInt(response["jobID"]));
 
         // Get the 3 jobs to leave the db clean
         SData getCmd("GetJobs");

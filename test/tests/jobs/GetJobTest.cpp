@@ -57,7 +57,7 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
-        ASSERT_GREATER_THAN(SToInt(jobID), 0);
+        ASSERT_GREATER_THAN(stol(jobID), 0);
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
 
@@ -102,7 +102,7 @@ struct GetJobTest : tpunit::TestFixture {
         command["name"] = jobName;
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
-        ASSERT_GREATER_THAN(SToInt(jobID), 0);
+        ASSERT_GREATER_THAN(stol(jobID), 0);
         SQResult originalJob;
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + jobID + ";", originalJob);
 

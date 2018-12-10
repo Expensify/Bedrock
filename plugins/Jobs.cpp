@@ -25,6 +25,25 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
+int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
+{
+    int64_t newID = 0;
+    while (!newID) {
+        // Make sure this fits even in a signed int64_t, and is positive.
+        newID = SRandom::rand64();
+        if (newID < 0) {
+            newID = -newID;
+        }
+        newID %= INT64_MAX;
+        string result = db.read( "SELECT jobID FROM jobs WHERE jobID = " + to_string(newID) + ";");
+        if (!result.empty()) {
+            // This one exists! Pick a new one.
+            newID = 0;
+        }
+    }
+    return newID;
+}
+
 // ==========================================================================
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
@@ -52,8 +71,6 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 
     SQResult nextIDResult;
     db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-    lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
-    SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
 }
 
 // ==========================================================================
@@ -123,7 +140,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If we didn't get any results, just return an empty list
-        if (result.empty() || SToInt(result[0][0]) == 0) {
+        if (result.empty() || SToInt64(result[0][0]) == 0) {
             // Did the caller set "Connection: wait"?  If so, put a "hold"
             // on this request -- we'll clear the hold when we get a new
             // job.
@@ -248,7 +265,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
             // Also verify that the parent job doesn't have a retryAfter set.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
@@ -340,12 +357,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (SToInt(result[0][3]) != 0) {
+        if (SToInt64(result[0][3]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
         // The command should only be called from a child job, throw if the job doesn't have a parent
-        if (SToInt(result[0][2]) == 0) {
+        if (SToInt64(result[0][2]) == 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
         }
 
@@ -464,7 +481,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            uint64_t updateJobID = 0;
+            int64_t updateJobID = 0;
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
@@ -540,7 +557,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
                 if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
@@ -605,7 +622,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int jobIDToUse = ++lastJobID;
+                const int64_t jobIDToUse = getNextID(db);
                 SINFO("Next jobID to be used " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
@@ -850,7 +867,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             STHROW("502 Select failed");
         }
-        if (result.empty() || !SToInt(result[0][0])) {
+        if (result.empty() || !SToInt64(result[0][0])) {
             STHROW("404 No job with this jobID");
         }
 
@@ -925,7 +942,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
         string repeat = result[0][3];
-        int64_t parentJobID = SToInt(result[0][4]);
+        int64_t parentJobID = SToInt64(result[0][4]);
         bool mockRequest = result[0][5] == "1";
 
         // Make sure we're finishing a job that's actually running
@@ -1099,7 +1116,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             STHROW("502 Select failed");
         }
-        if (SToInt(result[0][0]) == 0) {
+        if (SToInt64(result[0][0]) == 0) {
             SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
                 STHROW("502 Failed to update job data");
