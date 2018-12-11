@@ -16,13 +16,16 @@ using namespace std;
 static int global_bMmap = 0;
 static const char* global_dbFilename = "test.db";
 static int global_cacheSize = -1000000;
-static int global_querySize = 10;
+static int global_readSize = 10;
+static int global_writeSize = 10;
+static int global_writePercent = 0;
 static int global_numa = 0;
 static int64_t global_noopResult = 0;
 static int global_testSeconds = 10;
 static int global_secondsRemaining = 0;
 static int global_linear = 0;
 static int global_csv = 0;
+static int global_begin_concurrent = 0;
 static const char* global_vms = "unix";
 static const char* global_locking_mode = "NORMAL";
 
@@ -242,8 +245,14 @@ int main(int argc, char *argv[]) {
         if (z == string("-numThreads")) {
             numThreads = atoi(argv[++i]);
         }else
-        if (z == string("-querySize")) {
-            global_querySize = atoi(argv[++i]);
+        if (z == string("-readSize")) {
+            global_readSize = atoi(argv[++i]);
+        }else
+        if (z == string("-writeSize")) {
+            global_writeSize = atoi(argv[++i]);
+        }else
+        if (z == string("-writePercent")) {
+            global_writePercent = atoi(argv[++i]);
         }else
         if (z == string("-maxNumThreads")) {
             maxNumThreads = atoi(argv[++i]);
@@ -259,6 +268,9 @@ int main(int argc, char *argv[]) {
         }else
         if (z == string("-csv")) {
           global_csv = 1;
+        }else
+        if (z == string("-begin_concurrent")) {
+          global_begin_concurrent = 1;
         }else
         if (z == string("-dbFilename")) {
           global_dbFilename = argv[++i];
@@ -300,22 +312,41 @@ int main(int argc, char *argv[]) {
         // Use the query supplied on the command line
         testQuery = customQuery;
     } else {
+        // If transactions are requested, begin one
+        if (global_begin_concurrent || global_writePercent) {
+            testQuery += "BEGIN CONCURRENT;";
+        }
+
         // The test dataset is simply two columns filled with RANDOM(), one
         // indexed, one not.  Let's pick a random location from inside the
         // database, and then pick the next 10 rows.
-        testQuery = "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
-            "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_querySize) + ");";
+        testQuery += "SELECT COUNT(*), AVG(nonIndexedColumn) FROM "
+            "(SELECT nonIndexedColumn FROM perfTest WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_readSize) + ");";
+
+        // If writes requested, add one
+        if (global_writePercent > rand()%100) {
+            testQuery += "UPDATE perfTest SET indexedColumn=RANDOM(), nonIndexedColumn=RANDOM() WHERE indexedColumn > RANDOM() LIMIT " + to_string(global_writeSize) + ");";
+        }
+
+
+        // If transactions are requested, commit
+        if (global_begin_concurrent || global_writePercent) {
+            testQuery += "COMMIT;";
+        }
     }
     cout << "global_bMmap: " << global_bMmap << endl;
     cout << "global_dbFilename: " << global_dbFilename << endl;
     cout << "global_cacheSize: " << global_cacheSize << endl;
-    cout << "global_querySize: " << global_querySize << endl;
+    cout << "global_readSize: " << global_readSize << endl;
+    cout << "global_writeSize: " << global_writeSize << endl;
+    cout << "global_writePercent: " << global_writePercent << endl;
     cout << "global_numa: " << global_numa << endl;
     cout << "global_testSeconds: " << global_testSeconds << endl;
     cout << "global_linear: " << global_linear << endl;
     cout << "global_csv: " << global_csv << endl;
     cout << "global_vms: " << global_vms << endl;
     cout << "global_locking_mode: " << global_locking_mode << endl;
+    cout << "global_begin_concurrent: " << global_begin_concurrent << endl;
     cout << "testQuery: " << testQuery << endl;
 
     // Run the test for however many configurations were requested
