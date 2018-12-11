@@ -8,6 +8,9 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     // because of that, we need to increase the size of the param to be able to accept around 50 job names.
     static constexpr int64_t MAX_SIZE_NAME = 255 * 50;
 
+    // Set a default priority.
+    static constexpr int64_t JOBS_DEFAULT_PRIORITY = 500;
+
     // Implement base class interface
     virtual void initialize(const SData& args, BedrockServer& server);
     virtual string getName() { return "Jobs"; }
@@ -17,14 +20,66 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual void handleFailedReply(const BedrockCommand& command);
 
   private:
+    // Generate a job ID.
     static int64_t getNextID(SQLite& db);
 
-    // Helper functions
-    string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
-    bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
-    bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
-    bool _isValidSQLiteDateModifier(const string& modifier);
+    // Handle the peek portion of each command.
+    static bool peekCancelJob(SQLite& db, BedrockCommand& command);
+    static bool peekCreateJob(SQLite& db, BedrockCommand& command);
+    static bool peekCreateJobs(SQLite& db, BedrockCommand& command);
+    static void peekCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs);
+    static bool peekDeleteJob(SQLite& db, BedrockCommand& command);
+    static bool peekFailJob(SQLite& db, BedrockCommand& command);
+    static bool peekFinishJob(SQLite& db, BedrockCommand& command);
+    static bool peekGetJob(SQLite& db, BedrockCommand& command);
+    static bool peekGetJobs(SQLite& db, BedrockCommand& command);
+    static bool peekQueryJob(SQLite& db, BedrockCommand& command);
+    static bool peekRequeueJobs(SQLite& db, BedrockCommand& command);
+    static bool peekRetryJob(SQLite& db, BedrockCommand& command);
+    static bool peekUpdateJob(SQLite& db, BedrockCommand& command);
 
-    // Keep a reference to the server.
-    BedrockServer* _server = nullptr;
+    // Handle the process portion of each command.
+    static void processCancelJob(SQLite& db, BedrockCommand& command);
+    static void processCreateJob(SQLite& db, BedrockCommand& command);
+    static void processCreateJobs(SQLite& db, BedrockCommand& command);
+    static void processDeleteJob(SQLite& db, BedrockCommand& command);
+    static void processFailJob(SQLite& db, BedrockCommand& command);
+    static void processFinishJob(SQLite& db, BedrockCommand& command);
+    static void processGetJob(SQLite& db, BedrockCommand& command);
+    static void processGetJobs(SQLite& db, BedrockCommand& command);
+    static void processQueryJob(SQLite& db, BedrockCommand& command);
+    static void processRequeueJobs(SQLite& db, BedrockCommand& command);
+    static void processRetryJob(SQLite& db, BedrockCommand& command);
+    static void processUpdateJob(SQLite& db, BedrockCommand& command);
+
+    // Helper functions
+    static string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
+    static bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
+    static bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
+    static bool _isValidSQLiteDateModifier(const string& modifier);
+
+    // Keep a reference to the server so we can send commands back to it if required.
+    static BedrockServer* _server;
+
+    // Keep a global instance of our plugin.
+    static atomic<BedrockPlugin_Jobs*> _instance;
+
+    // We create these inside `processCommand` to diable noop update mode for all Jobs commands.
+    class scopedDisableNoopMode {
+      public:
+        scopedDisableNoopMode(SQLite& db) : _db(db) {
+            _wasNoop = db.getUpdateNoopMode();
+            if (_wasNoop) {
+                _db.setUpdateNoopMode(false);
+            }
+        }
+        ~scopedDisableNoopMode() {
+            if (_wasNoop) {
+                _db.setUpdateNoopMode(true);
+            }
+        }
+      private:
+        SQLite& _db;
+        bool _wasNoop;
+    };
 };
