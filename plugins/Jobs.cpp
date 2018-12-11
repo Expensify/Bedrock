@@ -68,11 +68,6 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
-
-    SQResult nextIDResult;
-    db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-    lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
-    SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
 }
 
 // ==========================================================================
@@ -624,7 +619,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int64_t jobIDToUse = ++lastJobID;
+                const int64_t jobIDToUse = getNextID(db);
                 SINFO("Next jobID to be used " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
