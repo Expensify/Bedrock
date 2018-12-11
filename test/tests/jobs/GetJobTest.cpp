@@ -670,22 +670,24 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "low_5");
 
         // Get priority 500
+        // nextRun is the same for all the jobs, so we just want to confirm that a medium job was returned
         command["priority"] = "500";
         response = tester->executeWaitVerifyContentTable(command);
         jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "medium_3");
+        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
         jobList.pop_front();
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "medium_4");
+        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
 
         // Get priority 1000
+        // nextRun is the same for all the jobs, so we just want to confirm that a high job was returned
         command["priority"] = "1000";
         response = tester->executeWaitVerifyContentTable(command);
         jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "high_1");
+        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
         jobList.pop_front();
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "high_2");
+        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
     }
 } __GetJobTest;
 
