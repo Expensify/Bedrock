@@ -33,18 +33,21 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool peekQueryJob(SQLite& db, BedrockCommand& command);
 
     // Handle the process portion of each command.
-    static void processCancelJob(SQLite& db, BedrockCommand& command);
-    static void processCreateJob(SQLite& db, BedrockCommand& command);
-    static void processCreateJobs(SQLite& db, BedrockCommand& command);
-    static void processDeleteJob(SQLite& db, BedrockCommand& command);
-    static void processFailJob(SQLite& db, BedrockCommand& command);
-    static void processFinishJob(SQLite& db, BedrockCommand& command);
-    static void processGetJob(SQLite& db, BedrockCommand& command);
-    static void processGetJobs(SQLite& db, BedrockCommand& command);
-    static void processQueryJob(SQLite& db, BedrockCommand& command);
-    static void processRequeueJobs(SQLite& db, BedrockCommand& command);
-    static void processRetryJob(SQLite& db, BedrockCommand& command);
-    static void processUpdateJob(SQLite& db, BedrockCommand& command);
+    static bool processCancelJob(SQLite& db, BedrockCommand& command);
+    static bool processCreateJob(SQLite& db, BedrockCommand& command);
+
+    // Returns the list of job IDs created.
+    static list<string> processCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs);
+    static bool processCreateJobs(SQLite& db, BedrockCommand& command);
+    static bool processDeleteJob(SQLite& db, BedrockCommand& command);
+    static bool processFailJob(SQLite& db, BedrockCommand& command);
+    static bool processFinishJob(SQLite& db, BedrockCommand& command);
+    static bool processGetJob(SQLite& db, BedrockCommand& command);
+    static bool processGetJobs(SQLite& db, BedrockCommand& command);
+    static bool processQueryJob(SQLite& db, BedrockCommand& command);
+    static bool processRequeueJobs(SQLite& db, BedrockCommand& command);
+    static bool processRetryJob(SQLite& db, BedrockCommand& command);
+    static bool processUpdateJob(SQLite& db, BedrockCommand& command);
 
     // Helper functions
     static string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);

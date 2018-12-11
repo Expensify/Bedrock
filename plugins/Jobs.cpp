@@ -306,21 +306,6 @@ bool BedrockPlugin_Jobs::peekQueryJob(SQLite& db, BedrockCommand& command) {
     return true;
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Disable noop update mode for jobs.
     scopedDisableNoopMode disable(db);
@@ -333,270 +318,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
-    content.clear();
-    response.clear();
+    command.jsonContent.clear();
+    command.response.clear();
+
+    if (SIEquals(requestVerb, "CreateJob")) return processCreateJob(db, command);
+    if (SIEquals(requestVerb, "CreateJobs")) return processCreateJobs(db, command);
 
     // ----------------------------------------------------------------------
-    if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
-        //
-        //     Creates a "job" for future processing by a worker.
-        //
-        //     Parameters:
-        //     - name  - An arbitrary string identifier (case insensitive)
-        //     - data  - A JSON object describing work to be done (optional)
-        //     - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
-        //     - repeat - A description of how to repeat (optional)
-        //     - jobPriority - High priorities go first (optional, default 500)
-        //     - unique - if true, it will check that no other job with this name already exists, if it does it will
-        //                return that jobID
-        //     - parentJobID - The ID of the parent job (optional)
-        //     - retryAfter - Amount of auto-retries before marking job as failed (optional)
-        //
-        //     Returns:
-        //     - jobID - Unique identifier of this job
-        //
-        // - CreateJobs (jobs)
-        //
-        //     Creates a list of jobs.
-        //
-        //     Parameters:
-        //     - jobs (json array):
-        //          - name  - An arbitrary string identifier (case insensitive)
-        //          - data  - A JSON object describing work to be done (optional)
-        //          - firstRun - A "YYYY-MM-DD HH:MM:SS" datetime of when this job should next execute (optional)
-        //          - repeat - A description of how to repeat (optional)
-        //          - jobPriority - High priorities go first (optional, default 500)
-        //          - unique - if true, it will check that no other job with this name already exists, if it does it will
-        //                     return that jobID
-        //          - parentJobID - The ID of the parent job (optional)
-        //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
-        //
-        //     Returns:
-        //     - jobIDs - array with the unique identifier of the jobs
-        //
-
-        list<STable> jsonJobs;
-        if (SIEquals(requestVerb, "CreateJob")) {
-            jsonJobs.push_back(request.nameValueMap);
-        } else {
-            list<string> multipleJobs;
-            multipleJobs = SParseJSONArray(request["jobs"]);
-            if (multipleJobs.empty()) {
-                STHROW("401 Invalid JSON");
-            }
-
-            for (auto& job : multipleJobs) {
-                STable jobObject = SParseJSONObject(job);
-                if (jobObject.empty()) {
-                    STHROW("401 Invalid JSON");
-                }
-
-                jsonJobs.push_back(jobObject);
-            }
-        }
-
-        list<string> jobIDs;
-        for (auto& job : jsonJobs) {
-            // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
-            // master.
-
-            // If this is a mock request, we insert that into the data.
-            string originalData = job["data"];
-            if (command.request.isSet("mockRequest")) {
-                // Mocked jobs should never repeat.
-                job.erase("repeat");
-
-                if (job["data"].empty()) {
-                    job["data"] = "{\"mockRequest\":true}";
-                } else {
-                    STable data = SParseJSONObject(job["data"]);
-                    data["mockRequest"] = "true";
-                    job["data"] = SComposeJSONObject(data);
-                }
-            }
-
-            int64_t updateJobID = 0;
-            if (SContains(job, "unique") && job["unique"] == "true") {
-                SQResult result;
-                SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
-                      << (command.request.isSet("mockRequest") ? "true" : "false"));
-                string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data "
-                             "FROM jobs "
-                             "WHERE name=" + SQ(job["name"]) +
-                             "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
-                             result)) {
-                    STHROW("502 Select failed");
-                }
-
-                // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                          << result[0][0] << ", mocked? " << (command.request.isSet("mockRequest") ? "true" : "false"));
-
-                    // If we are calling CreateJob, return early, there are no more jobs to create.
-                    if (SIEquals(requestVerb, "CreateJob")) {
-                        content["jobID"] = result[0][0];
-                        return true;
-                    }
-
-                    // Append new jobID to list of created jobs.
-                    jobIDs.push_back(result[0][0]);
-                    continue;
-                }
-
-                // If we found a job, but the data was different, we'll need to update it.
-                if (!result.empty()) {
-                    updateJobID = SToInt64(result[0][0]);
-                }
-            }
-
-            // Record whether or not this job is scheduling itself in the future. If so, it's not suitable for
-            // immediate scheduling and won't benefit from disk-access-free assignment to waiting workers.
-            if ((!SContains(job, "repeat") || job["repeat"].empty()) && (!SContains(job, "firstRun") && job["firstRun"].empty())) {
-                SINFO("Job has no run time, can be scheduled immediately.");
-            } else {
-                SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
-            }
-
-            // If no "firstRun" was provided, use right now
-            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
-
-            // If no data was provided, use an empty object
-            const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
-            const string& safeOriginalData = originalData.empty() ? SQ("{}") : SQ(originalData);
-
-            // If a repeat is provided, validate it
-            if (SContains(job, "repeat")) {
-                if (job["repeat"].empty()) {
-                    SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
-                          << job["name"] << ", removing attribute.");
-                    job.erase("repeat");
-                } else if (!_validateRepeat(job["repeat"])) {
-                    STHROW("402 Malformed repeat");
-                }
-            }
-
-            // If no priority set, set it
-            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
-
-            // We'd initially intended for any value to be allowable here, but for
-            // performance reasons, we currently will only allow specific values to
-            // try and keep queries fast. If you pass an invalid value, we'll throw
-            // here so that the caller can know that he did something wrong rather
-            // than having his job sit unprocessed in the queue forever. Hopefully
-            // we can remove this restriction in the future.
-            if (priority != 0 && priority != 500 && priority != 1000) {
-                STHROW("402 Invalid priority value");
-            }
-
-            // Validate that the parentJobID exists and is in the right state if one was passed.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
-            if (parentJobID) {
-                SQResult result;
-                if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
-                    STHROW("502 Select failed");
-                }
-                if (result.empty()) {
-                    STHROW("404 parentJobID does not exist");
-                }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
-                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
-                }
-
-                // Verify that the parent and child job have the same `mockRequest` setting.
-                STable parentData = SParseJSONObject(result[0][2]);
-                if (command.request.isSet("mockRequest") != (parentData.find("mockRequest") != parentData.end())) {
-                    STHROW("405 Parent and child jobs must have matching mockRequest setting");
-                }
-
-                // Prevent jobs from creating grandchildren
-                if (!SIEquals(result[0][1], "0")) {
-                    SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
-                    STHROW("405 Cannot create grandchildren");
-                }
-            }
-
-            // Are we creating a new job, or updating an existing job?
-            if (updateJobID) {
-                // Update the existing job.
-                if(!db.writeIdempotent("UPDATE jobs SET "
-                                         "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
-                                         "data     = JSON_PATCH(data, " + safeData + "), " +
-                                         "priority = " + SQ(priority) + " " +
-                                       "WHERE jobID = " + SQ(updateJobID) + ";"))
-                {
-                    STHROW("502 update query failed");
-                }
-
-                // If we are calling CreateJob, return early, there are no more jobs to create.
-                if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(updateJobID);
-                    return true;
-                }
-
-                // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(updateJobID));
-            } else {
-                // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
-                // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
-                // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
-                // the child is created (indicating a child is creating a sibling) then the new child starts
-                // in the QUEUED state.
-                auto initialState = "QUEUED";
-                if (parentJobID) {
-                    auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-                    if (SIEquals(parentState, "RUNNING")) {
-                        initialState = "PAUSED";
-                    }
-                }
-
-                // If no data was provided, use an empty object
-                const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
-
-                // Create this new job with a new generated ID
-                const int64_t jobIDToUse = getNextID(db);
-                SINFO("Next jobID to be used " << jobIDToUse);
-                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
-                         "VALUES( " +
-                            SQ(jobIDToUse) + ", " +
-                            SCURRENT_TIMESTAMP() + ", " +
-                            SQ(initialState) + ", " +
-                            SQ(job["name"]) + ", " +
-                            safeFirstRun + ", " +
-                            SQ(SToUpper(job["repeat"])) + ", " +
-                            safeData + ", " +
-                            SQ(priority) + ", " +
-                            SQ(parentJobID) + ", " +
-                            safeRetryAfter + " " +
-                         " );"))
-                {
-                    STHROW("502 insert query failed");
-                }
-
-                if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(jobIDToUse);
-                    return true;
-                }
-
-                // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(jobIDToUse));
-            }
-        }
-
-        content["jobIDs"] = SComposeJSONArray(jobIDs);
-
-        // Release workers waiting on this state
-        // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
-        // node->clearCommandHolds("Jobs:" + request["name"]);
-
-        return true; // Successfully processed
-    }
-
-    // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
+    if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // If we're here it's because peekCommand found some data; re-execute
         // the query for real now.  However, this time we will order by
         // priority.  We do this as three separate queries so we only have one
@@ -681,7 +410,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             if (parentJobID) {
                 // Has a parent job, add the parent data
-                job["parentJobID"] = SToStr(parentJobID);;
+                job["parentJobID"] = SToStr(parentJobID);
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
 
@@ -1161,6 +890,253 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Didn't recognize this command
     return false;
 }
+
+
+bool BedrockPlugin_Jobs::processCancelJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+list<string> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs) {
+    list<string> jobIDs;
+    for (auto& job : jsonJobs) {
+        // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
+        // master.
+
+        // If this is a mock request, we insert that into the data.
+        string originalData = job["data"];
+        if (command.request.isSet("mockRequest")) {
+            // Mocked jobs should never repeat.
+            job.erase("repeat");
+
+            if (job["data"].empty()) {
+                job["data"] = "{\"mockRequest\":true}";
+            } else {
+                STable data = SParseJSONObject(job["data"]);
+                data["mockRequest"] = "true";
+                job["data"] = SComposeJSONObject(data);
+            }
+        }
+
+        int64_t updateJobID = 0;
+        if (SContains(job, "unique") && job["unique"] == "true") {
+            SQResult result;
+            SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
+                  << (command.request.isSet("mockRequest") ? "true" : "false"));
+            string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
+            if (!db.read("SELECT jobID, data "
+                         "FROM jobs "
+                         "WHERE name=" + SQ(job["name"]) +
+                         "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
+                         result)) {
+                STHROW("502 Select failed");
+            }
+
+            // If we got a result, and it's data is the same as passed, we won't change anything.
+            if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
+                      << result[0][0] << ", mocked? " << (command.request.isSet("mockRequest") ? "true" : "false"));
+
+                // Append new jobID to list of created jobs.
+                jobIDs.push_back(result[0][0]);
+                continue;
+            }
+
+            // If we found a job, but the data was different, we'll need to update it.
+            if (!result.empty()) {
+                updateJobID = SToInt64(result[0][0]);
+            }
+        }
+
+        // Record whether or not this job is scheduling itself in the future. If so, it's not suitable for
+        // immediate scheduling and won't benefit from disk-access-free assignment to waiting workers.
+        if ((!SContains(job, "repeat") || job["repeat"].empty()) && (!SContains(job, "firstRun") && job["firstRun"].empty())) {
+            SINFO("Job has no run time, can be scheduled immediately.");
+        } else {
+            SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
+        }
+
+        // If no "firstRun" was provided, use right now
+        const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
+
+        // If no data was provided, use an empty object
+        const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
+        const string& safeOriginalData = originalData.empty() ? SQ("{}") : SQ(originalData);
+
+        // If a repeat is provided, validate it
+        if (SContains(job, "repeat")) {
+            if (job["repeat"].empty()) {
+                SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
+                      << job["name"] << ", removing attribute.");
+                job.erase("repeat");
+            } else if (!_validateRepeat(job["repeat"])) {
+                STHROW("402 Malformed repeat");
+            }
+        }
+
+        // If no priority set, set it
+        int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
+
+        // We'd initially intended for any value to be allowable here, but for
+        // performance reasons, we currently will only allow specific values to
+        // try and keep queries fast. If you pass an invalid value, we'll throw
+        // here so that the caller can know that he did something wrong rather
+        // than having his job sit unprocessed in the queue forever. Hopefully
+        // we can remove this restriction in the future.
+        if (priority != 0 && priority != 500 && priority != 1000) {
+            STHROW("402 Invalid priority value");
+        }
+
+        // Validate that the parentJobID exists and is in the right state if one was passed.
+        int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
+        if (parentJobID) {
+            SQResult result;
+            if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                STHROW("502 Select failed");
+            }
+            if (result.empty()) {
+                STHROW("404 parentJobID does not exist");
+            }
+            if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
+                STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+            }
+
+            // Verify that the parent and child job have the same `mockRequest` setting.
+            STable parentData = SParseJSONObject(result[0][2]);
+            if (command.request.isSet("mockRequest") != (parentData.find("mockRequest") != parentData.end())) {
+                STHROW("405 Parent and child jobs must have matching mockRequest setting");
+            }
+
+            // Prevent jobs from creating grandchildren
+            if (!SIEquals(result[0][1], "0")) {
+                SWARN("Trying to create grandchild job with parent jobID#" << parentJobID);
+                STHROW("405 Cannot create grandchildren");
+            }
+        }
+
+        // Are we creating a new job, or updating an existing job?
+        if (updateJobID) {
+            // Update the existing job.
+            if(!db.writeIdempotent("UPDATE jobs SET "
+                                     "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
+                                     "data     = JSON_PATCH(data, " + safeData + "), " +
+                                     "priority = " + SQ(priority) + " " +
+                                   "WHERE jobID = " + SQ(updateJobID) + ";"))
+            {
+                STHROW("502 update query failed");
+            }
+
+            // Append new jobID to list of created jobs.
+            jobIDs.push_back(SToStr(updateJobID));
+        } else {
+            // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
+            // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
+            // finishes itself (and itself becomes PAUSED).  However, if the parent is already PAUSED when
+            // the child is created (indicating a child is creating a sibling) then the new child starts
+            // in the QUEUED state.
+            auto initialState = "QUEUED";
+            if (parentJobID) {
+                auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+                if (SIEquals(parentState, "RUNNING")) {
+                    initialState = "PAUSED";
+                }
+            }
+
+            // If no data was provided, use an empty object
+            const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
+
+            // Create this new job with a new generated ID
+            const int64_t jobIDToUse = getNextID(db);
+            SINFO("Next jobID to be used " << jobIDToUse);
+            if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                     "VALUES( " +
+                        SQ(jobIDToUse) + ", " +
+                        SCURRENT_TIMESTAMP() + ", " +
+                        SQ(initialState) + ", " +
+                        SQ(job["name"]) + ", " +
+                        safeFirstRun + ", " +
+                        SQ(SToUpper(job["repeat"])) + ", " +
+                        safeData + ", " +
+                        SQ(priority) + ", " +
+                        SQ(parentJobID) + ", " +
+                        safeRetryAfter + " " +
+                     " );"))
+            {
+                STHROW("502 insert query failed");
+            }
+
+            // Append new jobID to list of created jobs.
+            jobIDs.push_back(SToStr(jobIDToUse));
+        }
+    }
+    return jobIDs;
+}
+
+bool BedrockPlugin_Jobs::processCreateJob(SQLite& db, BedrockCommand& command) {
+    list<STable> jsonJobs;
+    jsonJobs.push_back(command.request.nameValueMap);
+    auto jobIDs = processCreateCommon(db, command, jsonJobs);
+    command.jsonContent["jobID"] = jobIDs.front();
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processCreateJobs(SQLite& db, BedrockCommand& command) {
+    list<STable> jsonJobs;
+    list<string> multipleJobs;
+    multipleJobs = SParseJSONArray(command.request["jobs"]);
+    if (multipleJobs.empty()) {
+        STHROW("401 Invalid JSON");
+    }
+
+    for (auto& job : multipleJobs) {
+        STable jobObject = SParseJSONObject(job);
+        if (jobObject.empty()) {
+            STHROW("401 Invalid JSON");
+        }
+
+        jsonJobs.push_back(jobObject);
+    }
+    auto jobIDs = processCreateCommon(db, command, jsonJobs);
+    command.jsonContent["jobIDs"] = SComposeJSONArray(jobIDs);
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processDeleteJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processFailJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processFinishJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processGetJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processGetJobs(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processQueryJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processRequeueJobs(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
+bool BedrockPlugin_Jobs::processUpdateJob(SQLite& db, BedrockCommand& command) {
+    return true;
+}
+
 
 string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled,
                                                      const string& lastRun,
