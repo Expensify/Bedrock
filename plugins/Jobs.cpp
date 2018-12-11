@@ -918,28 +918,28 @@ bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
             STHROW("502 Failed to update job name");
         }
     }
-
     string safeNewNextRun = "";
     // If this is set to repeat, get the nextRun value
     if (!info.repeat.empty()) {
         safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
-    }
-
-    const string& newNextRun = command.request["nextRun"];
-
-    if (newNextRun.empty()) {
-        SINFO("nextRun isn't set, using delay");
-        int64_t delay = command.request.calc64("delay");
-        if (delay < 0) {
-            STHROW("402 Must specify a non-negative delay when retrying");
-        }
-        info.repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-        safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
-        if (safeNewNextRun.empty()) {
-            STHROW("402 Malformed delay");
-        }
     } else {
-        safeNewNextRun = SQ(newNextRun);
+
+        const string& newNextRun = command.request["nextRun"];
+
+        if (newNextRun.empty()) {
+            SINFO("nextRun isn't set, using delay");
+            int64_t delay = command.request.calc64("delay");
+            if (delay < 0) {
+                STHROW("402 Must specify a non-negative delay when retrying");
+            }
+            info.repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+            safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
+            if (safeNewNextRun.empty()) {
+                STHROW("402 Malformed delay");
+            }
+        } else {
+            safeNewNextRun = SQ(newNextRun);
+        }
     }
 
     // The job is set to be rescheduled.
