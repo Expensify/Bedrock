@@ -44,6 +44,9 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool processFinishJob(SQLite& db, BedrockCommand& command);
     static bool processGetJob(SQLite& db, BedrockCommand& command);
     static bool processGetJobs(SQLite& db, BedrockCommand& command);
+
+    // Returns the list of jobs retrieved. Each string is a serialized JSON object.
+    static list<string> processGetCommon(SQLite& db, BedrockCommand& command);
     static bool processQueryJob(SQLite& db, BedrockCommand& command);
     static bool processRequeueJobs(SQLite& db, BedrockCommand& command);
     static bool processRetryJob(SQLite& db, BedrockCommand& command);

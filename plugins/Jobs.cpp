@@ -312,8 +312,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     // Pull out some helpful variables
     SData& request = command.request;
-    SData& response = command.response;
-    STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
@@ -323,186 +321,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
     if (SIEquals(requestVerb, "CreateJob")) return processCreateJob(db, command);
     if (SIEquals(requestVerb, "CreateJobs")) return processCreateJobs(db, command);
+    if (SIEquals(requestVerb, "GetJob")) return processGetJob(db, command);
+    if (SIEquals(requestVerb, "GetJobs")) return processGetJobs(db, command);
+    if (SIEquals(requestVerb, "UpdateJob")) return processUpdateJob(db, command);
 
-    // ----------------------------------------------------------------------
-    if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
-        // If we're here it's because peekCommand found some data; re-execute
-        // the query for real now.  However, this time we will order by
-        // priority.  We do this as three separate queries so we only have one
-        // unbounded column in each query.  Additionally, we wrap each inner
-        // query in a "SELECT *" such that we can have an "ORDER BY" and
-        // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
-        // works!
-        SQResult result;
-        const list<string> nameList = SParseList(request["name"]);
-        string safeNumResults = SQ(max(request.calc("numResults"),1));
-        bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        string selectQuery =
-            "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=1000 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=500 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=0 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            ") "
-            "ORDER BY priority DESC "
-            "LIMIT " + safeNumResults + ";";
-        if (!db.read(selectQuery, result)) {
-            STHROW("502 Query failed");
-        }
-
-        // Are there any results?
-        if (result.empty()) {
-            // Ah, there were before, but aren't now -- nothing found
-            // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
-            //          as we could only get here if the job somehow got consumed between the peek
-            //          and process -- which could happen during heavy load.  But it'd just return
-            //          no results (which is correct) faster than it would otherwise time out.  Either
-            //          way the worker will likely just loop, so it doesn't really matter.
-            STHROW("404 No job found");
-        }
-
-        // There should only be at most one result if GetJob
-        SASSERT(!SIEquals(requestVerb, "GetJob") || result.size()<=1);
-
-        // Prepare to update the rows, while also creating all the child objects
-        list<string> nonRetriableJobs;
-        list<STable> retriableJobs;
-        list<string> jobList;
-        for (size_t c=0; c<result.size(); ++c) {
-            SASSERT(result[c].size() == 9); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun
-
-            // Add this object to our output
-            STable job;
-            SINFO("Returning jobID " << result[c][0] << " from " << requestVerb);
-            job["jobID"] = result[c][0];
-            job["name"] = result[c][1];
-            job["data"] = result[c][2];
-            job["created"] = result[c][5];
-            int64_t parentJobID = SToInt64(result[c][3]);
-
-            if (parentJobID) {
-                // Has a parent job, add the parent data
-                job["parentJobID"] = SToStr(parentJobID);
-                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-            }
-
-            // Add jobID to the respective list depending on if retryAfter is set
-            if (result[c][4] != "") {
-                job["retryAfter"] = result[c][4];
-                job["repeat"] = result[c][6];
-                job["lastRun"] = result[c][7];
-                job["nextRun"] = result[c][8];
-                retriableJobs.push_back(job);
-            } else {
-                nonRetriableJobs.push_back(result[c][0]);
-
-                // Only non-retryable jobs can have children so see if this job has any
-                // FINISHED/CANCELLED child jobs, indicating it is being resumed
-                SQResult childJobs;
-                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
-                    STHROW("502 Failed to select finished child jobs");
-                }
-
-                if (!childJobs.empty()) {
-                    // Add associative arrays of all children depending on their states
-                    list<string> finishedChildJobArray;
-                    list<string> cancelledChildJobArray;
-                    for (auto row : childJobs.rows) {
-                        STable childJob;
-                        childJob["jobID"] = row[0];
-                        childJob["data"] = row[1];
-
-                        if (row[2] ==  "FINISHED") {
-                            finishedChildJobArray.push_back(SComposeJSONObject(childJob));
-                        } else {
-                            cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
-                        }
-                    }
-                    job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
-                    job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
-                }
-            }
-
-            jobList.push_back(SComposeJSONObject(job));
-        }
-
-        // Update jobs without retryAfter
-        if (!nonRetriableJobs.empty()) {
-            SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
-            string updateQuery = "UPDATE jobs "
-                                 "SET state='RUNNING', "
-                                     "lastRun=" + SCURRENT_TIMESTAMP() + " "
-                                 "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
-            if (!db.writeIdempotent(updateQuery)) {
-                STHROW("502 Update failed");
-            }
-        }
-
-        // Update jobs with retryAfter
-        if (!retriableJobs.empty()) {
-            SINFO("Updating jobs with retryAfter");
-            for (auto job : retriableJobs) {
-                string currentTime = SCURRENT_TIMESTAMP();
-                string retryAfterDateTime = "DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + ")";
-                string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], job["lastRun"] != "" ? job["lastRun"] : job["nextRun"], job["repeat"]);
-                string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
-                string updateQuery = "UPDATE jobs "
-                                     "SET state='RUNQUEUED', "
-                                         "lastRun=" + currentTime + ", "
-                                         "nextRun=" + nextRunDateTime + " "
-                                     "WHERE jobID = " + SQ(job["jobID"]) + ";";
-                if (!db.writeIdempotent(updateQuery)) {
-                    STHROW("502 Update failed");
-                }
-            }
-        }
-
-        // Format the results as is appropriate for what was requested
-        if (SIEquals(requestVerb, "GetJob")) {
-            // Single response
-            SASSERT(jobList.size() == 1);
-            response.content = jobList.front();
-        } else {
-            // Multiple responses
-            SASSERT(SIEquals(requestVerb, "GetJobs"));
-            content["jobs"] = SComposeJSONArray(jobList);
-        }
-        return true; // Successfully processed
-    }
-
-    else if (SIEquals(requestVerb, "UpdateJob")) {
-        return processUpdateJob(db, command);
-    }
-
-    else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
+    if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
         // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
         //
         //     Re-queues a RUNNING job.
@@ -694,19 +517,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // Successfully processed
         return true;
-    } else if (SIEquals(request.methodLine, "CancelJob")) {
-        return processCancelJob(db, command);
-    } else if (SIEquals(requestVerb, "FailJob")) {
-        return processFailJob(db, command);
-
     }
-
-    else if (SIEquals(requestVerb, "DeleteJob")) {
-        return processDeleteJob(db, command);
-    }
-    else if (SIEquals(requestVerb, "RequeueJobs")) {
-        return processRequeueJobs(db, command);
-    }
+    
+    if (SIEquals(requestVerb, "CancelJob")) return processCancelJob(db, command);
+    if (SIEquals(requestVerb, "FailJob")) return processFailJob(db, command);
+    if (SIEquals(requestVerb, "DeleteJob")) return processDeleteJob(db, command);
+    if (SIEquals(requestVerb, "RequeueJobs")) return processRequeueJobs(db, command);
 
     // Didn't recognize this command
     return false;
@@ -1028,11 +844,176 @@ bool BedrockPlugin_Jobs::processFinishJob(SQLite& db, BedrockCommand& command) {
 }
 
 bool BedrockPlugin_Jobs::processGetJob(SQLite& db, BedrockCommand& command) {
+    auto jobList = processGetCommon(db, command);
+    SASSERT(jobList.size() == 1);
+    command.response.content = jobList.front();
     return true;
 }
 
 bool BedrockPlugin_Jobs::processGetJobs(SQLite& db, BedrockCommand& command) {
+    auto jobList = processGetCommon(db, command);
+    command.jsonContent["jobs"] = SComposeJSONArray(jobList);
     return true;
+}
+
+list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& command) {
+    // If we're here it's because peekCommand found some data; re-execute
+    // the query for real now.  However, this time we will order by
+    // priority.  We do this as three separate queries so we only have one
+    // unbounded column in each query.  Additionally, we wrap each inner
+    // query in a "SELECT *" such that we can have an "ORDER BY" and
+    // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
+    // works!
+    SQResult result;
+    const list<string> nameList = SParseList(command.request["name"]);
+    string safeNumResults = SQ(max(command.request.calc("numResults"),1));
+    bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
+    string selectQuery =
+        "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
+            "SELECT * FROM ("
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "FROM jobs "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                    "AND priority=1000 "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(command.request["name"])) + " " +
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+            ") "
+        "UNION ALL "
+            "SELECT * FROM ("
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "FROM jobs "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                    "AND priority=500 "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(command.request["name"])) + " " +
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+            ") "
+        "UNION ALL "
+            "SELECT * FROM ("
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "FROM jobs "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                    "AND priority=0 "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(command.request["name"])) + " " +
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+            ") "
+        ") "
+        "ORDER BY priority DESC "
+        "LIMIT " + safeNumResults + ";";
+    if (!db.read(selectQuery, result)) {
+        STHROW("502 Query failed");
+    }
+
+    // Are there any results?
+    if (result.empty()) {
+        // Ah, there were before, but aren't now -- nothing found
+        // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
+        //          as we could only get here if the job somehow got consumed between the peek
+        //          and process -- which could happen during heavy load.  But it'd just return
+        //          no results (which is correct) faster than it would otherwise time out.  Either
+        //          way the worker will likely just loop, so it doesn't really matter.
+        STHROW("404 No job found");
+    }
+
+    // Prepare to update the rows, while also creating all the child objects
+    list<string> nonRetriableJobs;
+    list<STable> retriableJobs;
+    list<string> jobList;
+    for (size_t c=0; c<result.size(); ++c) {
+        SASSERT(result[c].size() == 9); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun
+
+        // Add this object to our output
+        STable job;
+        SINFO("Returning jobID " << result[c][0] << " from " << command.request.methodLine);
+        job["jobID"] = result[c][0];
+        job["name"] = result[c][1];
+        job["data"] = result[c][2];
+        job["created"] = result[c][5];
+        int64_t parentJobID = SToInt64(result[c][3]);
+
+        if (parentJobID) {
+            // Has a parent job, add the parent data
+            job["parentJobID"] = SToStr(parentJobID);
+            job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        }
+
+        // Add jobID to the respective list depending on if retryAfter is set
+        if (result[c][4] != "") {
+            job["retryAfter"] = result[c][4];
+            job["repeat"] = result[c][6];
+            job["lastRun"] = result[c][7];
+            job["nextRun"] = result[c][8];
+            retriableJobs.push_back(job);
+        } else {
+            nonRetriableJobs.push_back(result[c][0]);
+
+            // Only non-retryable jobs can have children so see if this job has any
+            // FINISHED/CANCELLED child jobs, indicating it is being resumed
+            SQResult childJobs;
+            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                STHROW("502 Failed to select finished child jobs");
+            }
+
+            if (!childJobs.empty()) {
+                // Add associative arrays of all children depending on their states
+                list<string> finishedChildJobArray;
+                list<string> cancelledChildJobArray;
+                for (auto row : childJobs.rows) {
+                    STable childJob;
+                    childJob["jobID"] = row[0];
+                    childJob["data"] = row[1];
+
+                    if (row[2] ==  "FINISHED") {
+                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                    } else {
+                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
+                    }
+                }
+                job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
+            }
+        }
+
+        jobList.push_back(SComposeJSONObject(job));
+    }
+
+    // Update jobs without retryAfter
+    if (!nonRetriableJobs.empty()) {
+        SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
+        string updateQuery = "UPDATE jobs "
+                             "SET state='RUNNING', "
+                                 "lastRun=" + SCURRENT_TIMESTAMP() + " "
+                             "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
+        if (!db.writeIdempotent(updateQuery)) {
+            STHROW("502 Update failed");
+        }
+    }
+
+    // Update jobs with retryAfter
+    if (!retriableJobs.empty()) {
+        SINFO("Updating jobs with retryAfter");
+        for (auto job : retriableJobs) {
+            string currentTime = SCURRENT_TIMESTAMP();
+            string retryAfterDateTime = "DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + ")";
+            string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], job["lastRun"] != "" ? job["lastRun"] : job["nextRun"], job["repeat"]);
+            string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
+            string updateQuery = "UPDATE jobs "
+                                 "SET state='RUNQUEUED', "
+                                     "lastRun=" + currentTime + ", "
+                                     "nextRun=" + nextRunDateTime + " "
+                                 "WHERE jobID = " + SQ(job["jobID"]) + ";";
+            if (!db.writeIdempotent(updateQuery)) {
+                STHROW("502 Update failed");
+            }
+        }
+    }
+
+    return jobList;
 }
 
 bool BedrockPlugin_Jobs::processQueryJob(SQLite& db, BedrockCommand& command) {
