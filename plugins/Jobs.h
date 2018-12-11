@@ -23,20 +23,14 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     // Generate a job ID.
     static int64_t getNextID(SQLite& db);
 
-    // Handle the peek portion of each command.
     static bool peekCancelJob(SQLite& db, BedrockCommand& command);
     static bool peekCreateJob(SQLite& db, BedrockCommand& command);
     static bool peekCreateJobs(SQLite& db, BedrockCommand& command);
     static void peekCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs);
-    static bool peekDeleteJob(SQLite& db, BedrockCommand& command);
-    static bool peekFailJob(SQLite& db, BedrockCommand& command);
-    static bool peekFinishJob(SQLite& db, BedrockCommand& command);
     static bool peekGetJob(SQLite& db, BedrockCommand& command);
     static bool peekGetJobs(SQLite& db, BedrockCommand& command);
+    static void peekGetCommon(SQLite& db, BedrockCommand& command);
     static bool peekQueryJob(SQLite& db, BedrockCommand& command);
-    static bool peekRequeueJobs(SQLite& db, BedrockCommand& command);
-    static bool peekRetryJob(SQLite& db, BedrockCommand& command);
-    static bool peekUpdateJob(SQLite& db, BedrockCommand& command);
 
     // Handle the process portion of each command.
     static void processCancelJob(SQLite& db, BedrockCommand& command);

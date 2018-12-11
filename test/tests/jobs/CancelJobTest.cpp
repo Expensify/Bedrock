@@ -228,7 +228,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
+        tester->executeWaitVerifyContent(command, "402");
 
         // Assert job state is unchanged
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);

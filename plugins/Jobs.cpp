@@ -52,150 +52,22 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 }
 
 bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
-    // Pull out some helpful variables
-    SData& request = command.request;
-    SData& response = command.response;
-    STable& content = command.jsonContent;
-    const string& requestVerb = request.getVerb();
+    const string requestVerb = command.request.getVerb();
 
     // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
     command.request["crashID"] = to_string(SRandom::rand64());
     command.crashIdentifyingValues.insert("crashID");
 
-    // Reset the content object. It could have been written by a previous call to this function that conflicted in
-    // multi-write.
-    content.clear();
-    response.clear();
+    // Reset the content object. It could have been written by a previous call to this function that conflicted.
+    command.jsonContent.clear();
+    command.response.clear();
 
-    // ----------------------------------------------------------------------
-    if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
-        // - GetJob( name )
-        // - GetJobs( name, numResults )
-        //
-        //     Atomically dequeues one or more jobs, if available.
-        //
-        //     Parameters:
-        //     - name - list of name patterns of jobs to match. If only one name is passed, you can use '*' to match any job.
-        //     - numResults - maximum number of jobs to dequeue
-        //     - connection - (optional) If "wait" will pause up to "timeout" for a match
-        //     - timeout - (optional) maximum time (in ms) to wait, default forever
-        //
-        //     Returns:
-        //     - 200 - OK
-        //         . GetJob
-        //           o jobID - unique ID of the job
-        //           o name  - name of the actual job matched
-        //           o data  - JSON data associated with this job
-        //         . GetJobs
-        //           o jobs - Array of JSON objects, each matching the result of GetJob
-        //     - 303 - Timeout
-        //     - 404 - No jobs found
-        //
-        verifyAttributeSize(request, "name", 1, MAX_SIZE_NAME);
-        if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
-            if (SIEquals(requestVerb, "GetJobs")) {
-                STHROW("402 Missing numResults");
-            } else {
-                STHROW("402 Cannot use numResults with GetJob; try GetJobs");
-            }
-        }
-
-        // Get the list
-        SQResult result;
-        const list<string> nameList = SParseList(request["name"]);
-        bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        if (!db.read("SELECT 1 "
-                     "FROM jobs "
-                     "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                        "AND priority IN (0, 500, 1000) "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " + 
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                     "LIMIT 1;",
-                     result)) {
-            STHROW("502 Query failed");
-        }
-
-        // If we didn't get any results, just return an empty list
-        if (result.empty() || SToInt64(result[0][0]) == 0) {
-            // Did the caller set "Connection: wait"?  If so, put a "hold"
-            // on this request -- we'll clear the hold when we get a new
-            // job.
-            if (SIEquals(request["Connection"], "wait")) {
-                // Place a hold on this request waiting for new jobs in this
-                // state.
-                SINFO("No results found and 'Connection: wait'; placing request on hold until we get a new job "
-                      "matching name '"
-                      << request["name"] << "'");
-                request["HeldBy"] = "Jobs:" + request["name"];
-                response.clear(); // Clear default response so we don't accidentally think we're done
-                return false;     // Not processed
-            } else {
-                // Don't hold, just respond with no results
-                STHROW("404 No job found");
-            }
-        }
-
-        // Looks like there might be results -- queue this for processing
-        SINFO("Found results, but waiting for processCommand to update");
-        return false;
-    }
-
-    // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "QueryJob")) {
-        // - QueryJob( jobID )
-        //
-        //     Returns all known information about a given job.
-        //
-        //     Parameters:
-        //     - jobID - Identifier of the job to query
-        //
-        //     Returns:
-        //     - 200 - OK
-        //         . created - creation time of this job
-        //         . jobID - unique ID of the job
-        //         . state - One of QUEUED, RUNNING, FINISHED
-        //         . name  - name of the actual job matched
-        //         . nextRun - timestamp of next scheduled run
-        //         . lastRun - timestamp it was last run
-        //         . repeat - recurring description
-        //         . data - JSON data associated with this job
-        //     - 404 - No jobs found
-        //
-        verifyAttributeInt64(request, "jobID", 1);
-
-        // Verify there is a job like this
-        SQResult result;
-        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter, priority "
-                     "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        if (result.empty()) {
-            STHROW("404 No job with this jobID");
-        }
-        content["created"] = result[0][0];
-        content["jobID"] = result[0][1];
-        content["state"] = result[0][2];
-        content["name"] = result[0][3];
-        content["nextRun"] = result[0][4];
-        content["lastRun"] = result[0][5];
-        content["repeat"] = result[0][6];
-        content["data"] = result[0][7];
-        content["retryAfter"] = result[0][8];
-        content["priority"] = result[0][9];
-        return true; // Successfully processed
-    }
-
-    // ----------------------------------------------------------------------
-    else if (SIEquals(requestVerb, "CreateJob")) {
-        peekCreateJob(db, command);
-    } else if (SIEquals(requestVerb, "CreateJobs")) {
-        peekCreateJobs(db, command);
-    } else if (SIEquals(request.methodLine, "CancelJob")) {
-        return peekCancelJob(db, command);
-    }
+    if (SIEquals(requestVerb, "CancelJob")) return peekCancelJob(db, command);
+    if (SIEquals(requestVerb, "CreateJob")) return peekCreateJob(db, command);
+    if (SIEquals(requestVerb, "CreateJobs")) return peekCreateJobs(db, command);
+    if (SIEquals(requestVerb, "GetJob")) return peekGetJob(db, command);
+    if (SIEquals(requestVerb, "GetJobs")) return peekGetJobs(db, command);
+    if (SIEquals(requestVerb, "QueryJob")) return peekQueryJob(db, command);
 
     // Didn't recognize this command
     return false;
@@ -231,19 +103,22 @@ bool BedrockPlugin_Jobs::peekCancelJob(SQLite& db, BedrockCommand& command) {
     // Don't process the command if the job has finished or it's already running.
     if (result[0][1] == "FINISHED" || result[0][1] == "RUNNING") {
         SINFO("CancelJob called on a " << result[0][0] << " state, skipping");
-        return true; // Done
+
+        // Done.
+        return true;
     }
 
     // Verify that we are not trying to cancel a PAUSED job.
     if (result[0][1] == "PAUSED") {
-        SALERT("Trying to cancel a job " << command.request["jobID"] << " that is PAUSED");
-        return true; // Done
+        STHROW("402 Can't cancel PAUSED job"); 
+
+        // Done.
+        return true;
     }
 
     // Need to process command
     return false;
 }
-
 
 void BedrockPlugin_Jobs::peekCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs) {
     for (auto& job : jsonJobs) {
@@ -364,56 +239,72 @@ bool BedrockPlugin_Jobs::peekCreateJobs(SQLite& db, BedrockCommand& command) {
     return false;
 }
 
-bool BedrockPlugin_Jobs::peekDeleteJob(SQLite& db, BedrockCommand& command) {
-    return false;
-}
+void BedrockPlugin_Jobs::peekGetCommon(SQLite& db, BedrockCommand& command) {
+    verifyAttributeSize(command.request, "name", 1, MAX_SIZE_NAME);
 
-bool BedrockPlugin_Jobs::peekFailJob(SQLite& db, BedrockCommand& command) {
-    return false;
-}
+    // Get the list
+    SQResult result;
+    const list<string> nameList = SParseList(command.request["name"]);
+    bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
+    if (!db.read("SELECT 1 "
+                 "FROM jobs "
+                 "WHERE state in ('QUEUED', 'RUNQUEUED') "
+                    "AND priority IN (0, 500, 1000) "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(command.request["name"])) + " " + 
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                 "LIMIT 1;",
+                 result)) {
+        STHROW("502 Query failed");
+    }
 
-bool BedrockPlugin_Jobs::peekFinishJob(SQLite& db, BedrockCommand& command) {
-    return false;
+    if (result.empty()) {
+        STHROW("404 No job found");
+    }
 }
 
 bool BedrockPlugin_Jobs::peekGetJob(SQLite& db, BedrockCommand& command) {
+    if (command.request.isSet("numResults")) {
+        STHROW("402 Cannot use numResults with GetJob; try GetJobs");
+    }
+    peekGetCommon(db, command);
     return false;
 }
 
 bool BedrockPlugin_Jobs::peekGetJobs(SQLite& db, BedrockCommand& command) {
+    if (!command.request.isSet("numResults")) {
+        STHROW("402 Missing numResults");
+    }
+    peekGetCommon(db, command);
     return false;
 }
 
 bool BedrockPlugin_Jobs::peekQueryJob(SQLite& db, BedrockCommand& command) {
-    return false;
+    verifyAttributeInt64(command.request, "jobID", 1);
+    SQResult result;
+    if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter, priority "
+                 "FROM jobs "
+                 "WHERE jobID=" + SQ(command.request.calc64("jobID")) + ";",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    if (result.empty()) {
+        STHROW("404 No job with this jobID");
+    }
+    command.jsonContent["created"] = result[0][0];
+    command.jsonContent["jobID"] = result[0][1];
+    command.jsonContent["state"] = result[0][2];
+    command.jsonContent["name"] = result[0][3];
+    command.jsonContent["nextRun"] = result[0][4];
+    command.jsonContent["lastRun"] = result[0][5];
+    command.jsonContent["repeat"] = result[0][6];
+    command.jsonContent["data"] = result[0][7];
+    command.jsonContent["retryAfter"] = result[0][8];
+    command.jsonContent["priority"] = result[0][9];
+    
+    // Done.
+    return true;
 }
-
-bool BedrockPlugin_Jobs::peekRequeueJobs(SQLite& db, BedrockCommand& command) {
-    return false;
-}
-
-bool BedrockPlugin_Jobs::peekRetryJob(SQLite& db, BedrockCommand& command) {
-    return false;
-}
-
-bool BedrockPlugin_Jobs::peekUpdateJob(SQLite& db, BedrockCommand& command) {
-    return false;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
