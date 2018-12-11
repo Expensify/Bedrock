@@ -499,58 +499,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     }
 
     else if (SIEquals(requestVerb, "UpdateJob")) {
-        // - UpdateJob( jobID, data, [repeat] )
-        //
-        //     Atomically updates the data associated with a job.
-        //
-        //     Parameters:
-        //     - jobID - ID of the job to delete
-        //     - data  - A JSON object describing work to be done
-        //     - repeat - A description of how to repeat (optional)
-        //
-        verifyAttributeInt64(request, "jobID", 1);
-        verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
-
-        // If a repeat is provided, validate it
-        if (request.isSet("repeat")) {
-            if (request["repeat"].empty()) {
-                SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
-                      << request["jobID"] << ", removing attribute.");
-                request.erase("repeat");
-            } else if (!_validateRepeat(request["repeat"])) {
-                STHROW("402 Malformed repeat");
-            }
-        }
-
-        // Verify there is a job like this
-        SQResult result;
-        if (!db.read("SELECT jobID, nextRun, lastRun "
-                     "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        if (result.empty() || !SToInt64(result[0][0])) {
-            STHROW("404 No job with this jobID");
-        }
-
-        const string& nextRun = result[0][1];
-        const string& lastRun = result[0][2];
-
-        // Are we rescheduling?
-        const string& newNextRun = request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
-
-        // Update the data
-        if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data=" +
-                                SQ(request["data"]) + " " +
-                                (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
-                                (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
-                                "WHERE jobID=" +
-                                SQ(request.calc64("jobID")) + ";")) {
-            STHROW("502 Update failed");
-        }
-        return true; // Successfully processed
+        return processUpdateJob(db, command);
     }
 
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
@@ -746,145 +695,17 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Successfully processed
         return true;
     } else if (SIEquals(request.methodLine, "CancelJob")) {
-        // - CancelJob (jobID)
-        //
-        //     Cancel a QUEUED, RUNQUEUED, FAILED child job.
-        //
-        //     Parameters:
-        //     - jobID  - ID of the job to cancel
-        //
-        int64_t jobID = request.calc64("jobID");
-
-        // Cancel the job
-        if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
-            STHROW("502 Failed to update job data");
-        }
-
-        // If this was the last queued child, resume the parent
-        SQResult result;
-        if (!db.read("SELECT parentJobID "
-                     "FROM jobs "
-                     "WHERE jobID=" + SQ(jobID) + ";",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        const string& safeParentJobID = SQ(result[0][0]);
-        if (!db.read("SELECT count(1) "
-                     "FROM jobs "
-                     "WHERE parentJobID != 0 AND parentJobID=" + safeParentJobID + " AND "
-                       "state IN ('QUEUED', 'RUNQUEUED', 'RUNNING');",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        if (SToInt64(result[0][0]) == 0) {
-            SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
-            if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
-                STHROW("502 Failed to update job data");
-            }
-        }
-
-        // All done processing this command
-        return true;
+        return processCancelJob(db, command);
     } else if (SIEquals(requestVerb, "FailJob")) {
-        // - FailJob( jobID, [data] )
-        //
-        //     Fails a job.
-        //
-        //     Parameters:
-        //     - jobID - ID of the job to fail
-        //     - data  - Data to associate with this failed job
-        //
-        verifyAttributeInt64(request, "jobID", 1);
+        return processFailJob(db, command);
 
-        // Verify there is a job like this and it's running
-        SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat "
-                     "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        if (result.empty()) {
-            STHROW("404 No job with this jobID");
-        }
-        const string& state = result[0][0];
-
-        // Make sure we're failing a job that's actually running
-        if (state != "RUNNING") {
-            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
-            STHROW("405 Can only fail RUNNING jobs");
-        }
-
-        // Are we updating the data too?
-        list<string> updateList;
-        if (request.isSet("data")) {
-            // Update the data too
-            updateList.push_back("data=" + SQ(request["data"]));
-        }
-
-        // Not repeating; just finish
-        updateList.push_back("state='FAILED'");
-
-        // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
-            STHROW("502 Fail failed");
-        }
-
-        // Successfully processed
-        return true;
     }
 
     else if (SIEquals(requestVerb, "DeleteJob")) {
-        // - DeleteJob( jobID )
-        //
-        //     Deletes a given job.
-        //
-        //     Parameters:
-        //     - jobID - ID of the job to delete
-        //
-        verifyAttributeInt64(request, "jobID", 1);
-
-        // Verify there is a job like this and it's not running
-        SQResult result;
-        if (!db.read("SELECT state "
-                     "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
-                     result)) {
-            STHROW("502 Select failed");
-        }
-        if (result.empty()) {
-            STHROW("404 No job with this jobID");
-        }
-        if (result[0][0] == "RUNNING") {
-            STHROW("405 Can't delete a RUNNING job");
-        }
-        if (result[0][0] == "PAUSED") {
-            STHROW("405 Can't delete a parent jobs with children running");
-        }
-
-        // Delete the job
-        if (!db.writeIdempotent("DELETE FROM jobs "
-                      "WHERE jobID=" +
-                      SQ(request.calc64("jobID")) + ";")) {
-            STHROW("502 Delete failed");
-        }
-
-        // Successfully processed
-        return true;
+        return processDeleteJob(db, command);
     }
-
-    // Requeue a job for which a getJob(s) command could not complete.
     else if (SIEquals(requestVerb, "RequeueJobs")) {
-        SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
-        list<int64_t> jobIDs = SParseIntegerList(command.request["jobIDs"]);
-        if (jobIDs.size()) {
-            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID IN(" + SQList(jobIDs)+ ");";
-            if (!db.writeIdempotent(updateQuery)) {
-                STHROW("502 RequeueJobs update failed");
-            }
-        }
-
-        return true;
+        return processRequeueJobs(db, command);
     }
 
     // Didn't recognize this command
@@ -893,6 +714,36 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
 
 bool BedrockPlugin_Jobs::processCancelJob(SQLite& db, BedrockCommand& command) {
+    int64_t jobID = command.request.calc64("jobID");
+
+    // Cancel the job
+    if (!db.writeIdempotent("UPDATE jobs SET state='CANCELLED' WHERE jobID=" + SQ(jobID) + ";")) {
+        STHROW("502 Failed to update job data");
+    }
+
+    // If this was the last queued child, resume the parent
+    SQResult result;
+    if (!db.read("SELECT parentJobID "
+                 "FROM jobs "
+                 "WHERE jobID=" + SQ(jobID) + ";",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    const string& safeParentJobID = SQ(result[0][0]);
+    if (!db.read("SELECT count(1) "
+                 "FROM jobs "
+                 "WHERE parentJobID != 0 AND parentJobID=" + safeParentJobID + " AND "
+                   "state IN ('QUEUED', 'RUNQUEUED', 'RUNNING');",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    if (SToInt64(result[0][0]) == 0) {
+        SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
+        if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
+            STHROW("502 Failed to update job data");
+        }
+    }
+
     return true;
 }
 
@@ -1102,10 +953,73 @@ bool BedrockPlugin_Jobs::processCreateJobs(SQLite& db, BedrockCommand& command) 
 }
 
 bool BedrockPlugin_Jobs::processDeleteJob(SQLite& db, BedrockCommand& command) {
+    verifyAttributeInt64(command.request, "jobID", 1);
+
+    // Verify there is a job like this and it's not running
+    SQResult result;
+    if (!db.read("SELECT state "
+                 "FROM jobs "
+                 "WHERE jobID=" + SQ(command.request.calc64("jobID")) + ";",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    if (result.empty()) {
+        STHROW("404 No job with this jobID");
+    }
+    if (result[0][0] == "RUNNING") {
+        STHROW("405 Can't delete a RUNNING job");
+    }
+    if (result[0][0] == "PAUSED") {
+        STHROW("405 Can't delete a parent jobs with children running");
+    }
+
+    // Delete the job
+    if (!db.writeIdempotent("DELETE FROM jobs "
+                  "WHERE jobID=" +
+                  SQ(command.request.calc64("jobID")) + ";")) {
+        STHROW("502 Delete failed");
+    }
+
     return true;
 }
 
 bool BedrockPlugin_Jobs::processFailJob(SQLite& db, BedrockCommand& command) {
+    verifyAttributeInt64(command.request, "jobID", 1);
+
+    // Verify there is a job like this and it's running
+    SQResult result;
+    if (!db.read("SELECT state, nextRun, lastRun, repeat "
+                 "FROM jobs "
+                 "WHERE jobID=" + SQ(command.request.calc64("jobID")) + ";",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    if (result.empty()) {
+        STHROW("404 No job with this jobID");
+    }
+    const string& state = result[0][0];
+
+    // Make sure we're failing a job that's actually running
+    if (state != "RUNNING") {
+        SINFO("Trying to fail job#" << command.request["jobID"] << ", but isn't RUNNING (" << state << ")");
+        STHROW("405 Can only fail RUNNING jobs");
+    }
+
+    // Are we updating the data too?
+    list<string> updateList;
+    if (command.request.isSet("data")) {
+        // Update the data too
+        updateList.push_back("data=" + SQ(command.request["data"]));
+    }
+
+    // Not repeating; just finish
+    updateList.push_back("state='FAILED'");
+
+    // Update this job
+    if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(command.request.calc64("jobID")) + ";")) {
+        STHROW("502 Fail failed");
+    }
+
     return true;
 }
 
@@ -1126,6 +1040,15 @@ bool BedrockPlugin_Jobs::processQueryJob(SQLite& db, BedrockCommand& command) {
 }
 
 bool BedrockPlugin_Jobs::processRequeueJobs(SQLite& db, BedrockCommand& command) {
+    SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
+    list<int64_t> jobIDs = SParseIntegerList(command.request["jobIDs"]);
+    if (jobIDs.size()) {
+        string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID IN(" + SQList(jobIDs)+ ");";
+        if (!db.writeIdempotent(updateQuery)) {
+            STHROW("502 RequeueJobs update failed");
+        }
+    }
+
     return true;
 }
 
@@ -1134,6 +1057,49 @@ bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
 }
 
 bool BedrockPlugin_Jobs::processUpdateJob(SQLite& db, BedrockCommand& command) {
+    verifyAttributeInt64(command.request, "jobID", 1);
+    verifyAttributeSize(command.request, "data", 1, MAX_SIZE_BLOB);
+
+    // If a repeat is provided, validate it
+    if (command.request.isSet("repeat")) {
+        if (command.request["repeat"].empty()) {
+            SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
+                  << command.request["jobID"] << ", removing attribute.");
+            command.request.erase("repeat");
+        } else if (!_validateRepeat(command.request["repeat"])) {
+            STHROW("402 Malformed repeat");
+        }
+    }
+
+    // Verify there is a job like this
+    SQResult result;
+    if (!db.read("SELECT jobID, nextRun, lastRun "
+                 "FROM jobs "
+                 "WHERE jobID=" + SQ(command.request.calc64("jobID")) + ";",
+                 result)) {
+        STHROW("502 Select failed");
+    }
+    if (result.empty() || !SToInt64(result[0][0])) {
+        STHROW("404 No job with this jobID");
+    }
+
+    const string& nextRun = result[0][1];
+    const string& lastRun = result[0][2];
+
+    // Are we rescheduling?
+    const string& newNextRun = command.request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, command.request["repeat"]) : "";
+
+    // Update the data
+    if (!db.writeIdempotent("UPDATE jobs "
+                            "SET data=" +
+                            SQ(command.request["data"]) + " " +
+                            (command.request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(command.request["repeat"])) : "") +
+                            (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
+                            "WHERE jobID=" +
+                            SQ(command.request.calc64("jobID")) + ";")) {
+        STHROW("502 Update failed");
+    }
+
     return true;
 }
 
