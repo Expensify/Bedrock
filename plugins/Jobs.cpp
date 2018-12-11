@@ -96,8 +96,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - name - list of name patterns of jobs to match. If only one name is passed, you can use '*' to match any job.
-        //     - numResults - maximum number of jobs to dequeue
+        //     - numResults - (optional) Optional for GetJob, required for GetJobs. Maximum number of jobs to dequeue. 
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
+        //     - priority - (optional) Only check for jobs with this priority
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
         //
         //     Returns:
@@ -122,12 +123,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         // Get the list
         SQResult result;
+        string safePriority = SQ(request.calc("priority"));
         const list<string> nameList = SParseList(request["name"]);
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                        "AND priority IN (0, 500, 1000) "
+                        "AND " + (safePriority.empty() ? "priority IN (0, 500, 1000)" : "priority = " + safePriority) + " "
                         "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                         "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " + 
                         string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
@@ -669,44 +671,58 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         SQResult result;
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
+        string safePriority = SQ(request.calc("priority"));
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        string selectQuery =
-            "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=1000 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+        string selectQuery;
+        if (safePriority.empty()) {
+            selectQuery =
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=1000 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=500 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=0 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
                 ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=500 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=0 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            ") "
-            "ORDER BY priority DESC "
-            "LIMIT " + safeNumResults + ";";
+                "ORDER BY priority DESC "
+                "LIMIT " + safeNumResults + ";";
+        } else {
+            selectQuery = 
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "FROM jobs "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                    "AND priority=" + safePriority + " "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
+        }
         if (!db.read(selectQuery, result)) {
             STHROW("502 Query failed");
         }
