@@ -623,31 +623,31 @@ struct GetJobTest : tpunit::TestFixture {
         // Low
         SData command("CreateJob");
         command["name"] = "low_5";
-        command["priority"] = "0";
+        command["jobPriority"] = "0";
         command["firstRun"] = firstRun;
         STable response = tester->executeWaitVerifyContentTable(command);
 
         // High
         command["name"] = "high_1";
-        command["priority"] = "1000";
+        command["jobPriority"] = "1000";
         command["firstRun"] = firstRun;
         response = tester->executeWaitVerifyContentTable(command);
 
         // Medium
         command["name"] = "medium_3";
-        command["priority"] = "500";
+        command["jobPriority"] = "500";
         command["firstRun"] = firstRun;
         response = tester->executeWaitVerifyContentTable(command);
 
         // High
         command["name"] = "high_2";
-        command["priority"] = "1000";
+        command["jobPriority"] = "1000";
         command["firstRun"] = firstRun;
         response = tester->executeWaitVerifyContentTable(command);
 
         // Medium
         command["name"] = "medium_4";
-        command["priority"] = "500";
+        command["jobPriority"] = "500";
         command["firstRun"] = firstRun;
         response = tester->executeWaitVerifyContentTable(command);
 
@@ -656,22 +656,22 @@ struct GetJobTest : tpunit::TestFixture {
         tester->readDB("SELECT DISTINCT nextRun FROM jobs;", result);
         ASSERT_EQUAL(result.size(), 1);
 
-        // Use GetJobs with priority = 0, then 500, then 1000 and confirm that the jobs are returned in reverse priority
+        // Use GetJobs with jobPriority = 0, then 500, then 1000 and confirm that the jobs are returned in reverse jobPriority
         command.clear();
         command.methodLine = "GetJobs";
         command["name"] = "*";
         command["numResults"] = "2";
 
-        // Get priority 0
-        command["priority"] = "0";
+        // Get jobPriority 0
+        command["jobPriority"] = "0";
         response = tester->executeWaitVerifyContentTable(command);
         list<string> jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 1);
         ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "low_5");
 
-        // Get priority 500
+        // Get jobPriority 500
         // nextRun is the same for all the jobs, so we just want to confirm that a medium job was returned
-        command["priority"] = "500";
+        command["jobPriority"] = "500";
         response = tester->executeWaitVerifyContentTable(command);
         jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
@@ -679,9 +679,9 @@ struct GetJobTest : tpunit::TestFixture {
         jobList.pop_front();
         ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
 
-        // Get priority 1000
+        // Get jobPriority 1000
         // nextRun is the same for all the jobs, so we just want to confirm that a high job was returned
-        command["priority"] = "1000";
+        command["jobPriority"] = "1000";
         response = tester->executeWaitVerifyContentTable(command);
         jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
