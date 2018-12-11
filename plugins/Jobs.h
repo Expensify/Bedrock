@@ -20,6 +20,17 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual void handleFailedReply(const BedrockCommand& command);
 
   private:
+
+    // Structure to return data used by finish/retry commands.
+    struct jobInfo {
+        int64_t jobID;
+        int64_t parentJobID;
+        string state;
+        string nextRun;
+        string lastRun;
+        string repeat;
+    };
+
     // Generate a job ID.
     static int64_t getNextID(SQLite& db);
 
@@ -50,6 +61,10 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool processQueryJob(SQLite& db, BedrockCommand& command);
     static bool processRequeueJobs(SQLite& db, BedrockCommand& command);
     static bool processRetryJob(SQLite& db, BedrockCommand& command);
+
+    // Retry and Finish are variations on the same command.
+    static jobInfo processRetryFinishCommon(SQLite& db, BedrockCommand& command);
+
     static bool processUpdateJob(SQLite& db, BedrockCommand& command);
 
     // Helper functions
