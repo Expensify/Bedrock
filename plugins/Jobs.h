@@ -71,6 +71,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool peekGetJobs(SQLite& db, BedrockCommand& command);
     static void peekGetCommon(SQLite& db, BedrockCommand& command);
     static bool peekQueryJob(SQLite& db, BedrockCommand& command);
+    static bool peekMigrateParentJobs(SQLite& db, BedrockCommand& command);
 
     // Handle the process portion of each command.
     static bool processCancelJob(SQLite& db, BedrockCommand& command);
@@ -84,6 +85,8 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool processFinishJob(SQLite& db, BedrockCommand& command);
     static bool processGetJob(SQLite& db, BedrockCommand& command);
     static bool processGetJobs(SQLite& db, BedrockCommand& command);
+    static bool processMigrateParentJobs(SQLite& db, BedrockCommand& command);
+    static bool processMigrateStandaloneJobs(SQLite& db, BedrockCommand& command);
 
     // Returns the list of jobs retrieved. Each string is a serialized JSON object.
     static list<string> processGetCommon(SQLite& db, BedrockCommand& command);

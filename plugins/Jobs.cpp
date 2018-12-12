@@ -89,6 +89,10 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 
         // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
         // using the Bedrock::DB plugin.
+        if (tableNum == -1) {
+            // TODO: This probably breaks in production, it might take forever!
+            SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "ParentJobId     ON " + tableName + " ( parentJobID );"));
+        }
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "Name     ON " + tableName + " ( name     );"));
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "ParentJobIDState ON " + tableName + " ( parentJobID, state ) WHERE parentJobID != 0;"));
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "StatePriorityNextRunName ON " + tableName + " ( state, priority, nextRun, name );"));
@@ -112,6 +116,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     if (SIEquals(requestVerb, "GetJob")) return peekGetJob(db, command);
     if (SIEquals(requestVerb, "GetJobs")) return peekGetJobs(db, command);
     if (SIEquals(requestVerb, "QueryJob")) return peekQueryJob(db, command);
+    if (SIEquals(requestVerb, "MigrateParentJobs")) return peekMigrateParentJobs(db, command);
 
     // Didn't recognize this command
     return false;
@@ -387,6 +392,11 @@ bool BedrockPlugin_Jobs::peekQueryJob(SQLite& db, BedrockCommand& command) {
     return true;
 }
 
+bool BedrockPlugin_Jobs::peekMigrateParentJobs(SQLite& db, BedrockCommand& command) {
+    command.onlyProcessOnSyncThread = true;
+    return false;
+}
+
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Disable noop update mode for jobs.
     scopedDisableNoopMode disable(db);
@@ -411,6 +421,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     if (SIEquals(requestVerb, "RequeueJobs")) return processRequeueJobs(db, command);
     if (SIEquals(requestVerb, "RetryJob")) return processRetryJob(db, command);
     if (SIEquals(requestVerb, "UpdateJob")) return processUpdateJob(db, command);
+    if (SIEquals(requestVerb, "MigrateParentJobs")) return processMigrateParentJobs(db, command);
 
     // Didn't recognize this command
     return false;
@@ -1215,6 +1226,100 @@ bool BedrockPlugin_Jobs::processUpdateJob(SQLite& db, BedrockCommand& command) {
     return true;
 }
 
+bool BedrockPlugin_Jobs::processMigrateParentJobs(SQLite& db, BedrockCommand& command) {
+
+    // See when we start.
+    uint64_t start = STimeNow();
+
+    // Get some parent jobs to migrate.
+    SQResult result;
+    db.read("SELECT DISTINCT parentJobID FROM jobs WHERE parentJobId != 0 limit 100;", result);
+
+    if (result.size() == 0) {
+        SINFO("[JOBS MIGRATION] Done with parent/child jobs. Will start standalone jobs.");
+        // TODO: Spawn new command.
+        return true;
+    }
+
+    int64_t totalChildren = 0;
+    for (auto& row : result.rows) {
+        int64_t parentJobID = SToInt64(row[0]);
+
+        // Move the parent.
+        SQResult innerResult;
+        int64_t newParentID = getNextID(db);
+        string tableName = getTableName(newParentID);
+        db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + " LIMIT 1;", innerResult);
+        if (innerResult.size() != 1) {
+            SQResult cleanup;
+            SWARN("[JOBS MIGRATION] Parent job " << parentJobID << " not found, removing orphaned jobs.");
+            db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(parentJobID) + ";");
+            continue;
+        }
+
+        // Copy everything straight across to the new table.
+        SINFO("[JOBS MIGRATION] Migrating  " << parentJobID << ".");
+        db.write("INSERT INTO " + tableName + " (created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter) "
+                 "VALUES(" +
+                 SQ(innerResult[0][0]) + ", " +
+                 SQ(newParentID) + ", " +
+                 SQ(innerResult[0][2]) + ", " +
+                 SQ(innerResult[0][3]) + ", " +
+                 SQ(innerResult[0][4]) + ", " +
+                 SQ(innerResult[0][5]) + ", " +
+                 SQ(innerResult[0][6]) + ", " +
+                 SQ(innerResult[0][7]) + ", " +
+                 SQ(innerResult[0][8]) + ", " +
+                 SQ(innerResult[0][9]) + ", " +
+                 SQ(innerResult[0][10]) + ");");
+
+        // And delete the parent.
+        db.write("DELETE FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+
+        // Then we need to move the children.
+        db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE parentJobID=" + SQ(parentJobID) + ";", innerResult);
+        SINFO("[JOBS MIGRATION] found " << innerResult.size() << " child jobs to migrate for " << parentJobID << ".");
+        for (auto& row : innerResult.rows) {
+            totalChildren++;
+            int64_t newChildID = getNextID(db, newParentID);
+            db.write("INSERT INTO " + tableName + " (created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter) "
+                     "VALUES(" +
+                     SQ(row[0]) + ", " +
+                     SQ(newChildID) + ", " +
+                     SQ(row[2]) + ", " +
+                     SQ(row[3]) + ", " +
+                     SQ(row[4]) + ", " +
+                     SQ(row[5]) + ", " +
+                     SQ(row[6]) + ", " +
+                     SQ(row[7]) + ", " +
+                     SQ(row[8]) + ", " +
+                     SQ(row[9]) + ", " +
+                     SQ(row[10]) + ");");
+            
+            // And delete the child.
+            db.write("DELETE FROM jobs WHERE jobID=" + SQ(SToInt64(row[1])) + ";");
+        }
+    }
+
+    // Finish timing and start our next command.
+    uint64_t elapsed = STimeNow() - start;
+    SINFO("[JOBS MIGRATION] Completed migrating " << result.size() << " parent jobs with " << totalChildren << " total children in " << (elapsed / 1000) << "ms, continuing.");
+
+    SData nextCommand("MigrateParentJobs");
+    nextCommand["priority"] = to_string(0);
+
+    // Schedule it in the future by 3x as long as it took. That means commands will take 
+    nextCommand["commandExecuteTime"] = to_string(STimeNow() + (elapsed * 3));
+
+    // Send it to the server.
+    if (_server) {
+        SQLiteCommand command(move(nextCommand));
+        command.initiatingClientID = -1;
+        _server->acceptCommand(move(command));
+    }
+
+    return true;
+}
 
 string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled,
                                                      const string& lastRun,
