@@ -35,7 +35,6 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual bool processCommand(SQLite& db, BedrockCommand& command);
     virtual void handleFailedReply(const BedrockCommand& command);
 
-  private:
     // Turns numbers into table names.
     static string getTableName(int64_t number);
 
@@ -47,6 +46,8 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     // you will most likely end up with two jobs, as the first one will not have chosen a table based on the job name.
     static int64_t getTableNumberForJobName(const string& name);
 
+  private:
+
     // Structure to return data used by finish/retry commands.
     struct jobInfo {
         int64_t jobID;
@@ -56,6 +57,8 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
         string lastRun;
         string repeat;
     };
+
+    static atomic<int64_t> currentStartTableNumber;
 
     // Generate a job ID.
     static int64_t getNextID(SQLite& db, int64_t shouldMatch = -1);

@@ -3,6 +3,7 @@
 
 atomic<BedrockPlugin_Jobs*> BedrockPlugin_Jobs::_instance(nullptr);
 BedrockServer* BedrockPlugin_Jobs::_server = nullptr;
+atomic<int64_t> BedrockPlugin_Jobs::currentStartTableNumber(0);
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _instance.load()->getName() << "} "
@@ -63,7 +64,7 @@ string BedrockPlugin_Jobs::getTableName(int64_t number) {
     if (number < 0) {
         return "jobs";
     }
-    return "jobs"s + ((number < 10) ? "0" : "") + to_string(number % TABLE_COUNT);
+    return "jobs"s + (((number % TABLE_COUNT) < 10) ? "0" : "") + to_string(number % TABLE_COUNT);
 }
 
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
@@ -96,8 +97,6 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 
 bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     const string requestVerb = command.request.getVerb();
-
-    // TODO: clear the gettableJobs map if we're not mastering and were before.
 
     // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
     command.request["crashID"] = to_string(SRandom::rand64());
@@ -294,6 +293,8 @@ void BedrockPlugin_Jobs::peekGetCommon(SQLite& db, BedrockCommand& command) {
     SQResult result;
     const list<string> nameList = SParseList(command.request["name"]);
     bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
+
+    // This only runs on slaves,so where we start doesn't really matter, as long as we find *something*.
     int64_t startAt = SRandom::rand64() % TABLE_COUNT;
     int64_t current = startAt;
     int64_t checkCount = 0;
@@ -389,8 +390,6 @@ bool BedrockPlugin_Jobs::peekQueryJob(SQLite& db, BedrockCommand& command) {
 bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     // Disable noop update mode for jobs.
     scopedDisableNoopMode disable(db);
-
-    // TODO: initialize the gettableJobs map if we're mastering and haven't.
 
     // Pull out some helpful variables
     SData& request = command.request;
@@ -777,7 +776,18 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
     string safeNumResults = SQ(max(command.request.calc("numResults"),1));
     bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
 
-    int64_t startAt = SRandom::rand64() % TABLE_COUNT;
+    // The following line is *important* for random table selection. We want to make sure we eventually hit every
+    // table, so we've chosen *11* as our offset value, (specifically to work with a TABLE_COUNT of 100). This will
+    // increment by 11 each time, and the modulus will hit every one of our 100 tables before starting over. To do this
+    // the increment value must not be a factor of the TABLE_COUNT, or you will skip some tables (if we'd chosen 10,
+    // then we'd only hit tables 0, 10, 20, 30, etc). You might ask, "Why not just increment by 1? Then it doesn't
+    // matter how this works with the table count." That's true, but if each `GetJob` command starts on sequential
+    // table numbers, they'll be more likely to conflict, if they don't find a suitable job in the *first* table they
+    // look at.
+    // This way, we've guaranteed that all 100 tables will get looked at over 100 commands, and done our best to
+    // minimize conflicts.
+    // TODO: Add hinting based on existing contents of DB.
+    int64_t startAt = currentStartTableNumber.fetch_add(11) % TABLE_COUNT;
     int64_t current = startAt;
     int64_t checkCount = 0;
     while (true) {
@@ -888,7 +898,7 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
             // Only non-retryable jobs can have children so see if this job has any
             // FINISHED/CANCELLED child jobs, indicating it is being resumed
             SQResult childJobs;
-            string tableName = getTableName(parentJobID);
+            string tableName = getTableName(SToInt64(result[c][0]));
             if (!db.read("SELECT jobID, data, state FROM " + tableName + " WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
                 STHROW("502 Failed to select finished child jobs");
             }

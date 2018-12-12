@@ -1,5 +1,6 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
+#include <plugins/Jobs.h>
 
 struct CreateJobTest : tpunit::TestFixture {
     CreateJobTest()
@@ -30,8 +31,11 @@ struct CreateJobTest : tpunit::TestFixture {
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
-        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+        for (int64_t i = 0; i < BedrockPlugin_Jobs::TABLE_COUNT; i++) {
+            string tableName = BedrockPlugin_Jobs::getTableName(i);
+            command["query"] = "DELETE FROM " + tableName + " WHERE jobID > 0;";
+            tester->executeWaitVerifyContent(command);
+        }
     }
 
     void tearDownClass() { delete tester; }
@@ -44,7 +48,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -67,7 +72,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -92,7 +98,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -117,7 +124,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -142,7 +150,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
         ASSERT_EQUAL(originalJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
@@ -171,7 +180,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN(jobID, 0);
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", originalJob);
 
         // Try to recreate the job with the same data.
         response = tester->executeWaitVerifyContentTable(command);
@@ -184,7 +194,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(response["jobID"]), jobID);
 
         SQResult updatedJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", updatedJob);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(response["jobID"]));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM " + tableName + " WHERE jobID = " + response["jobID"] + ";", updatedJob);
         ASSERT_EQUAL(updatedJob.size(), 1);
         // Assert the values are what we expect
         ASSERT_EQUAL(updatedJob[0][0], originalJob[0][0]);
@@ -254,7 +265,8 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Assert parent is still running
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(parentID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Try to create grandchild
@@ -279,7 +291,8 @@ struct CreateJobTest : tpunit::TestFixture {
         string jobID = response["jobID"];
 
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM " + tableName + " WHERE jobID = " + jobID + ";", originalJob);
 
         ASSERT_EQUAL(originalJob[0][1], jobID);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
@@ -304,7 +317,8 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Query the db and confirm that state, nextRun and lastRun are 1 second apart because of retryAfter
         SQResult jobData;
-        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state, nextRun, lastRun FROM " + tableName + " WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
@@ -354,7 +368,8 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Query db and confirm job still exists
-        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state, nextRun, lastRun FROM " + tableName + " WHERE jobID = " + jobID + ";", jobData);
         nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(jobData[0][0], "QUEUED");
@@ -389,7 +404,8 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Query the db to confirm it was created correctly
         SQResult originalJob;
-        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM " + tableName + " WHERE jobID = " + jobID + ";", originalJob);
         ASSERT_EQUAL(originalJob[0][1], jobID);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
@@ -413,7 +429,8 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Query the db and confirm that state, nextRun and lastRun are 5 seconds apart
         SQResult jobData;
-        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state, nextRun, lastRun FROM " + tableName + " WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
@@ -461,7 +478,8 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Query db and confirm job doesn't exist
-        tester->readDB("SELECT state, nextRun, lastRun, FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state, nextRun, lastRun, FROM " + tableName + " WHERE jobID = " + jobID + ";", jobData);
         ASSERT_TRUE(jobData.empty());
     }
 

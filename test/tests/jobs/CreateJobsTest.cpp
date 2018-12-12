@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <plugins/Jobs.h>
 
 struct CreateJobsTest : tpunit::TestFixture {
     CreateJobsTest()
@@ -187,10 +188,12 @@ struct CreateJobsTest : tpunit::TestFixture {
 
         // Now make sure these are gone.
         list<int64_t> jobIDs = {child1ID, child2ID, stol(parentID)};
-        SQResult result;
-        string query = "SELECT jobID, state FROM jobs WHERE jobID in (" + SQList(jobIDs) + ");";
-        tester->readDB(query, result);
-
-        ASSERT_EQUAL(result.rows.size(), 0);
+        for (auto& id : jobIDs) {
+            SQResult result;
+            string tableName = BedrockPlugin_Jobs::getTableName(id);
+            string query = "SELECT jobID, state FROM " + tableName + " WHERE jobID=" + SQ(id) + ";";
+            tester->readDB(query, result);
+            ASSERT_EQUAL(result.rows.size(), 0);
+        }
     }
 } __CreateJobsTest;

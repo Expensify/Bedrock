@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <plugins/Jobs.h>
 
 struct DeleteJobTest : tpunit::TestFixture {
     DeleteJobTest()
@@ -18,8 +19,11 @@ struct DeleteJobTest : tpunit::TestFixture {
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
-        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+        for (int64_t i = 0; i < BedrockPlugin_Jobs::TABLE_COUNT; i++) {
+            string tableName = BedrockPlugin_Jobs::getTableName(i);
+            command["query"] = "DELETE FROM " + tableName + " WHERE jobID > 0;";
+            tester->executeWaitVerifyContent(command);
+        }
     }
 
     void tearDownClass() { delete tester; }
@@ -67,7 +71,8 @@ struct DeleteJobTest : tpunit::TestFixture {
 
         // Assert parent is in PAUSED state
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(parentID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + parentID + ";", result);
         ASSERT_EQUAL(result[0][0], "PAUSED");
 
         // Cannot finish a job with a child
@@ -113,7 +118,8 @@ struct DeleteJobTest : tpunit::TestFixture {
 
         // Assert job is in RUNNING state
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Cannot finish a job in RUNNING state
@@ -123,7 +129,8 @@ struct DeleteJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Can't delete a RUNNING job");
 
         // Assert job state is unchanged
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
     }
 
@@ -167,7 +174,8 @@ struct DeleteJobTest : tpunit::TestFixture {
 
         // Assert job is in FINISHED state
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(childID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + childID + ";", result);
         ASSERT_EQUAL(result[0][0], "FINISHED");
 
         // Delete the child job
