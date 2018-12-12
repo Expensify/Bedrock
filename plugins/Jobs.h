@@ -1,7 +1,12 @@
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
-
+// Here's an idea for minimizing conflicts while also minimizing the number of tables we look through in `GetJob`:
+//
+// What if we try to insert on every 10th table. But if that table is "busy", we increment to the next one. We keep an
+// atomic counter for each 10th table, and every time a transaction starts for that target table, we increment, putting
+// the counter....
+// Blah,this is complicated and maybe not better. Let's see if we regularly hit more than 10 tables anyway.
 
 // TODO: THINGS WE NEED.
 // 3. We need to migrate legacy jobs from the old table. This is likely slow, but we only need to do it once. If we let

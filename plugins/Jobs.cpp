@@ -32,9 +32,9 @@ int64_t BedrockPlugin_Jobs::getNextID(SQLite& db, int64_t shouldMatch)
             // It's possible to overflow at either end of our integer space, so we always subtract to the correct
             // modulus, unless we're already close to 0.
             if (newID <= TABLE_COUNT) {
-                newID += desiredModulo - currentModulo;
+                newID = newID + desiredModulo - currentModulo;
             } else {
-                newID -= currentModulo + desiredModulo;
+                newID = newID - currentModulo + desiredModulo;
             }
         }
 
@@ -51,8 +51,6 @@ int64_t BedrockPlugin_Jobs::getNextID(SQLite& db, int64_t shouldMatch)
 }
 
 int64_t BedrockPlugin_Jobs::getTableNumberForJobName(const string& name) {
-    // TODO: Remove
-    return -1;
     int64_t number = 0;
     for (size_t i = 0; i < name.size(); i++) {
         number += name[i];
@@ -65,8 +63,6 @@ string BedrockPlugin_Jobs::getTableName(int64_t number) {
     if (number < 0) {
         return "jobs";
     }
-    // TODO: Remove this line to actually generate tables.
-    return "jobs";
     return "jobs"s + ((number < 10) ? "0" : "") + to_string(number % TABLE_COUNT);
 }
 
@@ -625,7 +621,7 @@ list<int64_t> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand
             } else {
                 jobIDToUse = getNextID(db);
             }
-            string tableName = getTableName(parentJobID);
+            string tableName = getTableName(jobIDToUse);
 
             SINFO("Next jobID to be used " << jobIDToUse);
             if (!db.writeIdempotent("INSERT INTO " + tableName + " ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
