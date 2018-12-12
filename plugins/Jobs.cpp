@@ -96,7 +96,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - name - list of name patterns of jobs to match. If only one name is passed, you can use '*' to match any job.
-        //     - numResults - (optional) Optional for GetJob, required for GetJobs. Maximum number of jobs to dequeue. 
+        //     - numResults - (optional) Optional for GetJob, required for GetJobs. Maximum number of jobs to dequeue.
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
         //     - jobPriority - (optional) Only check for jobs with this priority
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
@@ -126,6 +126,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         const list<string> nameList = SParseList(request["name"]);
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
         string priorityCondition = "priority IN (0, 500, 1000)";
+        string nameColumn = "name";
         if (request.isSet("jobPriority")) {
             int64_t priority = request.calc64("jobPriority");
             if (priority != 0 && priority != 500 && priority != 1000) {
@@ -133,6 +134,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             priorityCondition = "priority = " + SQ(priority);
+            nameColumn = "+name";
         }
 
         if (!db.read("SELECT 1 "
@@ -140,7 +142,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
                         "AND " + priorityCondition + " "
                         "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " + 
+                        "AND " + nameColumn + " " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                         string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                      "LIMIT 1;",
                      result)) {
@@ -689,7 +691,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "AND priority=" + SQ(request.calc("jobPriority")) + " "
                     "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                    "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                    "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                     string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
         } else {
@@ -1392,4 +1394,3 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
 void BedrockPlugin_Jobs::initialize(const SData& args, BedrockServer& server) {
     _server = &server;
 }
-
