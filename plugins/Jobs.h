@@ -3,10 +3,7 @@
 
 
 
-// THINGS WE NEED.
-// 1. We need a callback for conflicts to put jobs back in the list.
-// 2. We need to load data from the table when we go mastering. If we do this in a bunch of threads, it's probably
-// fast.
+// TODO: THINGS WE NEED.
 // 3. We need to migrate legacy jobs from the old table. This is likely slow, but we only need to do it once. If we let
 // a single self-repeating command do this, it will slowly move work into the other tables, and then there will be at
 // least some work for other threads to do while the migration finishes. This will have to keep gettableJobs up-to-date
@@ -34,20 +31,16 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     virtual void handleFailedReply(const BedrockCommand& command);
 
   private:
-    // These vectors have size 3, because there's one map for each priority level.
-    // Each map is a set of job names mapped to job IDs for that name. These are all jobs that a QUEUED or RUNQUEUED.
-    // The custom comparator function allows us to support the GLOB syntax for finding jabs based on partial names.
-    // Note that this map contains the *expected* state of the database. If custom manual queries are run against the
-    // jobs tables from outside this plugin, there may be entries in here for unusable commands. In that case,
-    // `GetJob(s)` may return a `404 Job Not Found` when it tries to get these jobs.
-    // Alternatively, if jobs are added externally, the caller will need to re-scan tables to add them, or send a
-    // `ReloadQueueState` command for the specific job IDs affected.
-    // TODO: Implement `ReloadQueueState` and `RescanTables`.
-    static vector<map<string, list<int64_t>>> gettableJobs;
-    static vector<mutex> gettableJobsMutexes;
-
     // Turns numbers into table names.
     static string getTableName(int64_t number);
+
+    // This lets us map names to tables. We don't want to do this in the general case, because we have lots of jobs
+    // with identical names, and we want those to be spread out around the DB. However, we do this for unique jobs,
+    // since we need to look them up by ID, and being that the names are inherently *not* the same, these will end up
+    // spread around the DB.
+    // NOTE: This makes it an error to create a job without passing `unique`, and then pass `unique` at a later time,
+    // you will most likely end up with two jobs, as the first one will not have chosen a table based on the job name.
+    static int64_t getTableNumberForJobName(const string& name);
 
     // Structure to return data used by finish/retry commands.
     struct jobInfo {
@@ -76,7 +69,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static bool processCreateJob(SQLite& db, BedrockCommand& command);
 
     // Returns the list of job IDs created.
-    static list<string> processCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs);
+    static list<int64_t> processCreateCommon(SQLite& db, BedrockCommand& command, list<STable>& jsonJobs);
     static bool processCreateJobs(SQLite& db, BedrockCommand& command);
     static bool processDeleteJob(SQLite& db, BedrockCommand& command);
     static bool processFailJob(SQLite& db, BedrockCommand& command);

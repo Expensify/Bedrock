@@ -644,7 +644,7 @@ string SComposeJSONArray(const T& valueList) {
     }
     string working = "[";
     for (auto value : valueList) {
-        working += SToJSON(value) + ",";
+        working += SToJSON(SToStr(value)) + ",";
     }
     working.resize(working.size() - 1);
     working += "]";
