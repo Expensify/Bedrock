@@ -74,7 +74,7 @@ struct DeleteJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "DeleteJob";
         command["jobID"] = parentID;
-        tester->executeWaitVerifyContent(command, "405 Can't delete a parent jobs with children running");
+        tester->executeWaitVerifyContent(command, "405 Can't delete a parent job with children running");
     }
 
     // Ignore deletejob for RUNNING jobs
