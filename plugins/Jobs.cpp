@@ -549,7 +549,7 @@ list<string> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand&
             }
 
             // Append new jobID to list of created jobs.
-            jobIDs.push_back(SToStr(updateJobID));
+            jobIDs.push_back(to_string(updateJobID));
         } else {
             // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
             // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
@@ -588,7 +588,7 @@ list<string> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand&
             }
 
             // Append new jobID to list of created jobs.
-            jobIDs.push_back(SToStr(jobIDToUse));
+            jobIDs.push_back(to_string(jobIDToUse));
         }
     }
     return jobIDs;
@@ -791,7 +791,7 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
 
         if (parentJobID) {
             // Has a parent job, add the parent data
-            job["parentJobID"] = SToStr(parentJobID);
+            job["parentJobID"] = to_string(parentJobID);
             job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
         }
 
@@ -885,19 +885,20 @@ bool BedrockPlugin_Jobs::processRequeueJobs(SQLite& db, BedrockCommand& command)
 
 bool BedrockPlugin_Jobs::processFinishJob(SQLite& db, BedrockCommand& command) {
     jobInfo info = processRetryFinishCommon(db, command);
+    string tableName = getTableName(info.jobID);
 
     // If we are finishing a job that has child jobs, set its state to paused.
     if (_hasPendingChildJobs(db, info.jobID)) {
         // Update the parent job to PAUSED
         SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-        if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(info.jobID) + ";")) {
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET state='PAUSED' WHERE jobID=" + SQ(info.jobID) + ";")) {
             STHROW("502 Parent update failed");
         }
 
         // Also un-pause any child jobs such that they can run
-        if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET state='QUEUED' "
                       "WHERE state='PAUSED' "
-                        "AND parentJobID != 0 AND parentJobID=" + SQ(info.jobID) + ";")) {
+                        "AND parentJobID=" + SQ(info.jobID) + ";")) {
             STHROW("502 Child update failed");
         }
 
@@ -905,50 +906,39 @@ bool BedrockPlugin_Jobs::processFinishJob(SQLite& db, BedrockCommand& command) {
         return true;
     }
 
-    string safeNewNextRun = "";
-    // If this is set to repeat, get the nextRun value
+    // If the job is repeating, update the nextRun value, and we're done.
     if (!info.repeat.empty()) {
-        safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
-    }
-
-    // The job is set to be rescheduled.
-    if (!safeNewNextRun.empty()) {
+        string safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
         // The "nextRun" at this point is still
         // storing the last time this job was *scheduled* to be run;
         // lastRun contains when it was *actually* run.
         SINFO("Rescheduling job#" << info.jobID << ": " << safeNewNextRun);
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(info.jobID) + ";")) {
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(info.jobID) + ";")) {
             STHROW("502 Update failed");
         }
+        return true;
+    }
+
+    // For non-repeating jobs, we handle them differently depending on whether they're children or not.
+    if (info.parentJobID) {
+        // This is a child job.  Mark it as finished.
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET state='FINISHED' WHERE jobID=" + SQ(info.jobID) + ";")) {
+            STHROW("502 Failed to mark job as FINISHED");
+        }
+
+        // Resume the parent if this is the last pending child
+        if (!_hasPendingChildJobs(db, info.parentJobID)) {
+            SINFO("Job has parentJobID: " + to_string(info.parentJobID) + " with no other pending children, resuming parent job");
+            if (!db.writeIdempotent("UPDATE " + tableName + " SET state='QUEUED' where jobID=" + SQ(info.parentJobID) + ";")) {
+                STHROW("502 Update failed");
+            }
+        }
     } else {
-        if (info.parentJobID) {
-            // This is a child job.  Mark it as finished.
-            if (!db.writeIdempotent("UPDATE jobs SET state='FINISHED' WHERE jobID=" + SQ(info.jobID) + ";")) {
-                STHROW("502 Failed to mark job as FINISHED");
-            }
-
-            // Resume the parent if this is the last pending child
-            if (!_hasPendingChildJobs(db, info.parentJobID)) {
-                SINFO("Job has parentJobID: " + SToStr(info.parentJobID) +
-                      " and no other pending children, resuming parent job");
-                if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' where jobID=" + SQ(info.parentJobID) + ";")) {
-                    STHROW("502 Update failed");
-                }
-            }
-        } else {
-            // This is a standalone (not a child) job; delete it.
-            // *BUT ONLY IF NOT RECURRING*
-            if (!db.writeIdempotent("DELETE FROM jobs WHERE jobID=" + SQ(info.jobID) + ";")) {
-                STHROW("502 Delete failed");
-            }
-
-            // At this point, all child jobs should already be deleted, but
-            // let's double check.
-            if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(info.jobID) + " LIMIT 1;").empty()) {
-                SWARN("Child jobs still exist when deleting parent job, ignoring.");
-            }
+        // This is a standalone (not a child) job; delete it.
+        if (!db.writeIdempotent("DELETE FROM " + tableName + " WHERE jobID=" + SQ(info.jobID) + ";")) {
+            STHROW("502 Delete failed");
         }
     }
 
@@ -957,11 +947,12 @@ bool BedrockPlugin_Jobs::processFinishJob(SQLite& db, BedrockCommand& command) {
 
 bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
     jobInfo info = processRetryFinishCommon(db, command);
+    string tableName = getTableName(info.jobID);
 
     // We can update the name of jobs that we're going to retry.
     const string& name = command.request["name"];
     if (!name.empty()) {
-        if (!db.writeIdempotent("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(info.jobID) + ";")) {
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET name=" + SQ(name) + " WHERE jobID=" + SQ(info.jobID) + ";")) {
             STHROW("502 Failed to update job name");
         }
     }
@@ -970,16 +961,15 @@ bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
     if (!info.repeat.empty()) {
         safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, info.repeat);
     } else {
-
+        // Otherwise, we'll build one from the `nextRun` or `delay` value.
         const string& newNextRun = command.request["nextRun"];
-
         if (newNextRun.empty()) {
             SINFO("nextRun isn't set, using delay");
             int64_t delay = command.request.calc64("delay");
             if (delay < 0) {
                 STHROW("402 Must specify a non-negative delay when retrying");
             }
-            string newRepeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+            string newRepeat = "FINISHED, +" + to_string(delay) + " SECONDS";
             safeNewNextRun = _constructNextRunDATETIME(info.nextRun, info.lastRun, newRepeat);
             if (safeNewNextRun.empty()) {
                 STHROW("402 Malformed delay");
@@ -997,7 +987,7 @@ bool BedrockPlugin_Jobs::processRetryJob(SQLite& db, BedrockCommand& command) {
         SINFO("Rescheduling job#" << info.jobID << ": " << safeNewNextRun);
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(info.jobID) + ";")) {
+        if (!db.writeIdempotent("UPDATE " + tableName + " SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(info.jobID) + ";")) {
             STHROW("502 Update failed");
         }
     }
