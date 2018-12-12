@@ -790,6 +790,7 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
     int64_t startAt = currentStartTableNumber.fetch_add(11) % TABLE_COUNT;
     int64_t current = startAt;
     int64_t checkCount = 0;
+    uint64_t start = STimeNow();
     while (true) {
         checkCount++;
         string tableName = getTableName(current);
@@ -848,9 +849,6 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
             break;
         }
     }
-
-    SINFO("Checked " << checkCount << " tables for jobs in process.");
-
     // Are there any results?
     if (result.empty()) {
         // Ah, there were before, but aren't now -- nothing found
@@ -861,6 +859,10 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
         //          way the worker will likely just loop, so it doesn't really matter.
         STHROW("404 No job found");
     }
+
+    uint64_t elapsed = STimeNow() - start;
+    string elapsedMS = to_string(elapsed / 1000) + "." + to_string((elapsed % 1000) / 100);
+    SINFO("Checked " << checkCount << " tables for jobs in process in " << elapsedMS << "ms.");
 
     // Prepare to update the rows, while also creating all the child objects
     list<string> nonRetriableJobs;
