@@ -125,10 +125,20 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         SQResult result;
         const list<string> nameList = SParseList(request["name"]);
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
+        string priorityCondition = "priority IN (0, 500, 1000)";
+        if (request.isSet("jobPriority")) {
+            int64_t priority = request.calc64("jobPriority");
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                STHROW("402 Invalid priority value");
+            }
+
+            priorityCondition = "priority = " + SQ(priority);
+        }
+
         if (!db.read("SELECT 1 "
                      "FROM jobs "
                      "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                        "AND " + (request.isSet("jobPriority") ? "priority = " + SQ(request.calc("jobPriority")) : "priority IN (0, 500, 1000)") + " "
+                        "AND " + priorityCondition + " "
                         "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                         "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " + 
                         string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +

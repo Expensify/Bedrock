@@ -34,6 +34,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testPrioritiesWithRunQueued),
                               TEST(GetJobTest::testMultipleNames),
                               TEST(GetJobTest::testPriorityParameter),
+                              TEST(GetJobTest::testInvalidJobPriority),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
@@ -688,6 +689,15 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
         jobList.pop_front();
         ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
+    }
+
+    void testInvalidJobPriority() {
+        // GetJob
+        SData command("GetJobs");
+        command["name"] = "*";
+        command["numResults"] = "1";
+        command["jobPriority"] = "111";
+        tester->executeWaitVerifyContent(command, "402 Invalid priority value");
     }
 } __GetJobTest;
 
