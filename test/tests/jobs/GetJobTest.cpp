@@ -33,8 +33,6 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testWithFinishedAndCancelledChildren),
                               TEST(GetJobTest::testPrioritiesWithRunQueued),
                               TEST(GetJobTest::testMultipleNames),
-                              TEST(GetJobTest::testPriorityParameter),
-                              TEST(GetJobTest::testInvalidJobPriority),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
@@ -614,90 +612,6 @@ struct GetJobTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         list<string> jobList = SParseJSONArray(response["jobs"]);
         ASSERT_EQUAL(jobList.size(), 2);
-    }
-
-    // Create jobs with the same nextRun time but different priorities
-    // Test that the priority parameter works
-    void testPriorityParameter() {
-        string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow());
-        // Create jobs of different priorities
-        // Low
-        SData command("CreateJob");
-        command["name"] = "low_5";
-        command["jobPriority"] = "0";
-        command["firstRun"] = firstRun;
-        STable response = tester->executeWaitVerifyContentTable(command);
-
-        // High
-        command["name"] = "high_1";
-        command["jobPriority"] = "1000";
-        command["firstRun"] = firstRun;
-        response = tester->executeWaitVerifyContentTable(command);
-
-        // Medium
-        command["name"] = "medium_3";
-        command["jobPriority"] = "500";
-        command["firstRun"] = firstRun;
-        response = tester->executeWaitVerifyContentTable(command);
-
-        // High
-        command["name"] = "high_2";
-        command["jobPriority"] = "1000";
-        command["firstRun"] = firstRun;
-        response = tester->executeWaitVerifyContentTable(command);
-
-        // Medium
-        command["name"] = "medium_4";
-        command["jobPriority"] = "500";
-        command["firstRun"] = firstRun;
-        response = tester->executeWaitVerifyContentTable(command);
-
-        // Confirm these jobs all have the same nextRun time
-        SQResult result;
-        tester->readDB("SELECT DISTINCT nextRun FROM jobs;", result);
-        ASSERT_EQUAL(result.size(), 1);
-
-        // Use GetJobs with jobPriority = 0, then 500, then 1000 and confirm that the jobs are returned in reverse jobPriority
-        command.clear();
-        command.methodLine = "GetJobs";
-        command["name"] = "*";
-        command["numResults"] = "2";
-
-        // Get jobPriority 0
-        command["jobPriority"] = "0";
-        response = tester->executeWaitVerifyContentTable(command);
-        list<string> jobList = SParseJSONArray(response["jobs"]);
-        ASSERT_EQUAL(jobList.size(), 1);
-        ASSERT_EQUAL(SParseJSONObject(jobList.front())["name"], "low_5");
-
-        // Get jobPriority 500
-        // nextRun is the same for all the jobs, so we just want to confirm that a medium job was returned
-        command["jobPriority"] = "500";
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
-        ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("medium"), string::npos);
-
-        // Get jobPriority 1000
-        // nextRun is the same for all the jobs, so we just want to confirm that a high job was returned
-        command["jobPriority"] = "1000";
-        response = tester->executeWaitVerifyContentTable(command);
-        jobList = SParseJSONArray(response["jobs"]);
-        ASSERT_EQUAL(jobList.size(), 2);
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
-        jobList.pop_front();
-        ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
-    }
-
-    void testInvalidJobPriority() {
-        // GetJob
-        SData command("GetJobs");
-        command["name"] = "*";
-        command["numResults"] = "1";
-        command["jobPriority"] = "111";
-        tester->executeWaitVerifyContent(command, "402 Invalid priority value");
     }
 } __GetJobTest;
 
