@@ -121,6 +121,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
+        if (request.isSet("jobPriority")) {
+            int64_t priority = request.calc64("jobPriority");
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                STHROW("402 Invalid priority value");
+            }
+        }
+
         return false;
     }
 
