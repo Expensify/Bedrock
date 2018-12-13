@@ -1323,7 +1323,7 @@ bool BedrockPlugin_Jobs::processMigrateJobs(SQLite& db, BedrockCommand& command)
 
     // Schedule it in the future by 3x as long as it took. That means commands will take up roughly 25% of the sync
     // thread's time.
-    // nextCommand["commandExecuteTime"] = to_string(end + (elapsed * 3)); // TODO: ADD BACK IN PRODUCTION!
+    nextCommand["commandExecuteTime"] = to_string(end + (elapsed * 3));
 
     // Standalone should be the same setting as it was before *except* if there were no results for parent/child jobs.
     if (standalone || result.size() == 0) {
