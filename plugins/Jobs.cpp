@@ -116,7 +116,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     if (SIEquals(requestVerb, "GetJob")) return peekGetJob(db, command);
     if (SIEquals(requestVerb, "GetJobs")) return peekGetJobs(db, command);
     if (SIEquals(requestVerb, "QueryJob")) return peekQueryJob(db, command);
-    if (SIEquals(requestVerb, "MigrateParentJobs")) return peekMigrateParentJobs(db, command);
+    if (SIEquals(requestVerb, "MigrateJobs")) return peekMigrateJobs(db, command);
 
     // Didn't recognize this command
     return false;
@@ -392,7 +392,7 @@ bool BedrockPlugin_Jobs::peekQueryJob(SQLite& db, BedrockCommand& command) {
     return true;
 }
 
-bool BedrockPlugin_Jobs::peekMigrateParentJobs(SQLite& db, BedrockCommand& command) {
+bool BedrockPlugin_Jobs::peekMigrateJobs(SQLite& db, BedrockCommand& command) {
     command.onlyProcessOnSyncThread = true;
     return false;
 }
@@ -421,7 +421,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     if (SIEquals(requestVerb, "RequeueJobs")) return processRequeueJobs(db, command);
     if (SIEquals(requestVerb, "RetryJob")) return processRetryJob(db, command);
     if (SIEquals(requestVerb, "UpdateJob")) return processUpdateJob(db, command);
-    if (SIEquals(requestVerb, "MigrateParentJobs")) return processMigrateParentJobs(db, command);
+    if (SIEquals(requestVerb, "MigrateJobs")) return processMigrateJobs(db, command);
 
     // Didn't recognize this command
     return false;
@@ -1226,43 +1226,45 @@ bool BedrockPlugin_Jobs::processUpdateJob(SQLite& db, BedrockCommand& command) {
     return true;
 }
 
-bool BedrockPlugin_Jobs::processMigrateParentJobs(SQLite& db, BedrockCommand& command) {
+bool BedrockPlugin_Jobs::processMigrateJobs(SQLite& db, BedrockCommand& command) {
 
-    // See when we start.
+    // See if we want to do standalone jobs or parent/child jobs. We start with parent/child.
+    bool standalone = command.request.test("standalone");
+
+    // We keep track of timing so that we can schedule commands not to overload the sync thread.
     uint64_t start = STimeNow();
 
     // Get some parent jobs to migrate.
     SQResult result;
-    db.read("SELECT DISTINCT parentJobID FROM jobs WHERE parentJobId != 0 limit 100;", result);
-
-    if (result.size() == 0) {
-        SINFO("[JOBS MIGRATION] Done with parent/child jobs. Will start standalone jobs.");
-        // TODO: Spawn new command.
-        return true;
+    int64_t limit = 100;
+    if (standalone) {
+        limit *= 5;
+        db.read("SELECT jobID FROM jobs LIMIT " + SQ(limit) + ";", result);
+    } else {
+        db.read("SELECT DISTINCT parentJobID FROM jobs WHERE parentJobId != 0 LIMIT " + SQ(limit) + ";", result);
     }
 
     int64_t totalChildren = 0;
     for (auto& row : result.rows) {
-        int64_t parentJobID = SToInt64(row[0]);
+        int64_t baseJobID = SToInt64(row[0]);
 
-        // Move the parent.
+        // Move the base job.
         SQResult innerResult;
-        int64_t newParentID = getNextID(db);
-        string tableName = getTableName(newParentID);
-        db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID=" + SQ(parentJobID) + " LIMIT 1;", innerResult);
+        int64_t newBaseID = getNextID(db);
+        string tableName = getTableName(newBaseID);
+        db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID=" + SQ(baseJobID) + " LIMIT 1;", innerResult);
         if (innerResult.size() != 1) {
             SQResult cleanup;
-            SWARN("[JOBS MIGRATION] Parent job " << parentJobID << " not found, removing orphaned jobs.");
-            db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(parentJobID) + ";");
+            SWARN("[JOBS MIGRATION] Job " << baseJobID << " not found, removing orphaned children jobs.");
+            db.write("DELETE FROM jobs WHERE parentJobID=" + SQ(baseJobID) + ";");
             continue;
         }
 
         // Copy everything straight across to the new table.
-        SINFO("[JOBS MIGRATION] Migrating  " << parentJobID << ".");
         db.write("INSERT INTO " + tableName + " (created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter) "
                  "VALUES(" +
                  SQ(innerResult[0][0]) + ", " +
-                 SQ(newParentID) + ", " +
+                 SQ(newBaseID) + ", " +
                  SQ(innerResult[0][2]) + ", " +
                  SQ(innerResult[0][3]) + ", " +
                  SQ(innerResult[0][4]) + ", " +
@@ -1273,49 +1275,77 @@ bool BedrockPlugin_Jobs::processMigrateParentJobs(SQLite& db, BedrockCommand& co
                  SQ(innerResult[0][9]) + ", " +
                  SQ(innerResult[0][10]) + ");");
 
-        // And delete the parent.
-        db.write("DELETE FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        // And delete it.
+        db.write("DELETE FROM jobs WHERE jobID=" + SQ(baseJobID) + ";");
 
-        // Then we need to move the children.
-        db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE parentJobID=" + SQ(parentJobID) + ";", innerResult);
-        SINFO("[JOBS MIGRATION] found " << innerResult.size() << " child jobs to migrate for " << parentJobID << ".");
-        for (auto& row : innerResult.rows) {
-            totalChildren++;
-            int64_t newChildID = getNextID(db, newParentID);
-            db.write("INSERT INTO " + tableName + " (created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter) "
-                     "VALUES(" +
-                     SQ(row[0]) + ", " +
-                     SQ(newChildID) + ", " +
-                     SQ(row[2]) + ", " +
-                     SQ(row[3]) + ", " +
-                     SQ(row[4]) + ", " +
-                     SQ(row[5]) + ", " +
-                     SQ(row[6]) + ", " +
-                     SQ(row[7]) + ", " +
-                     SQ(row[8]) + ", " +
-                     SQ(row[9]) + ", " +
-                     SQ(row[10]) + ");");
-            
-            // And delete the child.
-            db.write("DELETE FROM jobs WHERE jobID=" + SQ(SToInt64(row[1])) + ";");
+        // If it's not a standalone job, also move it's children.
+        if (!standalone) {
+            db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE parentJobID=" + SQ(baseJobID) + ";", innerResult);
+            SINFO("[JOBS MIGRATION] found " << innerResult.size() << " child jobs to migrate for " << baseJobID << ".");
+            for (auto& row : innerResult.rows) {
+                totalChildren++;
+                int64_t newChildID = getNextID(db, newBaseID);
+                db.write("INSERT INTO " + tableName + " (created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter) "
+                         "VALUES(" +
+                         SQ(row[0]) + ", " +
+                         SQ(newChildID) + ", " +
+                         SQ(row[2]) + ", " +
+                         SQ(row[3]) + ", " +
+                         SQ(row[4]) + ", " +
+                         SQ(row[5]) + ", " +
+                         SQ(row[6]) + ", " +
+                         SQ(row[7]) + ", " +
+                         SQ(row[8]) + ", " +
+                         SQ(row[9]) + ", " +
+                         SQ(row[10]) + ");");
+                
+                // And delete the child.
+                db.write("DELETE FROM jobs WHERE jobID=" + SQ(SToInt64(row[1])) + ";");
+            }
         }
     }
 
     // Finish timing and start our next command.
-    uint64_t elapsed = STimeNow() - start;
-    SINFO("[JOBS MIGRATION] Completed migrating " << result.size() << " parent jobs with " << totalChildren << " total children in " << (elapsed / 1000) << "ms, continuing.");
+    uint64_t end = STimeNow();
+    uint64_t elapsed = end - start;
+    
+    if (standalone) {
+        SINFO("[JOBS MIGRATION] Completed migrating " << result.size() << " standalone jobs in " << (elapsed / 1000) << "ms.");
+    } else {
+        SINFO("[JOBS MIGRATION] Completed migrating " << result.size() << " parent jobs with " << totalChildren << " total children in " << (elapsed / 1000) << "ms.");
+    }
 
-    SData nextCommand("MigrateParentJobs");
+    // Ok, now on to the next command.
+    SData nextCommand("MigrateJobs");
+
+    // Low-priority.
     nextCommand["priority"] = to_string(0);
 
-    // Schedule it in the future by 3x as long as it took. That means commands will take 
-    nextCommand["commandExecuteTime"] = to_string(STimeNow() + (elapsed * 3));
+    // Schedule it in the future by 3x as long as it took. That means commands will take up roughly 25% of the sync
+    // thread's time.
+    // nextCommand["commandExecuteTime"] = to_string(end + (elapsed * 3)); // TODO: ADD BACK IN PRODUCTION!
 
-    // Send it to the server.
-    if (_server) {
-        SQLiteCommand command(move(nextCommand));
-        command.initiatingClientID = -1;
-        _server->acceptCommand(move(command));
+    // Standalone should be the same setting as it was before *except* if there were no results for parent/child jobs.
+    if (standalone || result.size() == 0) {
+        nextCommand["standalone"] = "true";
+    }
+
+    // If there were no results, we're either done, or we're starting the standalone jobs.
+    if (result.size() == 0) {
+        if (standalone) {
+            SINFO("[JOBS MIGRATION] All jobs complete!");
+        } else {
+            SINFO("[JOBS MIGRATION] Done with parent/child jobs. Will start standalone jobs.");
+        }
+    }
+
+    // Send the next command to the server, unless we're done.
+    if (!(result.size() == 0 && standalone)) {
+        if (_server) {
+            SQLiteCommand command(move(nextCommand));
+            command.initiatingClientID = -1;
+            _server->acceptCommand(move(command));
+        }
     }
 
     return true;
