@@ -121,56 +121,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Get the list
-        SQResult result;
-        const list<string> nameList = SParseList(request["name"]);
-        bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        string priorityCondition = "priority IN (0, 500, 1000)";
-        string nameColumn = "name";
         if (request.isSet("jobPriority")) {
             int64_t priority = request.calc64("jobPriority");
             if (priority != 0 && priority != 500 && priority != 1000) {
                 STHROW("402 Invalid priority value");
             }
-
-            priorityCondition = "priority = " + SQ(priority);
-            nameColumn = "+name";
         }
 
-        if (!db.read("SELECT 1 "
-                     "FROM jobs "
-                     "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                        "AND " + priorityCondition + " "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND " + nameColumn + " " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                     "LIMIT 1;",
-                     result)) {
-            STHROW("502 Query failed");
-        }
-
-        // If we didn't get any results, just return an empty list
-        if (result.empty() || SToInt64(result[0][0]) == 0) {
-            // Did the caller set "Connection: wait"?  If so, put a "hold"
-            // on this request -- we'll clear the hold when we get a new
-            // job.
-            if (SIEquals(request["Connection"], "wait")) {
-                // Place a hold on this request waiting for new jobs in this
-                // state.
-                SINFO("No results found and 'Connection: wait'; placing request on hold until we get a new job "
-                      "matching name '"
-                      << request["name"] << "'");
-                request["HeldBy"] = "Jobs:" + request["name"];
-                response.clear(); // Clear default response so we don't accidentally think we're done
-                return false;     // Not processed
-            } else {
-                // Don't hold, just respond with no results
-                STHROW("404 No job found");
-            }
-        }
-
-        // Looks like there might be results -- queue this for processing
-        SINFO("Found results, but waiting for processCommand to update");
         return false;
     }
 
