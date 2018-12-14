@@ -91,6 +91,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
         // using the Bedrock::DB plugin.
         if (tableNum == -1) {
             // TODO: This probably breaks in production, it might take forever!
+            // Update: It probably takes like 30 seconds, but that's still annoying at startup.
             SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "ParentJobId     ON " + tableName + " ( parentJobID );"));
         }
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "Name     ON " + tableName + " ( name     );"));
