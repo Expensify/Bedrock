@@ -833,7 +833,7 @@ void BedrockServer::worker(SData& args,
 
             // More checks for parallel writing.
             canWriteParallel = canWriteParallel && !server._suppressMultiWrite.load();
-            canWriteParallel = canWriteParallel && SQLiteNode::MASTERING;
+            canWriteParallel = canWriteParallel && (state == SQLiteNode::MASTERING);
             canWriteParallel = canWriteParallel && (command.writeConsistency == SQLiteNode::ASYNC);
 
             // We'll retry on conflict up to this many times.
