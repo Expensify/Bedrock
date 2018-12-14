@@ -97,6 +97,15 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "Name     ON " + tableName + " ( name     );"));
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "ParentJobIDState ON " + tableName + " ( parentJobID, state ) WHERE parentJobID != 0;"));
         SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "StatePriorityNextRunName ON " + tableName + " ( state, priority, nextRun, name );"));
+
+        // new SSDos indicies.
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunManualSmartScan ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScan*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunManualSmartScanMerchantAndCategory ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanMerchantAndCategory*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunManualSmartScanAmountAndCurrency ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanAmountAndCurrency*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunManualSmartScanCreated ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanCreated*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunManualSmartScanIsCash ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanIsCash*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "ManualSmartscanReceiptID ON " + tableName + " ( JSON_EXTRACT(data, '$.receiptID') ) WHERE JSON_VALID(data) AND name GLOB 'manual/SmartScan*';"));
+        SASSERT(db.write("CREATE INDEX IF NOT EXISTS " + tableName + "PriorityNextRunWWWProd ON " + tableName + " (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*';"));
     }
 }
 
@@ -868,20 +877,15 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
             break;
         }
     }
-    // Are there any results?
-    if (result.empty()) {
-        // Ah, there were before, but aren't now -- nothing found
-        // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
-        //          as we could only get here if the job somehow got consumed between the peek
-        //          and process -- which could happen during heavy load.  But it'd just return
-        //          no results (which is correct) faster than it would otherwise time out.  Either
-        //          way the worker will likely just loop, so it doesn't really matter.
-        STHROW("404 No job found");
-    }
 
     uint64_t elapsed = STimeNow() - start;
     string elapsedMS = to_string(elapsed / 1000) + "." + to_string((elapsed % 1000) / 100);
-    SINFO("Checked " << checkCount << " tables for jobs in process in " << elapsedMS << "ms, jobName: " << command.request["name"]);
+    SINFO("Checked " << checkCount << " tables for jobs in process in " << elapsedMS << "ms, found " << result.size() << " jobs. jobName: " << command.request["name"]);
+
+    // Are there any results?
+    if (result.empty()) {
+        STHROW("404 No job found");
+    }
 
     // Prepare to update the rows, while also creating all the child objects
     list<string> nonRetriableJobs;
@@ -1237,7 +1241,7 @@ bool BedrockPlugin_Jobs::processUpdateJob(SQLite& db, BedrockCommand& command) {
 bool BedrockPlugin_Jobs::processMigrateJobs(SQLite& db, BedrockCommand& command) {
 
     // See if we want to do standalone jobs or parent/child jobs. We start with parent/child.
-    bool standalone = command.request.test("standalone");
+    const bool standalone = command.request.test("standalone");
 
     // We keep track of timing so that we can schedule commands not to overload the sync thread.
     uint64_t start = STimeNow();
@@ -1352,6 +1356,7 @@ bool BedrockPlugin_Jobs::processMigrateJobs(SQLite& db, BedrockCommand& command)
         if (_server) {
             SQLiteCommand command(move(nextCommand));
             command.initiatingClientID = -1;
+
             _server->acceptCommand(move(command));
         }
     }
