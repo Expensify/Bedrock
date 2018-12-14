@@ -1,18 +1,19 @@
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
-// Here's an idea for minimizing conflicts while also minimizing the number of tables we look through in `GetJob`:
+// Optimizing for unique jobs:
+// In the trivial case, we walk the tables until we find the matching job.
+// This means, on average, we hit half the tables in the DB.
+// This has poor conflict performance.
 //
-// What if we try to insert on every 10th table. But if that table is "busy", we increment to the next one. We keep an
-// atomic counter for each 10th table, and every time a transaction starts for that target table, we increment, putting
-// the counter....
-// Blah,this is complicated and maybe not better. Let's see if we regularly hit more than 10 tables anyway.
-
-// TODO: THINGS WE NEED.
-// 3. We need to migrate legacy jobs from the old table. This is likely slow, but we only need to do it once. If we let
-// a single self-repeating command do this, it will slowly move work into the other tables, and then there will be at
-// least some work for other threads to do while the migration finishes. This will have to keep gettableJobs up-to-date
-// as it moves things.
+// AWESOME HACK:
+// Rollback and restart a transaction every time we finish a table.
+// How expensive is this? I don't know.
+//
+// It makes the previous transaction irrelevant for conflicts though.
+//
+// It still takes a long time to walk the whole DB. Let's test for performance, it's faster to walk a small table than
+// a big one, but maybe not a bunch of small tables instead of one big one.
 
 // Declare the class we're going to implement below
 class BedrockPlugin_Jobs : public BedrockPlugin {

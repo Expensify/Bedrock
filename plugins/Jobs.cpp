@@ -803,6 +803,13 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
     int64_t checkCount = 0;
     uint64_t start = STimeNow();
     while (true) {
+        // Restart the transaction. This discards any previous tables we looked at from counting towards conflicts
+        // entirely. There's no way changes to them will make any difference to this command anyway.
+        // TODO: Benchmark and see if (non-conflicting) commands are slower with this. I imagine the difference is
+        // small.
+        db.rollback();
+        db.beginConcurrentTransaction();
+
         checkCount++;
         string tableName = getTableName(current);
 
@@ -873,7 +880,7 @@ list<string> BedrockPlugin_Jobs::processGetCommon(SQLite& db, BedrockCommand& co
 
     uint64_t elapsed = STimeNow() - start;
     string elapsedMS = to_string(elapsed / 1000) + "." + to_string((elapsed % 1000) / 100);
-    SINFO("Checked " << checkCount << " tables for jobs in process in " << elapsedMS << "ms.");
+    SINFO("Checked " << checkCount << " tables for jobs in process in " << elapsedMS << "ms, jobName: " << command.request["name"]);
 
     // Prepare to update the rows, while also creating all the child objects
     list<string> nonRetriableJobs;
