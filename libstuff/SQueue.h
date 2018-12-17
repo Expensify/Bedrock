@@ -30,7 +30,7 @@ class SQueue {
     T getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue);
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
-    void push(T&& item);
+    void push(T&& item, uint64_t executionTimestampUS = 0);
 
   protected:
     // Removes and returns the first workable command in the queue. A command is workable if it's executeTimestamp is
@@ -48,7 +48,7 @@ class SQueue {
 
     // The priority queue in which we store commands. This is a map of integer priorities to their respective maps.
     // Each of those maps maps timestamps to commands.
-    map<int, multimap<uint64_t, T>> _commandQueue;
+    map<int, multimap<uint64_t, pair<T, uint64_t>>> _commandQueue;
 
     // This is a map of timeouts to the queue/timestamp we'll need to find the command with this timestamp.
     multimap<uint64_t, pair<int, uint64_t>> _lookupByTimeout;
@@ -139,13 +139,12 @@ T SQueue<T>::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDeq
 }
 
 template<typename T>
-void SQueue<T>::push(T&& item) {
+void SQueue<T>::push(T&& item, uint64_t executionTimestampUS) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     _startFunction(item);
-    uint64_t executeTime = item.request.calcU64("commandExecuteTime");
-    _lookupByTimeout.insert(make_pair(item.timeout(), make_pair(item.priority, executeTime)));
-    queue.emplace(executeTime, move(item));
+    _lookupByTimeout.insert(make_pair(item.timeout(), make_pair(item.priority, executionTimestampUS)));
+    queue.emplace(executionTimestampUS, make_pair(move(item), executionTimestampUS));
     _queueCondition.notify_one();
 }
 
@@ -171,9 +170,9 @@ T SQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
             if (individualQueueIt != _commandQueue.end()) {
                 auto itPair = individualQueueIt->second.equal_range(executeTime);
                 for (auto it = itPair.first; it != itPair.second; it++) {
-                    if (it->second.timeout() == timeout) {
+                    if (it->second.first.timeout() == timeout) {
                         // This is the command that timed out.
-                        T command = move(it->second);
+                        T command = move(it->second.first);
                         individualQueueIt->second.erase(it);
                         if (individualQueueIt->second.empty()) {
                             _commandQueue.erase(individualQueueIt);
@@ -199,7 +198,8 @@ T SQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
         auto commandMapIt = queueMapIt->second.begin();
         if (commandMapIt->first <= now) {
             // Pull out the command we want to return.
-            T command = move(commandMapIt->second);
+            T command = move(commandMapIt->second.first);
+            uint64_t executeTime = commandMapIt->second.second;
 
             // Make sure we increment this counter before we actually dequeue, so this commands will never be not in
             // the queue and also not counted by the counter.
@@ -215,7 +215,6 @@ T SQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
             }
 
             // Remove from the timing map, too.
-            uint64_t executeTime = command.request.calcU64("commandExecuteTime");
             auto itPair = _lookupByTimeout.equal_range(command.timeout());
             for (auto it = itPair.first; it != itPair.second; it++) {
                 if (it->second.first == command.priority && it->second.second == executeTime) {

@@ -1,7 +1,19 @@
 #pragma once
 #include "SQLite.h"
+#include <libstuff/SQueue.h>
 class SQLiteCommand;
 class SQLiteServer;
+
+class queueableSData {
+  public:
+    queueableSData(const SData& _data) : data(_data), _timeout(STimeNow() + (1'000'000l * 60l * 60l * 24l)) {}
+    SData data;
+    const int priority = 1;
+    uint64_t timeout() const { return _timeout; }
+
+  private:
+    uint64_t _timeout;
+};
 
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
@@ -211,7 +223,7 @@ class SQLiteNode : public STCPNode {
     int _stateChangeCount;
 
     // Queue of synchronization/replication messages to be handled by workers
-    SSynchronizedQueue<SData> _workerQueue;
+    SQueue<queueableSData> _workerQueue;
     atomic<bool> _workersShouldFinish;
 
     list<thread> _workers;

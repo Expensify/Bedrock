@@ -1383,6 +1383,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _changeState(SEARCHING);
             throw e;
         }
+        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
         // SUBSCRIBE: Sent by a node in the WAITING state to the current master to begin SLAVING. Respond
         // SUBSCRIPTION_APPROVED with any COMMITs that the subscribing peer lacks (for example, any commits that have
@@ -1531,6 +1532,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         float applyTimeMS = (float)applyTimeUS / 1000.0;
         PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
               << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the master by a slave when it confirms it was able to begin a transaction and
@@ -1624,6 +1626,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Master has committed in response to our command " << message["ID"]);
             commandIt->second.transaction = message;
         }
+        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         // ROLLBACK_TRANSACTION: Sent to all subscribed slaves by the master when it determines that the current
         // outstanding transaction should be rolled back. This completes a given distributed transaction.
@@ -1646,6 +1649,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Master has rolled back in response to our command " << message["ID"]);
             commandIt->second.transaction = message;
         }
+        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "ESCALATE")) {
         // ESCALATE: Sent to the master by a slave. Is processed like a normal command, except when complete an
         // ESCALATE_RESPONSE is sent to the slave that initiated the escalation.
@@ -2305,6 +2309,16 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
     journalID < 0 ?  SInitialize("replicate") : SInitialize("replicate" + to_string(journalID));
     try {
         SQLite worker = node._db.getCopyWithJournalID(journalID);
+
+        while (!node._workersShouldFinish.load()) {
+            try {
+                atomic<int> ignore;
+                queueableSData message = node._workerQueue.getSynchronized(1'000'000, ignore);
+                SINFO("TYLER dequeued " << message.data.methodLine);
+            } catch (const decltype(_workerQueue)::timeout_error& e) {
+                // No commands, that's fine, loop again.
+            }
+        }
     } catch (const out_of_range& e) {
         // There weren't enough journals for this.
         SWARN("Not enough journals for replicate thread " << journalID);
