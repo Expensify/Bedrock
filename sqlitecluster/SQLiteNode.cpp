@@ -62,10 +62,9 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     // Get this party started
     _changeState(SEARCHING);
 
-    // Spin up a worker pool.
-    list<thread> workers;
+    // Spin up a worker pool. 3 is an arbitrary number, because 4 seemed like enough threads to test with.
     for (int i = -1; i < 3; i++) {
-        workers.emplace_back(replicateWorker, ref(*this), i);
+        _workers.emplace_back(replicateWorker, ref(*this), i);
     }
 
     // Add any peers.
@@ -83,17 +82,11 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     }
 }
 
-void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
-    try {
-        SQLite worker = node._db.getCopyWithJournalID(journalID);
-    } catch (const out_of_range& e) {
-        // There weren't enough journals for this.
-        return;
-    }
-}
-
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
+    for (auto& t : _workers) {
+        t.join();
+    }
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
 }
@@ -2302,4 +2295,19 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
         return true;
     }
     return false;
+}
+
+void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
+    // This is a hack to make the SXXXX macros works, since they expect `name` and `_state` to be defined.
+    const string& name = node.name;
+    const State& _state = node._state;
+
+    journalID < 0 ?  SInitialize("replicate") : SInitialize("replicate" + to_string(journalID));
+    try {
+        SQLite worker = node._db.getCopyWithJournalID(journalID);
+    } catch (const out_of_range& e) {
+        // There weren't enough journals for this.
+        SWARN("Not enough journals for replicate thread " << journalID);
+        return;
+    }
 }

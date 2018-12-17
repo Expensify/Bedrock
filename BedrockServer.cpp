@@ -664,7 +664,7 @@ void BedrockServer::worker(SData& args,
     BedrockCommand command(move(SQLiteCommand(SData())));
 
     // Which command queue do we use? The blockingCommit thread special and does blocking commits from the blocking queue.
-    BedrockQueue<BedrockCommand>& commandQueue = threadId ? server._commandQueue : server._blockingCommandQueue;
+    BedrockCommandQueue& commandQueue = threadId ? server._commandQueue : server._blockingCommandQueue;
 
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
@@ -993,7 +993,7 @@ void BedrockServer::worker(SData& args,
                    server._blockingCommandQueue.push(move(command));
                 }
             }
-        } catch (const BedrockQueue<BedrockCommand>::timeout_error& e) {
+        } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
             if  (server._shutdownState.load() == DONE) {
@@ -1228,7 +1228,7 @@ bool BedrockServer::shutdownComplete() {
         // Timing out. Log some info and return true.
         string commandCounts;
         string blockingCommandCounts;
-        list<pair<string*, BedrockQueue<BedrockCommand>*>> queuesToCount = {
+        list<pair<string*, BedrockCommandQueue*>> queuesToCount = {
             {&commandCounts, &_commandQueue},
             {&blockingCommandCounts, &_blockingCommandQueue}
         };

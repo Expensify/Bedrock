@@ -213,4 +213,6 @@ class SQLiteNode : public STCPNode {
     // Queue of synchronization/replication messages to be handled by workers
     SSynchronizedQueue<SData> _workerQueue;
     atomic<bool> _workersShouldFinish;
+
+    list<thread> _workers;
 };
