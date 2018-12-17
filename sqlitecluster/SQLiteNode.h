@@ -227,4 +227,7 @@ class SQLiteNode : public STCPNode {
     atomic<bool> _workersShouldFinish;
 
     list<thread> _workers;
+    atomic<uint64_t> _safeCommitTarget;
+    condition_variable _notifyCommitters;
+    mutex _notifyCommittersMutex;
 };

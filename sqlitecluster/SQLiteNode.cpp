@@ -1590,6 +1590,19 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_state != SLAVING) {
             STHROW("not slaving");
         }
+
+        // These need to always *arrive* in order, so that we can verify they're for the correct commits in order.
+        uint64_t newCommit = message.calcU64("CommitCount");
+
+        // Notify everyone that they can commit.
+        {
+            lock_guard<mutex> lock(_notifyCommittersMutex);
+            _safeCommitTarget.store(newCommit);
+        }
+        _notifyCommitters.notify_all();
+        //TODO: We also need a "last committed" value with the last one we committed. This will let the threads know
+        //it's their turn
+
         if (_db.getUncommittedHash().empty()) {
             STHROW("no outstanding transaction");
         }
@@ -1626,7 +1639,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Master has committed in response to our command " << message["ID"]);
             commandIt->second.transaction = message;
         }
-        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         // ROLLBACK_TRANSACTION: Sent to all subscribed slaves by the master when it determines that the current
         // outstanding transaction should be rolled back. This completes a given distributed transaction.
@@ -2315,6 +2327,27 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                 atomic<int> ignore;
                 queueableSData message = node._workerQueue.getSynchronized(1'000'000, ignore);
                 SINFO("TYLER dequeued " << message.data.methodLine);
+
+                if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION")) {
+                    uint64_t commitNumber = message.data.calcU64("CommitCount");
+                    while (true) {
+                        // Lock.
+                        unique_lock<mutex> lock(node._notifyCommittersMutex);
+
+                        // Check if our condition is already true, even before waiting.
+                        uint64_t current = node._safeCommitTarget.load();
+                        if (node._safeCommitTarget.load() >= commitNumber) {
+                            SINFO("TYLER can commit " << commitNumber << ", committing.");
+
+                            // We're done.
+                            break;
+                        } else {
+                            // Otherwise, unlock and wait.
+                            SINFO("TYLER Waiting for commit " << commitNumber << ", at " << current);
+                            node._notifyCommitters.wait(lock);
+                        }
+                    }
+                }
             } catch (const decltype(_workerQueue)::timeout_error& e) {
                 // No commands, that's fine, loop again.
             }
