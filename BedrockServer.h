@@ -3,7 +3,7 @@
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
-#include "BedrockCommandQueue.h"
+#include "BedrockQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
 class BedrockServer : public SQLiteServer {
@@ -220,10 +220,10 @@ class BedrockServer : public SQLiteServer {
     SData _args;
 
     // Commands that aren't currently being processed are kept here.
-    BedrockCommandQueue _commandQueue;
+    BedrockQueue<BedrockCommand> _commandQueue;
 
     // These are commands that will be processed in a blacking fashion.
-    BedrockCommandQueue _blockingCommandQueue;
+    BedrockQueue<BedrockCommand> _blockingCommandQueue;
 
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;

@@ -199,6 +199,9 @@ class SQLiteNode : public STCPNode {
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
 
+    // A worker replication thread function.
+    static void replicateWorker(SQLiteNode& node, int journalID);
+
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
 
@@ -206,4 +209,8 @@ class SQLiteNode : public STCPNode {
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale reponses to old changes.
     int _stateChangeCount;
+
+    // Queue of synchronization/replication messages to be handled by workers
+    SSynchronizedQueue<SData> _workerQueue;
+    atomic<bool> _workersShouldFinish;
 };

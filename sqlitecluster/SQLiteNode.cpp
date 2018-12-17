@@ -47,7 +47,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpointSeconds)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0), _workersShouldFinish(false)
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -62,6 +62,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     // Get this party started
     _changeState(SEARCHING);
 
+    // Spin up a worker pool.
+    list<thread> workers;
+    for (int i = -1; i < 3; i++) {
+        workers.emplace_back(replicateWorker, ref(*this), i);
+    }
+
     // Add any peers.
     list<string> parsedPeerList = SParseList(peerList);
     for (const string& peer : parsedPeerList) {
@@ -74,6 +80,15 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
             name = params["nodeName"];
         }
         addPeer(name, host, params);
+    }
+}
+
+void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
+    try {
+        SQLite worker = node._db.getCopyWithJournalID(journalID);
+    } catch (const out_of_range& e) {
+        // There weren't enough journals for this.
+        return;
     }
 }
 
@@ -112,6 +127,7 @@ void SQLiteNode::beginShutdown(uint64_t usToWait) {
         SINFO("Beginning graceful shutdown.");
         _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
+        _workersShouldFinish.store(true);
     }
 }
 

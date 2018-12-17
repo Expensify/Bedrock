@@ -187,6 +187,10 @@ class SQLite {
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
     
+    // Get's a duplicate of the current object, set to use a particular journal. Throws `out_of_range` if the given
+    // journal isn't available.
+    SQLite getCopyWithJournalID(int journalID);
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -413,4 +417,11 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    // The remainder of these values are only used at initialization, but are stored to allow copying objects.
+    int _cacheSize;
+    int _journalTable;
+    int _maxRequiredJournalTableID;
+    string _synchronous;
+    int64_t _mmapSizeGB;
 };

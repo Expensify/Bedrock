@@ -38,7 +38,12 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
-    _isDeterministicQuery(false)
+    _isDeterministicQuery(false),
+    _cacheSize(cacheSize),
+    _journalTable(journalTable),
+    _maxRequiredJournalTableID(maxRequiredJournalTableID),
+    _synchronous(synchronous),
+    _mmapSizeGB(mmapSizeGB)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -209,6 +214,13 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.
     sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+}
+
+SQLite SQLite::getCopyWithJournalID(int journalID) {
+    if (journalID > _maxRequiredJournalTableID) {
+        throw out_of_range("journal ID too large");
+    }
+    return SQLite(_filename, _cacheSize, _enableFullCheckpoints, _maxJournalSize, journalID, _maxRequiredJournalTableID, _synchronous, _mmapSizeGB);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
