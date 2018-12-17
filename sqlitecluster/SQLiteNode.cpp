@@ -2329,7 +2329,9 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                 SINFO("TYLER dequeued " << message.data.methodLine);
 
                 if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION")) {
-                    uint64_t commitNumber = message.data.calcU64("CommitCount");
+                    uint64_t commitNumber = message.data.calcU64("NewCount");
+
+                    // TODO: Move BEGIN_TRANSACTION handling logic here.
                     while (true) {
                         // Lock.
                         unique_lock<mutex> lock(node._notifyCommittersMutex);
@@ -2339,6 +2341,7 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                         if (node._safeCommitTarget.load() >= commitNumber) {
                             SINFO("TYLER can commit " << commitNumber << ", committing.");
 
+                            // TODO: Move commit logic here.
                             // We're done.
                             break;
                         } else {
