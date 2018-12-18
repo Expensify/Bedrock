@@ -93,6 +93,7 @@ SQLiteNode::~SQLiteNode() {
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
 {
+    // TODO: Probably entirely obviated in multi-replicate.
     // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
     // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
     SASSERT(_commitState == CommitState::UNINITIALIZED ||
@@ -1441,97 +1442,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
-        // BEGIN_TRANSACTION: Sent by the MASTER to all subscribed slaves to begin a new distributed transaction. Each
-        // slave begins a local transaction with this query and responds APPROVE_TRANSACTION. If the slave cannot start
-        // the transaction for any reason, it is broken somehow -- disconnect from the master.
-        // **FIXME**: What happens if MASTER steps down before sending BEGIN?
-        // **FIXME**: What happens if MASTER steps down or disconnects after BEGIN?
-        bool success = true;
-        uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
-        uint64_t slaveDequeueTimestamp = STimeNow();
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        if (!message.isSet("NewCount")) {
-            STHROW("missing NewCount");
-        }
-        if (!message.isSet("NewHash")) {
-            STHROW("missing NewHash");
-        }
-        if (_state != SLAVING) {
-            STHROW("not slaving");
-        }
-        if (!_masterPeer) {
-            STHROW("no master?");
-        }
-        if (!_db.getUncommittedHash().empty()) {
-            STHROW("already in a transaction");
-        }
-        if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
-            STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1));
-        }
-        if (!_db.beginTransaction()) {
-            STHROW("failed to begin transaction");
-        }
-        try {
-            // Inside transaction; get ready to back out on error
-            if (!_db.writeUnmodified(message.content)) {
-                STHROW("failed to write transaction");
-            }
-            if (!_db.prepare()) {
-                STHROW("failed to prepare transaction");
-            }
-            // Successful commit; we in the right state?
-            if (_db.getUncommittedHash() != message["NewHash"]) {
-                // Something is screwed up
-                PWARN("New hash mismatch: command='" << message["Command"] << "', commitCount=#" << _db.getCommitCount()
-                      << "', committedHash='" << _db.getCommittedHash() << "', uncommittedHash='"
-                      << _db.getUncommittedHash() << "', messageHash='" << message["NewHash"] << "', uncommittedQuery='"
-                      << _db.getUncommittedQuery() << "'");
-                STHROW("new hash mismatch");
-            }
-        } catch (const SException& e) {
-            // Something caused a commit failure.
-            success = false;
-            _db.rollback();
-        }
 
-        // Are we participating in quorum?
-        if (_priority) {
-            // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
-            string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-            if (!SStartsWith(message["ID"], "ASYNC_")) {
-                // Not a permaslave, approve the transaction
-                PINFO(verb << " #" << _db.getCommitCount() + 1 << " (" << message["NewHash"] << ").");
-                SData response(verb);
-                response["NewCount"] = SToStr(_db.getCommitCount() + 1);
-                response["NewHash"] = success ? _db.getUncommittedHash() : message["NewHash"];
-                response["ID"] = message["ID"];
-                _sendToPeer(_masterPeer, response);
-            } else {
-                PINFO("Skipping " << verb << " for ASYNC command.");
-            }
-        } else {
-            PINFO("Would approve/deny transaction #" << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-                  << ") for command '" << message["Command"] << "', but a permaslave -- keeping quiet.");
-        }
-
-        // Check our escalated commands and see if it's one being processed
-        auto commandIt = _escalatedCommandMap.find(message["ID"]);
-        if (commandIt != _escalatedCommandMap.end()) {
-            // We're starting the transaction for a given command; note this
-            // so we know that this command might be corrupted if the master
-            // crashes.
-            SINFO("Master is processing our command " << message["ID"] << " (" << message["Command"] << ")");
-            commandIt->second.transaction = message;
-        }
-
-        uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
-        uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
-        float transitTimeMS = (float)transitTimeUS / 1000.0;
-        float applyTimeMS = (float)applyTimeUS / 1000.0;
-        PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
-              << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
         _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
@@ -1597,48 +1508,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Notify everyone that they can commit.
         {
             lock_guard<mutex> lock(_notifyCommittersMutex);
+            _commitHashes.emplace(make_pair(newCommit, message["Hash"]));
             _safeCommitTarget.store(newCommit);
         }
         _notifyCommitters.notify_all();
-        //TODO: We also need a "last committed" value with the last one we committed. This will let the threads know
-        //it's their turn
-
-        if (_db.getUncommittedHash().empty()) {
-            STHROW("no outstanding transaction");
-        }
-        if (message.calcU64("CommitCount") != _db.getCommitCount() + 1) {
-            STHROW("commit count mismatch. Expected: " + message["CommitCount"] + ", but would actually be: "
-                  + to_string(_db.getCommitCount() + 1));
-        }
-        if (message["Hash"] != _db.getUncommittedHash()) {
-            STHROW("hash mismatch");
-        }
-
-        SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << _db.getUncommittedQuery());
-        _db.commit();
-
-        // Clear the list of committed transactions. We're slaving, so we don't need to send these.
-        _db.getCommittedTransactions();
-
-        // Log timing info.
-        // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
-        uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-        uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
-                                                             commitElapsed, rollbackElapsed);
-        SINFO("Committed slave transaction #" << message["CommitCount"] << " (" << message["Hash"] << ") in "
-              << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
-              << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
-              << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
-              << rollbackElapsed / 1000 << "ms)");
-
-        // Look up in our escalated commands and see if it's one being processed
-        auto commandIt = _escalatedCommandMap.find(message["ID"]);
-        if (commandIt != _escalatedCommandMap.end()) {
-            // We're starting the transaction for a given command; note this so we know that this command might be
-            // corrupted if the master crashes.
-            SINFO("Master has committed in response to our command " << message["ID"]);
-            commandIt->second.transaction = message;
-        }
     } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         // ROLLBACK_TRANSACTION: Sent to all subscribed slaves by the master when it determines that the current
         // outstanding transaction should be rolled back. This completes a given distributed transaction.
@@ -2320,36 +2193,31 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
 
     journalID < 0 ?  SInitialize("replicate") : SInitialize("replicate" + to_string(journalID));
     try {
-        SQLite worker = node._db.getCopyWithJournalID(journalID);
-
+        SQLite workerDB = node._db.getCopyWithJournalID(journalID);
         while (!node._workersShouldFinish.load()) {
             try {
                 atomic<int> ignore;
                 queueableSData message = node._workerQueue.getSynchronized(1'000'000, ignore);
                 SINFO("TYLER dequeued " << message.data.methodLine);
-
                 if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION")) {
-                    uint64_t commitNumber = message.data.calcU64("NewCount");
-
-                    // TODO: Move BEGIN_TRANSACTION handling logic here.
-                    while (true) {
-                        // Lock.
-                        unique_lock<mutex> lock(node._notifyCommittersMutex);
-
-                        // Check if our condition is already true, even before waiting.
-                        uint64_t current = node._safeCommitTarget.load();
-                        if (node._safeCommitTarget.load() >= commitNumber) {
-                            SINFO("TYLER can commit " << commitNumber << ", committing.");
-
-                            // TODO: Move commit logic here.
-                            // We're done.
-                            break;
-                        } else {
-                            // Otherwise, unlock and wait.
-                            SINFO("TYLER Waiting for commit " << commitNumber << ", at " << current);
-                            node._notifyCommitters.wait(lock);
+                    int result = performTransaction(node, workerDB, message);
+                    if (result == SQLITE_BUSY_SNAPSHOT) {
+                        SINFO("TYLER Transaction conflicted, retrying");
+                        int result = performTransaction(node, workerDB, message);
+                        if (result == SQLITE_BUSY_SNAPSHOT) {
+                            SALERT("TYLER Transaction conflicted twice, shouldn't be possible.");
                         }
+                    } else if (result != SQLITE_OK) {
+                        SALERT("TYLER Transaction failed.");
+                    } else {
+                        // Everything is fine, get another command.
                     }
+                } else if (SIEquals(message.data.methodLine, "ROLLBACK_TRANSACTION")) {
+                    SALERT("TYLER ROLLBACK_TRANSACTION RECEIVED");
+                } else if (SIEquals(message.data.methodLine, "SYNCHRONIZE_RESPONSE")) {
+                    SINFO("TYLER SYNCHRONIZE_RESPONSE RECEIVED");
+                } else {
+                    SALERT("TYLER UNEXPECTED WORKER QUEUE MESSAGE: " << message.data.methodLine);
                 }
             } catch (const decltype(_workerQueue)::timeout_error& e) {
                 // No commands, that's fine, loop again.
@@ -2357,7 +2225,199 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
         }
     } catch (const out_of_range& e) {
         // There weren't enough journals for this.
-        SWARN("Not enough journals for replicate thread " << journalID);
+        SWARN("TYLER Not enough journals for replicate thread " << journalID);
         return;
+    }
+}
+
+int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message) {
+    const string& name = node.name;
+    const State& _state = node._state;
+    struct {string name;} peerBase;
+    auto peer = &peerBase;
+    peerBase.name = "peerName"; // TODO: Fix this.
+
+    // BEGIN_TRANSACTION: Sent by the MASTER to all subscribed slaves to begin a new distributed transaction. Each
+    // slave begins a local transaction with this query and responds APPROVE_TRANSACTION. If the slave cannot start
+    // the transaction for any reason, it is broken somehow -- disconnect from the master.
+    // **FIXME**: What happens if MASTER steps down before sending BEGIN?
+    // **FIXME**: What happens if MASTER steps down or disconnects after BEGIN?
+    bool success = true;
+    uint64_t masterSentTimestamp = message.data.calcU64("masterSendTime");
+    uint64_t slaveDequeueTimestamp = STimeNow();
+
+    bool async = SStartsWith(message.data["ID"], "ASYNC_");
+    
+    if (!message.data.isSet("ID")) {
+        SINFO("TYLER 1");
+        STHROW("missing ID");
+    }
+    if (!message.data.isSet("NewCount")) {
+        SINFO("TYLER 2");
+        STHROW("missing NewCount");
+    }
+    if (!message.data.isSet("NewHash")) {
+        SINFO("TYLER 3");
+        STHROW("missing NewHash");
+    }
+    if (_state != SLAVING) {
+        SINFO("TYLER 4");
+        STHROW("not slaving");
+    }
+    if (!node._masterPeer) {
+        SINFO("TYLER 5");
+        STHROW("no master?");
+    }
+    if (!db.getUncommittedHash().empty()) {
+        SINFO("TYLER 6");
+        STHROW("already in a transaction");
+    }
+    /* This block doesn't work when we can write out-of-order.
+    if (db.getCommitCount() + 1 != message.data.calcU64("NewCount")) {
+        SINFO("TYLER 7");
+        STHROW("commit count mismatch. Expected: " + message.data["NewCount"] + ", but would actually be: " + to_string(db.getCommitCount() + 1));
+    }
+    */
+    // We block for the whole transaction for synchronous commits.
+    shared_lock<shared_timed_mutex> quorumLockShared(node._quorumCommitMutex, defer_lock);
+    unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
+    if (async) {
+        quorumLockShared.lock();
+        if (!db.beginConcurrentTransaction()) {
+            SINFO("TYLER 8");
+            STHROW("failed to begin concurrent transaction");
+        }
+    } else {
+        quorumLockUnique.lock();
+        if (!db.beginTransaction()) {
+            SINFO("TYLER 8.5");
+            STHROW("failed to begin transaction");
+        }
+    }
+    try {
+        // Inside transaction; get ready to back out on error
+        if (!db.writeUnmodified(message.data.content)) {
+            SINFO("TYLER 9");
+            STHROW("failed to write transaction");
+        }
+        SINFO("TYLER write succeeded.");
+
+    } catch (const SException& e) {
+        // Something caused a commit failure.
+        success = false;
+        db.rollback();
+    }
+
+    // Are we participating in quorum?
+    if (node._priority) {
+        SINFO("TYLER preparing QUORUM response.");
+        
+        // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
+        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
+        if (!async) {
+            // Not a permaslave, approve the transaction
+            PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << message.data["NewHash"] << ").");
+            SData response(verb);
+            response["NewCount"] = SToStr(db.getCommitCount() + 1);
+
+            // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
+            // call that.
+            response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : message.data["NewHash"];
+
+            response["ID"] = message.data["ID"];
+            node._sendToPeer(node._masterPeer, response);
+        } else {
+            PINFO("Skipping " << verb << " for ASYNC command.");
+        }
+    } else {
+        PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
+              << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
+    }
+
+    if (!success) {
+        SALERT("Distributed transaction *failed*, won't try to commit.");
+        return SQLITE_ERROR;
+    }
+
+    uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
+    uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
+    float transitTimeMS = (float)transitTimeUS / 1000.0;
+    float applyTimeMS = (float)applyTimeUS / 1000.0;
+    PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+
+    uint64_t commitNumber = message.data.calcU64("NewCount");
+    while (true) {
+        // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
+        // to the end and wait for the required state to commit.
+        // TODO: Problem: This lock, and the lock in `prepare` above can deadlock.
+        // Example:
+        // thread 1 calls `prepare` and has locked thier transaction.
+        // thread 2 calls prepare and... waits? I don't get it if we don't call `prepare` from in here.
+        // someone calls `prepare` and then is going to try to commit, but they can't, because the commit number is
+        // wrong. But they shouldn't hold forever... 
+        // Ah, if we're waiting on the commit to come up to date, we never "undo" the prepare. We need to call `prepare
+        // inside the "ready to commit" check.
+        unique_lock<mutex> lock(node._notifyCommittersMutex);
+        if (node._safeCommitTarget.load() >= commitNumber && db.getCommitCount() == commitNumber - 1) {
+            if (!db.prepare()) {
+                SINFO("TYLER 10");
+                STHROW("failed to prepare transaction");
+            }
+            SINFO("TYLER prepare succeeded.");
+
+            SINFO("TYLER can commit " << commitNumber << ", committing.");
+            if (db.getUncommittedHash().empty()) {
+                SINFO("TYLER 12");
+                STHROW("no outstanding transaction");
+            }
+            if (commitNumber != db.getCommitCount() + 1) {
+                SINFO("TYLER 13");
+                STHROW("commit count mismatch. Expected: " + to_string(commitNumber) + ", but would actually be: "
+                      + to_string(db.getCommitCount() + 1));
+            }
+            auto it = node._commitHashes.find(commitNumber);
+            if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
+                SINFO("TYLER 14");
+                STHROW("hash mismatch");
+            }
+
+            SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+            int result = db.commit();
+            if (result != SQLITE_OK) {
+                db.rollback();
+                return result;
+            }
+
+            // Clear the list of committed transactions. We're slaving, so we don't need to send these.
+            db.getCommittedTransactions();
+
+            // Log timing info.
+            // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
+            uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+            uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
+                                                                 commitElapsed, rollbackElapsed);
+            SINFO("Committed slave transaction #" << message.data["CommitCount"] << " (" << message.data["Hash"] << ") in "
+                  << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+                  << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+                  << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+                  << rollbackElapsed / 1000 << "ms)");
+
+            // We're done with this hash.
+            node._commitHashes.erase(it);
+
+            // Notify anyone waiting that the state has changed.
+            lock.unlock();
+            node._notifyCommitters.notify_all();
+
+            SINFO("Commit complete.");
+
+            // We're done.
+            return SQLITE_OK;
+        } else {
+            // Otherwise, unlock and wait for the required conditions.
+            SINFO("TYLER Waiting for commit " << commitNumber << ", at " << node._safeCommitTarget.load());
+            node._notifyCommitters.wait(lock);
+        }
     }
 }

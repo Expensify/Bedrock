@@ -230,4 +230,8 @@ class SQLiteNode : public STCPNode {
     atomic<uint64_t> _safeCommitTarget;
     condition_variable _notifyCommitters;
     mutex _notifyCommittersMutex;
+    map<uint64_t, string> _commitHashes;
+    shared_timed_mutex _quorumCommitMutex;
+
+    static int performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message);
 };

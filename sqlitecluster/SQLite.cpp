@@ -614,7 +614,9 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
+    SINFO("TYLER locking in prepare.");
     g_commitLock.lock();
+    SINFO("TYLER locked in prepare.");
     _mutexLocked = true;
 
     // Now that we've locked anybody else from committing, look up the state of the database.
