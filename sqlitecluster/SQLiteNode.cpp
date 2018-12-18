@@ -47,7 +47,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                        int quorumCheckpointSeconds)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0), _workersShouldFinish(false)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0), _workersShouldFinish(false),
+      _safeCommitTarget(0)
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -1509,6 +1510,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Notify everyone that they can commit.
         {
             lock_guard<mutex> lock(_notifyCommittersMutex);
+            SINFO("Putting hash in table:" << newCommit << ", " << message["Hash"]);
             _commitHashes.emplace(make_pair(newCommit, message["Hash"]));
             _safeCommitTarget.store(newCommit);
         }
@@ -2009,9 +2011,10 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             // Give the work to the worker threads.
             lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
             uint64_t commitNum = commit.calcU64("CommitIndex");
-            _safeCommitTarget.store(commitNum);
             targetCommitCount = commitNum;
+            SINFO("Putting hash in table:" << commitNum << ", " << commit["Hash"]);
             _commitHashes.emplace(make_pair(commitNum, commit["Hash"]));
+            _safeCommitTarget.store(commitNum);
             _workerQueue.push(queueableSData(commit));
         }
 
@@ -2313,14 +2316,6 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     while (true) {
         // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
         // to the end and wait for the required state to commit.
-        // TODO: Problem: This lock, and the lock in `prepare` above can deadlock.
-        // Example:
-        // thread 1 calls `prepare` and has locked thier transaction.
-        // thread 2 calls prepare and... waits? I don't get it if we don't call `prepare` from in here.
-        // someone calls `prepare` and then is going to try to commit, but they can't, because the commit number is
-        // wrong. But they shouldn't hold forever... 
-        // Ah, if we're waiting on the commit to come up to date, we never "undo" the prepare. We need to call `prepare
-        // inside the "ready to commit" check.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
         if (node._safeCommitTarget.load() >= commitNum && db.getCommitCount() == commitNum - 1) {
 
@@ -2336,7 +2331,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                 STHROW("failed to prepare transaction");
             }
 
-            SINFO("TYLER can commit " << commitNum << ", committing.");
+            SINFO("Can commit " << commitNum << ", safe target is:" << node._safeCommitTarget << ", db.getCommitCount() is: " << db.getCommitCount() << ". Committing.");
             if (db.getUncommittedHash().empty()) {
                 STHROW("no outstanding transaction");
             }
@@ -2346,6 +2341,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
             }
             auto it = node._commitHashes.find(commitNum);
             if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
+                SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
                 STHROW("hash mismatch");
             }
 
