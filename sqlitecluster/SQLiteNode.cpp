@@ -1384,7 +1384,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _changeState(SEARCHING);
             throw e;
         }
-        _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
         // SUBSCRIBE: Sent by a node in the WAITING state to the current master to begin SLAVING. Respond
         // SUBSCRIPTION_APPROVED with any COMMITs that the subscribing peer lacks (for example, any commits that have
@@ -1442,7 +1441,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
-
+        if (_state != SLAVING) {
+            STHROW("not slaving");
+        }
         _workerQueue.push(queueableSData(message));
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
@@ -1990,57 +1991,49 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
 void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
     SASSERT(peer);
     // Walk across the content and commit in order
-    if (!message.isSet("NumCommits"))
+    if (!message.isSet("NumCommits")) {
         STHROW("missing NumCommits");
+    }
     int commitsRemaining = message.calc("NumCommits");
     SData commit;
     const char* content = message.content.c_str();
     int messageSize = 0;
     int remaining = (int)message.content.size();
+    uint64_t targetCommitCount = 0;
     while ((messageSize = commit.deserialize(content, remaining))) {
         // Consume this message and process
-        // **FIXME: This could be optimized to commit in one huge transaction
         content += messageSize;
         remaining -= messageSize;
-        if (!SIEquals(commit.methodLine, "COMMIT"))
-            STHROW("expecting COMMIT");
-        if (!commit.isSet("CommitIndex"))
-            STHROW("missing CommitIndex");
-        if (commit.calc64("CommitIndex") < 0)
-            STHROW("invalid CommitIndex");
-        if (!commit.isSet("Hash"))
-            STHROW("missing Hash");
-        if (commit.content.empty())
-            SALERT("Synchronized blank query");
-        if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
-            STHROW("commit index mismatch");
-        if (!_db.beginTransaction())
-            STHROW("failed to begin transaction");
-        try {
-            // Inside a transaction; get ready to back out if an error
-            if (!_db.writeUnmodified(commit.content))
-                STHROW("failed to write transaction");
-            if (!_db.prepare())
-                STHROW("failed to prepare transaction");
-        } catch (const SException& e) {
-            // Transaction failed, clean up
-            SERROR("Can't synchronize (" << e.what() << "); shutting down.");
-            // **FIXME: Remove the above line once we can automatically handle?
-            _db.rollback();
-            throw e;
+
+        {
+            // Give the work to the worker threads.
+            lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
+            uint64_t commitNum = commit.calcU64("CommitIndex");
+            _safeCommitTarget.store(commitNum);
+            targetCommitCount = commitNum;
+            _commitHashes.emplace(make_pair(commitNum, commit["Hash"]));
+            _workerQueue.push(queueableSData(commit));
         }
 
-        // Transaction succeeded, commit and go to the next
-        SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
-        _db.commit();
-        if (_db.getCommittedHash() != commit["Hash"])
-            STHROW("potential hash mismatch");
+        // Let the threads know there's work.
+        _notifyCommitters.notify_all();
         --commitsRemaining;
     }
 
     // Did we get all our commits?
-    if (commitsRemaining)
+    if (commitsRemaining) {
         STHROW("commits remaining at end");
+    }
+
+    // Wait for all the work to be done. 
+    while (true) {
+        unique_lock<mutex> lock(_notifyCommittersMutex);
+        if (_db.getCommitCount() >= targetCommitCount) {
+            SINFO("Workers finished synchronization block, continuing.");
+            break;
+        }
+        _notifyCommitters.wait(lock);
+    }
 }
 
 void SQLiteNode::_updateSyncPeer()
@@ -2199,23 +2192,26 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                 atomic<int> ignore;
                 queueableSData message = node._workerQueue.getSynchronized(1'000'000, ignore);
                 SINFO("TYLER dequeued " << message.data.methodLine);
-                if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION")) {
-                    int result = performTransaction(node, workerDB, message);
-                    if (result == SQLITE_BUSY_SNAPSHOT) {
-                        SINFO("TYLER Transaction conflicted, retrying");
-                        int result = performTransaction(node, workerDB, message);
+                if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.data.methodLine, "COMMIT")) {
+                    bool isCommit = SIEquals(message.data.methodLine, "COMMIT");
+
+                    // BEGIN_TRANSACTION (sent during replication) and COMMIT (sent during synchronization) send slightly
+                    // different things, so we normalize their inputs here.
+                    uint64_t commitNum = SToUInt64(isCommit ? message.data["CommitIndex"] : message.data["NewCount"]);
+                    string commitHash = isCommit? message.data["Hash"] : message.data["NewHash"];
+
+                    int result = performTransaction(node, workerDB, message, commitNum, commitHash, false);
+                    if (result != SQLITE_OK) {
+                        SINFO("Transaction failed (conflict or schema change), retrying in sync mode.");
+                        int result = performTransaction(node, workerDB, message, commitNum, commitHash, true);
                         if (result == SQLITE_BUSY_SNAPSHOT) {
-                            SALERT("TYLER Transaction conflicted twice, shouldn't be possible.");
+                            SALERT("Transaction failed twice, shouldn't be possible.");
                         }
-                    } else if (result != SQLITE_OK) {
-                        SALERT("TYLER Transaction failed.");
-                    } else {
+                    }  else {
                         // Everything is fine, get another command.
                     }
                 } else if (SIEquals(message.data.methodLine, "ROLLBACK_TRANSACTION")) {
                     SALERT("TYLER ROLLBACK_TRANSACTION RECEIVED");
-                } else if (SIEquals(message.data.methodLine, "SYNCHRONIZE_RESPONSE")) {
-                    SINFO("TYLER SYNCHRONIZE_RESPONSE RECEIVED");
                 } else {
                     SALERT("TYLER UNEXPECTED WORKER QUEUE MESSAGE: " << message.data.methodLine);
                 }
@@ -2230,7 +2226,7 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
     }
 }
 
-int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message) {
+int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message, uint64_t commitNum, const string& commitHash, bool forceSync) {
     const string& name = node.name;
     const State& _state = node._state;
     struct {string name;} peerBase;
@@ -2246,61 +2242,29 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     uint64_t masterSentTimestamp = message.data.calcU64("masterSendTime");
     uint64_t slaveDequeueTimestamp = STimeNow();
 
-    bool async = SStartsWith(message.data["ID"], "ASYNC_");
+    bool isCommit = SIEquals(message.data.methodLine, "COMMIT");
+    bool async = (SStartsWith(message.data["ID"], "ASYNC_") || isCommit) && !forceSync;
     
-    if (!message.data.isSet("ID")) {
-        SINFO("TYLER 1");
-        STHROW("missing ID");
-    }
-    if (!message.data.isSet("NewCount")) {
-        SINFO("TYLER 2");
-        STHROW("missing NewCount");
-    }
-    if (!message.data.isSet("NewHash")) {
-        SINFO("TYLER 3");
-        STHROW("missing NewHash");
-    }
-    if (_state != SLAVING) {
-        SINFO("TYLER 4");
-        STHROW("not slaving");
-    }
-    if (!node._masterPeer) {
-        SINFO("TYLER 5");
-        STHROW("no master?");
-    }
     if (!db.getUncommittedHash().empty()) {
-        SINFO("TYLER 6");
         STHROW("already in a transaction");
     }
-    /* This block doesn't work when we can write out-of-order.
-    if (db.getCommitCount() + 1 != message.data.calcU64("NewCount")) {
-        SINFO("TYLER 7");
-        STHROW("commit count mismatch. Expected: " + message.data["NewCount"] + ", but would actually be: " + to_string(db.getCommitCount() + 1));
-    }
-    */
     // We block for the whole transaction for synchronous commits.
-    shared_lock<shared_timed_mutex> quorumLockShared(node._quorumCommitMutex, defer_lock);
     unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
     if (async) {
-        quorumLockShared.lock();
         if (!db.beginConcurrentTransaction()) {
-            SINFO("TYLER 8");
             STHROW("failed to begin concurrent transaction");
         }
     } else {
         quorumLockUnique.lock();
         if (!db.beginTransaction()) {
-            SINFO("TYLER 8.5");
             STHROW("failed to begin transaction");
         }
     }
     try {
         // Inside transaction; get ready to back out on error
         if (!db.writeUnmodified(message.data.content)) {
-            SINFO("TYLER 9");
             STHROW("failed to write transaction");
         }
-        SINFO("TYLER write succeeded.");
 
     } catch (const SException& e) {
         // Something caused a commit failure.
@@ -2308,30 +2272,30 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         db.rollback();
     }
 
-    // Are we participating in quorum?
-    if (node._priority) {
-        SINFO("TYLER preparing QUORUM response.");
-        
-        // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
-        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-        if (!async) {
-            // Not a permaslave, approve the transaction
-            PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << message.data["NewHash"] << ").");
-            SData response(verb);
-            response["NewCount"] = SToStr(db.getCommitCount() + 1);
+    // Are we participating in quorum? If this is a COMMIT message, we aren't.
+    if (!isCommit) {
+        if (node._priority) {
+            // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
+            string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
+            if (!async) {
+                // Not a permaslave, approve the transaction
+                PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << commitHash << ").");
+                SData response(verb);
+                response["NewCount"] = SToStr(db.getCommitCount() + 1);
 
-            // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
-            // call that.
-            response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : message.data["NewHash"];
+                // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
+                // call that.
+                response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
 
-            response["ID"] = message.data["ID"];
-            node._sendToPeer(node._masterPeer, response);
+                response["ID"] = message.data["ID"];
+                node._sendToPeer(node._masterPeer, response);
+            } else {
+                PINFO("Skipping " << verb << " for ASYNC command.");
+            }
         } else {
-            PINFO("Skipping " << verb << " for ASYNC command.");
+            PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
+                  << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
         }
-    } else {
-        PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
-              << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
     }
 
     if (!success) {
@@ -2346,7 +2310,6 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 
-    uint64_t commitNumber = message.data.calcU64("NewCount");
     while (true) {
         // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
         // to the end and wait for the required state to commit.
@@ -2359,26 +2322,30 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         // Ah, if we're waiting on the commit to come up to date, we never "undo" the prepare. We need to call `prepare
         // inside the "ready to commit" check.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
-        if (node._safeCommitTarget.load() >= commitNumber && db.getCommitCount() == commitNumber - 1) {
+        if (node._safeCommitTarget.load() >= commitNum && db.getCommitCount() == commitNum - 1) {
+
+            // If we're in synchronous mode, we'll have already locked above and don't need to do this. However, if
+            // we're in async mode, we need to grab the shared lock now just in case someone else is doing a
+            // synchronous operation. This will keep us from writing over their commit (because we won't be able to
+            // acquire this until they finish).
+            shared_lock<shared_timed_mutex> quorumLockShared(node._quorumCommitMutex, defer_lock);
+            if (async) {
+                quorumLockShared.lock();
+            }
             if (!db.prepare()) {
-                SINFO("TYLER 10");
                 STHROW("failed to prepare transaction");
             }
-            SINFO("TYLER prepare succeeded.");
 
-            SINFO("TYLER can commit " << commitNumber << ", committing.");
+            SINFO("TYLER can commit " << commitNum << ", committing.");
             if (db.getUncommittedHash().empty()) {
-                SINFO("TYLER 12");
                 STHROW("no outstanding transaction");
             }
-            if (commitNumber != db.getCommitCount() + 1) {
-                SINFO("TYLER 13");
-                STHROW("commit count mismatch. Expected: " + to_string(commitNumber) + ", but would actually be: "
+            if (commitNum != db.getCommitCount() + 1) {
+                STHROW("commit count mismatch. Expected: " + to_string(commitNum) + ", but would actually be: "
                       + to_string(db.getCommitCount() + 1));
             }
-            auto it = node._commitHashes.find(commitNumber);
+            auto it = node._commitHashes.find(commitNum);
             if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
-                SINFO("TYLER 14");
                 STHROW("hash mismatch");
             }
 
@@ -2416,7 +2383,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
             return SQLITE_OK;
         } else {
             // Otherwise, unlock and wait for the required conditions.
-            SINFO("TYLER Waiting for commit " << commitNumber << ", at " << node._safeCommitTarget.load());
+            SINFO("TYLER Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
             node._notifyCommitters.wait(lock);
         }
     }
