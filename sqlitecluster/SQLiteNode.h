@@ -232,6 +232,7 @@ class SQLiteNode : public STCPNode {
     mutex _notifyCommittersMutex;
     map<uint64_t, string> _commitHashes;
     shared_timed_mutex _quorumCommitMutex;
+    atomic <uint64_t> _rollbackTransactionID;
 
     static int performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
 };

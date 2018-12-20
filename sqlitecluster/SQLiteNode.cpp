@@ -59,6 +59,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _version = version;
     _lastQuorumTime = 0;
     _quorumCheckpointSeconds = quorumCheckpointSeconds;
+    _rollbackTransactionID.store(UINT64_MAX);
 
     // Get this party started
     _changeState(SEARCHING);
@@ -1535,20 +1536,16 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_state != SLAVING) {
             STHROW("not slaving");
         }
-        if (_db.getUncommittedHash().empty()) {
-            SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
+        {
+            uint64_t rollbackID = message.calcU64("ID");
+            lock_guard<mutex> lock(_notifyCommittersMutex);
+            SWARN("Got ROLLBACK for transaction " << rollbackID);
+            if (_rollbackTransactionID.load() != UINT64_MAX) {
+                SWARN("Recieved conflicting ROLLBACKs (this should never happen).");
+            }
+            _rollbackTransactionID.store(rollbackID);
         }
-        _db.rollback();
-
-        // Look through our escalated commands and see if it's one being processed
-        auto commandIt = _escalatedCommandMap.find(message["ID"]);
-        if (commandIt != _escalatedCommandMap.end()) {
-            // We're starting the transaction for a given command; note this so we know that this command might be
-            // corrupted if the master crashes.
-            SINFO("Master has rolled back in response to our command " << message["ID"]);
-            commandIt->second.transaction = message;
-        }
-        _workerQueue.push(queueableSData(message));
+        _notifyCommitters.notify_all();
     } else if (SIEquals(message.methodLine, "ESCALATE")) {
         // ESCALATE: Sent to the master by a slave. Is processed like a normal command, except when complete an
         // ESCALATE_RESPONSE is sent to the slave that initiated the escalation.
@@ -2225,8 +2222,6 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                     }  else {
                         // Everything is fine, get another command.
                     }
-                } else if (SIEquals(message.data.methodLine, "ROLLBACK_TRANSACTION")) {
-                    SALERT("TYLER ROLLBACK_TRANSACTION RECEIVED");
                 } else {
                     SALERT("TYLER UNEXPECTED WORKER QUEUE MESSAGE: " << message.data.methodLine);
                 }
@@ -2334,6 +2329,15 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
         // to the end and wait for the required state to commit.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
+
+        // If we received a notification that we should roll this transaction back, do it now.
+        if (node._rollbackTransactionID == commitNum) {
+            SINFO("Rolling back transaction " << commitNum);
+            db.rollback();
+            node._rollbackTransactionID.store(UINT64_MAX);
+            return SQLITE_OK;
+        }
+
         if (node._safeCommitTarget.load() >= commitNum && db.getCommitCount() == commitNum - 1) {
 
             // If we're in synchronous mode, we'll have already locked above and don't need to do this. However, if
