@@ -1460,6 +1460,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
             STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1));
         }
+        _db.waitForCheckpoint();
         if (!_db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
@@ -2116,6 +2117,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             SALERT("Synchronized blank query");
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
             STHROW("commit index mismatch");
+        _db.waitForCheckpoint();
         if (!_db.beginTransaction())
             STHROW("failed to begin transaction");
         try {
