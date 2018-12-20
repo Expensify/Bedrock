@@ -150,13 +150,13 @@ class SQLiteNode : public STCPNode {
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the MASTER.
-    int _priority;
+    atomic<int> _priority;
 
     // Our current State.
-    State _state;
+    atomic<State> _state;
     
     // Pointer to the peer that is the master. Null if we're the master, or if we don't have a master yet.
-    Peer* _masterPeer;
+    atomic<Peer*> _masterPeer;
 
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;

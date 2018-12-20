@@ -85,9 +85,20 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    for (auto& t : _workers) {
-        t.join();
+    SINFO("Closing worker threads in destructor.");
+
+    if (!_workersShouldFinish) {
+        _workersShouldFinish.store(true);
+        SWARN("_workersShouldFinish not true at destruction, setting.");
     }
+    int threadID = -1;
+    for (auto& t : _workers) {
+        string threadName = (threadID < 0 ? "replicate" : "replicate" + to_string(threadID));
+        SINFO("Joining " << threadName);
+        t.join();
+        threadID++;
+    }
+    SINFO("All worker threads joined.");
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
 }
@@ -260,7 +271,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     SASSERT(_masterPeer);
     SASSERTEQUALS((*_masterPeer)["State"], "MASTERING");
     uint64_t elapsed = STimeNow() - command.request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer->name
+    SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to MASTER '" << _masterPeer.load()->name
           << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our master.
@@ -2187,7 +2198,8 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
     const string& name = node.name;
     const State& _state = node._state;
 
-    journalID < 0 ?  SInitialize("replicate") : SInitialize("replicate" + to_string(journalID));
+    string threadName = (journalID < 0 ? "replicate" : "replicate" + to_string(journalID));
+    SInitialize(threadName);
     try {
         SQLite workerDB = node._db.getCopyWithJournalID(journalID);
         while (!node._workersShouldFinish.load()) {
@@ -2225,8 +2237,8 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
     } catch (const out_of_range& e) {
         // There weren't enough journals for this.
         SWARN("TYLER Not enough journals for replicate thread " << journalID);
-        return;
     }
+    SINFO("Replicate thread done, returning.");
 }
 
 int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message, uint64_t commitNum, const string& commitHash, bool forceSync) {
@@ -2291,7 +2303,12 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                 response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
 
                 response["ID"] = message.data["ID"];
-                node._sendToPeer(node._masterPeer, response);
+                Peer* masterPeer = node._masterPeer;
+                if (masterPeer) {
+                    node._sendToPeer(masterPeer, response);
+                } else {
+                    SWARN("Lost master while committing, can't send response.");
+                }
             } else {
                 PINFO("Skipping " << verb << " for ASYNC command.");
             }
@@ -2313,7 +2330,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 
-    while (true) {
+    while (true && !node._workersShouldFinish) {
         // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
         // to the end and wait for the required state to commit.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
@@ -2383,4 +2400,9 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
             node._notifyCommitters.wait(lock);
         }
     }
+
+    // We can only get here if we exit mid-transaction (because _workersShouldFinish is now `true`). If that happens,
+    // roll back.
+    db.rollback();
+    return SQLITE_OK;
 }
