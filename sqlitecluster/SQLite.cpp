@@ -263,7 +263,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         string filename = object->_filename;
         string dbNameCopy = dbName;
         int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
-        if (alreadyCheckpointing != 1) {
+        if (alreadyCheckpointing) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
