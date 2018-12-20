@@ -32,9 +32,10 @@ struct SQLiteNodeTest : tpunit::TestFixture {
     void testFindSyncPeer() {
 
         // This exposes just enough to test the peer selection logic.
-        char* tempFileName = tempnam("/tmp", "syncPeerTest");
+        char* tempFileName = tempnam(0, "sync");
         SFileSave(tempFileName, "");
         SQLite db(tempFileName, 1000000, 100, 5000, -1, -1);
+        free(tempFileName);
         TestServer server("");
         SQLiteNode testNode(server, db, "test", "localhost:19998", "", 1, 1000000000, "1.0", 100);
 
