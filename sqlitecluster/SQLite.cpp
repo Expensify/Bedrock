@@ -273,12 +273,17 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
+        int alreadyCheckpointing = object->_sharedData->_checkpointThreadBusy.fetch_add(1);
+        if (alreadyCheckpointing) {
+            SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
+            return SQLITE_OK;
+        }
         thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
             // Lock the mutex that keeps anyone from starting a new transaction.
-            object->_sharedData->blockNewTransactionsMutex.lock();
+            lock_guard<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
 
             while (1) {
                 // Lock first, this prevents anyone from updating the count while we're operating here.
@@ -316,8 +321,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
-                    // We're done. Unlock and anyone can start a new transaction.
-                    object->_sharedData->blockNewTransactionsMutex.unlock();
+                    // We're done. Anyone can start a new transaction.
                     break;
                 }
 
@@ -325,6 +329,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // someone says the count has changed, and try again.
                 object->_sharedData->blockNewTransactionsCV.wait(lock);
             }
+
+            // Allow the next checkpointer.
+            object->_sharedData->_checkpointThreadBusy.store(0);
         }).detach();
     }
     return SQLITE_OK;
@@ -1038,5 +1045,6 @@ bool SQLite::getUpdateNoopMode() const {
 }
 
 SQLite::SharedData::SharedData() :
-currentTransactionCount(0)
+currentTransactionCount(0),
+_checkpointThreadBusy(0)
 { }

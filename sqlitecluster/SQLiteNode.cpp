@@ -2259,6 +2259,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         STHROW("already in a transaction");
     }
     // We block for the whole transaction for synchronous commits.
+    db.waitForCheckpoint();
     unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
     if (async) {
         if (!db.beginConcurrentTransaction()) {

@@ -274,6 +274,9 @@ class SQLite {
         // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
         // if the SQLite object that initiated it has been deleted since it started.
         set<SQLite*> validObjects;
+
+        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+        atomic<int> _checkpointThreadBusy;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
