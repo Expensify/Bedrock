@@ -413,4 +413,7 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+    atomic<int> _checkpointThreadBusy;
 };
