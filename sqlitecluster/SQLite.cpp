@@ -272,7 +272,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             uint64_t start = STimeNow();
 
             // Lock the mutex that keeps anyone from starting a new transaction.
-            object->_sharedData->blockNewTransactionsMutex.lock();
+            lock_guard<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
 
             while (1) {
                 // Lock first, this prevents anyone from updating the count while we're operating here.
@@ -310,8 +310,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
-                    // We're done. Unlock and anyone can start a new transaction.
-                    object->_sharedData->blockNewTransactionsMutex.unlock();
+                    // We're done. Anyone can start a new transaction.
                     break;
                 }
 
