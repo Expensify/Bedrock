@@ -400,7 +400,6 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     SASSERT(_uncommittedQuery.empty());
     {
         unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
-        SINFO("inc beginTransaction");
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
@@ -427,7 +426,6 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& transaction
     SASSERT(_uncommittedQuery.empty());
     {
         unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
-        SINFO("inc beginConcurrentTransaction");
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
@@ -627,9 +625,7 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    SINFO("TYLER locking in prepare.");
     g_commitLock.lock();
-    SINFO("TYLER locked in prepare.");
     _mutexLocked = true;
 
     // Now that we've locked anybody else from committing, look up the state of the database.
@@ -730,7 +726,6 @@ int SQLite::commit() {
         _mutexLocked = false;
         {
             unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
-            SINFO("dec commit");
             _sharedData->currentTransactionCount--;
         }
         _sharedData->blockNewTransactionsCV.notify_one();
@@ -807,7 +802,6 @@ void SQLite::rollback() {
         }
         {
             unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
-            SINFO("dec rollback");
             _sharedData->currentTransactionCount--;
         }
         _sharedData->blockNewTransactionsCV.notify_one();

@@ -102,9 +102,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        cout << "Waiting for node 0 to be mastering." << endl;
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
-        cout << "Done." << endl;
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread>* threads = new list<thread>();
@@ -115,38 +113,27 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         atomic<int> commandID(10000);
         mutex mu;
         vector<list<SData>>* allresults = new vector<list<SData>>(60);
-        cout << "Starting spamming commands." << endl;
         startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
-        cout << "Going..." << endl;
 
         // Let the clients get some activity going, we want everything to be busy.
         sleep(2);
 
         // Now our clients are spamming all our nodes. Shut down master.
-        cout << "Waiting for node 0 to stop." << endl;
         tester->stopNode(0);
-        cout << "Done." << endl;
 
         // Wait for node 1 to be master.
-        cout << "Waiting for node 1 to be mastering." << endl;
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
-        cout << "Done." << endl;
 
         // Let the spammers keep spamming on the new master.
         sleep(3);
 
         // Bring master back up.
-        cout << "Start node 0 mastering again." << endl;
         tester->getBedrockTester(0)->startServer();
-        cout << "Started." << endl;
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
-        cout << "Mastering. (Sleeping 15 seconds)" << endl;
         sleep(15);
 
         // Now let's  stop a slave and make sure everything keeps working.
-        cout << "Waiting for node 2 to stop." << endl;
         tester->stopNode(2);
-        cout << "Done, waiting for master to know." << endl;
 
         // Wait up to 90 seconds for master to think the slave is down.
         uint64_t start = STimeNow();
@@ -169,13 +156,10 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             usleep(100'000);
         }
         ASSERT_TRUE(success);
-        cout << "Done." << endl;
 
         // And bring it back up.
-        cout << "Start node 2 slaving again." << endl;
         tester->getBedrockTester(2)->startServer();
         ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
-        cout << "Done, letting clients finish." << endl;
 
         // We're done, let spammers finish.
         done.store(true);
@@ -188,15 +172,11 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         allresults->resize(60);
         done.store(false);
 
-        cout << "Done, verify results." << endl;
-
         // Verify everything was either a 202 or a 756.
         for (auto& p : *counts) {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
             cout << "method: " << p.first << ", count: " << p.second << endl;
         }
-
-        cout << "OK, resume spamming." << endl;
         
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
         startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
@@ -205,31 +185,25 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up master.
-        cout << "Blow up master (node 0)." << endl;
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be master.
-        cout << "Waiting for node 1 to be mastering." << endl;
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Now bring master back up.
         sleep(2);
-        cout << "Revive node 0 as master." << endl;
         tester->getBedrockTester(0)->startServer();
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
         // Blow up a slave.
         sleep(2);
-        cout << "Blow up a slave (node 2)." << endl;
         tester->getBedrockTester(2)->stopServer(SIGKILL);
 
         // And bring it back up.
         sleep(2);
-        cout << "Revive node 2 as slave." << endl;
         tester->getBedrockTester(2)->startServer();
         ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
 
-        cout << "Finish up." << endl;
         // We're really done, let everything finish a last time.
         done.store(true);
         for (auto& t : *threads) {
