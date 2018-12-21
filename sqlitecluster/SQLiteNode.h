@@ -1,6 +1,6 @@
 #pragma once
 #include "SQLite.h"
-#include <libstuff/SQueue.h>
+#include <libstuff/SScheduledPriorityQueue.h>
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -223,7 +223,7 @@ class SQLiteNode : public STCPNode {
     int _stateChangeCount;
 
     // Queue of synchronization/replication messages to be handled by workers
-    SQueue<queueableSData> _workerQueue;
+    SScheduledPriorityQueue<queueableSData> _workerQueue;
     atomic<bool> _workersShouldFinish;
 
     list<thread> _workers;

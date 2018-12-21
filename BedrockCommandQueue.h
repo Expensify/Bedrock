@@ -1,9 +1,9 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include <libstuff/SQueue.h>
+#include <libstuff/SScheduledPriorityQueue.h>
 #include "BedrockCommand.h"
 
-class BedrockCommandQueue : public SQueue<BedrockCommand> {
+class BedrockCommandQueue : public SScheduledPriorityQueue<BedrockCommand> {
   public:
     BedrockCommandQueue();
 
@@ -13,10 +13,6 @@ class BedrockCommandQueue : public SQueue<BedrockCommand> {
     // Returns a list of all the method lines for all the requests currently queued. This function exists for state
     // reporting, and is called by BedrockServer when we receive a `Status` command.
     list<string> getRequestMethodLines();
-
-    // Looks for a command with the given ID and removes it.
-    // This will inspect every command in the case the command does not exist.
-    bool removeByID(const string& id);
 
     // Discards all commands scheduled more than msInFuture milliseconds after right now.
     void abandonFutureCommands(int msInFuture);

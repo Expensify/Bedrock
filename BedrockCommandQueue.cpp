@@ -9,7 +9,7 @@ void BedrockCommandQueue::stopTiming(BedrockCommand& item) {
 }
 
 BedrockCommandQueue::BedrockCommandQueue() :
-  SQueue<BedrockCommand>(function<void(BedrockCommand&)>(startTiming), function<void(BedrockCommand&)>(stopTiming))
+  SScheduledPriorityQueue<BedrockCommand>(function<void(BedrockCommand&)>(startTiming), function<void(BedrockCommand&)>(stopTiming))
 { }
 
 list<string> BedrockCommandQueue::getRequestMethodLines() {
@@ -21,31 +21,6 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
         }
     }
     return returnVal;
-}
-
-// This function currently never gets called. It's actually completely untested, so if you ever make any changes that
-// cause it to actually get called, you'll want to do that testing.
-bool BedrockCommandQueue::removeByID(const string& id) {
-    SAUTOLOCK(_queueMutex);
-    bool retVal = false;
-    for (auto queueIt = _commandQueue.begin(); queueIt != _commandQueue.end(); queueIt++) {
-        auto& queue = queueIt->second;
-        auto it = queue.begin();
-        while (it != queue.end()) {
-            if (it->second.first.id == id) {
-                // Found it!
-                queue.erase(it);
-                retVal = true;
-                break;
-            }
-            it++;
-        }
-        if (retVal) {
-            _commandQueue.erase(queueIt);
-            break;
-        }
-    }
-    return retVal;
 }
 
 void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
@@ -91,5 +66,5 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
 
 void BedrockCommandQueue::push(BedrockCommand&& item) {
     uint64_t exectionTime = item.request.calcU64("commandExecuteTime");
-    SQueue<BedrockCommand>::push(move(item), exectionTime);
+    SScheduledPriorityQueue<BedrockCommand>::push(move(item), exectionTime);
 }

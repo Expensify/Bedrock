@@ -2,7 +2,7 @@
 #include <libstuff/libstuff.h>
 
 template<typename T>
-class SQueue {
+class SScheduledPriorityQueue {
   public:
     class timeout_error : exception {
       public:
@@ -11,7 +11,7 @@ class SQueue {
         }
     };
 
-    SQueue(function<void(T& item)> startFunction = [](T& item){}, function<void(T& item)> endFunction = [](T& item){}) : _startFunction(startFunction), _endFunction(endFunction) {};
+    SScheduledPriorityQueue(function<void(T& item)> startFunction = [](T& item){}, function<void(T& item)> endFunction = [](T& item){}) : _startFunction(startFunction), _endFunction(endFunction) {};
 
     // Remove all items from the queue.
     void clear();
@@ -58,19 +58,19 @@ class SQueue {
 };
 
 template<typename T>
-void SQueue<T>::clear()  {
+void SScheduledPriorityQueue<T>::clear()  {
     SAUTOLOCK(_queueMutex);
     _commandQueue.clear();
 }
 
 template<typename T>
-bool SQueue<T>::empty()  {
+bool SScheduledPriorityQueue<T>::empty()  {
     SAUTOLOCK(_queueMutex);
     return _commandQueue.empty();
 }
 
 template<typename T>
-size_t SQueue<T>::size()  {
+size_t SScheduledPriorityQueue<T>::size()  {
     SAUTOLOCK(_queueMutex);
     size_t size = 0;
     for (const auto& queue : _commandQueue) {
@@ -80,13 +80,13 @@ size_t SQueue<T>::size()  {
 }
 
 template<typename T>
-T SQueue<T>::get(uint64_t timeoutUS) {
+T SScheduledPriorityQueue<T>::get(uint64_t timeoutUS) {
     atomic<int> temp;
     return getSynchronized(timeoutUS, temp);
 }
 
 template<typename T>
-T SQueue<T>::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue) {
+T SScheduledPriorityQueue<T>::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDequeue) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -139,7 +139,7 @@ T SQueue<T>::getSynchronized(uint64_t timeoutUS, atomic<int>& incrementBeforeDeq
 }
 
 template<typename T>
-void SQueue<T>::push(T&& item, uint64_t executionTimestampUS) {
+void SScheduledPriorityQueue<T>::push(T&& item, uint64_t executionTimestampUS) {
     SAUTOLOCK(_queueMutex);
     auto& queue = _commandQueue[item.priority];
     _startFunction(item);
@@ -149,7 +149,7 @@ void SQueue<T>::push(T&& item, uint64_t executionTimestampUS) {
 }
 
 template<typename T>
-T SQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
+T SScheduledPriorityQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
     // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).

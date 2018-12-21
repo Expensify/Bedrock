@@ -63,7 +63,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
 }
 
 void BedrockServer::cancelCommand(const string& commandID) {
-    _commandQueue.removeByID(commandID);
+    // TODO: Not implemented.
 }
 
 bool BedrockServer::canStandDown() {
