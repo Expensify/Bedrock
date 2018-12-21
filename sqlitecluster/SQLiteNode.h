@@ -1,19 +1,8 @@
 #pragma once
-#include "SQLite.h"
+#include <sqlitecluster/SQLite.h>
 #include <libstuff/SScheduledPriorityQueue.h>
 class SQLiteCommand;
 class SQLiteServer;
-
-class queueableSData {
-  public:
-    queueableSData(const SData& _data) : data(_data), _timeout(STimeNow() + (1'000'000l * 60l * 60l * 24l)) {}
-    SData data;
-    const int priority = 1;
-    uint64_t timeout() const { return _timeout; }
-
-  private:
-    uint64_t _timeout;
-};
 
 // Distributed, master/slave, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
@@ -223,7 +212,7 @@ class SQLiteNode : public STCPNode {
     int _stateChangeCount;
 
     // Queue of synchronization/replication messages to be handled by workers
-    SScheduledPriorityQueue<queueableSData> _workerQueue;
+    SScheduledPriorityQueue<SData> _workerQueue;
     atomic<bool> _workersShouldFinish;
 
     list<thread> _workers;
@@ -234,5 +223,9 @@ class SQLiteNode : public STCPNode {
     shared_timed_mutex _quorumCommitMutex;
     atomic <uint64_t> _rollbackTransactionID;
 
-    static int performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
+    static int performTransaction(SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
+
+    // Returns a timestamp that's arbitrarily "far away". Used to set the timeout for messages passed to worker
+    // threads, so that they are very unlikely to timeout.
+    static uint64_t _getDistantTimestamp();
 };

@@ -7,8 +7,9 @@ class BedrockCommandQueue : public SScheduledPriorityQueue<BedrockCommand> {
   public:
     BedrockCommandQueue();
 
-    static void startTiming(BedrockCommand& item);
-    static void stopTiming(BedrockCommand& item);
+    // Functions to start and stop timing on the commands when they're inserted/removed from the queue.
+    static void startTiming(BedrockCommand& command);
+    static void stopTiming(BedrockCommand& command);
     
     // Returns a list of all the method lines for all the requests currently queued. This function exists for state
     // reporting, and is called by BedrockServer when we receive a `Status` command.
@@ -18,5 +19,5 @@ class BedrockCommandQueue : public SScheduledPriorityQueue<BedrockCommand> {
     void abandonFutureCommands(int msInFuture);
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
-    void push(BedrockCommand&& item);
+    void push(BedrockCommand&& command);
 };

@@ -27,15 +27,22 @@ class TestServer : public SQLiteServer {
 
 struct SQLiteNodeTest : tpunit::TestFixture {
     SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
+                                           AFTER_CLASS(SQLiteNodeTest::teardown),
                                            TEST(SQLiteNodeTest::testFindSyncPeer)) { }
+
+    // Filename for temp DB.
+    char filename[17] = "br_sync_dbXXXXXX";
+
+    void teardown() {
+        unlink(filename);
+    }
 
     void testFindSyncPeer() {
 
         // This exposes just enough to test the peer selection logic.
-        char* tempFileName = tempnam(0, "sync");
-        SFileSave(tempFileName, "");
-        SQLite db(tempFileName, 1000000, 100, 5000, -1, -1);
-        free(tempFileName);
+        int fd = mkstemp(filename);
+        close(fd);
+        SQLite db(filename, 1000000, 100, 5000, -1, -1);
         TestServer server("");
         SQLiteNode testNode(server, db, "test", "localhost:19998", "", 1, 1000000000, "1.0", 100);
 

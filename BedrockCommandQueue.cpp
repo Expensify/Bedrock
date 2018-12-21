@@ -1,11 +1,11 @@
 #include <BedrockCommandQueue.h>
 
-void BedrockCommandQueue::startTiming(BedrockCommand& item) {
-    item.startTiming(BedrockCommand::QUEUE_WORKER);
+void BedrockCommandQueue::startTiming(BedrockCommand& command) {
+    command.startTiming(BedrockCommand::QUEUE_WORKER);
 }
 
-void BedrockCommandQueue::stopTiming(BedrockCommand& item) {
-    item.stopTiming(BedrockCommand::QUEUE_WORKER);
+void BedrockCommandQueue::stopTiming(BedrockCommand& command) {
+    command.stopTiming(BedrockCommand::QUEUE_WORKER);
 }
 
 BedrockCommandQueue::BedrockCommandQueue() :
@@ -15,9 +15,9 @@ BedrockCommandQueue::BedrockCommandQueue() :
 list<string> BedrockCommandQueue::getRequestMethodLines() {
     list<string> returnVal;
     SAUTOLOCK(_queueMutex);
-    for (auto& queue : _commandQueue) {
+    for (auto& queue : _queue) {
         for (auto& entry : queue.second) {
-            returnVal.push_back(entry.second.first.request.methodLine);
+            returnVal.push_back(entry.second.item.request.methodLine);
         }
     }
     return returnVal;
@@ -33,8 +33,8 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
     // We're going to look at each queue by priority. It's possible we'll end up removing *everything* from multiple
     // queues. In that case, we need to remove the queues themselves, so we keep a list of queues to delete when we're
     // done operating on each of them (so that we don't delete them while iterating over them).
-    list<typename decltype(_commandQueue)::iterator> toDelete;
-    for (typename decltype(_commandQueue)::iterator queueMapIt = _commandQueue.begin(); queueMapIt != _commandQueue.end(); ++queueMapIt) {
+    list<typename decltype(_queue)::iterator> toDelete;
+    for (typename decltype(_queue)::iterator queueMapIt = _queue.begin(); queueMapIt != _queue.end(); ++queueMapIt) {
         // Starting from the first item, skip any items that have a valid scheduled time.
         auto commandMapIt = queueMapIt->second.begin();
         while (commandMapIt != queueMapIt->second.end() && commandMapIt->first < timeLimit) {
@@ -60,11 +60,13 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
 
     // Delete any empty queues.
     for (auto& it : toDelete) {
-        _commandQueue.erase(it);
+        _queue.erase(it);
     }
 }
 
-void BedrockCommandQueue::push(BedrockCommand&& item) {
-    uint64_t exectionTime = item.request.calcU64("commandExecuteTime");
-    SScheduledPriorityQueue<BedrockCommand>::push(move(item), exectionTime);
+void BedrockCommandQueue::push(BedrockCommand&& command) {
+    BedrockCommand::Priority priority = command.priority;
+    uint64_t executionTime = command.request.calcU64("commandExecuteTime");
+    uint64_t timeout = command.timeout();
+    SScheduledPriorityQueue<BedrockCommand>::push(move(command), priority, executionTime, timeout);
 }

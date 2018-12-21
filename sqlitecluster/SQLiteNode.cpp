@@ -1457,7 +1457,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_state != SLAVING) {
             STHROW("not slaving");
         }
-        _workerQueue.push(queueableSData(message));
+        _workerQueue.push(SData(message), 1, STimeNow(), _getDistantTimestamp());
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
                SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the master by a slave when it confirms it was able to begin a transaction and
@@ -2023,7 +2023,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             SINFO("Putting hash in table:" << commitNum << ", " << commit["Hash"]);
             _commitHashes.emplace(make_pair(commitNum, commit["Hash"]));
             _safeCommitTarget.store(commitNum);
-            _workerQueue.push(queueableSData(commit));
+            _workerQueue.push(SData(commit), 1, STimeNow(), _getDistantTimestamp());
         }
 
         // Let the threads know there's work.
@@ -2201,16 +2201,15 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
         SQLite workerDB = node._db.getCopyWithJournalID(journalID);
         while (!node._workersShouldFinish.load()) {
             try {
-                atomic<int> ignore;
-                queueableSData message = node._workerQueue.getSynchronized(1'000'000, ignore);
-                SINFO("TYLER dequeued " << message.data.methodLine);
-                if (SIEquals(message.data.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.data.methodLine, "COMMIT")) {
-                    bool isCommit = SIEquals(message.data.methodLine, "COMMIT");
+                SData message = node._workerQueue.get(1'000'000);
+                SINFO("Dequeued " << message.methodLine);
+                if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT")) {
+                    bool isCommit = SIEquals(message.methodLine, "COMMIT");
 
                     // BEGIN_TRANSACTION (sent during replication) and COMMIT (sent during synchronization) send slightly
                     // different things, so we normalize their inputs here.
-                    uint64_t commitNum = SToUInt64(isCommit ? message.data["CommitIndex"] : message.data["NewCount"]);
-                    string commitHash = isCommit? message.data["Hash"] : message.data["NewHash"];
+                    uint64_t commitNum = SToUInt64(isCommit ? message["CommitIndex"] : message["NewCount"]);
+                    string commitHash = isCommit? message["Hash"] : message["NewHash"];
 
                     int result = performTransaction(node, workerDB, message, commitNum, commitHash, false);
                     if (result != SQLITE_OK) {
@@ -2223,7 +2222,7 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
                         // Everything is fine, get another command.
                     }
                 } else {
-                    SALERT("TYLER UNEXPECTED WORKER QUEUE MESSAGE: " << message.data.methodLine);
+                    SALERT("UNEXPECTED WORKER QUEUE MESSAGE: " << message.methodLine);
                 }
             } catch (const decltype(_workerQueue)::timeout_error& e) {
                 // No commands, that's fine, loop again.
@@ -2231,12 +2230,12 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int journalID) {
         }
     } catch (const out_of_range& e) {
         // There weren't enough journals for this.
-        SWARN("TYLER Not enough journals for replicate thread " << journalID);
+        SWARN("Not enough journals for replicate thread " << journalID);
     }
     SINFO("Replicate thread done, returning.");
 }
 
-int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData& message, uint64_t commitNum, const string& commitHash, bool forceSync) {
+int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync) {
     const string& name = node.name;
     const State& _state = node._state;
     struct {string name;} peerBase;
@@ -2249,11 +2248,11 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     // **FIXME**: What happens if MASTER steps down before sending BEGIN?
     // **FIXME**: What happens if MASTER steps down or disconnects after BEGIN?
     bool success = true;
-    uint64_t masterSentTimestamp = message.data.calcU64("masterSendTime");
+    uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
     uint64_t slaveDequeueTimestamp = STimeNow();
 
-    bool isCommit = SIEquals(message.data.methodLine, "COMMIT");
-    bool async = (SStartsWith(message.data["ID"], "ASYNC_") || isCommit) && !forceSync;
+    bool isCommit = SIEquals(message.methodLine, "COMMIT");
+    bool async = (SStartsWith(message["ID"], "ASYNC_") || isCommit) && !forceSync;
     
     if (!db.getUncommittedHash().empty()) {
         STHROW("already in a transaction");
@@ -2281,7 +2280,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         try {
             SINFO("writeUnmodified");
             // Inside transaction; get ready to back out on error
-            if (!db.writeUnmodified(message.data.content)) {
+            if (!db.writeUnmodified(message.content)) {
                 STHROW("failed to write transaction");
             }
         } catch (const SException& e) {
@@ -2305,7 +2304,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                     // call that.
                     response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
 
-                    response["ID"] = message.data["ID"];
+                    response["ID"] = message["ID"];
                     Peer* masterPeer = node._masterPeer;
                     if (masterPeer) {
                         node._sendToPeer(masterPeer, response);
@@ -2317,7 +2316,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                 }
             } else {
                 PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
-                      << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
+                      << ") for command '" << message["Command"] << "', but a permaslave -- keeping quiet.");
             }
         }
 
@@ -2331,7 +2330,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
         float transitTimeMS = (float)transitTimeUS / 1000.0;
         float applyTimeMS = (float)applyTimeUS / 1000.0;
-        PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+        PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
               << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 
         while (true && !node._workersShouldFinish) {
@@ -2386,11 +2385,10 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                 db.getCommittedTransactions();
 
                 // Log timing info.
-                // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
                 uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
                 uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                                      commitElapsed, rollbackElapsed);
-                SINFO("Committed slave transaction #" << commitNum << " (" << message.data["Hash"] << ") in "
+                SINFO("Committed slave transaction #" << commitNum << " (" << message["Hash"] << ") in "
                       << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
                       << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
                       << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
@@ -2417,7 +2415,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
                 }
 
                 // Otherwise, unlock and wait for the required conditions.
-                SINFO("TYLER Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
+                SINFO("Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
                 node._notifyCommitters.wait(lock);
             }
         }
@@ -2427,4 +2425,9 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     // roll back.
     db.rollback();
     return SQLITE_OK;
+}
+
+uint64_t SQLiteNode::_getDistantTimestamp() {
+    // One day in the future. If anything takes this long to execute, everything is broken anyway.
+    return STimeNow() + (1'000'000l * 60l * 60l * 24l);
 }
