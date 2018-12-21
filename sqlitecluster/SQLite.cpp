@@ -390,6 +390,10 @@ void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
 }
 
+bool SQLite::isCheckpointing() {
+    return (_sharedData->_checkpointThreadBusy.load() > 0);
+}
+
 bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());

@@ -2258,165 +2258,168 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
     if (!db.getUncommittedHash().empty()) {
         STHROW("already in a transaction");
     }
-    // We block for the whole transaction for synchronous commits.
-    SINFO("Waiting on checkpoint");
-    //db.waitForCheckpoint(); // TODO: Why doesn't this work here?
-    // Someone else can start a checkpoint immediately after we check. This can block other transactions from
-    // completing. 
-    // In turn, that may block us from ever committing our own transaction.
-    // Because we retry indefinitely, the checkpoint might never happen, as it waits for us to finish.
-    // We need to not only wait for the checkpoint, but block the checkpoint from starting.
-    unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
-    if (async) {
-        SINFO("beginConcurrentTransaction");
-        if (!db.beginConcurrentTransaction()) {
-            STHROW("failed to begin concurrent transaction");
+
+    // This is in a loop to deal with the checkpoint issue.
+    while (true) {
+        // We block for the whole transaction for synchronous commits.
+        SINFO("Waiting on checkpoint");
+        db.waitForCheckpoint();
+        unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
+        if (async) {
+            SINFO("beginConcurrentTransaction");
+            if (!db.beginConcurrentTransaction()) {
+                STHROW("failed to begin concurrent transaction");
+            }
+        } else {
+            SINFO("quorumLockUnique");
+            quorumLockUnique.lock();
+            SINFO("beginTransaction");
+            if (!db.beginTransaction()) {
+                STHROW("failed to begin transaction");
+            }
         }
-    } else {
-        SINFO("quorumLockUnique");
-        quorumLockUnique.lock();
-        SINFO("beginTransaction");
-        if (!db.beginTransaction()) {
-            STHROW("failed to begin transaction");
-        }
-    }
-    try {
-        SINFO("writeUnmodified");
-        // Inside transaction; get ready to back out on error
-        if (!db.writeUnmodified(message.data.content)) {
-            STHROW("failed to write transaction");
+        try {
+            SINFO("writeUnmodified");
+            // Inside transaction; get ready to back out on error
+            if (!db.writeUnmodified(message.data.content)) {
+                STHROW("failed to write transaction");
+            }
+        } catch (const SException& e) {
+            // Something caused a commit failure.
+            success = false;
+            db.rollback();
         }
 
-    } catch (const SException& e) {
-        // Something caused a commit failure.
-        success = false;
-        db.rollback();
-    }
+        // Are we participating in quorum? If this is a COMMIT message, we aren't.
+        if (!isCommit) {
+            if (node._priority) {
+                // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
+                string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
+                if (!async) {
+                    // Not a permaslave, approve the transaction
+                    PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << commitHash << ").");
+                    SData response(verb);
+                    response["NewCount"] = SToStr(db.getCommitCount() + 1);
 
-    // Are we participating in quorum? If this is a COMMIT message, we aren't.
-    if (!isCommit) {
-        if (node._priority) {
-            // If the ID is /ASYNC_\d+/, no need to respond, master will ignore it anyway.
-            string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-            if (!async) {
-                // Not a permaslave, approve the transaction
-                PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << commitHash << ").");
-                SData response(verb);
-                response["NewCount"] = SToStr(db.getCommitCount() + 1);
+                    // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
+                    // call that.
+                    response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
 
-                // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
-                // call that.
-                response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
-
-                response["ID"] = message.data["ID"];
-                Peer* masterPeer = node._masterPeer;
-                if (masterPeer) {
-                    node._sendToPeer(masterPeer, response);
+                    response["ID"] = message.data["ID"];
+                    Peer* masterPeer = node._masterPeer;
+                    if (masterPeer) {
+                        node._sendToPeer(masterPeer, response);
+                    } else {
+                        SWARN("Lost master while committing, can't send response.");
+                    }
                 } else {
-                    SWARN("Lost master while committing, can't send response.");
+                    PINFO("Skipping " << verb << " for ASYNC command.");
                 }
             } else {
-                PINFO("Skipping " << verb << " for ASYNC command.");
+                PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
+                      << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
             }
-        } else {
-            PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
-                  << ") for command '" << message.data["Command"] << "', but a permaslave -- keeping quiet.");
         }
-    }
 
-    if (!success) {
-        SALERT("Distributed transaction *failed*, won't try to commit.");
-        db.rollback();
-        return SQLITE_ERROR;
-    }
-
-    uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
-    uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
-    float transitTimeMS = (float)transitTimeUS / 1000.0;
-    float applyTimeMS = (float)applyTimeUS / 1000.0;
-    PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
-          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
-
-    while (true && !node._workersShouldFinish) {
-        // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
-        // to the end and wait for the required state to commit.
-        unique_lock<mutex> lock(node._notifyCommittersMutex);
-
-        // If we received a notification that we should roll this transaction back, do it now.
-        if (node._rollbackTransactionID == commitNum) {
-            SINFO("Rolling back transaction " << commitNum);
+        if (!success) {
+            SALERT("Distributed transaction *failed*, won't try to commit.");
             db.rollback();
-            node._rollbackTransactionID.store(UINT64_MAX);
-            return SQLITE_OK;
+            return SQLITE_ERROR;
         }
 
-        if (node._safeCommitTarget.load() >= commitNum && db.getCommitCount() == commitNum - 1) {
+        uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
+        uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
+        float transitTimeMS = (float)transitTimeUS / 1000.0;
+        float applyTimeMS = (float)applyTimeUS / 1000.0;
+        PINFO("Replicated transaction " << message.data.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+              << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 
-            // If we're in synchronous mode, we'll have already locked above and don't need to do this. However, if
-            // we're in async mode, we need to grab the shared lock now just in case someone else is doing a
-            // synchronous operation. This will keep us from writing over their commit (because we won't be able to
-            // acquire this until they finish).
-            shared_lock<shared_timed_mutex> quorumLockShared(node._quorumCommitMutex, defer_lock);
-            if (async) {
-                quorumLockShared.lock();
-            }
-            if (!db.prepare()) {
-                STHROW("failed to prepare transaction");
-            }
+        while (true && !node._workersShouldFinish) {
 
-            SINFO("Can commit " << commitNum << ", safe target is:" << node._safeCommitTarget << ", db.getCommitCount() is: " << db.getCommitCount() << ". Committing.");
-            if (db.getUncommittedHash().empty()) {
-                STHROW("no outstanding transaction");
-            }
-            if (commitNum != db.getCommitCount() + 1) {
-                STHROW("commit count mismatch. Expected: " + to_string(commitNum) + ", but would actually be: "
-                      + to_string(db.getCommitCount() + 1));
-            }
-            auto it = node._commitHashes.find(commitNum);
-            if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
-                SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
-                STHROW("hash mismatch");
-            }
+            // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
+            // to the end and wait for the required state to commit.
+            unique_lock<mutex> lock(node._notifyCommittersMutex);
 
-            SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-            int result = db.commit();
-            if (result != SQLITE_OK) {
+            // If we received a notification that we should roll this transaction back, do it now.
+            if (node._rollbackTransactionID == commitNum) {
+                SINFO("Rolling back transaction " << commitNum);
                 db.rollback();
-                return result;
+                node._rollbackTransactionID.store(UINT64_MAX);
+                return SQLITE_OK;
             }
 
-            // Clear the list of committed transactions. We're slaving, so we don't need to send these.
-            db.getCommittedTransactions();
+            if (node._safeCommitTarget.load() >= commitNum && db.getCommitCount() == commitNum - 1) {
+                // If we're in synchronous mode, we'll have already locked above and don't need to do this. However, if
+                // we're in async mode, we need to grab the shared lock now just in case someone else is doing a
+                // synchronous operation. This will keep us from writing over their commit (because we won't be able to
+                // acquire this until they finish).
+                shared_lock<shared_timed_mutex> quorumLockShared(node._quorumCommitMutex, defer_lock);
+                if (async) {
+                    quorumLockShared.lock();
+                }
+                if (!db.prepare()) {
+                    STHROW("failed to prepare transaction");
+                }
 
-            // Log timing info.
-            // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
-            uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-            uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
-                                                                 commitElapsed, rollbackElapsed);
-            SINFO("Committed slave transaction #" << commitNum << " (" << message.data["Hash"] << ") in "
-                  << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
-                  << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
-                  << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
-                  << rollbackElapsed / 1000 << "ms)");
+                SINFO("Can commit " << commitNum << ", safe target is:" << node._safeCommitTarget << ", db.getCommitCount() is: " << db.getCommitCount() << ". Committing.");
+                if (db.getUncommittedHash().empty()) {
+                    STHROW("no outstanding transaction");
+                }
+                if (commitNum != db.getCommitCount() + 1) {
+                    STHROW("commit count mismatch. Expected: " + to_string(commitNum) + ", but would actually be: "
+                          + to_string(db.getCommitCount() + 1));
+                }
+                auto it = node._commitHashes.find(commitNum);
+                if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
+                    SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
+                    STHROW("hash mismatch");
+                }
 
-            // We're done with this hash.
-            node._commitHashes.erase(it);
+                SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+                int result = db.commit();
+                if (result != SQLITE_OK) {
+                    db.rollback();
+                    return result;
+                }
 
-            // Notify anyone waiting that the state has changed.
-            lock.unlock();
-            node._notifyCommitters.notify_all();
+                // Clear the list of committed transactions. We're slaving, so we don't need to send these.
+                db.getCommittedTransactions();
 
-            SINFO("Commit complete.");
+                // Log timing info.
+                // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
+                uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+                uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
+                                                                     commitElapsed, rollbackElapsed);
+                SINFO("Committed slave transaction #" << commitNum << " (" << message.data["Hash"] << ") in "
+                      << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+                      << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+                      << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+                      << rollbackElapsed / 1000 << "ms)");
 
-            // We're done.
-            return SQLITE_OK;
-        } else {
+                // We're done with this hash.
+                node._commitHashes.erase(it);
 
-            SINFO("_safeCommitTarget: " << node._safeCommitTarget.load() << ", commitNum: " << commitNum << ", db.getCommitCount(): " << db.getCommitCount());
+                // Notify anyone waiting that the state has changed.
+                lock.unlock();
+                node._notifyCommitters.notify_all();
 
-            // Otherwise, unlock and wait for the required conditions.
-            SINFO("TYLER Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
-            node._notifyCommitters.wait(lock);
+                SINFO("Commit complete.");
+
+                // We're done.
+                return SQLITE_OK;
+            } else {
+                // If we're blocked from committing, and the checkpoint thread has started, break out of the loop and
+                // begin again from the top.
+                if (db.isCheckpointing()) {
+                    SINFO("Checkpoint thread is running, aborting this commit, will retry.");
+                    db.rollback();
+                    break;
+                }
+
+                // Otherwise, unlock and wait for the required conditions.
+                SINFO("TYLER Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
+                node._notifyCommitters.wait(lock);
+            }
         }
     }
 
