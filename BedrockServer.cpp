@@ -627,8 +627,6 @@ void BedrockServer::sync(SData& args,
         SWARN("Sync thread shut down with " << server._commandQueue.size() << " queued commands. Commands were: "
               << SComposeList(server._commandQueue.getRequestMethodLines()) << ". Clearing.");
         server._commandQueue.clear();
-    } else {
-        SINFO("Sync thread shut down with no queued commands.");
     }
 
     // Same for the blocking queue.
@@ -636,18 +634,14 @@ void BedrockServer::sync(SData& args,
         SWARN("Sync thread shut down with " << server._blockingCommandQueue.size() << " blocking queued commands. Commands were: "
               << SComposeList(server._blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         server._blockingCommandQueue.clear();
-    } else {
-        SINFO("Sync thread shut down with no queued blocking commands.");
     }
 
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     server._syncNode = nullptr;
-    SINFO("Sync node released.");
 
     // We're really done, store our flag so main() can be aware.
     server._syncThreadComplete.store(true);
-    SINFO("Sync thread returning.");
 }
 
 void BedrockServer::worker(SData& args,
@@ -846,7 +840,6 @@ void BedrockServer::worker(SData& args,
             int retry = server._maxConflictRetries.load();
             while (retry) {
                 // Block if a checkpoint is happening so we don't interrupt it.
-                SINFO("Waiting on checkpoint");
                 db.waitForCheckpoint();
 
                 // If we're going to force a blocking commit, we lock now.
@@ -1262,8 +1255,6 @@ bool BedrockServer::shutdownComplete() {
               << "Commands queued: " << commandCounts << ". "
               << "Blocking commands queued: " << blockingCommandCounts << ". "
               << "Killing non-gracefully.");
-
-        return true;
     }
 
     // We wait until the sync thread returns.

@@ -148,7 +148,6 @@ class SQLite {
 
     // Gets any error message associated with the previous query
     string getLastError() { return sqlite3_errmsg(_db); }
-    int getLastExtendedErrorCode() { return sqlite3_extended_errcode(_db); }
 
     // Returns true if we're inside an uncommitted transaction.
     bool insideTransaction() { return _insideTransaction; }
