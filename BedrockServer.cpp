@@ -846,6 +846,7 @@ void BedrockServer::worker(SData& args,
             int retry = server._maxConflictRetries.load();
             while (retry) {
                 // Block if a checkpoint is happening so we don't interrupt it.
+                SINFO("Waiting on checkpoint");
                 db.waitForCheckpoint();
 
                 // If we're going to force a blocking commit, we lock now.

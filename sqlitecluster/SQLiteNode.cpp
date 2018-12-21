@@ -2259,19 +2259,29 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
         STHROW("already in a transaction");
     }
     // We block for the whole transaction for synchronous commits.
-    db.waitForCheckpoint();
+    SINFO("Waiting on checkpoint");
+    //db.waitForCheckpoint(); // TODO: Why doesn't this work here?
+    // Someone else can start a checkpoint immediately after we check. This can block other transactions from
+    // completing. 
+    // In turn, that may block us from ever committing our own transaction.
+    // Because we retry indefinitely, the checkpoint might never happen, as it waits for us to finish.
+    // We need to not only wait for the checkpoint, but block the checkpoint from starting.
     unique_lock<shared_timed_mutex> quorumLockUnique(node._quorumCommitMutex, defer_lock);
     if (async) {
+        SINFO("beginConcurrentTransaction");
         if (!db.beginConcurrentTransaction()) {
             STHROW("failed to begin concurrent transaction");
         }
     } else {
+        SINFO("quorumLockUnique");
         quorumLockUnique.lock();
+        SINFO("beginTransaction");
         if (!db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
     }
     try {
+        SINFO("writeUnmodified");
         // Inside transaction; get ready to back out on error
         if (!db.writeUnmodified(message.data.content)) {
             STHROW("failed to write transaction");
@@ -2316,6 +2326,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
 
     if (!success) {
         SALERT("Distributed transaction *failed*, won't try to commit.");
+        db.rollback();
         return SQLITE_ERROR;
     }
 
@@ -2382,7 +2393,7 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
             uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
             uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                                  commitElapsed, rollbackElapsed);
-            SINFO("Committed slave transaction #" << message.data["CommitCount"] << " (" << message.data["Hash"] << ") in "
+            SINFO("Committed slave transaction #" << commitNum << " (" << message.data["Hash"] << ") in "
                   << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
                   << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
                   << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
@@ -2400,6 +2411,9 @@ int SQLiteNode::performTransaction(SQLiteNode& node, SQLite& db, queueableSData&
             // We're done.
             return SQLITE_OK;
         } else {
+
+            SINFO("_safeCommitTarget: " << node._safeCommitTarget.load() << ", commitNum: " << commitNum << ", db.getCommitCount(): " << db.getCommitCount());
+
             // Otherwise, unlock and wait for the required conditions.
             SINFO("TYLER Waiting for commit " << commitNum << ", at " << node._safeCommitTarget.load());
             node._notifyCommitters.wait(lock);
