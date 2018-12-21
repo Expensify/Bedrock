@@ -50,7 +50,7 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
-               int priority, uint64_t firstTimeout, const string& version, int quorumCheckpointSeconds = 0);
+               int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.
@@ -173,9 +173,6 @@ class SQLiteNode : public STCPNode {
     // are performed outside of SQLiteNode, but we'll catch up the next time we do a commit.
     int _quorumCheckpointSeconds;
 
-    // The timestamp of the (end of) the last quorum commit.
-    uint64_t _lastQuorumTime;
-
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
@@ -200,8 +197,8 @@ class SQLiteNode : public STCPNode {
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
 
-    // A worker replication thread function.
-    static void replicateWorker(SQLiteNode& node, int journalID);
+    // The main function for worker threads, which handle replication and syncronization.
+    static void replicateWorker(SQLiteNode& node, int workerID);
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
@@ -211,21 +208,47 @@ class SQLiteNode : public STCPNode {
     // and not stale reponses to old changes.
     int _stateChangeCount;
 
-    // Queue of synchronization/replication messages to be handled by workers
+    // Queue of messages for workers to handle (currently, BEGIN_TRANSACTION and COMMIT_TRANSACTION messages).
     SScheduledPriorityQueue<SData> _workerQueue;
+
+    // This will be set to true at shurdown to indicate to worker threads that they should exit.
     atomic<bool> _workersShouldFinish;
 
-    list<thread> _workers;
+    // The list of worker threads.
+    list<thread> _workerThreads;
+
+    // Whenever we receive a new COMMIT message from master, we update this counter to indicate the highest commit that
+    // master thinks we can safely make (these always arrive from master in-order). Our worker threads can complete
+    // their commits as long as they don't exceed this value.
     atomic<uint64_t> _safeCommitTarget;
-    condition_variable _notifyCommitters;
+
+    // Mutex and matching condition variable for notifying workers when a new message has been received, and they
+    // might be able to do more work.
     mutex _notifyCommittersMutex;
+    condition_variable _notifyCommitters;
+
+    // These store state for some of the data sent by master in COMMIT_TRANSACTION and ROLLBACK_TRANSACTION messages.
+    // We save the expected hash for each commit in here, so that when workers finish transactions they can compare
+    // against it (we don't send actual COMMIT_TRANSACTION messages to workers, because there's no easy way to tell
+    // which worker should get it. Instead, all workers look at _safeCommitTarget to tell when they can commit). We
+    // also store a single `rollback` commit ID, in the case master sends a `ROLLBACK_TRANSACTION` message. Since this
+    // can only happen for a QUORUM commit, and there can only be one quorum commit at a time, we store a single value.
     map<uint64_t, string> _commitHashes;
-    shared_timed_mutex _quorumCommitMutex;
     atomic <uint64_t> _rollbackTransactionID;
 
-    static int performTransaction(SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
+    // This mutex blocks new transactions from starting so that a particular transaction can be done by itself. This is
+    // used for QUORUM transactions, but also any transaction that failed the first time. Typically, these are
+    // transactions that conflicted on the first try, but can also be specialized transactions, like ones that update
+    // the DB schema (which can't be done in `beginConcurrentTransaction`). 
+    shared_timed_mutex _nonConcurrentTransactionMutex;
+
+    // Pointer to an array of atomic ints.
+    atomic<int>* _workerNotificationArray;
+
+    static int performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
 
     // Returns a timestamp that's arbitrarily "far away". Used to set the timeout for messages passed to worker
     // threads, so that they are very unlikely to timeout.
     static uint64_t _getDistantTimestamp();
+
 };
