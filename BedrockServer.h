@@ -461,5 +461,4 @@ class BedrockServer : public SQLiteServer {
 
     // Timestamp for the last time we promoted a command to QUORUM.
     atomic<uint64_t> _lastQuorumCommandTime;
-
 };

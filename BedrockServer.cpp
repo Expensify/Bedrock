@@ -71,7 +71,7 @@ bool BedrockServer::canStandDown() {
     int count = _commandsInProgress.load();
     int queueSize = _commandQueue.size();
     int blockingQueueSize = _blockingCommandQueue.size();
-    if (count || queueSize || blockingQueueSize) {
+    if (/*count ||*/ queueSize || blockingQueueSize) {
         SINFO("Can't stand down with " << count << " commands in progress, " << queueSize << " commands queued, and "
               << blockingQueueSize << " blocking commands queued.");
         return false;
@@ -640,7 +640,9 @@ void BedrockServer::sync(SData& args,
 
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
+    SINFO("Shutting down sync node.");
     server._syncNode = nullptr;
+    SINFO("Sync node done.");
 
     // We're really done, store our flag so main() can be aware.
     server._syncThreadComplete.store(true);
@@ -813,6 +815,8 @@ void BedrockServer::worker(SData& args,
                 SASSERT(command.initiatingClientID);
                 if (command.initiatingClientID > 0) {
                     server._reply(command);
+                } else {
+                    server._commandsInProgress--;
                 }
 
                 // This command is done, move on to the next one.
@@ -860,6 +864,7 @@ void BedrockServer::worker(SData& args,
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
                 if (threadId == 0) {
                     uint64_t preLockTime = STimeNow();
+                    SINFO("Getting blocking lock.");
                     blockingLock.lock();
                     SINFO("_syncThreadCommitMutex (unique) acquired in worker in " << fixed << setprecision(2)
                           << ((STimeNow() - preLockTime)/1000) << "ms.");
@@ -1013,6 +1018,8 @@ void BedrockServer::worker(SData& args,
             if  (server._shutdownState.load() == DONE) {
                 SINFO("No commands found in queue and DONE.");
                 return;
+            } else {
+                SINFO("No commands found in queue and " << server._shutdownState.load());
             }
         }
 

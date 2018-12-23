@@ -63,10 +63,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
 
     // Spin up a worker pool. 3 is an arbitrary number, because 4 seemed like enough threads to test with.
     int workerCount = 4;
-    _workerNotificationArray = new atomic<int>[workerCount];
-    for (int i = 0; i < workerCount; i++) {
-        _workerNotificationArray[i].store(0);
-    }
     for (int i = 0; i < workerCount; i++) {
         _workerThreads.emplace_back(replicateWorker, ref(*this), i);
     }
@@ -104,8 +100,6 @@ SQLiteNode::~SQLiteNode() {
     SINFO("All worker threads joined.");
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
-
-    delete[] _workerNotificationArray;
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -1714,14 +1708,13 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // Clear the worker queue and tell all the workers to abandon.
         {
             lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
-            _workerQueue.clear();
-            _safeCommitTarget.store(0);
-            _commitHashes.clear();
-            _rollbackTransactionID.store(0);
-            for (size_t i = 0; i < _workerThreads.size(); i++) {
-                _workerNotificationArray[i]++;
-            }
+            //_workerQueue.clear();
+            //_safeCommitTarget.store(0);
+            //_commitHashes.clear();
+            //_rollbackTransactionID.store(0); // Maybe we can jsut use this 
+            SINFO("Master disconnected. Notifying workers");
         }
+        _notifyCommitters.notify_all();
 
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
@@ -2213,18 +2206,20 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int workerID) {
                 SData message = node._workerQueue.get(1'000'000);
                 SINFO("Dequeued " << message.methodLine);
                 if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT")) {
-                    bool isCommit = SIEquals(message.methodLine, "COMMIT");
+                    //bool isCommit = SIEquals(message.methodLine, "COMMIT");
 
                     // BEGIN_TRANSACTION (sent during replication) and COMMIT (sent during synchronization) send slightly
                     // different things, so we normalize their inputs here.
-                    uint64_t commitNum = SToUInt64(isCommit ? message["CommitIndex"] : message["NewCount"]);
-                    string commitHash = isCommit? message["Hash"] : message["NewHash"];
+                    //uint64_t commitNum = SToUInt64(isCommit ? message["CommitIndex"] : message["NewCount"]);
+                    //string commitHash = isCommit? message["Hash"] : message["NewHash"];
 
-                    int result = performTransaction(workerID, node, workerDB, message, commitNum, commitHash, false);
-                    if (result != SQLITE_OK) {
+                    //int result = performTransaction(workerID, node, workerDB, message, commitNum, commitHash, false);
+                    bool complete = performTransaction(workerID, node, workerDB, message, true);
+                    if (/*result != SQLITE_OK*/ !complete) {
                         SINFO("Transaction failed (conflict or schema change), retrying in sync mode.");
-                        int result = performTransaction(workerID, node, workerDB, message, commitNum, commitHash, true);
-                        if (result != SQLITE_OK) {
+                        //result = performTransaction(workerID, node, workerDB, message, commitNum, commitHash, true);
+                        complete = performTransaction(workerID, node, workerDB, message, false);
+                        if (/*result != SQLITE_OK*/ !complete) {
                             SALERT("Transaction failed twice, shouldn't be possible.");
                         }
                     }  else {
@@ -2244,6 +2239,247 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int workerID) {
     SINFO("Replicate thread done, returning.");
 }
 
+// Ok, let's do performTransaction again. This time, nothing can block in a loop. How do we accomplish this?
+// For async transactions, we don't begin them until we've already received the COMMIT for them. This doesn't block
+// anything from happening in parallel, as master will send a continuous stream of these, regardless of whether we've
+// written them or not.
+//
+// For synchronous commands (i.e., quorum commands), we can't wait until we've received a commit, for these, because we
+// won't receive one until we've acknowledged that the write looks OK. This is the hardest case here. Let's come back
+// to it.
+//
+// There are also synchronous commands that we *will* have a COMMIT for, these being commands that were retried because
+// of a conflict. These are straightforward.
+//
+// And then there's the issue of checkpointing. Checkpointing needs to wait until everyone else (including quorum
+// commits) has finished. 
+//
+// Finally, there's the issue of an aborted quorum commit (in the case that master crashes, for instance). 
+//
+// When the checkpointing thread wants to checkpoint, it should raise a flag. This will prevent any new transactions
+// from starting. Existing transactions will finish, and then checkpointing will start. This should be fairly
+// straightforward.
+//
+// ASYNC commands do nothing special. They verify that there's a commit for them already before starting, otherwise
+// they wait for the condition variable to notify them.
+//
+// *Important note* If commits aren't dequeued in the order received, there's no guarantee that things ever finish.
+// Imagine that we queue commits 1,2,3,4, and 5, and have 4 threads processing them. If 2, 3, 4, and 5 are dequeued
+// first, 1 might never run as all the other threads are blocked waiting on it.
+//
+// Ok, so everyone waits if the checkpoint flag is set.
+
+
+bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, bool concurrent) {
+    const string& name = node.name;
+    const State& _state = node._state;
+    struct {string name;} peerBase;
+    auto peer = &peerBase;
+    peerBase.name = "peerName"; // TODO: Fix this.
+
+    Peer* startingMaster = node._masterPeer;
+
+    uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
+    uint64_t slaveDequeueTimestamp = STimeNow();
+
+    // Determine of this is a QUORUM transaction, and it's commit number and hash.
+    bool isCommit = SIEquals(message.methodLine, "COMMIT");
+    bool useQuorum = !((SStartsWith(message["ID"], "ASYNC_") || isCommit));
+    uint64_t commitNum = SToUInt64(isCommit ? message["CommitIndex"] : message["NewCount"]);
+    string commitHash = isCommit? message["Hash"] : message["NewHash"];
+
+    // Quorum commits are never concurrent.
+    if (useQuorum) {
+        concurrent = false;
+    } else {
+        SINFO("Starting non-concurrent commit in worker.");
+    }
+
+    // First wait until we know we're ready to go.
+    while (!node._workersShouldFinish) {
+        // Lock and check the required condition for our commit type.
+        unique_lock<mutex> lock(node._notifyCommittersMutex);
+        if (useQuorum) {
+            if (db.getCommitCount() == commitNum - 1) {
+                break;
+            } else {
+                SINFO("Waiting for " << db.getCommitCount() << " to equal " << (commitNum - 1) << " in QUORUM commit.");
+            }
+        } else {
+            // For this non-quorum transaction, we can start as soon as we're past the required target.
+            if (node._safeCommitTarget.load() >= commitNum) {
+                break;
+            } else {
+                SINFO("Waiting for " << node._safeCommitTarget.load() << " to equal " << commitNum << " in non-QUROUM commit.");
+            }
+        }
+        // If we didn't break because our conditions are met, then go ahead and loop again.
+        node._notifyCommitters.wait(lock);
+    }
+
+    // If we're supposed to exit, do so without starting the transaction.
+    if (node._workersShouldFinish) {
+        SINFO("Workers told to exit, returning TRUE without starting transaction.");
+        return true;
+    }
+
+    // Now we know we're allowed to commit this, let's wait for the checkpointer to be done.
+    db.waitForCheckpoint(); // TODO: This should hold a shared lock until our transaction completes.
+
+    // Ok, now we're in a good position to start our transaction.
+    // We'll lock one of the two following objects, depending on our transaction type.
+    unique_lock<shared_timed_mutex> quorumLockUnique(node._nonConcurrentTransactionMutex, defer_lock);
+    shared_lock<shared_timed_mutex> quorumLockShared(node._nonConcurrentTransactionMutex, defer_lock);
+
+    // If we're getting a unique lock, we get it early, so that no other commits can happen during our transaction.
+    // However, if we're getting a shared lock, we don't need it except to block committing during an exclusive
+    // transaction, so we defer grabbing it until just before we commit.
+    if (concurrent) {
+        if (!db.beginConcurrentTransaction()) {
+            STHROW("failed to begin concurrent transaction");
+        }
+    } else {
+        quorumLockUnique.lock();
+        if (!db.beginTransaction()) {
+            STHROW("failed to begin transaction");
+        }
+    }
+
+    // Ok, we've started, now we have to finish.
+    bool success = true;
+    try {
+        SINFO("writeUnmodified");
+        // Inside transaction; get ready to back out on error
+        if (!db.writeUnmodified(message.content)) {
+            STHROW("failed to write transaction");
+        }
+    } catch (const SException& e) {
+        success = false;
+        db.rollback();
+    }
+
+    // If this wasn't a quorum commit, and the write failed, we can back out now. If we tried to do this with
+    // `concurrent` set, we'll try again without it, and this will resolve failures for things like schemas changing.
+    if (!useQuorum && !success) {
+        SINFO("Non-QUORUM command failed in write. concurrent? " << (concurrent ? "yes" : "no"));
+        return false;
+    }
+
+    // If we're participating in quorum, (and we have a priority, indicating we're not a permaslave), we need to tell
+    // master what our result was.
+    if (useQuorum && node._priority) {
+        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
+        PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << commitHash << ").");
+        SData response(verb);
+        response["NewCount"] = SToStr(db.getCommitCount() + 1);
+        // The "success" case here duplicates part of "SQLite::prepare" because we need this data before we can
+        // call that.
+        response["NewHash"] = success ? SToHex(SHashSHA1(db.getCommittedHash() + db.getUncommittedQuery())) : commitHash;
+        response["ID"] = message["ID"];
+        Peer* masterPeer = node._masterPeer;
+        if (masterPeer) {
+            node._sendToPeer(masterPeer, response);
+        } else {
+            SWARN("Lost master while committing, can't send response.");
+        }
+        SINFO("Sent " << verb << " for QUORUM transaction.");
+    }
+
+    // Logging.
+    uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
+    uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
+    float transitTimeMS = (float)transitTimeUS / 1000.0;
+    float applyTimeMS = (float)applyTimeUS / 1000.0;
+    PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
+          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+
+    // Now we wait. For quorum commands, we wait for a server response (or disconnection).
+    // For non-quorum commands, we wait for all previous commits to succeed, so that we know we commit in order.
+    while (!node._workersShouldFinish) {
+        if (useQuorum) {
+            SINFO("Waiting for " << db.getCommitCount() << " to equal " << (commitNum - 1) << " and " << node._safeCommitTarget.load() << " to equal " << commitNum << " in QUORUM commit.");
+        } else {
+            SINFO("Waiting for " << db.getCommitCount() << " to equal " << (commitNum - 1) << " and " << node._safeCommitTarget.load() << " to equal " << commitNum << " in non-QUORUM commit.");
+        }
+        // Lock and check the required condition for our commit type.
+        unique_lock<mutex> lock(node._notifyCommittersMutex);
+
+        // TODO: Was the transaction rolled back? This never happens so add in a bit.
+        //
+        // Did master change or disconnect? If so, we'll give up on any quorum transaction we were working on. Any
+        // non-quorum transaction 
+        if (!startingMaster || (startingMaster != node._masterPeer)) {
+            if (useQuorum) {
+                SWARN("Master changed mid-QUORUM transaction. Aborting.");
+                db.rollback();
+                return true;
+            }
+        }
+
+        // If we haven't hit any exception cases, and these conditions are true, we can commit.
+        if ((db.getCommitCount() == commitNum - 1) && (node._safeCommitTarget.load() >= commitNum)) {
+            break;
+        }
+        // If we didn't break because our conditions are met, then go ahead and loop again.
+        node._notifyCommitters.wait(lock);
+    }
+
+    // If we're supposed to exit, do so without starting the transaction.
+    if (node._workersShouldFinish) {
+        SINFO("Workers told to exit, returning TRUE without committing transaction.");
+        db.rollback();
+        return true;
+    }
+
+    // If this is a concurrent transaction, we grab our shared lock now, to prevent committing while a non-concurrent
+    // transaction is busy. TODO: I don't even think this is required.
+    if (concurrent) {
+        quorumLockShared.lock();
+    }
+
+    // Now we know we can commit.
+    if (!db.prepare()) {
+        STHROW("failed to prepare transaction");
+    }
+    auto it = node._commitHashes.find(commitNum);
+    if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
+        SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
+        STHROW("hash mismatch");
+    }
+
+    SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+    int result = db.commit();
+    if (result != SQLITE_OK) {
+        db.rollback();
+        return result;
+    }
+
+    // Clear the list of committed transactions. We're slaving, so we don't need to send these.
+    db.getCommittedTransactions();
+
+    // Log timing info.
+    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+    uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
+                                                         commitElapsed, rollbackElapsed);
+    SINFO("Committed slave transaction #" << commitNum << " (" << message["Hash"] << ") in "
+          << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+          << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+          << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+          << rollbackElapsed / 1000 << "ms)");
+
+    // We're done with this hash.
+    node._commitHashes.erase(it);
+
+    // Notify anyone waiting that the state has changed.
+    node._notifyCommitters.notify_all();
+
+    SINFO("Commit complete.");
+
+    // We're done.
+    return true;
+}
+
+/*
 int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync) {
     const string& name = node.name;
     const State& _state = node._state;
@@ -2267,13 +2503,10 @@ int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, S
         STHROW("already in a transaction");
     }
 
+
+
     // This is in a loop to deal with the checkpoint issue.
     while (true) {
-        if (node._workerNotificationArray[workerID] > 0) {
-            SWARN("Master disappeared pre-transaction, abandoning transaction.");
-            node._workerNotificationArray[workerID]--;
-            return SQLITE_OK;
-        }
         // We block for the whole transaction for synchronous commits.
         db.waitForCheckpoint();
         unique_lock<shared_timed_mutex> quorumLockUnique(node._nonConcurrentTransactionMutex, defer_lock);
@@ -2296,9 +2529,6 @@ int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, S
                 // Hacky to just sleep while we wait for the other threads to deliver/commit whatever we need, but at
                 // least it only blocks this one thread. Only wait for 5ms.
 
-                if (node._masterPeer == nullptr) {
-                    SWARN("Master disappeared while waiting on QUORUM commit, aborting.");
-                }
                 usleep(5'000);
                 continue;
             }
@@ -2366,10 +2596,12 @@ int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, S
         while (true && !node._workersShouldFinish) {
 
             if (node._workerNotificationArray[workerID] > 0) {
-                SWARN("Master disappeared mid-transaction, rolling back.");
                 node._workerNotificationArray[workerID]--;
-                db.rollback();
-                return SQLITE_OK;
+                if (commitNum > node._safeCommitTarget.load()) {
+                    db.rollback();
+                    SWARN("Master disappeared mid-transaction, abandoning transaction " << commitNum << ", safe through: " << node._safeCommitTarget.load() << ".");
+                    return SQLITE_OK;
+                }
             }
 
             // Lock and check if we can commit. If we *can* commit, we will (while holding the lock). Otherwise, we'll skip
@@ -2389,6 +2621,7 @@ int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, S
                 // we're in async mode, we need to grab the shared lock now just in case someone else is doing a
                 // synchronous operation. This will keep us from writing over their commit (because we won't be able to
                 // acquire this until they finish).
+                SINFO("About to lock at count " << node._safeCommitTarget.load() << " but quorum commit might have blocked.");
                 shared_lock<shared_timed_mutex> quorumLockShared(node._nonConcurrentTransactionMutex, defer_lock);
                 if (async) {
                     quorumLockShared.lock();
@@ -2463,6 +2696,7 @@ int SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, S
     db.rollback();
     return SQLITE_OK;
 }
+*/
 
 uint64_t SQLiteNode::_getDistantTimestamp() {
     // One day in the future. If anything takes this long to execute, everything is broken anyway.
