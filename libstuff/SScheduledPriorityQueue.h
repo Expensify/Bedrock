@@ -220,7 +220,6 @@ T SScheduledPriorityQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
                 for (auto it = matchingItemIterators.first; it != matchingItemIterators.second; it++) {
 
                     // Convenience names for legibility.
-                    const Scheduled& thisItemScheduled = it->first;
                     ItemTimeoutPair& thisItemTimeoutPair = it->second;
 
                     // Is this the one that timed out?
