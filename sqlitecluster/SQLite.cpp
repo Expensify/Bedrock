@@ -332,6 +332,8 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
             // Allow the next checkpointer.
             object->_sharedData->_checkpointThreadBusy.store(0);
+
+            SINFO("Checkpoint thread complete.");
         }).detach();
     }
     return SQLITE_OK;

@@ -1509,6 +1509,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Notify everyone that they can commit.
         {
             lock_guard<mutex> lock(_notifyCommittersMutex);
+            lock_guard<mutex> lockHashes(_commitHashMutex);
             SINFO("Putting hash in table:" << newCommit << ", " << message["Hash"]);
             _commitHashes.emplace(make_pair(newCommit, message["Hash"]));
             _safeCommitTarget.store(newCommit);
@@ -1708,11 +1709,12 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // Clear the worker queue and tell all the workers to abandon.
         {
             lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
-            //_workerQueue.clear();
-            //_safeCommitTarget.store(0);
-            //_commitHashes.clear();
-            //_rollbackTransactionID.store(0); // Maybe we can jsut use this 
-            SINFO("Master disconnected. Notifying workers");
+            lock_guard<mutex> lockHashes(_commitHashMutex);
+            _workerQueue.clear();
+            _safeCommitTarget.store(0);
+            _commitHashes.clear();
+            _rollbackTransactionID.store(0); // Maybe we can just use this 
+            SINFO("Master disconnected. Notifying workers.");
         }
         _notifyCommitters.notify_all();
 
@@ -2017,9 +2019,14 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         {
             // Give the work to the worker threads.
             lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
+            lock_guard<mutex> lockHashes(_commitHashMutex);
             uint64_t commitNum = commit.calcU64("CommitIndex");
             targetCommitCount = commitNum;
             SINFO("Putting hash in table:" << commitNum << ", " << commit["Hash"]);
+            auto it = _commitHashes.find(commitNum);
+            if (it != _commitHashes.end()) {
+                SALERT("Replacing existing commit hash in commitHashes table.");
+            }
             _commitHashes.emplace(make_pair(commitNum, commit["Hash"]));
             _safeCommitTarget.store(commitNum);
             _workerQueue.push(SData(commit), 1, STimeNow(), _getDistantTimestamp());
@@ -2203,6 +2210,12 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int workerID) {
         SQLite workerDB = node._db.getCopyWithJournalID(journalID);
         while (!node._workersShouldFinish.load()) {
             try {
+                // As long as we always dequeue items in order, the working set of items can all finish alongside
+                // one-another. If a checkpoint needs to happen, we'll let them all finish before de-queueing more
+                // work.
+                workerDB.waitForCheckpoint();
+
+                // Ok, not checkpointing, can get more work.
                 SData message = node._workerQueue.get(1'000'000);
                 SINFO("Dequeued " << message.methodLine);
                 if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT")) {
@@ -2230,6 +2243,7 @@ void SQLiteNode::replicateWorker(SQLiteNode& node, int workerID) {
                 }
             } catch (const decltype(_workerQueue)::timeout_error& e) {
                 // No commands, that's fine, loop again.
+                SINFO("No replication commands to work on.");
             }
         }
     } catch (const out_of_range& e) {
@@ -2282,6 +2296,9 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     uint64_t masterSentTimestamp = message.calcU64("masterSendTime");
     uint64_t slaveDequeueTimestamp = STimeNow();
 
+    // TODO: There's a better way to detect a master disconnection than this.
+    uint64_t startingCommitTarget = node._safeCommitTarget.load();
+
     // Determine of this is a QUORUM transaction, and it's commit number and hash.
     bool isCommit = SIEquals(message.methodLine, "COMMIT");
     bool useQuorum = !((SStartsWith(message["ID"], "ASYNC_") || isCommit));
@@ -2295,8 +2312,20 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
 
     // First wait until we know we're ready to go.
     while (!node._workersShouldFinish) {
+
         // Lock and check the required condition for our commit type.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
+
+        // See if we've lost our master
+        {
+            lock_guard<mutex> lock(node._commitHashMutex);
+            if (node._safeCommitTarget.load() < startingCommitTarget) {
+                SWARN("Master lost mid-commit. Discarding transaction and starting over.");
+                db.rollback();
+                return true;
+            }
+        }
+
         if (useQuorum) {
             if (db.getCommitCount() == commitNum - 1) {
                 break;
@@ -2321,26 +2350,7 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
         return true;
     }
 
-    // We only wait for the checkpoint thread in concurrent mode. This is because non-concurrent commits block all the
-    // others, and we run the risk of this happening:
-    //
-    // thread 1 begins transaction 100.
-    // thread 2 begins transaction 101.
-    // checkpoint thread starts blocking new transactions.
-    // thread 1 tries to commit transaction 100, and fails.
-    // thread 2 tries to commit transaction 101, and waits for 100 to complete.
-    // thread 1 restarts in non-concurrent mode and can't begin because it blocks on the checkpoint.
-    //
-    // The checkpoint never finishes because transaction 101 never finishes, so transaction 100 can't restart, so
-    // transaction 101 can never finish. Therein lies the deadlock.
-    //
-    // Instead, non-concurrent transactions ignore the checkpoint thread, which is forced to wait until they finish.
-    // Since only one non-concurrent transaction can happen at a time, and the checkpoint thread can block concurrent
-    // transactions, it should be able to complete it's checkpoint as soon as the non-concurrent commit (and any
-    // concurrent commits already waiting on it) have finished.
-    if (concurrent) {
-        db.waitForCheckpoint();
-    }
+
 
     // Ok, now we're in a good position to start our transaction.
     // We'll lock one of the two following objects, depending on our transaction type.
@@ -2420,6 +2430,16 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
         // Lock and check the required condition for our commit type.
         unique_lock<mutex> lock(node._notifyCommittersMutex);
 
+        // See if we've lost our master
+        {
+            lock_guard<mutex> lock(node._commitHashMutex);
+            if (node._safeCommitTarget.load() < startingCommitTarget) {
+                SWARN("Master lost mid-commit. Discarding transaction and starting over.");
+                db.rollback();
+                return true;
+            }
+        }
+
         // TODO: Was the transaction rolled back? This never happens so add in a bit.
         //
         // Did master change or disconnect? If so, we'll give up on any quorum transaction we were working on. Any
@@ -2460,35 +2480,54 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     if (!db.prepare()) {
         STHROW("failed to prepare transaction");
     }
-    auto it = node._commitHashes.find(commitNum);
-    if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
-        SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
-        STHROW("hash mismatch");
+
+    // Why do we lock this here? Because, if master disconnects, we'll clear _commitHashes, and we'll need to start
+    // over.
+    // We don't run through the existing transactions in the queue when we lose master, because if that happens
+    // suddenly, it's not guaranteed that the new master had them, and thus more likely to fork.
+    {
+        decltype(_commitHashes)::iterator it;
+        {
+            lock_guard<mutex> lock(node._commitHashMutex);
+
+            // See if we've lost our master
+            if (node._safeCommitTarget.load() < startingCommitTarget) {
+                SWARN("Master lost mid-commit. Discarding transaction and starting over.");
+                db.rollback();
+                return true;
+            }
+
+            it = node._commitHashes.find(commitNum);
+            if (it == node._commitHashes.end() || it->second != db.getUncommittedHash()) {
+                SALERT("Hash Mismatch[" << commitNum << "]: " << db.getUncommittedHash() << ":" << (it == node._commitHashes.end() ? "[empty]" : it->second));
+                STHROW("hash mismatch");
+            }
+        }
+
+        SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+        int result = db.commit();
+        if (result != SQLITE_OK) {
+            SINFO("Commit failed.");
+            db.rollback();
+            return false;
+        }
+
+        // Clear the list of committed transactions. We're slaving, so we don't need to send these.
+        db.getCommittedTransactions();
+
+        // Log timing info.
+        uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+        uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
+                                                             commitElapsed, rollbackElapsed);
+        SINFO("Committed slave transaction #" << commitNum << " (" << message["Hash"] << ") in "
+              << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
+              << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
+              << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
+              << rollbackElapsed / 1000 << "ms)");
+
+        // We're done with this hash.
+        node._commitHashes.erase(it);
     }
-
-    SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-    int result = db.commit();
-    if (result != SQLITE_OK) {
-        SINFO("Commit failed.");
-        db.rollback();
-        return false;
-    }
-
-    // Clear the list of committed transactions. We're slaving, so we don't need to send these.
-    db.getCommittedTransactions();
-
-    // Log timing info.
-    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-    uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
-                                                         commitElapsed, rollbackElapsed);
-    SINFO("Committed slave transaction #" << commitNum << " (" << message["Hash"] << ") in "
-          << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
-          << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
-          << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
-          << rollbackElapsed / 1000 << "ms)");
-
-    // We're done with this hash.
-    node._commitHashes.erase(it);
 
     // Notify anyone waiting that the state has changed.
     node._notifyCommitters.notify_all();

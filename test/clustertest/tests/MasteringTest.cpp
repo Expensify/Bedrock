@@ -129,8 +129,12 @@ struct MasteringTest : tpunit::TestFixture {
     }
 
     void synchronizing() {
+        SLogLevel(LOG_INFO);
+        SInitialize("CLUSTERTEST");
+        SINFO("Starting CLUSTERTEST");
         // Stop a slave.
         tester->stopNode(1);
+        SINFO("Node 1 stopped.");
 
         // Create a bunch of commands.
         vector<SData> requests(5000);
@@ -150,11 +154,14 @@ struct MasteringTest : tpunit::TestFixture {
 
         // Send these all to master.
         BedrockTester* master = tester->getBedrockTester(0);
+        SINFO("Sending 5000 requests.");
         master->executeWaitMultipleData(requests);
+        SINFO("5000 requests sent.");
 
         // Start the slave back up.
         bool wasSynchronizing = false;
         bool wasSlaving = false;
+        SINFO("Node 1 starting.");
         string startstatus = tester->startNodeDontWait(1);
         STable json = SParseJSONObject(startstatus);
         if (json["state"] == "SYNCHRONIZING") {

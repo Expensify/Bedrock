@@ -227,12 +227,14 @@ class SQLiteNode : public STCPNode {
     mutex _notifyCommittersMutex;
     condition_variable _notifyCommitters;
 
+
     // These store state for some of the data sent by master in COMMIT_TRANSACTION and ROLLBACK_TRANSACTION messages.
     // We save the expected hash for each commit in here, so that when workers finish transactions they can compare
     // against it (we don't send actual COMMIT_TRANSACTION messages to workers, because there's no easy way to tell
     // which worker should get it. Instead, all workers look at _safeCommitTarget to tell when they can commit). We
     // also store a single `rollback` commit ID, in the case master sends a `ROLLBACK_TRANSACTION` message. Since this
     // can only happen for a QUORUM commit, and there can only be one quorum commit at a time, we store a single value.
+    mutex _commitHashMutex;
     map<uint64_t, string> _commitHashes;
     atomic <uint64_t> _rollbackTransactionID;
 
