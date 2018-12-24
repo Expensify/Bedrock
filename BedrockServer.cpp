@@ -169,7 +169,7 @@ void BedrockServer::sync(SData& args,
 
     // This should be empty anyway, but let's make sure.
     if (server._completedCommands.size()) {
-        SWARN("_completedCommands not empty at starup of sync thread.");
+        SWARN("_completedCommands not empty at startup of sync thread.");
     }
 
     // The node is now coming up, and should eventually end up in a `MASTERING` or `SLAVING` state. We can start adding
