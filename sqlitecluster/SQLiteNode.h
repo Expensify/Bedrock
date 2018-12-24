@@ -242,8 +242,6 @@ class SQLiteNode : public STCPNode {
     // the DB schema (which can't be done in `beginConcurrentTransaction`). 
     shared_timed_mutex _nonConcurrentTransactionMutex;
 
-    static int performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, uint64_t commitNum, const string& commitHash, bool forceSync);
-
     // Returns true if the transaction is completed, false if it should try again. Completed doesn't mean "successful",
     // necessarily.
     static bool performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, bool concurrent);
