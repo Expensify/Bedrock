@@ -189,10 +189,10 @@ struct MasteringTest : tpunit::TestFixture {
                 break;
             }
             tries++;
-            if (tries > 6000) {
+            if (tries > 600) {
                 STHROW("Timed out waiting for synchronizing and then mastering.");
             }
-            usleep(10'000); // 1/100th of a second
+            usleep(100'000); // 1/10th of a second
         }
         ASSERT_TRUE(wasSynchronizing);
         ASSERT_TRUE(wasSlaving);
