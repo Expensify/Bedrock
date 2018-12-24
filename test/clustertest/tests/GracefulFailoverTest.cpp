@@ -126,7 +126,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->stopNode(0);
 
         // Wait for node 1 to be master.
-        SINFO("Waiting for node 1 to be mastering");
+        SINFO("Waiting for node 1 to be mastering (1)");
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Let the spammers keep spamming on the new master.
@@ -199,7 +199,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be master.
-        SINFO("Waiting for node 1 to be mastering");
+        SINFO("Waiting for node 1 to be mastering (2)");
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Now bring master back up.

@@ -347,10 +347,6 @@ class BedrockServer : public SQLiteServer {
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
-    // This counts the number of commands currently being processed (which might not be in any of our queues). We use
-    // this value to prevent us from standing down until this value is 0 and our main queue is empty.
-    atomic<int> _commandsInProgress;
-
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
@@ -461,4 +457,9 @@ class BedrockServer : public SQLiteServer {
 
     // Timestamp for the last time we promoted a command to QUORUM.
     atomic<uint64_t> _lastQuorumCommandTime;
+
+
+    // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
+    // that just needs to be returned to a peer.
+    BedrockTimeoutCommandQueue _completedCommands;
 };
