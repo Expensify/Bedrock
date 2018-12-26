@@ -34,8 +34,8 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             newCommand.initiatingPeerID = 0;
         }
         // Add a request ID if one was missing.
-        _addRequestIDAndEmail(newCommand.request);
-        SAUTOPREFIX(newCommand.request["requestID"] + " " + newCommand.request["requestEmail"]);
+        _addRequestID(newCommand.request);
+        SAUTOPREFIX(newCommand.request["requestID"] + (newCommand.request.isSet("logParam") ? " " + newCommand.request["logParam"] : ""));
         if (newCommand.writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
@@ -192,7 +192,7 @@ void BedrockServer::sync(SData& args,
     do {
 
         // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
-        SAUTOPREFIX(command.request["requestID"] + " " + command.request["requestEmail"]);
+        SAUTOPREFIX(command.request["requestID"] + (command.request.isSet("logParam") ? " " + command.request["logParam"] : ""));
 
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
@@ -303,7 +303,7 @@ void BedrockServer::sync(SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SAUTOPREFIX("xxxxxx we@dont.know");
+            SAUTOPREFIX("xxxxxx ");
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
@@ -447,7 +447,7 @@ void BedrockServer::sync(SData& args,
             try {
                 while (true) {
                     BedrockCommand completedCommand = completedCommands.pop();
-                    SAUTOPREFIX(completedCommand.request["requestID"] + " " + completedCommand.request["requestEmail"]);
+                    SAUTOPREFIX(completedCommand.request["requestID"] + (completedCommand.request.isSet("logParam") ? " " + completedCommand.request["logParam"] : ""));
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
@@ -466,7 +466,7 @@ void BedrockServer::sync(SData& args,
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
-            SAUTOPREFIX(command.request["requestID"] + " " + command.request["requestEmail"]);
+            SAUTOPREFIX(command.request["requestID"] + (command.request.isSet("logParam") ? " " + command.request["logParam"] : ""));
             SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
@@ -681,7 +681,7 @@ void BedrockServer::worker(SData& args,
             // count wrong while we wait.
             command = commandQueue.getSynchronized(1000000, server._commandsInProgress);
 
-            SAUTOPREFIX(command.request["requestID"] + " " + command.request["requestEmail"]);
+            SAUTOPREFIX(command.request["requestID"] + (command.request.isSet("logParam") ? " " + command.request["logParam"] : ""));
             SINFO("Dequeued command " << command.request.methodLine << " in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
@@ -1428,8 +1428,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // command.
                 if (!request.empty()) {
                     // If there's no ID for this request, let's add one.
-                    _addRequestIDAndEmail(request);
-                    SAUTOPREFIX(request["requestID"] + " " + request["requestEmail"]);
+                    _addRequestID(request);
+                    SAUTOPREFIX(request["requestID"] + (request.isSet("logParam") ? " " + request["logParam"] : ""));
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
@@ -2114,7 +2114,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     return commandsCompleted;
 }
 
-void BedrockServer::_addRequestIDAndEmail(SData& request) {
+void BedrockServer::_addRequestID(SData& request) {
     if (!request.isSet("requestID")) {
         string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         string requestID;
@@ -2122,8 +2122,5 @@ void BedrockServer::_addRequestIDAndEmail(SData& request) {
             requestID += chars[SRandom::rand64() % chars.size()];
         }
         request["requestID"] = requestID;
-    }
-    if (!request.isSet("requestEmail")) {
-        request["requestEmail"] = "we@dont.know";
     }
 }
