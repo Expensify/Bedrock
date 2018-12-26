@@ -2459,6 +2459,7 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
         }
         // If we didn't break because our conditions are met, then go ahead and loop again.
         node._notifyCommitters.wait(lock);
+        SINFO("Stopped waiting, will re-check.");
     }
 
     // If we're supposed to exit, do so without starting the transaction.
@@ -2526,7 +2527,15 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
               << rollbackElapsed / 1000 << "ms)");
 
         // We're done with this hash.
-        node._commitHashes.erase(it);
+        // TODO: Just do this check in the above locked block.
+        lock_guard<mutex> lock(node._commitHashMutex);
+        SINFO("Erasing hash for commit " << commitNum);
+        it = node._commitHashes.find(commitNum);
+        if (it == node._commitHashes.end()) {
+            SWARN("hash for commit " << commitNum << " gone missing. Could happen if master dropped mid-commit.");
+        } else {
+            node._commitHashes.erase(it);
+        }
     }
 
     // Notify anyone waiting that the state has changed.
