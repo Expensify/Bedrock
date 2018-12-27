@@ -2528,6 +2528,7 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
 
         // We're done with this hash.
         // TODO: Just do this check in the above locked block.
+        // Oh, can;'t do that, cause if the commit fails, we still need it. Need to wait till it succeeds.
         lock_guard<mutex> lock(node._commitHashMutex);
         SINFO("Erasing hash for commit " << commitNum);
         it = node._commitHashes.find(commitNum);
