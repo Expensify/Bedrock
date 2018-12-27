@@ -2486,6 +2486,7 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     // over.
     // We don't run through the existing transactions in the queue when we lose master, because if that happens
     // suddenly, it's not guaranteed that the new master had them, and thus more likely to fork.
+    unique_lock<mutex> lock(node._notifyCommittersMutex);
     {
         decltype(_commitHashes)::iterator it;
         {
@@ -2527,8 +2528,6 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
               << rollbackElapsed / 1000 << "ms)");
 
         // We're done with this hash.
-        // TODO: Just do this check in the above locked block.
-        // Oh, can;'t do that, cause if the commit fails, we still need it. Need to wait till it succeeds.
         lock_guard<mutex> lock(node._commitHashMutex);
         SINFO("Erasing hash for commit " << commitNum);
         it = node._commitHashes.find(commitNum);
@@ -2540,6 +2539,32 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     }
 
     // Notify anyone waiting that the state has changed.
+    // We need to hold _notifyCommittersMutex right up until here, *I think*. This means that this state couldn't
+    // have changed while some other thread was inspecting it.
+    // I would feel better about this fix if I could explain it to myself. Maybe I need a break here.
+    // 
+    // I think:
+    // There are three main phases here:
+    // 1. Queue work.
+    // 2. Dequeue work.
+    // 3. Do work.
+    //
+    // The idea is that whenever you're queuing or de-queuing work, you need to lock. This prevents various race
+    // conditions that I'll try and explain shortly.
+    //
+    // Then you're free to do your work in parallel.
+    //
+    // The challenge here is that work being "queued" is dependent on not just the state of a counter in `_safeCommitTarget`, but also 
+    // in the state of the DB (getCommitCount()). This means that we're "queuing work" by calling commit (we're making
+    // the next transaction ready to commit).
+    //
+    // So I think if we don't lock correctly we can get in a place where thstate of doable work has checked when
+    // _notifyCommittersMutex wasn't locked, meaning someone waiting for that work may have checked it and thought it
+    // wasn't there when it had just become available there. Then it calls `wait` on the condition_variable, but it
+    // waits forever, because the state changed between checking and calling wait, which is what the lock is supposed
+    // to prevent.
+    //
+    // Yeah, that makes sense.
     node._notifyCommitters.notify_all();
 
     SINFO("Commit complete.");
