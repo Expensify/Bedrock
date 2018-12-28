@@ -40,7 +40,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
             newCommand.writeConsistency = SQLiteNode::QUORUM;
-            _lastQuorumCommandTime = 0;
+            _lastQuorumCommandTime = STimeNow();
             SINFO("Forcing QUORUM consistency for command " << newCommand.request.methodLine);
         }
         SINFO("Queued new '" << newCommand.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
@@ -1486,7 +1486,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
 
                         command.writeConsistency = SQLiteNode::QUORUM;
-                        _syncNode->startCommit(SQLiteNode::QUORUM);
                         SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
                     }
 
