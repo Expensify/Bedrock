@@ -49,7 +49,7 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
-               int priority, uint64_t firstTimeout, const string& version, int quorumCheckpointSeconds = 0);
+               int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.

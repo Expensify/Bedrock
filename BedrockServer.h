@@ -455,4 +455,10 @@ class BedrockServer : public SQLiteServer {
     static SData _generateCrashMessage(const BedrockCommand* command);
 
     static void _addRequestID(SData& request);
+
+    // The number of seconds to wait between forcing a command to QUORUM.
+    uint64_t _quorumCheckpointSeconds;
+
+    // Timestamp for the last time we promoted a command to QUORUM.
+    atomic<uint64_t> _lastQuorumCommandTime;
 };
