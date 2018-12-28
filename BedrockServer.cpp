@@ -40,6 +40,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
             newCommand.writeConsistency = SQLiteNode::QUORUM;
+            _lastQuorumCommandTime = 0;
             SINFO("Forcing QUORUM consistency for command " << newCommand.request.methodLine);
         }
         SINFO("Queued new '" << newCommand.request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
@@ -154,7 +155,7 @@ void BedrockServer::sync(SData& args,
     // Initialize the shared pointer to our sync node object.
     server._syncNode = make_shared<SQLiteNode>(server, db, args["-nodeName"], args["-nodeHost"],
                                                args["-peerList"], args.calc("-priority"), firstTimeout,
-                                               server._version, (args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60));
+                                               server._version);
 
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
@@ -360,6 +361,7 @@ void BedrockServer::sync(SData& args,
                 committingCommand = true;
                 server._commandsInProgress++;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
+                server._lastQuorumCommandTime = STimeNow();
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -836,6 +838,18 @@ void BedrockServer::worker(SData& args,
             canWriteParallel = canWriteParallel && (state == SQLiteNode::MASTERING);
             canWriteParallel = canWriteParallel && (command.writeConsistency == SQLiteNode::ASYNC);
 
+            // If all the other checks have passed, and we haven't sent a quorum command to the sync thread in a while,
+            // auto-promote one.
+            if (canWriteParallel) {
+                uint64_t now = STimeNow();
+                if (now > (server._lastQuorumCommandTime + (server._quorumCheckpointSeconds * 1'000'000))) {
+                    SINFO("Forcing QUORUM for command '" << command.request.methodLine << "'.");
+                    server._lastQuorumCommandTime = now;
+                    command.writeConsistency = SQLiteNode::QUORUM;
+                    canWriteParallel = false;
+                }
+            }
+
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
             while (retry) {
@@ -1098,7 +1112,7 @@ BedrockServer::BedrockServer(const SData& args)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3)
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
 {
     _version = SVERSION;
 
@@ -1174,6 +1188,9 @@ BedrockServer::BedrockServer(const SData& args)
     if (_detach) {
         SINFO("Bootstrap flag detected, starting sync node in detach mode.");
     }
+
+    // Set the quorum checkpoint, or default if not specified.
+    _quorumCheckpointSeconds = args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60;
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
@@ -1469,6 +1486,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
 
                         command.writeConsistency = SQLiteNode::QUORUM;
+                        _syncNode->startCommit(SQLiteNode::QUORUM);
                         SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
                     }
 
