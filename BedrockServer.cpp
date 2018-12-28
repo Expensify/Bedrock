@@ -64,7 +64,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
 }
 
 void BedrockServer::cancelCommand(const string& commandID) {
-    _commandQueue.removeByID(commandID);
+    // TODO: Unimplemented (but never called, anyway)
 }
 
 bool BedrockServer::canStandDown() {
@@ -674,14 +674,14 @@ void BedrockServer::worker(SData& args,
         try {
             // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
-                SWARN("Die function called early with no command, probably died in `getSynchronized`.");
+                SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
             // If we can't find any work to do, this will throw. If we can, this will increment _commandsInProgress for
             // us before returning the command that it is dequeuing. We don't update _commandsInProgress before calling
             // this, as it can spend up to a second finding out that there is no command to dequeue, which makes our
             // count wrong while we wait.
-            command = commandQueue.getSynchronized(1000000, server._commandsInProgress);
+            command = commandQueue.get(1000000, server._commandsInProgress);
 
             SAUTOPREFIX(command.request["requestID"]);
             SINFO("Dequeued command " << command.request.methodLine << " in worker, "
