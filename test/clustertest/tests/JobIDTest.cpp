@@ -2,7 +2,7 @@
 
 struct JobIDTest : tpunit::TestFixture {
     JobIDTest()
-        : tpunit::TestFixture("jobID",
+        : tpunit::TestFixture("JobID",
                               BEFORE_CLASS(JobIDTest::setup),
                               AFTER_CLASS(JobIDTest::teardown),
                               TEST(JobIDTest::test)

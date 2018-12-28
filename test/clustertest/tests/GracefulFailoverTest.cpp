@@ -102,6 +102,9 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
+        SLogLevel(LOG_INFO);
+        SInitialize("CLUSTERTEST");
+        SINFO("Starting CLUSTERTEST");
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
@@ -119,20 +122,25 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Now our clients are spamming all our nodes. Shut down master.
+        SINFO("Stopping node 0");
         tester->stopNode(0);
 
         // Wait for node 1 to be master.
+        SINFO("Waiting for node 1 to be mastering (1)");
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Let the spammers keep spamming on the new master.
         sleep(3);
 
         // Bring master back up.
+        SINFO("Restarting node 0");
         tester->getBedrockTester(0)->startServer();
+        SINFO("Waiting for node 0 to be mastering (1)");
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
         sleep(15);
 
         // Now let's  stop a slave and make sure everything keeps working.
+        SINFO("Stopping node 2");
         tester->stopNode(2);
 
         // Wait up to 90 seconds for master to think the slave is down.
@@ -158,7 +166,9 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
 
         // And bring it back up.
+        SINFO("Starting node 2");
         tester->getBedrockTester(2)->startServer();
+        SINFO("Waiting for node 2 to be slaving");
         ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
 
         // We're done, let spammers finish.
@@ -185,23 +195,30 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up master.
+        SINFO("Sending SIGKILL to node 0");
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be master.
+        SINFO("Waiting for node 1 to be mastering (2)");
         ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
 
         // Now bring master back up.
         sleep(2);
+        SINFO("Starting node 0");
         tester->getBedrockTester(0)->startServer();
+        SINFO("Waiting for node 0 to be mastering (2)");
         ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
 
         // Blow up a slave.
         sleep(2);
+        SINFO("Sending SIGKILL to node 2");
         tester->getBedrockTester(2)->stopServer(SIGKILL);
 
         // And bring it back up.
         sleep(2);
+        SINFO("Starting node 2");
         tester->getBedrockTester(2)->startServer();
+        SINFO("Waiting for node 2 to be slaving");
         ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
 
         // We're really done, let everything finish a last time.

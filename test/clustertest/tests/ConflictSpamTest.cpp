@@ -85,13 +85,17 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
+        SLogLevel(LOG_INFO);
+        SInitialize("CLUSTERTEST");
+        SINFO("Starting CLUSTERTEST");
         recursive_mutex m;
         atomic<int> totalRequestFailures(0);
 
+        SINFO("ConflictSpam 1");
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &totalRequestFailures, &m](){
+            threads.emplace_back([this, i, &totalRequestFailures, &m]() {
                 BedrockTester* brtester = tester->getBedrockTester(i);
 
                 // Let's make ourselves 20 commands to spam at each node.
@@ -125,6 +129,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             t.join();
         }
         threads.clear();
+        SINFO("ConflictSpam 2");
 
         // Let's collect the names of the journal tables on each node.
         vector <string> allResults(3);
@@ -148,6 +153,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             t.join();
         }
         threads.clear();
+        SINFO("ConflictSpam 3");
 
         // Build a list of journal tables on each node.
         vector<list<string>> tables(3);
@@ -164,6 +170,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             tables[i] = output;
             i++;
         }
+        SINFO("ConflictSpam 4");
 
         // We'll let this go a couple of times. It's feasible that these won't match if the whole journal hasn't
         // replicated yet.
@@ -208,6 +215,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             cout << "Results didn't match, waiting for journals to equalize." << endl;
             sleep(1);
         }
+        SINFO("ConflictSpam 5");
 
         // Verify the journals all match.
         ASSERT_TRUE(allResults[0].size() > 0);
@@ -242,6 +250,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             // each node comes online as master during startup.
             // ASSERT_EQUAL(totalRows, 69);
         }
+        SINFO("ConflictSpam 6");
 
         // Spit out the actual table contents, for debugging.
         allResults.clear();
@@ -266,6 +275,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             t.join();
         }
         threads.clear();
+        SINFO("ConflictSpam 7");
 
         // Verify the actual table contains the right number of rows.
         allResults.clear();
@@ -290,6 +300,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             t.join();
         }
         threads.clear();
+        SINFO("ConflictSpam 8");
 
         // Verify these came out the same.
         ASSERT_TRUE(allResults[0].size() > 0);

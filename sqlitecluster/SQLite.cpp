@@ -39,7 +39,11 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _cacheHits(0),
     _useCache(false),
     _isDeterministicQuery(false),
-    _checkpointThreadBusy(0)
+    _cacheSize(cacheSize),
+    _journalTable(journalTable),
+    _maxRequiredJournalTableID(maxRequiredJournalTableID),
+    _synchronous(synchronous),
+    _mmapSizeGB(mmapSizeGB)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -212,6 +216,13 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 }
 
+SQLite SQLite::getCopyWithJournalID(int journalID) {
+    if (journalID > _maxRequiredJournalTableID) {
+        throw out_of_range("journal ID too large");
+    }
+    return SQLite(_filename, _cacheSize, _enableFullCheckpoints, _maxJournalSize, journalID, _maxRequiredJournalTableID, _synchronous, _mmapSizeGB);
+}
+
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
@@ -262,7 +273,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
-        int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
+        int alreadyCheckpointing = object->_sharedData->_checkpointThreadBusy.fetch_add(1);
         if (alreadyCheckpointing) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
@@ -320,7 +331,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             }
 
             // Allow the next checkpointer.
-            object->_checkpointThreadBusy.store(0);
+            object->_sharedData->_checkpointThreadBusy.store(0);
+
+            SINFO("Checkpoint thread complete.");
         }).detach();
     }
     return SQLITE_OK;
@@ -377,6 +390,10 @@ SQLite::~SQLite() {
 
 void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
+}
+
+bool SQLite::isCheckpointing() {
+    return (_sharedData->_checkpointThreadBusy.load() > 0);
 }
 
 bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
@@ -1032,5 +1049,6 @@ bool SQLite::getUpdateNoopMode() const {
 }
 
 SQLite::SharedData::SharedData() :
-currentTransactionCount(0)
+currentTransactionCount(0),
+_checkpointThreadBusy(0)
 { }

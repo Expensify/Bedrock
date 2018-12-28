@@ -179,6 +179,9 @@ class SQLite {
     // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
     void waitForCheckpoint();
 
+    // Returns true while the checkpoint thread exists.
+    bool isCheckpointing();
+
     // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
@@ -187,6 +190,10 @@ class SQLite {
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
     
+    // Get's a duplicate of the current object, set to use a particular journal. Throws `out_of_range` if the given
+    // journal isn't available.
+    SQLite getCopyWithJournalID(int journalID);
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -269,6 +276,9 @@ class SQLite {
         // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
         // if the SQLite object that initiated it has been deleted since it started.
         set<SQLite*> validObjects;
+
+        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+        atomic<int> _checkpointThreadBusy;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
@@ -414,6 +424,10 @@ class SQLite {
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
 
-    // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
-    atomic<int> _checkpointThreadBusy;
+    // The remainder of these values are only used at initialization, but are stored to allow copying objects.
+    int _cacheSize;
+    int _journalTable;
+    int _maxRequiredJournalTableID;
+    string _synchronous;
+    int64_t _mmapSizeGB;
 };
