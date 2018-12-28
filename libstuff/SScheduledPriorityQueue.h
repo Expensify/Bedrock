@@ -60,10 +60,6 @@ class SScheduledPriorityQueue {
     // period has elapsed, timeout_error is thrown.
     T get(uint64_t waitUS = 0);
 
-    // Same as above, but increments a counter just before returning an item. This allows callers to keep accurate
-    // counts of items in or out of the queue.
-    T get(uint64_t waitUS, atomic<int>& incrementBeforeDequeue);
-
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout);
 
@@ -78,7 +74,7 @@ class SScheduledPriorityQueue {
     };
 
     // Removes an item from the queue and returns it, if a suitable item is available. Throws `out_of_range` otherwise.
-    T _dequeue(atomic<int>& incrementBeforeDequeue);
+    T _dequeue();
 
     // Synchronization primitives for managing access to the queue.
     mutex _queueMutex;
@@ -119,12 +115,6 @@ size_t SScheduledPriorityQueue<T>::size()  {
 
 template<typename T>
 T SScheduledPriorityQueue<T>::get(uint64_t waitUS) {
-    atomic<int> temp;
-    return get(waitUS, temp);
-}
-
-template<typename T>
-T SScheduledPriorityQueue<T>::get(uint64_t waitUS, atomic<int>& incrementBeforeDequeue) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -139,7 +129,7 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, atomic<int>& incrementBeforeD
 
     // If there's already work in the queue, just return some.
     try {
-        return _dequeue(incrementBeforeDequeue);
+        return _dequeue();
     } catch (const out_of_range& e) {
         // Nothing available.
     }
@@ -153,7 +143,7 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, atomic<int>& incrementBeforeD
             
             // If we got any work, return it.
             try {
-                return _dequeue(incrementBeforeDequeue);
+                return _dequeue();
             } catch (const out_of_range& e) {
                 // Still nothing available.
             }
@@ -168,7 +158,7 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, atomic<int>& incrementBeforeD
         while (true) {
             _queueCondition.wait(queueLock);
             try {
-                return _dequeue(incrementBeforeDequeue);
+                return _dequeue();
             } catch (const out_of_range& e) {
                 // Nothing yet, loop again.
             }
@@ -187,7 +177,7 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
 }
 
 template<typename T>
-T SScheduledPriorityQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
+T SScheduledPriorityQueue<T>::_dequeue() {
     // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).
@@ -273,9 +263,6 @@ T SScheduledPriorityQueue<T>::_dequeue(atomic<int>& incrementBeforeDequeue) {
 
             // Pull out the item we want to return.
             T item = move(thisItemTimeoutPair.item);
-
-            // Increment the caller's counter as we're now actually de-queuing the item.
-            incrementBeforeDequeue++;
 
             // Delete the entry in this queue.
             queueIt->second.erase(itemIt);
