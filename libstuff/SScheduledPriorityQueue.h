@@ -55,9 +55,6 @@ class SScheduledPriorityQueue {
     // Get an item from the queue. Optionally, a timeout can be specified.
     // If timeout is non-zero, a timeout_error exception will be thrown after waitUS microseconds, if no work was
     // available.
-
-    // Get an item from the queue. If `waitUS` is specified, and no items become available before the specified time
-    // period has elapsed, timeout_error is thrown.
     T get(uint64_t waitUS = 0);
 
     // Same as above, but increments a counter just before returning an item. This allows callers to keep accurate
@@ -77,7 +74,8 @@ class SScheduledPriorityQueue {
         Timeout timeout;
     };
 
-    // Removes an item from the queue and returns it, if a suitable item is available. Throws `out_of_range` otherwise.
+    // Removes an item from the queue and returns it, if a suitable item is available (see the comment at the top of
+    // this file for what counts as a suitable item). Throws `out_of_range` otherwise.
     T _dequeue(atomic<int>& incrementBeforeDequeue);
 
     // Synchronization primitives for managing access to the queue.
@@ -97,19 +95,19 @@ class SScheduledPriorityQueue {
 
 template<typename T>
 void SScheduledPriorityQueue<T>::clear()  {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     _queue.clear();
 }
 
 template<typename T>
 bool SScheduledPriorityQueue<T>::empty()  {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.empty();
 }
 
 template<typename T>
 size_t SScheduledPriorityQueue<T>::size()  {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     size_t size = 0;
     for (const auto& queue : _queue) {
         size += queue.second.size();
@@ -178,7 +176,7 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, atomic<int>& incrementBeforeD
 
 template<typename T>
 void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout) {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     auto& queue = _queue[priority];
     _startFunction(item);
     _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduled)));
