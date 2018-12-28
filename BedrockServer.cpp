@@ -1486,6 +1486,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         && _syncCommands.find(command.request.methodLine) != _syncCommands.end()) {
 
                         command.writeConsistency = SQLiteNode::QUORUM;
+                        _lastQuorumCommandTime = STimeNow();
                         SINFO("Forcing QUORUM consistency for command " << command.request.methodLine);
                     }
 
