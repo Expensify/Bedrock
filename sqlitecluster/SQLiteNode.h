@@ -197,9 +197,6 @@ class SQLiteNode : public STCPNode {
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
 
-    // The main function for worker threads, which handle replication and syncronization.
-    static void replicateWorker(SQLiteNode& node, int workerID);
-
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
 
@@ -208,34 +205,56 @@ class SQLiteNode : public STCPNode {
     // and not stale reponses to old changes.
     int _stateChangeCount;
 
+    // This is the set of worker threads that are used for synchronization/replication while SLAVING (or, really, not
+    // mastering, as it includes SYNCHRONIZING as well).
+    list<thread> _workerThreads;
+
+    // This mutex needs to be locked any time the set of conditions that means "work is ready" for the 
+    // might be able to do more work. In a more typical case, this would be when we inserted new items into a queue,
+    // but there's a more complex interaction required here to manage the fact that work needs to be finished in-order.
+    // This needs to include several of the following variables:
+    //
+    // _workersShouldFinish
+    // _safeCommitTarget
+    // _commitHashes
+    // _rollbackTransactionID
+    //
+    // AND importantly, because it's not obvious, any call to `commit()` on a SQLite object. This is because the state
+    // of doable work changes with the commit count of the object.
+    //
+    // After changing any of these, we need to notify on _workReadyCV to make sure that workers can pick up the
+    // changes.
+    //
+    // Note that `_workerQueue` is explicitly not included, as it contains it's own notification mechanism.
+    // Also note that because _commitHashes is not inherently thread-safe, we need to lock around *all* accesses to it,
+    // not jut writes.
+    //
+    // Finally, it's important that we *don't* lock around calls to `write` or `writeUnmodified`, as that defeats the
+    // purpose of multi-threading these transactions in the first place.
+    mutex _workReadyMutex;
+    condition_variable _workReadyCV;
+
     // Queue of messages for workers to handle (currently, BEGIN_TRANSACTION and COMMIT_TRANSACTION messages).
     SScheduledPriorityQueue<SData> _workerQueue;
 
-    // This will be set to true at shurdown to indicate to worker threads that they should exit.
+    // This will be set to true at shutdown to indicate to worker threads that they should exit.
     atomic<bool> _workersShouldFinish;
-
-    // The list of worker threads.
-    list<thread> _workerThreads;
 
     // Whenever we receive a new COMMIT message from master, we update this counter to indicate the highest commit that
     // master thinks we can safely make (these always arrive from master in-order). Our worker threads can complete
     // their commits as long as they don't exceed this value.
     atomic<uint64_t> _safeCommitTarget;
 
-    // Mutex and matching condition variable for notifying workers when a new message has been received, and they
-    // might be able to do more work.
-    mutex _notifyCommittersMutex;
-    condition_variable _notifyCommitters;
-
-
-    // These store state for some of the data sent by master in COMMIT_TRANSACTION and ROLLBACK_TRANSACTION messages.
-    // We save the expected hash for each commit in here, so that when workers finish transactions they can compare
-    // against it (we don't send actual COMMIT_TRANSACTION messages to workers, because there's no easy way to tell
-    // which worker should get it. Instead, all workers look at _safeCommitTarget to tell when they can commit). We
-    // also store a single `rollback` commit ID, in the case master sends a `ROLLBACK_TRANSACTION` message. Since this
-    // can only happen for a QUORUM commit, and there can only be one quorum commit at a time, we store a single value.
-    mutex _commitHashMutex;
+    // This stores the expected hash of any commit we're in the process of making, so that we can verify that we apply
+    // the same thing as seen on master. This is sent alongside the `COMMIT` message when doing synchronization, but
+    // for replication, this is sent in a separate `COMMIT_TRANSACTION` command. In these cases, there's no easy way to
+    // deliver the hash to the particular thread that needs it (because any worker thread could be handling the
+    // transaction), so we store it here. The thread will wait until it finds the value here before completing and
+    // committing the transaction.
     map<uint64_t, string> _commitHashes;
+
+    // If a quorum transaction is rolled back, we need to do the same as above with _commitHashes, but we can only ever
+    // have one quorum transaction at a time, so we only hold a single value here.
     atomic <uint64_t> _rollbackTransactionID;
 
     // This mutex blocks new transactions from starting so that a particular transaction can be done by itself. This is
@@ -244,6 +263,9 @@ class SQLiteNode : public STCPNode {
     // the DB schema (which can't be done in `beginConcurrentTransaction`). 
     shared_timed_mutex _nonConcurrentTransactionMutex;
 
+    // The main function for worker threads which handle replication and synchronization.
+    static void replicateWorker(SQLiteNode& node, int workerID);
+
     // Returns true if the transaction is completed, false if it should try again. Completed doesn't mean "successful",
     // necessarily.
     static bool performTransaction(int workerID, SQLiteNode& node, SQLite& db, SData& message, bool concurrent);
@@ -251,5 +273,4 @@ class SQLiteNode : public STCPNode {
     // Returns a timestamp that's arbitrarily "far away". Used to set the timeout for messages passed to worker
     // threads, so that they are very unlikely to timeout.
     static uint64_t _getDistantTimestamp();
-
 };

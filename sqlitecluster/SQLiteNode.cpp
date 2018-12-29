@@ -86,9 +86,13 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SINFO("Closing worker threads in destructor.");
 
-    if (!_workersShouldFinish) {
-        _workersShouldFinish.store(true);
-        SWARN("_workersShouldFinish not true at destruction, setting.");
+    if (!_workersShouldFinish.load()) {
+        {
+            SWARN("_workersShouldFinish not true at destruction, setting.");
+            lock_guard<mutex> lock(_workReadyMutex);
+            _workersShouldFinish.store(true);
+        }
+        _workReadyCV.notify_all();
     }
     int threadID = -1;
     for (auto& t : _workerThreads) {
@@ -132,7 +136,11 @@ void SQLiteNode::beginShutdown(uint64_t usToWait) {
         SINFO("Beginning graceful shutdown.");
         _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
-        _workersShouldFinish.store(true);
+        {
+            lock_guard<mutex> lock(_workReadyMutex);
+            _workersShouldFinish.store(true);
+        }
+        _workReadyCV.notify_all();
     }
 }
 
@@ -1508,13 +1516,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
         // Notify everyone that they can commit.
         {
-            lock_guard<mutex> lock(_notifyCommittersMutex);
-            lock_guard<mutex> lockHashes(_commitHashMutex);
+            lock_guard<mutex> lock(_workReadyMutex);
             SINFO("Putting hash in table:" << newCommit << ", " << message["Hash"]);
             _commitHashes.emplace(make_pair(newCommit, message["Hash"]));
             _safeCommitTarget.store(newCommit);
         }
-        _notifyCommitters.notify_all();
+        _workReadyCV.notify_all();
     } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         // ROLLBACK_TRANSACTION: Sent to all subscribed slaves by the master when it determines that the current
         // outstanding transaction should be rolled back. This completes a given distributed transaction.
@@ -1526,14 +1533,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         {
             uint64_t rollbackID = message.calcU64("ID");
-            lock_guard<mutex> lock(_notifyCommittersMutex);
+            lock_guard<mutex> lock(_workReadyMutex);
             SWARN("Got ROLLBACK for transaction " << rollbackID);
             if (_rollbackTransactionID.load() != UINT64_MAX) {
-                SWARN("Recieved conflicting ROLLBACKs (this should never happen).");
+                SWARN("Received conflicting ROLLBACKs (this should never happen).");
             }
             _rollbackTransactionID.store(rollbackID);
         }
-        _notifyCommitters.notify_all();
+        _workReadyCV.notify_all();
     } else if (SIEquals(message.methodLine, "ESCALATE")) {
         // ESCALATE: Sent to the master by a slave. Is processed like a normal command, except when complete an
         // ESCALATE_RESPONSE is sent to the slave that initiated the escalation.
@@ -1708,15 +1715,14 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
 
         // Clear the worker queue and tell all the workers to abandon.
         {
-            lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
-            lock_guard<mutex> lockHashes(_commitHashMutex);
+            lock_guard<decltype(_workReadyMutex)> lock(_workReadyMutex);
             _workerQueue.clear();
             _safeCommitTarget.store(0);
             _commitHashes.clear();
             _rollbackTransactionID.store(0); // Maybe we can just use this 
             SINFO("Master disconnected. Notifying workers.");
         }
-        _notifyCommitters.notify_all();
+        _workReadyCV.notify_all();
 
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
@@ -2018,8 +2024,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 
         {
             // Give the work to the worker threads.
-            lock_guard<decltype(_notifyCommittersMutex)> lock(_notifyCommittersMutex);
-            lock_guard<mutex> lockHashes(_commitHashMutex);
+            lock_guard<decltype(_workReadyMutex)> lock(_workReadyMutex);
             uint64_t commitNum = commit.calcU64("CommitIndex");
             targetCommitCount = commitNum;
             SINFO("Putting hash in table:" << commitNum << ", " << commit["Hash"]);
@@ -2033,7 +2038,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Let the threads know there's work.
-        _notifyCommitters.notify_all();
+        _workReadyCV.notify_all();
         --commitsRemaining;
     }
 
@@ -2044,12 +2049,12 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 
     // Wait for all the work to be done. 
     while (true) {
-        unique_lock<mutex> lock(_notifyCommittersMutex);
+        unique_lock<mutex> lock(_workReadyMutex);
         if (_db.getCommitCount() >= targetCommitCount) {
             SINFO("Workers finished synchronization block, continuing.");
             break;
         }
-        _notifyCommitters.wait(lock);
+        _workReadyCV.wait(lock);
     }
 }
 
@@ -2311,14 +2316,13 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     }
 
     // First wait until we know we're ready to go.
-    while (!node._workersShouldFinish) {
+    while (!node._workersShouldFinish.load()) {
 
         // Lock and check the required condition for our commit type.
-        unique_lock<mutex> lock(node._notifyCommittersMutex);
+        unique_lock<mutex> lock(node._workReadyMutex);
 
         // See if we've lost our master
         {
-            lock_guard<mutex> lock(node._commitHashMutex);
             if (node._safeCommitTarget.load() < startingCommitTarget) {
                 SWARN("Master lost mid-commit. Discarding transaction and starting over.");
                 db.rollback();
@@ -2341,11 +2345,11 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
             }
         }
         // If we didn't break because our conditions are met, then go ahead and loop again.
-        node._notifyCommitters.wait(lock);
+        node._workReadyCV.wait(lock);
     }
 
     // If we're supposed to exit, do so without starting the transaction.
-    if (node._workersShouldFinish) {
+    if (node._workersShouldFinish.load()) {
         SINFO("Workers told to exit, returning TRUE without starting transaction.");
         return true;
     }
@@ -2421,18 +2425,17 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
 
     // Now we wait. For quorum commands, we wait for a server response (or disconnection).
     // For non-quorum commands, we wait for all previous commits to succeed, so that we know we commit in order.
-    while (!node._workersShouldFinish) {
+    while (!node._workersShouldFinish.load()) {
         if (useQuorum) {
             SINFO("Waiting for " << db.getCommitCount() << " == " << (commitNum - 1) << " and " << node._safeCommitTarget.load() << " >= " << commitNum << " in QUORUM commit.");
         } else {
             SINFO("Waiting for " << db.getCommitCount() << " == " << (commitNum - 1) << " and " << node._safeCommitTarget.load() << " >= " << commitNum << " in non-QUORUM commit.");
         }
         // Lock and check the required condition for our commit type.
-        unique_lock<mutex> lock(node._notifyCommittersMutex);
+        unique_lock<mutex> lock(node._workReadyMutex);
 
         // See if we've lost our master
         {
-            lock_guard<mutex> lock(node._commitHashMutex);
             if (node._safeCommitTarget.load() < startingCommitTarget) {
                 SWARN("Master lost mid-commit. Discarding transaction and starting over.");
                 db.rollback();
@@ -2458,12 +2461,12 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
             break;
         }
         // If we didn't break because our conditions are met, then go ahead and loop again.
-        node._notifyCommitters.wait(lock);
+        node._workReadyCV.wait(lock);
         SINFO("Stopped waiting, will re-check.");
     }
 
     // If we're supposed to exit, do so without starting the transaction.
-    if (node._workersShouldFinish) {
+    if (node._workersShouldFinish.load()) {
         SINFO("Workers told to exit, returning TRUE without committing transaction.");
         db.rollback();
         return true;
@@ -2486,11 +2489,10 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     // over.
     // We don't run through the existing transactions in the queue when we lose master, because if that happens
     // suddenly, it's not guaranteed that the new master had them, and thus more likely to fork.
-    unique_lock<mutex> lock(node._notifyCommittersMutex);
+    unique_lock<mutex> lock(node._workReadyMutex);
     {
         decltype(_commitHashes)::iterator it;
         {
-            lock_guard<mutex> lock(node._commitHashMutex);
 
             // See if we've lost our master
             if (node._safeCommitTarget.load() < startingCommitTarget) {
@@ -2528,7 +2530,6 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
               << rollbackElapsed / 1000 << "ms)");
 
         // We're done with this hash.
-        lock_guard<mutex> lock(node._commitHashMutex);
         SINFO("Erasing hash for commit " << commitNum);
         it = node._commitHashes.find(commitNum);
         if (it == node._commitHashes.end()) {
@@ -2539,7 +2540,7 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     }
 
     // Notify anyone waiting that the state has changed.
-    // We need to hold _notifyCommittersMutex right up until here, *I think*. This means that this state couldn't
+    // We need to hold _workReadyMutex right up until here, *I think*. This means that this state couldn't
     // have changed while some other thread was inspecting it.
     // I would feel better about this fix if I could explain it to myself. Maybe I need a break here.
     // 
@@ -2559,13 +2560,13 @@ bool SQLiteNode::performTransaction(int workerID, SQLiteNode& node, SQLite& db, 
     // the next transaction ready to commit).
     //
     // So I think if we don't lock correctly we can get in a place where thstate of doable work has checked when
-    // _notifyCommittersMutex wasn't locked, meaning someone waiting for that work may have checked it and thought it
+    // _workReadyMutex wasn't locked, meaning someone waiting for that work may have checked it and thought it
     // wasn't there when it had just become available there. Then it calls `wait` on the condition_variable, but it
     // waits forever, because the state changed between checking and calling wait, which is what the lock is supposed
     // to prevent.
     //
     // Yeah, that makes sense.
-    node._notifyCommitters.notify_all();
+    node._workReadyCV.notify_all();
 
     SINFO("Commit complete.");
 
