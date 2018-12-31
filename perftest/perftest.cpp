@@ -1,5 +1,6 @@
 #include "../libstuff/sqlite3.h"
 #include <string>
+#include <sstream>
 #include <list>
 #include <vector>
 #include <thread>
@@ -108,6 +109,12 @@ void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSeco
             // Does a simple calculation
             int c=1000000;
             while(c--) { noopResult+=c; }
+        } else if (testQuery=="NOOP_MEMORY") {
+            // Does a simple memory-intensive operation
+            int c=22;
+            string str = "asdf";
+            while(c--) { str += str; }
+            noopResult += str.size();
         } else {
             // Run the query
             list<vector<string>> results;
