@@ -255,6 +255,13 @@ bool BedrockPlugin_Jobs::peekCreateJob(SQLite& db, BedrockCommand& command) {
     // If this is a unique job that already exists, we won't need to escalate it.
     if (SContains(job, "unique") && job["unique"] == "true") {
         string tableName = getTableName(getTableNumberForJobName(job["name"]));
+
+        // If it's a child though, it will be in the same table as it's parent.
+        int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
+        if (parentJobID) {
+            tableName = getTableName(parentJobID);
+        }
+
         SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? " << (command.request.isSet("mockRequest") ? "true" : "false"));
         SQResult result;
         string operation = command.request.isSet("mockRequest") ? "IS NOT" : "IS";
@@ -499,6 +506,14 @@ list<int64_t> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand
         if (SContains(job, "unique") && job["unique"] == "true") {
             string tableName = getTableName(getTableNumberForJobName(job["name"]));
 
+            // If the job is unique *and* has a parent, we use the table for the parent, so that we keep all related jobs
+            // together. This means passing the "unique" flag on jobs with different parents is weird, and you probably
+            // shouldn't do that.
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
+            if (parentJobID) {
+                tableName = getTableName(parentJobID);
+            }
+
             SQResult result;
             SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                   << (command.request.isSet("mockRequest") ? "true" : "false"));
@@ -634,10 +649,12 @@ list<int64_t> BedrockPlugin_Jobs::processCreateCommon(SQLite& db, BedrockCommand
             // UNIONS and JOINs across tables when we check that relationship.
             // Otherwise, the table chosen is entirely random.
             int64_t jobIDToUse = 0;
-            if (SContains(job, "unique") && job["unique"] == "true") {
-                jobIDToUse = getNextID(db, getTableNumberForJobName(job["name"]));
-            } else if (parentJobID) {
+            if (parentJobID) {
+                // Parent job overrides uniqueness. If something has both a parent and is unique, it uses the parent table.
                 jobIDToUse = getNextID(db, parentJobID);
+            } else if (SContains(job, "unique") && job["unique"] == "true") {
+                // Otherwise, if it's unique, it goes in the table based on its name.
+                jobIDToUse = getNextID(db, getTableNumberForJobName(job["name"]));
             } else {
                 jobIDToUse = getNextID(db);
             }
