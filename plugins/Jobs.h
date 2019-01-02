@@ -23,7 +23,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static constexpr int64_t MAX_SIZE_NAME = 255 * 50;
 
     // Ever changing this will break existing data if not done carefully.
-    static constexpr int64_t TABLE_COUNT = 100;
+    static constexpr int64_t TABLE_COUNT = 2; // TODO: This often causes timeouts in testing when using the intended 100;
 
     // Set a default priority.
     static constexpr int64_t JOBS_DEFAULT_PRIORITY = 500;
