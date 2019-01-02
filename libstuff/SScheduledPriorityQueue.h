@@ -251,9 +251,9 @@ T SScheduledPriorityQueue<T>::_dequeue() {
         auto itemIt = queueIt->second.begin();
 
         // Convenience names for legibility.
-        const Scheduled& thisItemScheduled = itemIt->first;
+        const Scheduled thisItemScheduled = itemIt->first;
         ItemTimeoutPair& thisItemTimeoutPair = itemIt->second;
-        const Timeout& thisItemTimeout = thisItemTimeoutPair.timeout;
+        const Timeout thisItemTimeout = thisItemTimeoutPair.timeout;
 
         // If the item is scheduled before now, we can return it. Otherwise, since these are in scheduled order, there
         // are no usable items in this queue, and we can go on to the next one.
