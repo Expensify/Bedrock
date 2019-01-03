@@ -21,6 +21,7 @@ static int global_readSize = 10;
 static int global_writeSize = 10;
 static int global_writePercent = 0;
 static int global_numa = 0;
+static int global_numaPack = 0;
 static int64_t global_noopResult = 0;
 static int global_testSeconds = 10;
 static int global_secondsRemaining = 0;
@@ -90,8 +91,15 @@ void countDownTimer()
 void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSecond, const string& testQuery, bool showProgress) {
     // If we're numa aware, spread the memory across all nodes
     if (global_numa) {
-        numa_run_on_node(threadNum%numa_num_task_nodes());
-        numa_set_preferred(threadNum%numa_num_task_nodes());
+        if (global_numaPack) {
+            // Pack into the fewest numa nodes
+            numa_run_on_node(numa_node_of_cpu(threadNum%numa_num_task_cpus()));
+            numa_set_preferred(numa_node_of_cpu(threadNum%numa_num_task_cpus()));
+        } else {
+            // Spread across all nodes
+            numa_run_on_node(threadNum%numa_num_task_nodes());
+            numa_set_preferred(threadNum%numa_num_task_nodes());
+        }
     }
 
     // Initialize our query counters
@@ -144,9 +152,16 @@ void runTestQueries(sqlite3* db, int threadNum, vector<uint64_t>* queriesPerSeco
 }
 
 sqlite3* openDatabase(int threadNum) {
-    // If we're numa aware, spread the memory across all nodes
+    // If we're numa aware
     if (global_numa) {
-        numa_set_preferred(threadNum%numa_num_task_nodes());
+        if (global_numaPack) {
+            // pack into the fewest numa nodes
+            numa_set_preferred(numa_node_of_cpu(threadNum%numa_num_task_cpus()));
+        } else {
+            // spread the memory across all nodes
+            numa_set_preferred(threadNum%numa_num_task_nodes());
+        }
+
     }
 
     // Open it per the global settings
@@ -235,6 +250,10 @@ void test(int threadCount, const string& testQuery) {
 
 
 int main(int argc, char *argv[]) {
+    // Log the command line
+    for (int i = 0; i < argc; i++) { cout << argv[i] << " "; }
+    cout << endl;
+
     // Disable memory status tracking as this has a known concurrency problem
     sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
 
@@ -298,6 +317,10 @@ int main(int argc, char *argv[]) {
             // Output numa information about this system
             global_numa = 1;
         } else
+        if (z == string("-numaPack")) {
+            // Pack into the fewest CPUs and numa nodes
+            global_numaPack = 1;
+        } else
         if (z == string("-numastats")) {
             cout << "Enabling NUMA awareness:" << endl;
             cout << "numa_available=" << numa_available() << endl;
@@ -348,6 +371,7 @@ int main(int argc, char *argv[]) {
     cout << "global_writeSize: " << global_writeSize << endl;
     cout << "global_writePercent: " << global_writePercent << endl;
     cout << "global_numa: " << global_numa << endl;
+    cout << "global_numaPack: " << global_numaPack << endl;
     cout << "global_testSeconds: " << global_testSeconds << endl;
     cout << "global_linear: " << global_linear << endl;
     cout << "global_csv: " << global_csv << endl;
