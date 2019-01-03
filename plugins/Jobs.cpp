@@ -1056,7 +1056,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // At this point, all child jobs should already be deleted, but
                 // let's double check.
                 if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
-                    SWARN("Child jobs still exist when deleting parent job, ignoring.");
+                    STHROW("405 Failed to delete a job with outstanding children");
                 }
             }
         }

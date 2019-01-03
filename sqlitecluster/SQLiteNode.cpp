@@ -44,8 +44,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "QUORUM"};
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
-                       const string& peerList, int priority, uint64_t firstTimeout, const string& version,
-                       int quorumCheckpointSeconds)
+                       const string& peerList, int priority, uint64_t firstTimeout, const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
     {
@@ -56,8 +55,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _masterPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
-    _lastQuorumTime = 0;
-    _quorumCheckpointSeconds = quorumCheckpointSeconds;
 
     // Get this party started
     _changeState(SEARCHING);
@@ -748,8 +745,7 @@ bool SQLiteNode::update() {
                    << ", writeConsistency="       << consistencyLevelNames[_commitConsistency]
                    << ", consistencyRequired="    << consistencyLevelNames[_commitConsistency]
                    << ", consistentEnough="       << consistentEnough
-                   << ", everybodyResponded="     << everybodyResponded
-                   << ", lastQuorumTime="         << _lastQuorumTime);
+                   << ", everybodyResponded="     << everybodyResponded);
 
             // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
             // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
@@ -817,11 +813,6 @@ bool SQLiteNode::update() {
                     // Update the last sent transaction ID to reflect that this is finished.
                     _lastSentTransactionID = _db.getCommitCount();
 
-                    // If this was a quorum commit, we'll reset our counter, otherwise, we'll update it.
-                    if (_commitConsistency == QUORUM) {
-                        _lastQuorumTime = STimeNow();
-                    }
-
                     // Done!
                     _commitState = CommitState::SUCCESS;
                 }
@@ -846,12 +837,6 @@ bool SQLiteNode::update() {
             // Lock the database. We'll unlock it when we complete in a future update cycle.
             SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
-
-            // Figure out how much consistency we need. Go with whatever the caller specified, unless we're over our
-            // checkpoint limit.
-            if (STimeNow() > _lastQuorumTime + (_quorumCheckpointSeconds * 1'000'000)) {
-                _commitConsistency = QUORUM;
-            }
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
             // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
