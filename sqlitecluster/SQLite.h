@@ -179,9 +179,6 @@ class SQLite {
     // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
     void waitForCheckpoint();
 
-    // Returns true while the checkpoint thread exists.
-    bool isCheckpointing();
-
     // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
@@ -267,7 +264,7 @@ class SQLite {
         // when required to make sure it can get exclusive use of the DB.
         mutex blockNewTransactionsMutex;
 
-        // These three varialbes let us notify the checkpoint thread when a tranasction ends (or starts, but it will
+        // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
         // have blocked any new ones from starting by locking blockNewTransactionsMutex).
         mutex notifyWaitMutex;
         condition_variable blockNewTransactionsCV;

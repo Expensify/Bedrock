@@ -273,8 +273,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
-        int alreadyCheckpointing = object->_sharedData->_checkpointThreadBusy.fetch_add(1);
-        if (alreadyCheckpointing) {
+        if (object->_sharedData->_checkpointThreadBusy.fetch_add(1)) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
@@ -306,7 +305,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     // shutting down (or otherwise destroying an SQLite object).
                     auto it = _sharedDataLookupMap.find(filename);
                     if (it == _sharedDataLookupMap.end() || it->second->validObjects.find(object) == it->second->validObjects.end()) {
-                        SWARN("Aborting checkpoint, SQLite object deleted.");
+                        SWARN("[checkpoint] Aborting checkpoint, SQLite object deleted.");
                         break;
                     }
 
@@ -332,8 +331,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
             // Allow the next checkpointer.
             object->_sharedData->_checkpointThreadBusy.store(0);
-
-            SINFO("Checkpoint thread complete.");
+            SINFO("[checkpoint] Checkpoint thread complete.");
         }).detach();
     }
     return SQLITE_OK;
@@ -390,10 +388,6 @@ SQLite::~SQLite() {
 
 void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
-}
-
-bool SQLite::isCheckpointing() {
-    return (_sharedData->_checkpointThreadBusy.load() > 0);
 }
 
 bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
