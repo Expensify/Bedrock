@@ -3,6 +3,8 @@
 SimpleHTTPSManager::SimpleHTTPSManager() {}
 SimpleHTTPSManager::~SimpleHTTPSManager() {}
 
+bool verbose = false;
+
 bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
@@ -23,6 +25,10 @@ bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
     if (!transaction->response) {
         transaction->response = 400;
         cout << "[WARN] Failed to parse method line from request: " << methodLine << endl;
+    }
+
+    if (verbose) {
+        cout << "Got response: " << methodLine << endl;
     }
 
     return false;
@@ -112,7 +118,7 @@ int main(int argc, char *argv[]) {
     uint64_t threads = 1;
     uint64_t queryCount = 1;
     bool noop = false;
-    bool verbose = false;
+    // bool verbose = false;
 
     // Change our default values if their CLI counterpart is set
     if (args.isSet("-threads")) {
