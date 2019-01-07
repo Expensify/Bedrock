@@ -6,10 +6,20 @@ SimpleHTTPSManager::~SimpleHTTPSManager() {}
 bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
-    // Just need to parse bedrock style method lines
-    if (!methodLine.empty()) {
-        transaction->response = stoi(SBefore(methodLine, " "));
+    // // Just need to parse bedrock style method lines
+    // if (!methodLine.empty()) {
+    //     transaction->response = stoi(SBefore(methodLine, " "));
+    // }
+
+    size_t offset = methodLine.find_first_of(' ', 0);
+    offset = methodLine.find_first_not_of(' ', offset);
+    if (offset != string::npos) {
+        int status = SToInt(methodLine.substr(offset));
+        if (status) {
+            transaction->response = status;
+        }
     }
+
     if (!transaction->response) {
         transaction->response = 400;
         cout << "[WARN] Failed to parse method line from request: " << methodLine << endl;
