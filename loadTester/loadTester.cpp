@@ -20,9 +20,24 @@ bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
 
 SimpleHTTPSManager::Transaction* SimpleHTTPSManager::send(const string& url, const SData& request) {
     // Open a non https socket, bedrock doesn't use https
-    Socket* s = openSocket(url, nullptr);
+    // Socket* s = openSocket(url, nullptr);
+    // if (!s) {
+    //     cout << "[ALRT] Whoa failed to open a socket to " << url << endl;
+    //     return _createErrorTransaction();
+    // }
+
+    string host, path;
+    if (!SParseURI(url, host, path)) {
+        return _createErrorTransaction();
+    }
+    if (!SContains(host, ":")) {
+        host += ":443";
+    }
+
+    // If this is going to be an https transaction, create a certificate and give it to the socket.
+    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+    Socket* s = openSocket(host, x509);
     if (!s) {
-        cout << "[ALRT] Whoa failed to open a socket to " << url << endl;
         return _createErrorTransaction();
     }
 
@@ -63,9 +78,10 @@ void _prePoll(fd_map& fdm, SimpleHTTPSManager& httpsManager)
     httpsManager.prePoll(fdm);
 }
 
-void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager) {
-    SData request("Query");
-    request["query"] = "SELECT 1;";
+void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager, string& identifier) {
+    SData request("GET ?SQF_EMAIL=cole+test+" + identifier + "@expensify.com HTTP/1.1");
+    // request["query"] = "SELECT 1;";
+    request["Host"] = "exops.io";
     SHTTPSManager::Transaction* transaction = httpsManager.send(host, request);
     _poll(httpsManager, transaction);
     SINFO("Received " << transaction->response);
@@ -110,8 +126,9 @@ int main(int argc, char *argv[]) {
             // start with http or https
             SimpleHTTPSManager httpsManager;
 
-            for (size_t i = 0; i < queryCount; i++) {
-                _sendQueryRequest("bedrock1:8888", httpsManager);
+            for (size_t z = 0; z < queryCount; z++) {
+                string identifier = to_string(i) + "+" + to_string(z);
+                _sendQueryRequest("https://exops.io/mobile-signup", httpsManager, identifier);
                 if (verbose) {
                     cout << "[INFO] Sent query!" << endl;
                 }

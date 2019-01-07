@@ -15,4 +15,4 @@ static void _poll(SimpleHTTPSManager& httpsManager, SHTTPSManager::Transaction* 
 // Wrappers for this plugin that just call the base class of the HTTPSManager.
 static void _prePoll(fd_map& fdm, SimpleHTTPSManager& httpsManager);
 static void _postPoll(fd_map& fdm, uint64_t nextActivity, SimpleHTTPSManager& httpsManager);
-static void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager);
+static void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager, string& identifier);
