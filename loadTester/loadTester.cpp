@@ -3,8 +3,6 @@
 SimpleHTTPSManager::SimpleHTTPSManager() {}
 SimpleHTTPSManager::~SimpleHTTPSManager() {}
 
-bool verbose = false;
-
 bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
@@ -27,7 +25,7 @@ bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
         cout << "[WARN] Failed to parse method line from request: " << methodLine << endl;
     }
 
-    if (verbose) {
+    if (!SContains(methodLine, "20")) {
         cout << "Got response: " << methodLine << endl;
     }
 
@@ -95,7 +93,7 @@ void _prePoll(fd_map& fdm, SimpleHTTPSManager& httpsManager)
 }
 
 void _sendQueryRequest(string host, SimpleHTTPSManager& httpsManager, string& identifier) {
-    SData request("GET ?SQF_EMAIL=cole+test+" + identifier + "@expensify.com HTTP/1.1");
+    SData request("GET /mobile-signup?SQF_EMAIL=cole+test+" + identifier + "@expensify.com HTTP/1.1");
     // request["query"] = "SELECT 1;";
     request["Host"] = "exops.io";
     SHTTPSManager::Transaction* transaction = httpsManager.send(host, request);
@@ -117,8 +115,8 @@ int main(int argc, char *argv[]) {
     // Init arg values
     uint64_t threads = 1;
     uint64_t queryCount = 1;
-    bool noop = false;
-    // bool verbose = false;
+    // bool noop = false;
+    bool verbose = false;
 
     // Change our default values if their CLI counterpart is set
     if (args.isSet("-threads")) {
@@ -144,7 +142,7 @@ int main(int argc, char *argv[]) {
 
             for (size_t z = 0; z < queryCount; z++) {
                 string identifier = to_string(i) + "+" + to_string(z);
-                _sendQueryRequest("https://exops.io/mobile-signup", httpsManager, identifier);
+                _sendQueryRequest("https://exops.io", httpsManager, identifier);
                 if (verbose) {
                     cout << "[INFO] Sent query!" << endl;
                 }

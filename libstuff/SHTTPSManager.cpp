@@ -113,7 +113,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
 
             // 200OK or any content?
             active->finished = now;
-            if (SContains(active->fullResponse.methodLine, " 200 ") || active->fullResponse.content.size()) {
+            if (SContains(active->fullResponse.methodLine, "20") || active->fullResponse.content.size()) {
                 // Pass the transaction down to the subclass.
                 if (_onRecv(active)) {
                     // If true, then the transaction was closed in onRecv.
