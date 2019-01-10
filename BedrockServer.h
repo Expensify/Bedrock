@@ -362,6 +362,8 @@ class BedrockServer : public SQLiteServer {
     // unlocked afterward. Workers do the same, so that they won't try to start a new transaction while the sync thread
     // is committing. This mutex is *not* recursive.
     shared_timed_mutex _syncThreadCommitMutex;
+    atomic<int> _syncThreadCommitMutexWaitCount;
+    shared_timed_mutex _syncThreadCommitOrderMutex;
 
     // Set this when we switch mastering.
     atomic<bool> _suppressMultiWrite;

@@ -368,6 +368,7 @@ void BedrockServer::sync(SData& args,
             upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
                 server._syncThreadCommitMutex.lock();
+                server._syncThreadCommitMutexWaitCount++;
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
@@ -503,6 +504,7 @@ void BedrockServer::sync(SData& args,
                 // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
                 db.waitForCheckpoint();
                 server._syncThreadCommitMutex.lock();
+                server._syncThreadCommitMutexWaitCount++;
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
                 // explicit logging for it to check.
@@ -855,9 +857,15 @@ void BedrockServer::worker(SData& args,
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
                 if (threadId == 0) {
                     uint64_t preLockTime = STimeNow();
+                    server._syncThreadCommitMutexWaitCount.store(0);
+
+                    // We lock the order mutex here and don't unlock until we've got the commit mutex. Locking the
+                    // order mutex prevents workers from trying to lock the commit mutex.
+                    unique_lock<decltype(server._syncThreadCommitOrderMutex)> lock2(server._syncThreadCommitOrderMutex);
                     blockingLock.lock();
                     SINFO("_syncThreadCommitMutex (unique) acquired in worker in " << fixed << setprecision(2)
-                          << ((STimeNow() - preLockTime)/1000) << "ms.");
+                          << ((STimeNow() - preLockTime)/1000) << "ms. Waited for "
+                          << server._syncThreadCommitMutexWaitCount.load() << " other locks to be acquired.");
                 }
 
                 // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
@@ -938,9 +946,33 @@ void BedrockServer::worker(SData& args,
                             shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
                             if (threadId) {
                                 uint64_t preLockTime = STimeNow();
-                                lock1.lock();
-                                SINFO("_syncThreadCommitMutex (shared) acquired in worker in " << fixed << setprecision(2)
-                                      << ((STimeNow() - preLockTime)/1000) << "ms.");
+
+                                // Wait if the blocking thread is trying to commit.
+                                while (true) {
+                                    {
+                                        // We briefly lock this and immediately unlock it. The point of this is that,
+                                        // while the blocking commit thread is trying to lock _syncThreadCommitMutex, we
+                                        // don't try to compete with it, as we want to allow it to lock with priority.
+                                        // If we can acquire the lock, then it wasn't trying to get it.
+                                        shared_lock<decltype(server._syncThreadCommitOrderMutex)> lock2(server._syncThreadCommitOrderMutex);
+                                    }
+
+                                    // We now know that the blocking commit thread isn't trying to lock (or, well, it
+                                    // wasn't very recently. This race condition is sub-optimal but not broken. It
+                                    // means we can still get a lock for a brief time while the blocking commit thread
+                                    // wants it).
+                                    // We try and lock it, and if we can't, we fall back into this loop, checking if
+                                    // the blocking commit thread wants to lock, and if so, waiting. We time-limit this
+                                    // so that we can't have a big queue of threads that checked whether the blocking
+                                    // thread wanted this lock hundreds of MS ago and are now waiting in `lock()`.
+                                    bool locked = lock1.try_lock_for(1ms);
+                                    if (locked) {
+                                        server._syncThreadCommitMutexWaitCount++;
+                                        SINFO("_syncThreadCommitMutex (shared) acquired in worker in " << fixed << setprecision(2)
+                                              << ((STimeNow() - preLockTime)/1000) << "ms.");
+                                        break;
+                                    }
+                                }
                             }
 
                             // This is the first place we get really particular with the state of the node from a
@@ -1103,7 +1135,7 @@ void BedrockServer::_resetServer() {
 BedrockServer::BedrockServer(const SData& args)
   : SQLiteServer(""), shutdownWhileDetached(false), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
+    _syncThreadComplete(false), _syncNode(nullptr), _syncThreadCommitMutexWaitCount(0), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
 {
