@@ -308,6 +308,11 @@ int main(int argc, char* argv[]) {
             SClearSignals();
         }
 
+        // Counters for seeing how long we spend in postPoll.
+        uint64_t pollCounter = 0;
+        uint64_t postPollCounter = 0;
+        uint64_t lastResetCounter = STimeNow();
+
         uint64_t nextActivity = STimeNow();
         while (!server.shutdownComplete()) {
             if (server.shouldBackup() && server.isDetached()) {
@@ -319,8 +324,22 @@ int main(int argc, char* argv[]) {
             server.prePoll(fdm);
             const uint64_t now = STimeNow();
             S_poll(fdm, max(nextActivity, now) - now);
-            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+            nextActivity = STimeNow() + 1'000'000; // 1s max period
             server.postPoll(fdm, nextActivity);
+
+            uint64_t end = STimeNow();
+            postPollCounter += (end - (nextActivity - 1'000'000));
+            pollCounter += ((nextActivity - 1'000'000) - now);
+
+            // Every 10s, log and reset.
+            if (end > lastResetCounter + 10'000'000) {
+                SINFO("Main poll loop: " << ((end - lastResetCounter) / 1000) << " ms elapsed. " << (pollCounter / 1000)
+                      << " ms in poll. " << (postPollCounter / 1000) << " ms in postPoll");
+                pollCounter = 0;
+                postPollCounter = 0;
+                lastResetCounter = end;
+            }
+
         }
         if (server.shutdownWhileDetached) {
             // We need to actually shut down here.
