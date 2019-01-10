@@ -1634,7 +1634,14 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             u_long enable = 1;
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
                 STHROW("couldn't set REUSEADDR");
-                
+
+
+            struct timeval tv;
+            tv.tv_sec = 1;
+            if (setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (struct timeval *)&tv,sizeof(struct timeval))) {
+                STHROW("couldn't set SO_SNDTIMEO");
+            }
+
             // If TCP, connect
             sockaddr_in addr;
             memset(&addr, 0, sizeof(addr));
@@ -1645,12 +1652,12 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
                 switch (S_errno) {
                 case S_EWOULDBLOCK:
                 case S_EALREADY:
-                case S_EINPROGRESS:
                 case S_EINTR:
                 case S_EISCONN:
                     // Not fatal, ignore
                     break;
-
+                case S_EINPROGRESS:
+                    SWARN("Got a 115 connecting to host!");
                 default:
                     STHROW("couldn't connect");
                 }
