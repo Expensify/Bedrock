@@ -46,7 +46,7 @@ void STCPServer::closePorts(list<Port*> except) {
     }
 }
 
-STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
+STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut, bool deferRead) {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     portOut = 0;
     Socket* socket = nullptr;
@@ -65,7 +65,9 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             socketList.push_back(socket);
 
             // Try to read immediately
-            S_recvappend(socket->s, socket->recvBuffer);
+            if (!deferRead) {
+                S_recvappend(socket->s, socket->recvBuffer);
+            }
 
             // Record what port it was accepted on
             portOut = &port;
