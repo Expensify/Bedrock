@@ -183,6 +183,9 @@ class SQLite {
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
     static atomic<int> fullCheckpointPageMin;
+
+    // Enable/disable SQL statement tracing.
+    static atomic<bool> enableTrace;
     
   private:
 
@@ -360,6 +363,9 @@ class SQLite {
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten;
 
+    // Callback to trace internal sqlite state (used for logging normalized queries).
+    static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
+
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
 
@@ -407,4 +413,7 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+    atomic<int> _checkpointThreadBusy;
 };

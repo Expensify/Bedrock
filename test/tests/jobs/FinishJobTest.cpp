@@ -249,14 +249,19 @@ struct FinishJobTest : tpunit::TestFixture {
         // Confirm that the parent is in the PAUSED state and the children are in the QUEUED state
         SQResult result;
         list<string> ids = {parentID, finishedChildID, cancelledChildID};
-        tester->readDB("SELECT jobID, state FROM jobs WHERE jobID IN(" + SComposeList(ids) + ") ORDER BY jobID;", result);
+        tester->readDB("SELECT jobID, state FROM jobs WHERE jobID IN(" + SComposeList(ids) + ");", result);
         ASSERT_EQUAL(result.rows.size(), 3);
-        ASSERT_EQUAL(result[0][0], parentID);
-        ASSERT_EQUAL(result[0][1], "PAUSED");
-        ASSERT_EQUAL(result[1][0], finishedChildID);
-        ASSERT_EQUAL(result[1][1], "QUEUED");
-        ASSERT_EQUAL(result[2][0], cancelledChildID);
-        ASSERT_EQUAL(result[2][1], "QUEUED");
+        for (auto& row : result.rows) {
+            if (row[0] == parentID) {
+                ASSERT_EQUAL(row[1], "PAUSED");
+            } else if (row[0] == finishedChildID) {
+                ASSERT_EQUAL(row[1], "QUEUED");
+            } else if (row[0] == cancelledChildID) {
+                ASSERT_EQUAL(row[1], "QUEUED");
+            } else { 
+                ASSERT_TRUE(false);
+            }
+        }
     }
 
     void deleteFinishedJobWithNoChildren() {
