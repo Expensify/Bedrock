@@ -85,7 +85,6 @@ int main(int argc, char *argv[]) {
     // Init arg values
     uint64_t threads = 1;
     uint64_t queryCount = 1;
-    bool noop = false;
     bool verbose = false;
 
     // Change our default values if their CLI counterpart is set
