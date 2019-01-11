@@ -1173,6 +1173,13 @@ BedrockServer::BedrockServer(const SData& args)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
 {
+    // Initialize all the postPoll timers.
+    _postPollBaseClass = chrono::steady_clock::duration::zero();
+    _postPollAccept = chrono::steady_clock::duration::zero();
+    _postPollChooseSockets = chrono::steady_clock::duration::zero();
+    _postPollPostProcess = chrono::steady_clock::duration::zero();
+    _postPollStart = chrono::steady_clock::now();
+
     _version = SVERSION;
 
     // Output the list of plugins.
@@ -1339,7 +1346,8 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    uint64_t postPollStartTime = STimeNow();
+    auto startBaseClassPostPoll = chrono::steady_clock::now();
+
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
@@ -1351,12 +1359,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     int deserializationAttempts = 0;
     int deserializedRequests = 0;
 
+    auto startAccept = chrono::steady_clock::now();
     // Accept any new connections
     set<Socket*> sockets = _acceptSockets(true);
     size_t newSocketCount = sockets.size();
-
-    // Time the end of the accept section.
-    uint64_t acceptEndTime = STimeNow();
 
     // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
     // over it, we'll keep a list of sockets that need closing.
@@ -1367,6 +1373,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
     // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
     static uint64_t lastChance = 0;
+
+    auto startChooseSockets = chrono::steady_clock::now();
 
     // Lock our socket set for the remainder of the function.
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
@@ -1402,6 +1410,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     SINFO("Poll returned " << fdm.size() << " sockets to inspect and we accepted " << newSocketCount
           << " new sockets. Total to inspect: " << sockets.size() << " of " << socketSet.size() << ".");
+
+    auto startPostProcess = chrono::steady_clock::now();
     for (auto s : sockets) {
         // Do the read that we deferred above. This doesn't help a ton yet, but if we break out the below loop to a
         // separate thread, this lets the new thread do this work.
@@ -1553,12 +1563,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // Log the timing of this loop.
-    uint64_t acceptElapsedUS = (acceptEndTime - postPollStartTime);
-    uint64_t readElapsedUS = (STimeNow() - acceptEndTime);
-    SINFO("Read from " << socketSet.size() << " sockets, attempted to deserialize " << deserializationAttempts
-          << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedUS << "us. Accepted in:" << acceptElapsedUS << "us.");
-
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
         closeSocket(s);
@@ -1595,6 +1599,30 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             }
             _shutdownState.store(CLIENTS_RESPONDED);
         }
+    }
+
+    // Compute timing info.
+    auto end = chrono::steady_clock::now();
+    _postPollBaseClass += (startAccept - startBaseClassPostPoll);
+    _postPollAccept += (startChooseSockets - startAccept);
+    _postPollChooseSockets += (startPostProcess - startChooseSockets);
+    _postPollPostProcess += (end - startPostProcess);
+
+    // If it's been 10s since the last time we logged something, log and reset.
+    if (end > (_postPollStart + 10s)) {
+        SINFO("[performance] postPoll timing: "
+            << chrono::duration_cast<chrono::milliseconds>(end - _postPollStart).count() << " ms total elapsed. "
+            << chrono::duration_cast<chrono::milliseconds>(_postPollBaseClass).count() << " ms in bases class. "
+            << chrono::duration_cast<chrono::milliseconds>(_postPollAccept).count() << " ms in accept. "
+            << chrono::duration_cast<chrono::milliseconds>(_postPollChooseSockets).count() << " ms choosing sockets. "
+            << chrono::duration_cast<chrono::milliseconds>(_postPollPostProcess).count() << " ms post processing connections.");
+
+        // Reset everything.
+        _postPollBaseClass = chrono::steady_clock::duration::zero();
+        _postPollAccept = chrono::steady_clock::duration::zero();
+        _postPollChooseSockets = chrono::steady_clock::duration::zero();
+        _postPollPostProcess = chrono::steady_clock::duration::zero();
+        _postPollStart = end;
     }
 }
 

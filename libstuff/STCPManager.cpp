@@ -79,7 +79,7 @@ void STCPManager::postPoll(fd_map& fdm) {
         if (fdm.find(socket->s) == fdm.end()) {
             // If this socket isn't in our fd_map, it wasn't active in `poll`, so we can skip it.
             // TODO: ideally we don't walk the whole list for this, but only look at the sockets in `fdm`.
-            // continue;
+            continue;
         }
 
         // Update this socket

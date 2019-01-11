@@ -462,8 +462,10 @@ class BedrockServer : public SQLiteServer {
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
 
-    // Manage the poll worker queue.
-    mutex _postPollWorkerMutex;
-    condition_variable _postPollWorkerCV;
-    list<Socket*> _pendingPollSockets;
+    // Counters for timing postPoll and locating bottlenecks;
+    chrono::steady_clock::duration _postPollBaseClass;
+    chrono::steady_clock::duration _postPollAccept;
+    chrono::steady_clock::duration _postPollChooseSockets;
+    chrono::steady_clock::duration _postPollPostProcess;
+    chrono::steady_clock::time_point _postPollStart;
 };
