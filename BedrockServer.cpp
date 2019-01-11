@@ -1274,13 +1274,10 @@ BedrockServer::~BedrockServer() {
         SWARN("Still have " << _socketIDMap.size() << " entries in _socketIDMap.");
     }
 
-    if (socketList.size()) {
-        SWARN("Still have " << socketList.size() << " entries in socketList.");
-        for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
-            // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
-            Socket* s = *socketIt++;
-            closeSocket(s);
-        }
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    while (socketSet.size()) {
+        SWARN("Still have " << socketSet.size() << " entries in socketSet.");
+        closeSocket(*(socketSet.begin()));
     }
 }
 
@@ -1371,7 +1368,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     static uint64_t lastChance = 0;
 
     // Ok, now we'll tell workers to start on these.
-    for (auto s : socketList) {
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    for (auto s : socketSet) {
 
         // Do the read that we deferred above.
         S_recvappend(s->s, s->recvBuffer);
@@ -1536,7 +1534,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Log the timing of this loop.
     uint64_t acceptElapsedUS = (acceptEndTime - postPollStartTime);
     uint64_t readElapsedUS = (STimeNow() - acceptEndTime);
-    SINFO("Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
+    SINFO("Read from " << socketSet.size() << " sockets, attempted to deserialize " << deserializationAttempts
           << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedUS << "us. Accepted in:" << acceptElapsedUS << "us.");
 
     // Now we can close any sockets that we need to.
@@ -1561,16 +1559,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
-        if (socketList.empty() || _gracefulShutdownTimeout.ringing()) {
+        if (socketSet.empty() || _gracefulShutdownTimeout.ringing()) {
             lastChance = 0;
 
             // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
             // shutdown any time after here, and we'll have no way to handle new requests.
-            if (socketList.size()) {
+            if (socketSet.size()) {
                 SAUTOLOCK(_socketIDMutex);
-                SINFO("Killing " << socketList.size() << " remaining sockets at graceful shutdown timeout.");
-                while(socketList.size()) {
-                    auto s = socketList.front();
+                SINFO("Killing " << socketSet.size() << " remaining sockets at graceful shutdown timeout.");
+                while(socketSet.size()) {
+                    auto s = *(socketSet.begin());
                     _socketIDMap.erase(s->id);
                     closeSocket(s);
                 }

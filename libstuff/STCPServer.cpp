@@ -62,7 +62,8 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut, bool deferRead) {
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
             socket = new Socket(s, Socket::CONNECTED);
             socket->addr = addr;
-            socketList.push_back(socket);
+            lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+            socketSet.insert(socket);
 
             // Try to read immediately
             if (!deferRead) {

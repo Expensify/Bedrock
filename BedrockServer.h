@@ -234,9 +234,9 @@ class BedrockServer : public SQLiteServer {
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
-    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
+    // We don't need to lock around access to the base class's `socketSet` because we carefully control access to it
     // to the main thread.
-    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
+    // The only functions that access `socketSet` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
     // and acceptSocket in STCPServer.
     // prePoll and postPoll are only ever called by the main thread.
     // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
