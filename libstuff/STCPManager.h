@@ -60,7 +60,28 @@ struct STCPManager {
     // Hard terminate a socket
     void closeSocket(Socket* socket);
 
+    struct SocketCompare {
+        bool operator() (const Socket* lhs, const Socket* rhs) const {
+            if (lhs == 0 || rhs == 0) {
+                SWARN("Invalid socket in comparison.");
+                return false;
+            }
+            if (lhs->s == rhs->s) {
+                // This shouldn't be possible because we remove sockets before closing them, meaning the OS has no
+                // opportunity to reuse them until we've already dropped them. This is a sanity check in case something
+                // weird happens like the OS has closed the socket and reused the file descriptor before we notice
+                // that's happened. I don't think that's supposed to be possible on linux, though.
+                SALERT("Duplicate sockets in set, one will get dropped.");
+            }
+            return lhs->s < rhs->s;
+        }
+    };
+
     // Attributes
-    set<Socket*> socketSet; // TODO: Make the set sorted in a useful way.
+    set<Socket*, SocketCompare> socketSet;
     recursive_mutex socketSetMutex;
 };
+
+// These allow searching socketSet with just an FD, not an entire socket object.
+//bool operator<(const STCPManager::Socket* so, const int& si) { return so->s < i; }
+//bool operator<(const int& si, const STCPManager::Socket* so) { return i < so->s; }

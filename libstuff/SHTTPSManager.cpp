@@ -8,7 +8,7 @@ SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const stri
 { }
 
 SHTTPSManager::~SHTTPSManager() {
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
 
     // Clean up outstanding transactions
     SASSERTWARN(_activeTransactionList.empty());

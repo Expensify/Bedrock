@@ -75,6 +75,13 @@ void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
     for (Socket* socket : socketSet) {
+
+        if (fdm.find(socket->s) == fdm.end()) {
+            // If this socket isn't in our fd_map, it wasn't active in `poll`, so we can skip it.
+            // TODO: ideally we don't walk the whole list for this, but only look at the sockets in `fdm`.
+            // continue;
+        }
+
         // Update this socket
         switch (socket->state.load()) {
         case Socket::CONNECTING: {

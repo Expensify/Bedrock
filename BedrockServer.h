@@ -342,7 +342,7 @@ class BedrockServer : public SQLiteServer {
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
     // those ports.
-    void _acceptSockets(bool deferRead = false);
+    set<Socket*> _acceptSockets(bool deferRead = false);
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
