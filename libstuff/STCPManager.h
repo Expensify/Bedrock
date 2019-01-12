@@ -10,7 +10,7 @@ struct STCPManager {
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
         ~Socket();
         // Attributes
-        const int s;
+        int s;
         sockaddr_in addr;
         string recvBuffer;
         atomic<State> state;
@@ -52,7 +52,7 @@ struct STCPManager {
     void postPoll(fd_map& fdm);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = nullptr);
+    Socket* openSocket(const string& host, SX509* x509 = nullptr, recursive_mutex* listMutexPtr = nullptr);
 
     // Gracefully shuts down a socket
     void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
@@ -60,24 +60,6 @@ struct STCPManager {
     // Hard terminate a socket
     void closeSocket(Socket* socket);
 
-    struct SocketCompare {
-        bool operator() (const Socket* lhs, const Socket* rhs) const {
-            if (lhs == 0 || rhs == 0) {
-                SWARN("Invalid socket in comparison.");
-                return false;
-            }
-            if (lhs->s == rhs->s) {
-                // This shouldn't be possible because we remove sockets before closing them, meaning the OS has no
-                // opportunity to reuse them until we've already dropped them. This is a sanity check in case something
-                // weird happens like the OS has closed the socket and reused the file descriptor before we notice
-                // that's happened. I don't think that's supposed to be possible on linux, though.
-                SALERT("Duplicate sockets in set, one will get dropped.");
-            }
-            return lhs->s < rhs->s;
-        }
-    };
-
     // Attributes
-    set<Socket*, SocketCompare> socketSet;
-    recursive_mutex socketSetMutex;
+    list<Socket*> socketList;
 };
