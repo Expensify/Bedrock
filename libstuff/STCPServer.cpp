@@ -18,9 +18,7 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     Port port;
     port.host = host;
     port.s = S_socket(host, true, true, false);
-    if (port.s < 0) {
-        throw FailedToOpenPort();
-    }
+    SASSERT(port.s >= 0);
     lock_guard <decltype(portListMutex)> lock(portListMutex);
     list<Port>::iterator portIt = portList.insert(portList.end(), port);
     return &*portIt;

@@ -335,63 +335,51 @@ void BedrockServer::sync(SData& args,
         // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
         // Instead, we'll simply not respond and let this request get re-directed to another slave.
         string masterVersion = server._masterVersion.load();
-        lock_guard <decltype(server.portListMutex)> lock(server.portListMutex);
-        if (!server._suppressCommandPort && nodeState == SQLiteNode::SLAVING && (masterVersion != server._version)) {
-            SINFO("Node " << server._args["-nodeName"] << " slaving on version " << server._version << ", master is version: "
-                  << masterVersion << ", not opening command port.");
-            server.suppressCommandPort("master version mismatch", true);
-        } else if (server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || (masterVersion == server._version))) {
-            // If we become master, or if master's version resumes matching ours, open the command port again.
-            if (!server._suppressCommandPortManualOverride) {
-                // Only generate this logline if we haven't manually blocked this.
-                SINFO("Node " << server._args["-nodeName"] << " disabling previously suppressed command port after version check.");
+        {
+            // We lock around any changes to the command port state so that two threads can't run over each other.
+            lock_guard <decltype(server.portListMutex)> lock(server.portListMutex);
+            if (!server._suppressCommandPort && nodeState == SQLiteNode::SLAVING && (masterVersion != server._version)) {
+                SINFO("Node " << server._args["-nodeName"] << " slaving on version " << server._version << ", master is version: "
+                      << masterVersion << ", not opening command port.");
+                server.suppressCommandPort("master version mismatch", true);
+            } else if (server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || (masterVersion == server._version))) {
+                // If we become master, or if master's version resumes matching ours, open the command port again.
+                if (!server._suppressCommandPortManualOverride) {
+                    // Only generate this logline if we haven't manually blocked this.
+                    SINFO("Node " << server._args["-nodeName"] << " disabling previously suppressed command port after version check.");
+                }
+                server.suppressCommandPort("master version match", false);
             }
-            server.suppressCommandPort("master version match", false);
-        }
 
-        if (!server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::SLAVING) &&
-            server._shutdownState.load() == RUNNING) {
-            // Open the port
-            if (!server._commandPort) {
-                SINFO("Ready to process commands, opening command port on '" << server._args["-serverHost"] << "'");
-                try {
+            if (!server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::SLAVING) &&
+                server._shutdownState.load() == RUNNING) {
+                // Open the port
+                if (!server._commandPort) {
+                    SINFO("Ready to process commands, opening command port on '" << server._args["-serverHost"] << "'");
                     server._commandPort = server.openPort(server._args["-serverHost"]);
-                } catch (const FailedToOpenPort& e) {
-                    server._commandPort = nullptr;
-                    SWARN("Failed opening command port. Will retry.");
                 }
-            }
-            if (!server._controlPort) {
-                SINFO("Opening control port on '" << server._args["-controlPort"] << "'");
-                try {
+                if (!server._controlPort) {
+                    SINFO("Opening control port on '" << server._args["-controlPort"] << "'");
                     server._controlPort = server.openPort(server._args["-controlPort"]);
-                } catch (const FailedToOpenPort& e) {
-                    server._controlPort = nullptr;
-                    SWARN("Failed opening control port. Will retry.");
                 }
-            }
 
-            // Open any plugin ports on enabled plugins
-            for (auto plugin : server.plugins) {
-                string portHost = plugin->getPort();
-                if (!portHost.empty()) {
-                    bool alreadyOpened = false;
-                    for (auto pluginPorts : server._portPluginMap) {
-                        if (pluginPorts.second == plugin) {
-                            // We've already got this one.
-                            alreadyOpened = true;
-                            break;
+                // Open any plugin ports on enabled plugins
+                for (auto plugin : server.plugins) {
+                    string portHost = plugin->getPort();
+                    if (!portHost.empty()) {
+                        bool alreadyOpened = false;
+                        for (auto pluginPorts : server._portPluginMap) {
+                            if (pluginPorts.second == plugin) {
+                                // We've already got this one.
+                                alreadyOpened = true;
+                                break;
+                            }
                         }
-                    }
-                    // Open the port and associate it with the plugin
-                    if (!alreadyOpened) {
-                        SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
-                        Port* port = server.openPort(portHost);
-                        try {
+                        // Open the port and associate it with the plugin
+                        if (!alreadyOpened) {
+                            SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                            Port* port = server.openPort(portHost);
                             server._portPluginMap[port] = plugin;
-                        } catch (const FailedToOpenPort& e) {
-                            server._portPluginMap.erase(port);
-                            SWARN("Failed opening plugin port. Will retry.");
                         }
                     }
                 }
@@ -1265,12 +1253,7 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Allow sending control commands when the server's not MASTERING/SLAVING.
     SINFO("Opening control port on '" << _args["-controlPort"] << "'");
-    try {
-        _controlPort = openPort(_args["-controlPort"]);
-    } catch (const FailedToOpenPort& e) {
-        _controlPort = nullptr;
-        SWARN("Failed opening plugin port. Will retry.");
-    }
+    _controlPort = openPort(_args["-controlPort"]);
 
     // If we're bootstraping this node we need to go into detached mode here.
     // The syncWrapper will handle this for us.
@@ -1731,16 +1714,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
         }
     } else {
         // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
-        // TODO: Is that true?
         SHMMM("Clearing command port suppression");
-        if (_commandPort == nullptr) {
-            try {
-                _commandPort = openPort(_args["-serverHost"]);
-            } catch (const FailedToOpenPort& e) {
-                _commandPort = nullptr;
-                SWARN("Failed opening command port. Will retry.");
-            }
-        }
     }
 }
 
