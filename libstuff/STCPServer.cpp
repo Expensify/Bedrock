@@ -33,6 +33,7 @@ void STCPServer::closePorts(list<Port*> except) {
         while (it != portList.end()) {
             if  (find(except.begin(), except.end(), &(*it)) == except.end()) {
                 // Close this port
+                ::shutdown(it->s, SHUT_RDWR);
                 ::close(it->s);
                 SINFO("Close ports closing " << it->host << ".");
                 it = portList.erase(it);
