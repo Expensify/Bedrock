@@ -3,12 +3,14 @@
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 STCPManager::~STCPManager() {
-    SASSERTWARN(socketList.empty());
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    SASSERTWARN(socketSet.empty());
 }
 
 void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
-    for (Socket* socket : socketList) {
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    for (Socket* socket : socketSet) {
         // Make sure it's not closed
         if (socket->state.load() != Socket::CLOSED) {
             // Check and see if it looks like we're still valid.
@@ -71,7 +73,15 @@ void STCPManager::prePoll(fd_map& fdm) {
 
 void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
-    for (Socket* socket : socketList) {
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    for (Socket* socket : socketSet) {
+
+        if (fdm.find(socket->s) == fdm.end()) {
+            // If this socket isn't in our fd_map, it wasn't active in `poll`, so we can skip it.
+            // TODO: ideally we don't walk the whole list for this, but only look at the sockets in `fdm`.
+            continue;
+        }
+
         // Update this socket
         switch (socket->state.load()) {
         case Socket::CONNECTING: {
@@ -211,7 +221,8 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
-    socketList.remove(socket);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    socketSet.erase(socket);
 
     delete socket;
 }
@@ -231,7 +242,7 @@ STCPManager::Socket::~Socket() {
     }
 }
 
-STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, recursive_mutex* listMutexPtr) {
+STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
     SASSERT(SHostIsValid(host));
     int s = S_socket(host, true, false, false);
@@ -244,12 +255,8 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, re
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
 
-    if (listMutexPtr) {
-        lock_guard<recursive_mutex> lock(*listMutexPtr);
-        socketList.push_back(socket);
-    } else {
-        socketList.push_back(socket);
-    }
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    socketSet.insert(socket);
     return socket;
 }
 

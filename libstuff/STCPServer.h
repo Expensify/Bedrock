@@ -23,7 +23,7 @@ struct STCPServer : public STCPManager {
     void closePorts(list<Port*> except = {});
 
     // Tries to accept a new incoming socket
-    Socket* acceptSocket(Port*& port);
+    Socket* acceptSocket(Port*& port, bool deferRead = false);
     Socket* acceptSocket() {
         Port* ignore;
         return acceptSocket(ignore);
