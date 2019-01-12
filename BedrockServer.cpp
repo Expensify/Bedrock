@@ -335,6 +335,7 @@ void BedrockServer::sync(SData& args,
         // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
         // Instead, we'll simply not respond and let this request get re-directed to another slave.
         string masterVersion = server._masterVersion.load();
+        lock_guard <decltype(server.portListMutex)> lock(server.portListMutex);
         if (!server._suppressCommandPort && nodeState == SQLiteNode::SLAVING && (masterVersion != server._version)) {
             SINFO("Node " << server._args["-nodeName"] << " slaving on version " << server._version << ", master is version: "
                   << masterVersion << ", not opening command port.");
@@ -347,16 +348,27 @@ void BedrockServer::sync(SData& args,
             }
             server.suppressCommandPort("master version match", false);
         }
+
         if (!server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::SLAVING) &&
             server._shutdownState.load() == RUNNING) {
             // Open the port
             if (!server._commandPort) {
                 SINFO("Ready to process commands, opening command port on '" << server._args["-serverHost"] << "'");
-                server._commandPort = server.openPort(server._args["-serverHost"]);
+                try {
+                    server._commandPort = server.openPort(server._args["-serverHost"]);
+                } catch (const FailedToOpenPort& e) {
+                    server._commandPort = nullptr;
+                    SWARN("Failed opening command port. Will retry.");
+                }
             }
             if (!server._controlPort) {
                 SINFO("Opening control port on '" << server._args["-controlPort"] << "'");
-                server._controlPort = server.openPort(server._args["-controlPort"]);
+                try {
+                    server._controlPort = server.openPort(server._args["-controlPort"]);
+                } catch (const FailedToOpenPort& e) {
+                    server._controlPort = nullptr;
+                    SWARN("Failed opening control port. Will retry.");
+                }
             }
 
             // Open any plugin ports on enabled plugins
@@ -375,7 +387,12 @@ void BedrockServer::sync(SData& args,
                     if (!alreadyOpened) {
                         SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
                         Port* port = server.openPort(portHost);
-                        server._portPluginMap[port] = plugin;
+                        try {
+                            server._portPluginMap[port] = plugin;
+                        } catch (const FailedToOpenPort& e) {
+                            server._portPluginMap.erase(port);
+                            SWARN("Failed opening plugin port. Will retry.");
+                        }
                     }
                 }
             }
@@ -1152,6 +1169,7 @@ bool BedrockServer::_wouldCrash(const BedrockCommand& command) {
 }
 
 void BedrockServer::_resetServer() {
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     _requestCount = 0;
     _replicationState = SQLiteNode::SEARCHING;
     _upgradeInProgress = false;
@@ -1247,7 +1265,12 @@ BedrockServer::BedrockServer(const SData& args)
 
     // Allow sending control commands when the server's not MASTERING/SLAVING.
     SINFO("Opening control port on '" << _args["-controlPort"] << "'");
-    _controlPort = openPort(_args["-controlPort"]);
+    try {
+        _controlPort = openPort(_args["-controlPort"]);
+    } catch (const FailedToOpenPort& e) {
+        _controlPort = nullptr;
+        SWARN("Failed opening plugin port. Will retry.");
+    }
 
     // If we're bootstraping this node we need to go into detached mode here.
     // The syncWrapper will handle this for us.
@@ -1685,6 +1708,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
 }
 
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
     // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
     if (_suppressCommandPortManualOverride && !manualOverride) {
         return;
@@ -1707,7 +1731,16 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
         }
     } else {
         // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
+        // TODO: Is that true?
         SHMMM("Clearing command port suppression");
+        if (_commandPort == nullptr) {
+            try {
+                _commandPort = openPort(_args["-serverHost"]);
+            } catch (const FailedToOpenPort& e) {
+                _commandPort = nullptr;
+                SWARN("Failed opening command port. Will retry.");
+            }
+        }
     }
 }
 

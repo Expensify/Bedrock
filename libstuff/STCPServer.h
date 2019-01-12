@@ -37,5 +37,9 @@ struct STCPServer : public STCPManager {
     list<Port> portList;
 
     // Protect access to to the port list when multiple threads insert and delete from it.
-    mutex portListMutex;
+    recursive_mutex portListMutex;
+
+    class FailedToOpenPort : public exception {
+        virtual const char* what() const noexcept { return "Couldn't open port."; }
+    };
 };

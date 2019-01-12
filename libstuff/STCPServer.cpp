@@ -18,7 +18,9 @@ STCPServer::Port* STCPServer::openPort(const string& host) {
     Port port;
     port.host = host;
     port.s = S_socket(host, true, true, false);
-    SASSERT(port.s >= 0);
+    if (port.s < 0) {
+        throw FailedToOpenPort();
+    }
     lock_guard <decltype(portListMutex)> lock(portListMutex);
     list<Port>::iterator portIt = portList.insert(portList.end(), port);
     return &*portIt;
@@ -33,6 +35,7 @@ void STCPServer::closePorts(list<Port*> except) {
         while (it != portList.end()) {
             if  (find(except.begin(), except.end(), &(*it)) == except.end()) {
                 // Close this port
+                ::shutdown(it->s, SHUT_RDWR);
                 ::close(it->s);
                 SINFO("Close ports closing " << it->host << ".");
                 it = portList.erase(it);
