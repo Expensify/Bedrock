@@ -222,9 +222,11 @@ void STCPManager::closeSocket(Socket* socket) {
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
-    socketSet.erase(socket);
-
-    delete socket;
+    if (socketSet.erase(socket)) {
+        delete socket;
+    } else {
+        SINFO("Socket already closed.");
+    }
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
