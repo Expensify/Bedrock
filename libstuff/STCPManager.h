@@ -66,13 +66,6 @@ struct STCPManager {
                 SWARN("Invalid socket in comparison.");
                 return false;
             }
-            if (lhs->s == rhs->s) {
-                // This shouldn't be possible because we remove sockets before closing them, meaning the OS has no
-                // opportunity to reuse them until we've already dropped them. This is a sanity check in case something
-                // weird happens like the OS has closed the socket and reused the file descriptor before we notice
-                // that's happened. I don't think that's supposed to be possible on linux, though.
-                SALERT("Duplicate sockets in set, one will get dropped.");
-            }
             return lhs->s < rhs->s;
         }
     };
