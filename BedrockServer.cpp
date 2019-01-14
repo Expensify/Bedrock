@@ -1371,7 +1371,26 @@ void BedrockServer::prePoll(fd_map& fdm) {
 
 void BedrockServer::_network(BedrockServer& server) {
     SInitialize("network");
+
+    // Keep track of time spent waiting versus busy.
+    chrono::steady_clock::duration waitTime(0);
+    chrono::steady_clock::time_point lastStartTime(chrono::steady_clock::now());
+
     while (true) {
+        // Log timing info. This is at the top of the loop instead of the bottom so that `continue` can't skip it.
+        chrono::steady_clock::time_point end(chrono::steady_clock::now());
+        if (end > (lastStartTime + 10s)) {
+            auto busyTime = ((end - lastStartTime) - waitTime);
+            SINFO("[performance] network thread timing: "
+                << chrono::duration_cast<chrono::milliseconds>(end - lastStartTime).count() << " ms total elapsed. "
+                << chrono::duration_cast<chrono::milliseconds>(busyTime).count() << " ms busy. "
+                << chrono::duration_cast<chrono::milliseconds>(waitTime).count() << " ms waiting.");
+
+            // Reset everything.
+            waitTime = chrono::steady_clock::duration::zero();
+            lastStartTime = end;
+        }
+
         Socket* socket = nullptr;
         {
             // Lock and dequeue.
@@ -1389,7 +1408,10 @@ void BedrockServer::_network(BedrockServer& server) {
                 // Otherwise there's nothing in the queue and we're not supposed to exit, so wait for work.
                 // We'll get interrupted if either work becomes available or we're supposed to exit, so just start at
                 // the top of the loop if that happens.
+                auto beforeWait = chrono::steady_clock::now();
                 server._networkCV.wait(lock);
+                auto afterWait = chrono::steady_clock::now();
+                waitTime += (afterWait - beforeWait);
                 continue;
             }
         }
