@@ -35,7 +35,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         // Add a request ID if one was missing.
         _addRequestID(newCommand.request);
-        SAUTOPREFIX(newCommand.request["requestID"]);
+        SAUTOPREFIX(newCommand.request);
         if (newCommand.writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
@@ -203,7 +203,7 @@ void BedrockServer::sync(SData& args,
     server._syncMutex.lock();
     do {
         // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
-        SAUTOPREFIX(command.request["requestID"]);
+        SAUTOPREFIX(command.request);
 
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
@@ -314,7 +314,9 @@ void BedrockServer::sync(SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SAUTOPREFIX("xxxxxx");
+            SData request = SData();
+            request["requestID"] = "xxxxxx";
+            SAUTOPREFIX(request);
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
@@ -456,7 +458,7 @@ void BedrockServer::sync(SData& args,
             try {
                 while (true) {
                     BedrockCommand completedCommand = server._completedCommands.pop();
-                    SAUTOPREFIX(completedCommand.request["requestID"]);
+                    SAUTOPREFIX(completedCommand.request);
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
@@ -475,7 +477,7 @@ void BedrockServer::sync(SData& args,
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
-            SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request);
             SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
@@ -684,7 +686,7 @@ void BedrockServer::worker(SData& args,
 
             command = commandQueue.get(1000000);
 
-            SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request);
             SINFO("Dequeued command " << command.request.methodLine << " in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
@@ -1438,7 +1440,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (!request.empty()) {
                     // If there's no ID for this request, let's add one.
                     _addRequestID(request);
-                    SAUTOPREFIX(request["requestID"]);
+                    SAUTOPREFIX(request);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
