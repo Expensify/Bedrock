@@ -35,7 +35,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         // Add a request ID if one was missing.
         _addRequestID(newCommand.request);
-        SAUTOPREFIX(newCommand.request["requestID"]);
+        SAUTOPREFIX(newCommand.request);
         if (newCommand.writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(newCommand.request.methodLine) != _syncCommands.end()) {
 
@@ -203,7 +203,7 @@ void BedrockServer::sync(const SData& args,
     server._syncMutex.lock();
     do {
         // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
-        SAUTOPREFIX(command.request["requestID"]);
+        SAUTOPREFIX(command.request);
 
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
@@ -314,7 +314,9 @@ void BedrockServer::sync(const SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SAUTOPREFIX("xxxxxx");
+            SData request = SData();
+            request["requestID"] = "xxxxxx";
+            SAUTOPREFIX(request);
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
@@ -331,76 +333,6 @@ void BedrockServer::sync(const SData& args,
         replicationState.store(nodeState);
         masterVersion.store(server._syncNode->getMasterVersion());
 
-        // If we're a slave, and the master's on a different version than us, we don't open the command port.
-        // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
-        // Instead, we'll simply not respond and let this request get re-directed to another slave.
-        string masterVersion = server._masterVersion.load();
-        {
-            // We lock around any changes to the command port state so that two threads can't run over each other.
-            lock_guard <decltype(server.portListMutex)> lock(server.portListMutex);
-            if (!server._suppressCommandPort && nodeState == SQLiteNode::SLAVING && (masterVersion != server._version)) {
-                SINFO("Node " << server._args["-nodeName"] << " slaving on version " << server._version << ", master is version: "
-                      << masterVersion << ", not opening command port.");
-                server.suppressCommandPort("master version mismatch", true);
-            } else if (server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || (masterVersion == server._version))) {
-                // If we become master, or if master's version resumes matching ours, open the command port again.
-                if (!server._suppressCommandPortManualOverride) {
-                    // Only generate this logline if we haven't manually blocked this.
-                    SINFO("Node " << server._args["-nodeName"] << " disabling previously suppressed command port after version check.");
-                }
-                server.suppressCommandPort("master version match", false);
-            }
-
-            if (!server._suppressCommandPort && (nodeState == SQLiteNode::MASTERING || nodeState == SQLiteNode::SLAVING) &&
-                server._shutdownState.load() == RUNNING) {
-                // Open the port
-                if (!server._commandPort) {
-                    SINFO("Ready to process commands, opening command port on '" << server._args["-serverHost"] << "'");
-                    server._commandPort = server.openPort(server._args["-serverHost"]);
-                }
-                if (!server._controlPort) {
-                    SINFO("Opening control port on '" << server._args["-controlPort"] << "'");
-                    server._controlPort = server.openPort(server._args["-controlPort"]);
-                }
-
-                // Open any plugin ports on enabled plugins
-                for (auto plugin : server.plugins) {
-                    string portHost = plugin->getPort();
-                    if (!portHost.empty()) {
-                        bool alreadyOpened = false;
-                        for (auto pluginPorts : server._portPluginMap) {
-                            if (pluginPorts.second == plugin) {
-                                // We've already got this one.
-                                alreadyOpened = true;
-                                break;
-                            }
-                        }
-                        // Open the port and associate it with the plugin
-                        if (!alreadyOpened) {
-                            SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
-                            Port* port = server.openPort(portHost);
-                            server._portPluginMap[port] = plugin;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Is the OS trying to communicate with us?
-        if (SGetSignals()) {
-            if (SGetSignal(SIGTTIN)) {
-                // Suppress command port, but only if we haven't already cleared it
-                if (!SCheckSignal(SIGTTOU)) {
-                    server.suppressCommandPort("SIGTTIN", true, true);
-                }
-            } else if (SGetSignal(SIGTTOU)) {
-                // Clear command port suppression
-                server.suppressCommandPort("SIGTTOU", false, true);
-            } else {
-                // For any other signal, just shutdown.
-                server._beginShutdown(SGetSignalDescription());
-            }
-        }
 
         // If anything was in the stand down queue, move it back to the main queue.
         if (nodeState != SQLiteNode::STANDINGDOWN) {
@@ -527,7 +459,7 @@ void BedrockServer::sync(const SData& args,
             try {
                 while (true) {
                     BedrockCommand completedCommand = server._completedCommands.pop();
-                    SAUTOPREFIX(completedCommand.request["requestID"]);
+                    SAUTOPREFIX(completedCommand.request);
                     SASSERT(completedCommand.complete);
                     SASSERT(completedCommand.initiatingPeerID);
                     SASSERT(!completedCommand.initiatingClientID);
@@ -546,7 +478,7 @@ void BedrockServer::sync(const SData& args,
             command = syncNodeQueuedCommands.pop();
 
             // We got a command to work on! Set our log prefix to the request ID.
-            SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request);
             SINFO("Sync thread dequeued command " << command.request.methodLine << ". Sync thread has "
                   << syncNodeQueuedCommands.size() << " queued commands.");
 
@@ -755,7 +687,7 @@ void BedrockServer::worker(const SData& args,
 
             command = commandQueue.get(1000000);
 
-            SAUTOPREFIX(command.request["requestID"]);
+            SAUTOPREFIX(command.request);
             SINFO("Dequeued command " << command.request.methodLine << " in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
@@ -1482,7 +1414,7 @@ void BedrockServer::_network(BedrockServer& server) {
                 if (!request.empty()) {
                     // If there's no ID for this request, let's add one.
                     _addRequestID(request);
-                    SAUTOPREFIX(request["requestID"]);
+                    SAUTOPREFIX(request);
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
                         (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
@@ -1572,6 +1504,81 @@ void BedrockServer::_network(BedrockServer& server) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    auto startMisc = chrono::steady_clock::now();
+    // TODO: This whole block of junk unrelated to processing sockets should go in a different thread (everything
+    // through the signal handling bit).
+
+    // If we're a slave, and the master's on a different version than us, we don't open the command port.
+    // If we do, we'll escalate all of our commands to the master, which causes undue load on master during upgrades.
+    // Instead, we'll simply not respond and let this request get re-directed to another slave.
+    {
+        string masterVersion = _masterVersion.load();
+        // We lock around any changes to the command port state so that two threads can't run over each other.
+        lock_guard <decltype(portListMutex)> lock(portListMutex);
+        if (!_suppressCommandPort && _replicationState.load() == SQLiteNode::SLAVING && (masterVersion != _version)) {
+            SINFO("Node " << _args["-nodeName"] << " slaving on version " << _version << ", master is version: "
+                  << masterVersion << ", not opening command port.");
+            suppressCommandPort("master version mismatch", true);
+        } else if (_suppressCommandPort && (_replicationState.load() == SQLiteNode::MASTERING || (masterVersion == _version))) {
+            // If we become master, or if master's version resumes matching ours, open the command port again.
+            if (!_suppressCommandPortManualOverride) {
+                // Only generate this logline if we haven't manually blocked this.
+                SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
+            }
+            suppressCommandPort("master version match", false);
+        }
+
+        if (!_suppressCommandPort && (_replicationState.load() == SQLiteNode::MASTERING || _replicationState.load() == SQLiteNode::SLAVING) &&
+            _shutdownState.load() == RUNNING) {
+            // Open the port
+            if (!_commandPort) {
+                SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
+                _commandPort = openPort(_args["-serverHost"]);
+            }
+            if (!_controlPort) {
+                SINFO("Opening control port on '" << _args["-controlPort"] << "'");
+                _controlPort = openPort(_args["-controlPort"]);
+            }
+
+            // Open any plugin ports on enabled plugins
+            for (auto plugin : plugins) {
+                string portHost = plugin->getPort();
+                if (!portHost.empty()) {
+                    bool alreadyOpened = false;
+                    for (auto pluginPorts : _portPluginMap) {
+                        if (pluginPorts.second == plugin) {
+                            // We've already got this one.
+                            alreadyOpened = true;
+                            break;
+                        }
+                    }
+                    // Open the port and associate it with the plugin
+                    if (!alreadyOpened) {
+                        SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                        Port* port = openPort(portHost);
+                        _portPluginMap[port] = plugin;
+                    }
+                }
+            }
+        }
+    }
+
+    // Is the OS trying to communicate with us?
+    if (SGetSignals()) {
+        if (SGetSignal(SIGTTIN)) {
+            // Suppress command port, but only if we haven't already cleared it
+            if (!SCheckSignal(SIGTTOU)) {
+                suppressCommandPort("SIGTTIN", true, true);
+            }
+        } else if (SGetSignal(SIGTTOU)) {
+            // Clear command port suppression
+            suppressCommandPort("SIGTTOU", false, true);
+        } else {
+            // For any other signal, just shutdown.
+            _beginShutdown(SGetSignalDescription());
+        }
+    }
+
     auto startBaseClassPostPoll = chrono::steady_clock::now();
 
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
@@ -1595,57 +1602,55 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         _networkCV.notify_one();
     }
 
-    // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
-    // over it, we'll keep a list of sockets that need closing.
-    list<STCPManager::Socket*> socketsToClose;
-
     auto startChooseSockets = chrono::steady_clock::now();
 
-    // Lock our socket set for the remainder of the function.
-    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    // Lock our socket set while we iterate over it.
+    {
+        lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
 
-    // This works because all of our sockets in both fdm and socketSet are in sorted order by their FD.
-    // This runs in linear time across the size of socketSet plus the size of fdm.
-    // An alternative implementation could run in the size O(N*log(M)) where N is the size of fdm and M is the size of
-    // socketSet, if we could easily binary-search socketSet by FD. This is possible since that's the ordering, but
-    // it's a bit of a pain. It should be faster in the case than socketSet is larger than fdm, though.
-    auto fdmIt = fdm.begin();
-    auto socketSetIt = socketSet.begin();
-    while (true) {
-        // Are either of them past the end? If so, we're done.
-        if (fdmIt == fdm.end() || socketSetIt == socketSet.end()) {
-            break;
-        }
-        // See if the two iterators have the same FD.
-        if (fdmIt->first == (*socketSetIt)->s) {
-            // They do! We want to keep this, and then move on with both of them.
-            bool inserted;
-            {
-                // As soon as we know of a single socket we can work on, pass it to the worker thread. This lets the
-                // worker thread get started while we look for more sockets.
-                unique_lock<mutex> lock(_networkMutex);
-                sockets.insert(*socketSetIt);
-                auto result = _networkThreadQueue.insert(*socketSetIt);
-                inserted = result.second;
+        // This works because all of our sockets in both fdm and socketSet are in sorted order by their FD.
+        // This runs in linear time across the size of socketSet plus the size of fdm.
+        // An alternative implementation could run in the size O(N*log(M)) where N is the size of fdm and M is the size of
+        // socketSet, if we could easily binary-search socketSet by FD. This is possible since that's the ordering, but
+        // it's a bit of a pain. It should be faster in the case than socketSet is larger than fdm, though.
+        auto fdmIt = fdm.begin();
+        auto socketSetIt = socketSet.begin();
+        while (true) {
+            // Are either of them past the end? If so, we're done.
+            if (fdmIt == fdm.end() || socketSetIt == socketSet.end()) {
+                break;
             }
-            if (inserted) {
-                _networkCV.notify_one();
+            // See if the two iterators have the same FD.
+            if (fdmIt->first == (*socketSetIt)->s) {
+                // They do! We want to keep this, and then move on with both of them.
+                bool inserted;
+                {
+                    // As soon as we know of a single socket we can work on, pass it to the worker thread. This lets the
+                    // worker thread get started while we look for more sockets.
+                    unique_lock<mutex> lock(_networkMutex);
+                    sockets.insert(*socketSetIt);
+                    auto result = _networkThreadQueue.insert(*socketSetIt);
+                    inserted = result.second;
+                }
+                if (inserted) {
+                    _networkCV.notify_one();
+                }
+                fdmIt++;
+                socketSetIt++;
+            } else if (fdmIt->first < (*socketSetIt)->s) {
+                // So, if the iterator into FDM is less than the iterator into socket set, we can discard it, all the
+                // values in socketSet are larger than this.
+                fdmIt++;
+            } else if ((*socketSetIt)->s < fdmIt->first) {
+                // On the other hand, if the iterator into socketSet is lower than the one into FDM, then we can discard
+                // the one in socketSet, it's not part of our candidate set.
+                socketSetIt++;
             }
-            fdmIt++;
-            socketSetIt++;
-        } else if (fdmIt->first < (*socketSetIt)->s) {
-            // So, if the iterator into FDM is less than the iterator into socket set, we can discard it, all the
-            // values in socketSet are larger than this.
-            fdmIt++;
-        } else if ((*socketSetIt)->s < fdmIt->first) {
-            // On the other hand, if the iterator into socketSet is lower than the one into FDM, then we can discard
-            // the one in socketSet, it's not part of our candidate set.
-            socketSetIt++;
         }
+
+        SINFO("Poll returned " << fdm.size() << " sockets to inspect and we accepted " << newSocketCount
+              << " new sockets. Total to inspect: " << sockets.size() << " of " << socketSet.size() << ".");
     }
-
-    SINFO("Poll returned " << fdm.size() << " sockets to inspect and we accepted " << newSocketCount
-          << " new sockets. Total to inspect: " << sockets.size() << " of " << socketSet.size() << ".");
 
     auto startPostProcess = chrono::steady_clock::now();
 
@@ -1663,6 +1668,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         if (!_networkLastChanceTimetamp.load()) {
             _networkLastChanceTimetamp.store(STimeNow() + 5 * 1'000'000); // 5 seconds from now.
         }
+
+        // We need to lock to access socketSet.
+        lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (socketSet.empty() || _gracefulShutdownTimeout.ringing()) {
             _networkLastChanceTimetamp.store(0);
@@ -1684,6 +1693,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Compute timing info.
     auto end = chrono::steady_clock::now();
+    _postPollMisc += (startBaseClassPostPoll - startMisc);
     _postPollBaseClass += (startAccept - startBaseClassPostPoll);
     _postPollAccept += (startChooseSockets - startAccept);
     _postPollChooseSockets += (startPostProcess - startChooseSockets);
@@ -1693,6 +1703,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (end > (_postPollStart + 10s)) {
         SINFO("[performance] postPoll timing: "
             << chrono::duration_cast<chrono::milliseconds>(end - _postPollStart).count() << " ms total elapsed. "
+            << chrono::duration_cast<chrono::milliseconds>(_postPollMisc).count() << " ms in misc. "
             << chrono::duration_cast<chrono::milliseconds>(_postPollBaseClass).count() << " ms in bases class. "
             << chrono::duration_cast<chrono::milliseconds>(_postPollAccept).count() << " ms in accept. "
             << chrono::duration_cast<chrono::milliseconds>(_postPollChooseSockets).count() << " ms choosing sockets. "

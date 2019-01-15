@@ -467,6 +467,7 @@ class BedrockServer : public SQLiteServer {
     BedrockTimeoutCommandQueue _completedCommands;
 
     // Counters for timing postPoll and locating bottlenecks;
+    chrono::steady_clock::duration _postPollMisc;
     chrono::steady_clock::duration _postPollBaseClass;
     chrono::steady_clock::duration _postPollAccept;
     chrono::steady_clock::duration _postPollChooseSockets;
