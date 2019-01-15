@@ -371,10 +371,14 @@ void SLogSetThreadName(const string& name);
 
 struct SAutoThreadPrefix {
     // Set on construction; reset on destruction
-    SAutoThreadPrefix(const SData& request) {
+    SAutoThreadPrefix(const string& prefix) {
         // Retain the old prefix
         oldPrefix = SThreadLogPrefix;
-        SLogSetThreadPrefix(request["requestID"] + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
+
+        // Only change if we have something
+        if (!prefix.empty()) {
+            SLogSetThreadPrefix(prefix + " ");
+        }
     }
     ~SAutoThreadPrefix() { SLogSetThreadPrefix(oldPrefix); }
 
