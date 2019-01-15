@@ -234,9 +234,9 @@ class BedrockServer : public SQLiteServer {
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
-    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
+    // We don't need to lock around access to the base class's `socketSet` because we carefully control access to it
     // to the main thread.
-    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
+    // The only functions that access `socketSet` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
     // and acceptSocket in STCPServer.
     // prePoll and postPoll are only ever called by the main thread.
     // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
@@ -342,7 +342,7 @@ class BedrockServer : public SQLiteServer {
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
     // those ports.
-    void _acceptSockets();
+    set<Socket*> _acceptSockets(bool deferRead = false);
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
@@ -461,4 +461,12 @@ class BedrockServer : public SQLiteServer {
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
+
+    // Counters for timing postPoll and locating bottlenecks;
+    chrono::steady_clock::duration _postPollMisc;
+    chrono::steady_clock::duration _postPollBaseClass;
+    chrono::steady_clock::duration _postPollAccept;
+    chrono::steady_clock::duration _postPollChooseSockets;
+    chrono::steady_clock::duration _postPollPostProcess;
+    chrono::steady_clock::time_point _postPollStart;
 };
