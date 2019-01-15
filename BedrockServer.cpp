@@ -1619,7 +1619,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Compute timing info.
     auto end = chrono::steady_clock::now();
-    _postPollMisc += (startAccept - startMisc);
+    _postPollMisc += (startBaseClassPostPoll - startMisc);
     _postPollBaseClass += (startAccept - startBaseClassPostPoll);
     _postPollAccept += (startChooseSockets - startAccept);
     _postPollChooseSockets += (startPostProcess - startChooseSockets);
