@@ -333,7 +333,6 @@ void BedrockServer::sync(const SData& args,
         replicationState.store(nodeState);
         masterVersion.store(server._syncNode->getMasterVersion());
 
-
         // If anything was in the stand down queue, move it back to the main queue.
         if (nodeState != SQLiteNode::STANDINGDOWN) {
             while (server._standDownQueue.size()) {
@@ -1328,11 +1327,11 @@ void BedrockServer::_network(BedrockServer& server) {
             // Lock and dequeue.
             unique_lock<mutex> lock(server._networkMutex);
 
-            if (server._networkThreadQueue.size()) {
+            if (server._networkThreadSocketActivitySet.size()) {
                 // If there's something in the queue, pull it off the queue.
-                auto first = server._networkThreadQueue.begin();
+                auto first = server._networkThreadSocketActivitySet.begin();
                 socket = *first;
-                server._networkThreadQueue.erase(first);
+                server._networkThreadSocketActivitySet.erase(first);
             } else if (server._networkThreadShouldExit.load()) {
                 // If there's nothing in the queue, and we're supposed to exit, do that.
                 return;
@@ -1350,8 +1349,6 @@ void BedrockServer::_network(BedrockServer& server) {
 
         // The only way we can fall through the locked block above and get to here is by dequeuing something to work on, so
         // we start on that here.
-        SINFO("Got work for socket " << socket);
-
         // Do the read that we deferred above. This doesn't help a ton yet, but if we break out the below loop to a
         // separate thread, this lets the new thread do this work.
         S_recvappend(socket->s, socket->recvBuffer);
@@ -1597,7 +1594,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     for (auto s : sockets) {
         {
             unique_lock<mutex> lock(_networkMutex);
-            _networkThreadQueue.insert(s);
+            _networkThreadSocketActivitySet.insert(s);
         }
         _networkCV.notify_one();
     }
@@ -1629,7 +1626,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // worker thread get started while we look for more sockets.
                     unique_lock<mutex> lock(_networkMutex);
                     sockets.insert(*socketSetIt);
-                    auto result = _networkThreadQueue.insert(*socketSetIt);
+                    auto result = _networkThreadSocketActivitySet.insert(*socketSetIt);
                     inserted = result.second;
                 }
                 if (inserted) {
