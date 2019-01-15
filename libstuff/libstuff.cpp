@@ -1908,6 +1908,11 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
     // We're only going to return the entries that had activity, so clear out the whole structure.
     fdm.clear();
 
+    // If there were no sockets with activity, we can return early.
+    if (returnValue == 0) {
+        return 0;
+    }
+
     // And for anything that had a result, re-insert it.
     int count = 0;
     for (pollfd& pfd : pollvec) {
