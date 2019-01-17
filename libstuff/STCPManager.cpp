@@ -224,34 +224,24 @@ void STCPManager::shutdownSocket(shared_ptr<Socket> socket, int how) {
 }
 
 void STCPManager::closeSocket(shared_ptr<Socket> socket) {
-    // We lock this first, because it's possible that the calling function has already locked this, and is calling a
-    // socket function inside that block. This enforces that the locking order is always the same between
-    // socketSetMutex and sendRecvMutex. sendRecvMutex is only ever locked in short functions that never lock anything
-    // else afterward.
-    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
-    lock_guard<decltype(socket->sendRecvMutex)> lock2(socket->sendRecvMutex);
-    if (socket->completed) {
-        SINFO("Socket already closed.");
-        return;
-    }
-
     // Remove from our set.
-    SASSERT(socket);
-    SDEBUG("Closing socket '" << socket->addr << "'");
-    if (!socketSet.erase(socket)) {
-        SINFO("Socket already closed.");
+    {
+        lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+        if (!socketSet.erase(socket)) {
+            SINFO("Socket already closed.");
+        }
     }
 
-    // Do the actual close.
-    ::close(socket->s);
-    if (socket->ssl) {
-        SSSLClose(socket->ssl);
+    // Mark the socket done.
+    {
+        lock_guard<decltype(socket->sendRecvMutex)> lock(socket->sendRecvMutex);
+        SDEBUG("Closing socket '" << socket->addr << "'");
+        if (socket->completed) {
+            SINFO("Socket already closed.");
+            return;
+        }
+        socket->completed = true;
     }
-    if (socket->_x509) {
-        SX509Close(socket->_x509);
-    }
-
-    socket->completed = true;
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
@@ -262,6 +252,16 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* 
 STCPManager::Socket::~Socket() {
     auto existingCount = socketCount--;
     SDEBUG("Destroying socket with " << existingCount << " existing sockets.");
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Do the actual close.
+    ::close(s);
+    if (ssl) {
+        SSSLClose(ssl);
+    }
+    if (_x509) {
+        SX509Close(_x509);
+    }
 }
 
 shared_ptr<STCPManager::Socket> STCPManager::openSocket(const string& host, SX509* x509) {
