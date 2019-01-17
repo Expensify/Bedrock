@@ -43,7 +43,7 @@ struct STCPNode : public STCPServer {
         void sendMessage(const SData& message);
 
       private:
-        Socket* s;
+        shared_ptr<Socket> s;
         recursive_mutex socketMutex;
     };
 
@@ -54,7 +54,7 @@ struct STCPNode : public STCPServer {
     string name;
     uint64_t recvTimeout;
     vector<Peer*> peerList;
-    list<Socket*> acceptedSocketList;
+    list<shared_ptr<Socket>> acceptedSocketList;
 
     // Called when we first establish a connection with a new peer
     virtual void _onConnect(Peer* peer) = 0;

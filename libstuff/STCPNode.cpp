@@ -9,7 +9,7 @@ STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvT
 
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
-    for (Socket* socket : acceptedSocketList) {
+    for (shared_ptr<Socket> socket : acceptedSocketList) {
         closeSocket(socket);
     }
     acceptedSocketList.clear();
@@ -60,17 +60,17 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     STCPServer::postPoll(fdm);
 
     // Accept any new peers
-    Socket* socket = nullptr;
+    shared_ptr<Socket> socket = nullptr;
     while ((socket = acceptSocket()))
         acceptedSocketList.push_back(socket);
 
     // Process the incoming sockets
-    list<Socket*>::iterator nextSocketIt = acceptedSocketList.begin();
+    list<shared_ptr<Socket>>::iterator nextSocketIt = acceptedSocketList.begin();
     while (nextSocketIt != acceptedSocketList.end()) {
         // See if we've logged in (we know we're already connected because
         // we're accepting an inbound connection)
-        list<Socket*>::iterator socketIt = nextSocketIt++;
-        Socket* socket = *socketIt;
+        list<shared_ptr<Socket>>::iterator socketIt = nextSocketIt++;
+        shared_ptr<Socket> socket = *socketIt;
         try {
             // Verify it's still alive
             if (socket->state.load() != Socket::CONNECTED)
