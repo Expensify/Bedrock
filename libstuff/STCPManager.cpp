@@ -1,6 +1,6 @@
 #include "libstuff.h"
 
-atomic<uint64_t> STCPManager::Socket::socketCount(0);
+atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 STCPManager::~STCPManager() {
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
@@ -241,6 +241,15 @@ void STCPManager::closeSocket(shared_ptr<Socket> socket) {
             return;
         }
         socket->completed = true;
+
+        // Do the actual close.
+        ::close(socket->s);
+        if (socket->ssl) {
+            SSSLClose(socket->ssl);
+        }
+        if (socket->_x509) {
+            SX509Close(socket->_x509);
+        }
     }
 }
 
@@ -250,18 +259,6 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* 
 { }
 
 STCPManager::Socket::~Socket() {
-    auto existingCount = socketCount--;
-    SDEBUG("Destroying socket with " << existingCount << " existing sockets.");
-    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-
-    // Do the actual close.
-    ::close(s);
-    if (ssl) {
-        SSSLClose(ssl);
-    }
-    if (_x509) {
-        SX509Close(_x509);
-    }
 }
 
 shared_ptr<STCPManager::Socket> STCPManager::openSocket(const string& host, SX509* x509) {

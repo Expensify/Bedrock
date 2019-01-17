@@ -1356,6 +1356,7 @@ void BedrockServer::_network(BedrockServer& server) {
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
                 // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
                 // able to have their responses returned.
+                SINFO("TYLER, socket looks closed, erasing from _socketIDMap: " << socket->id);
                 lock_guard<decltype(server._socketIDMutex)> lock(server._socketIDMutex);
                 server._socketIDMap.erase(socket->id);
                 server.closeSocket(socket);
@@ -1758,10 +1759,12 @@ void BedrockServer::_reply(BedrockCommand& command) {
         }
 
         // We only keep track of sockets with pending commands.
+        SINFO("TYLER Replying to socket for " << socketIt->first << " and removing.");
         _socketIDMap.erase(socketIt);
     } else {
         if (!SIEquals(command.request["Connection"], "forget")) {
-            SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID);
+            SINFO("No socket to reply for: '" << command.request.methodLine << "' #" << command.initiatingClientID << ", socket: " << socketIt->first);
+            SINFO("TYLER:" << command.request.serialize());
         }
 
         // If the command was processed, tell the plugin we couldn't send the response.
