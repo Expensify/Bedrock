@@ -10,7 +10,7 @@ struct STCPManager {
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
         ~Socket();
         // Attributes
-        int s;
+        const int s;
         sockaddr_in addr;
         string recvBuffer;
         atomic<State> state;
@@ -52,7 +52,7 @@ struct STCPManager {
     void postPoll(fd_map& fdm);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = nullptr, recursive_mutex* listMutexPtr = nullptr);
+    Socket* openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
     void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
@@ -60,6 +60,17 @@ struct STCPManager {
     // Hard terminate a socket
     void closeSocket(Socket* socket);
 
+    struct SocketCompare {
+        bool operator() (const Socket* lhs, const Socket* rhs) const {
+            if (lhs == 0 || rhs == 0) {
+                SWARN("Invalid socket in comparison.");
+                return false;
+            }
+            return lhs->s < rhs->s;
+        }
+    };
+
     // Attributes
-    list<Socket*> socketList;
+    set<Socket*, SocketCompare> socketSet;
+    recursive_mutex socketSetMutex;
 };

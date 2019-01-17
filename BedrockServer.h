@@ -216,8 +216,8 @@ class BedrockServer : public SQLiteServer {
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
 
-    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
-    SData _args;
+    // Arguments passed on the command line.
+    const SData _args;
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
@@ -234,9 +234,9 @@ class BedrockServer : public SQLiteServer {
     map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
-    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
+    // We don't need to lock around access to the base class's `socketSet` because we carefully control access to it
     // to the main thread.
-    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
+    // The only functions that access `socketSet` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
     // and acceptSocket in STCPServer.
     // prePoll and postPoll are only ever called by the main thread.
     // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
@@ -286,7 +286,7 @@ class BedrockServer : public SQLiteServer {
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
-    static void sync(SData& args,
+    static void sync(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
@@ -294,7 +294,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Wraps the sync thread main function to make it easy to add exception handling.
-    static void syncWrapper(SData& args,
+    static void syncWrapper(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& masterVersion,
@@ -302,7 +302,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SData& args,
+    static void worker(const SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& masterVersion,
@@ -342,7 +342,7 @@ class BedrockServer : public SQLiteServer {
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
     // those ports.
-    void _acceptSockets();
+    set<Socket*> _acceptSockets(bool deferRead = false);
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
@@ -368,7 +368,11 @@ class BedrockServer : public SQLiteServer {
 
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.
-    set<string> _syncCommands;
+    // Const to allow lock-free access.
+    const set<string> _syncCommands;
+    
+    // Utility function for initializing `_syncCommands` from the constructor initializer list.
+    static set<string> _getSyncCommands(const SData& args);
 
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _blacklistedParallelCommands;
@@ -461,4 +465,25 @@ class BedrockServer : public SQLiteServer {
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
+
+    // Counters for timing postPoll and locating bottlenecks;
+    chrono::steady_clock::duration _postPollMisc;
+    chrono::steady_clock::duration _postPollBaseClass;
+    chrono::steady_clock::duration _postPollAccept;
+    chrono::steady_clock::duration _postPollChooseSockets;
+    chrono::steady_clock::duration _postPollPostProcess;
+    chrono::steady_clock::time_point _postPollStart;
+
+    // Network thread stuff.
+    thread _networkThread;
+    condition_variable _networkCV;
+    mutex _networkMutex;
+    set<Socket*> _networkThreadSocketActivitySet;
+    atomic<bool> _networkThreadShouldExit;
+    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
+    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
+    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
+    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
+    atomic<uint64_t> _networkLastChanceTimetamp;
+    static void _network(BedrockServer& server);
 };
