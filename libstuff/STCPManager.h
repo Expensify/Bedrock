@@ -5,6 +5,7 @@
 struct STCPManager {
     // Captures all the state for a single socket
     class Socket {
+        friend class STCPManager;
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
@@ -33,6 +34,10 @@ struct STCPManager {
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 
+        // this is false for the lifetime of the socket, and set to true when we close the socket. This prevents other
+        // threads that still have shared pointers to this socket from performing operations on it.
+        bool completed;
+
         // This is private because it's used by our synchronized send() functions. This requires it to only
         // be accessed through the (also synchronized) wrapper functions above.
         // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
@@ -52,16 +57,16 @@ struct STCPManager {
     void postPoll(fd_map& fdm);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = nullptr);
+    shared_ptr<Socket> openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
-    void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
+    void shutdownSocket(shared_ptr<Socket> socket, int how = SHUT_RDWR);
 
     // Hard terminate a socket
-    void closeSocket(Socket* socket);
+    void closeSocket(shared_ptr<Socket> socket);
 
     struct SocketCompare {
-        bool operator() (const Socket* lhs, const Socket* rhs) const {
+        bool operator() (const shared_ptr<Socket> lhs, const shared_ptr<Socket> rhs) const {
             if (lhs == 0 || rhs == 0) {
                 SWARN("Invalid socket in comparison.");
                 return false;
@@ -71,6 +76,6 @@ struct STCPManager {
     };
 
     // Attributes
-    set<Socket*, SocketCompare> socketSet;
+    set<shared_ptr<Socket>, SocketCompare> socketSet;
     recursive_mutex socketSetMutex;
 };

@@ -8,7 +8,7 @@ class SHTTPSManager : public STCPManager {
         ~Transaction();
 
         // Attributes
-        STCPManager::Socket* s;
+        shared_ptr<STCPManager::Socket> s;
         uint64_t created;
         uint64_t finished;
         SData fullRequest;

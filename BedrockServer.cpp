@@ -1322,7 +1322,7 @@ void BedrockServer::_network(BedrockServer& server) {
             lastStartTime = end;
         }
 
-        Socket* socket = nullptr;
+        shared_ptr<Socket> socket = nullptr;
         {
             // Lock and dequeue.
             unique_lock<mutex> lock(server._networkMutex);
@@ -1340,7 +1340,7 @@ void BedrockServer::_network(BedrockServer& server) {
                 // We'll get interrupted if either work becomes available or we're supposed to exit, so just start at
                 // the top of the loop if that happens.
                 auto beforeWait = chrono::steady_clock::now();
-                server._networkCV.wait(lock);
+                server._networkCV.wait_for(lock, 1s);
                 auto afterWait = chrono::steady_clock::now();
                 waitTime += (afterWait - beforeWait);
                 continue;
@@ -1349,9 +1349,7 @@ void BedrockServer::_network(BedrockServer& server) {
 
         // The only way we can fall through the locked block above and get to here is by dequeuing something to work on, so
         // we start on that here.
-        // Do the read that we deferred above. This doesn't help a ton yet, but if we break out the below loop to a
-        // separate thread, this lets the new thread do this work.
-        S_recvappend(socket->s, socket->recvBuffer);
+        socket->recv();
         switch (socket->state.load()) {
             case STCPManager::Socket::CLOSED:
             {
@@ -1395,7 +1393,7 @@ void BedrockServer::_network(BedrockServer& server) {
                 BedrockPlugin* plugin = static_cast<BedrockPlugin*>(socket->data);
                 if (plugin) {
                     // Call the plugin's handler.
-                    plugin->onPortRecv(socket, request);
+                    plugin->onPortRecv(socket.get(), request);
                     if (!request.empty()) {
                         // If it populated our request, then we'll save the plugin name so we can handle the response.
                         request["plugin"] = plugin->getName();
@@ -1587,7 +1585,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     auto startAccept = chrono::steady_clock::now();
     // Accept any new connections
-    set<Socket*> sockets = _acceptSockets(true);
+    set<shared_ptr<Socket>> sockets = _acceptSockets(true);
     size_t newSocketCount = sockets.size();
 
     // If we accepted any new sockets, notify the worker thread that it has work.
@@ -1745,7 +1743,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
                   << "' to request '" << command.request.methodLine << "'");
             BedrockPlugin* plugin = BedrockPlugin::getPluginByName(pluginName);
             if (plugin) {
-                plugin->onPortRequestComplete(command, socketIt->second);
+                plugin->onPortRequestComplete(command, socketIt->second.get());
             } else {
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
@@ -2208,16 +2206,16 @@ void BedrockServer::_finishPeerCommand(BedrockCommand& command) {
     }
 }
 
-set<STCPManager::Socket*> BedrockServer::_acceptSockets(bool deferRead) {
-    Socket* s = nullptr;
+set<shared_ptr<STCPManager::Socket>> BedrockServer::_acceptSockets(bool deferRead) {
+    shared_ptr<Socket> s = nullptr;
     Port* acceptPort = nullptr;
-    set<Socket*> retVal;
+    set<shared_ptr<Socket>> retVal;
     while ((s = acceptSocket(acceptPort, deferRead))) {
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
             // Allow the plugin to process this
             SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
-            plugin->onPortAccept(s);
+            plugin->onPortAccept(s.get());
 
             // Remember that this socket is owned by this plugin.
             SASSERT(!s->data);
