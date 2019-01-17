@@ -35,7 +35,7 @@ struct STCPManager {
         recursive_mutex sendRecvMutex;
 
         // this is false for the lifetime of the socket, and set to true when we close the socket. This prevents other
-        // threads that still ahve shared pointers to this socket from performing operations on it.:w
+        // threads that still have shared pointers to this socket from performing operations on it.
         bool completed;
 
         // This is private because it's used by our synchronized send() functions. This requires it to only
