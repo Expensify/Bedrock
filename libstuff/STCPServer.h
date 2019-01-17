@@ -23,7 +23,7 @@ struct STCPServer : public STCPManager {
     void closePorts(list<Port*> except = {});
 
     // Tries to accept a new incoming socket
-    Socket* acceptSocket(Port*& port);
+    Socket* acceptSocket(Port*& port, bool deferRead = false);
     Socket* acceptSocket() {
         Port* ignore;
         return acceptSocket(ignore);
@@ -37,5 +37,5 @@ struct STCPServer : public STCPManager {
     list<Port> portList;
 
     // Protect access to to the port list when multiple threads insert and delete from it.
-    mutex portListMutex;
+    recursive_mutex portListMutex;
 };
