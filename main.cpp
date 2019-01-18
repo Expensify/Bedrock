@@ -308,11 +308,6 @@ int main(int argc, char* argv[]) {
             SClearSignals();
         }
 
-        // Counters for seeing how long we spend in postPoll.
-        chrono::steady_clock::duration pollCounter(0);
-        chrono::steady_clock::duration postPollCounter(0);
-        chrono::steady_clock::time_point start = chrono::steady_clock::now();
-
         uint64_t nextActivity = STimeNow();
         while (!server.shutdownComplete()) {
             if (server.shouldBackup() && server.isDetached()) {
@@ -323,26 +318,9 @@ int main(int argc, char* argv[]) {
             fd_map fdm;
             server.prePoll(fdm);
             const uint64_t now = STimeNow();
-            auto timeBeforePoll = chrono::steady_clock::now();
             S_poll(fdm, max(nextActivity, now) - now);
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
-            auto timeAfterPoll = chrono::steady_clock::now();
             server.postPoll(fdm, nextActivity);
-            auto timeAfterPostPoll = chrono::steady_clock::now();
-
-            pollCounter += timeAfterPoll - timeBeforePoll;
-            postPollCounter += timeAfterPostPoll - timeAfterPoll;
-
-            // Every 10s, log and reset.
-            if (timeAfterPostPoll > (start + 10s)) {
-                SINFO("[performance] main poll loop timing: "
-                      << chrono::duration_cast<chrono::milliseconds>(timeAfterPostPoll - start).count() << " ms elapsed. "
-                      << chrono::duration_cast<chrono::milliseconds>(pollCounter).count() << " ms in poll. "
-                      << chrono::duration_cast<chrono::milliseconds>(postPollCounter).count() << " ms in postPoll.");
-                pollCounter = chrono::microseconds::zero();
-                postPollCounter = chrono::microseconds::zero();
-                start = timeAfterPostPoll;
-            }
         }
         if (server.shutdownWhileDetached) {
             // We need to actually shut down here.
