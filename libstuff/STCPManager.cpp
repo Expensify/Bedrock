@@ -10,7 +10,7 @@ STCPManager::~STCPManager() {
 void STCPManager::prePoll(fd_map& fdm) {
     // Add all the sockets
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
-    for (shared_ptr<Socket> socket : socketSet) {
+    for (Socket* socket : socketSet) {
         // Make sure it's not closed
         if (socket->state.load() != Socket::CLOSED) {
             // Check and see if it looks like we're still valid.
@@ -74,7 +74,7 @@ void STCPManager::prePoll(fd_map& fdm) {
 void STCPManager::postPoll(fd_map& fdm) {
     // Walk across the sockets
     lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
-    for (shared_ptr<Socket> socket : socketSet) {
+    for (Socket* socket : socketSet) {
 
         if (fdm.find(socket->s) == fdm.end()) {
             // If this socket isn't in our fd_map, it wasn't active in `poll`, so we can skip it.
@@ -209,13 +209,7 @@ void STCPManager::postPoll(fd_map& fdm) {
     }
 }
 
-void STCPManager::shutdownSocket(shared_ptr<Socket> socket, int how) {
-    lock_guard<decltype(socket->sendRecvMutex)> lock(socket->sendRecvMutex);
-    if (socket->completed) {
-        SINFO("Socket already shutdown.");
-        return;
-    }
-
+void STCPManager::shutdownSocket(Socket* socket, int how) {
     // Send the shutdown and note
     SASSERT(socket);
     SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
@@ -223,45 +217,34 @@ void STCPManager::shutdownSocket(shared_ptr<Socket> socket, int how) {
     socket->state.store(Socket::SHUTTINGDOWN);
 }
 
-void STCPManager::closeSocket(shared_ptr<Socket> socket) {
-    // Remove from our set.
-    {
-        lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
-        if (!socketSet.erase(socket)) {
-            SINFO("Socket already closed.");
-        }
-    }
-
-    // Mark the socket done.
-    {
-        lock_guard<decltype(socket->sendRecvMutex)> lock(socket->sendRecvMutex);
-        SDEBUG("Closing socket '" << socket->addr << "'");
-        if (socket->completed) {
-            SINFO("Socket already closed.");
-            return;
-        }
-        socket->completed = true;
-
-        // Do the actual close.
-        ::close(socket->s);
-        if (socket->ssl) {
-            SSSLClose(socket->ssl);
-        }
-        if (socket->_x509) {
-            SX509Close(socket->_x509);
-        }
+void STCPManager::closeSocket(Socket* socket) {
+    // Clean up this socket
+    SASSERT(socket);
+    SDEBUG("Closing socket '" << socket->addr << "'");
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    if (socketSet.erase(socket)) {
+        delete socket;
+    } else {
+        SINFO("Socket already closed.");
     }
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), completed(false), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
 { }
 
 STCPManager::Socket::~Socket() {
+    ::close(s);
+    if (ssl) {
+        SSSLClose(ssl);
+    }
+    if (_x509) {
+        SX509Close(_x509);
+    }
 }
 
-shared_ptr<STCPManager::Socket> STCPManager::openSocket(const string& host, SX509* x509) {
+STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
     SASSERT(SHostIsValid(host));
     int s = S_socket(host, true, false, false);
@@ -270,7 +253,7 @@ shared_ptr<STCPManager::Socket> STCPManager::openSocket(const string& host, SX50
     }
 
     // Create a new socket
-    shared_ptr<Socket> socket = make_shared<Socket>(s, Socket::CONNECTING, x509);
+    Socket* socket = new Socket(s, Socket::CONNECTING, x509);
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
 
@@ -281,11 +264,6 @@ shared_ptr<STCPManager::Socket> STCPManager::openSocket(const string& host, SX50
 
 bool STCPManager::Socket::send() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    if (completed) {
-        SINFO("Can't send on closed socket, acting like failure.");
-        return false;
-    }
-
     // Send data
     bool result = false;
     if (ssl) {
@@ -299,10 +277,6 @@ bool STCPManager::Socket::send() {
 
 bool STCPManager::Socket::send(const string& buffer) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    if (completed) {
-        SINFO("Can't send on closed socket, acting like failure.");
-        return false;
-    }
 
     // If the socket's in a valid state for sending, append to the sendBuffer, otherwise warn
     if (state.load() < Socket::State::SHUTTINGDOWN) {
@@ -332,10 +306,6 @@ void STCPManager::Socket::setSendBuffer(const string& buffer) {
 
 bool STCPManager::Socket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    if (completed) {
-        SINFO("Can't recv on closed socket, acting like failure.");
-        return false;
-    }
 
     // Read data
     bool result = false;

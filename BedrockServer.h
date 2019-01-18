@@ -231,7 +231,7 @@ class BedrockServer : public SQLiteServer {
     // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
     // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
     // open. It will be re-inserted in this set when another command is read from it.
-    map <uint64_t, shared_ptr<Socket>> _socketIDMap;
+    map <uint64_t, Socket*> _socketIDMap;
 
     // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
     // We don't need to lock around access to the base class's `socketSet` because we carefully control access to it
@@ -342,7 +342,7 @@ class BedrockServer : public SQLiteServer {
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
     // those ports.
-    set<shared_ptr<Socket>> _acceptSockets(bool deferRead = false);
+    set<Socket*> _acceptSockets(bool deferRead = false);
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
@@ -478,7 +478,7 @@ class BedrockServer : public SQLiteServer {
     thread _networkThread;
     condition_variable _networkCV;
     mutex _networkMutex;
-    set<shared_ptr<Socket>> _networkThreadSocketActivitySet;
+    set<Socket*> _networkThreadSocketActivitySet;
     atomic<bool> _networkThreadShouldExit;
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on

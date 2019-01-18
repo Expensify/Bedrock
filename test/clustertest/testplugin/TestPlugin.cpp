@@ -284,7 +284,7 @@ SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url,
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    shared_ptr<Socket> s = openSocket(host, x509);
+    Socket* s = openSocket(host, x509);
     if (!s) {
         return _createErrorTransaction();
     }
