@@ -1842,16 +1842,23 @@ bool S_recvappend(int s, string& recvBuffer) {
 }
 
 // --------------------------------------------------------------------------
-bool S_sendconsume(int s, string& sendBuffer) {
+bool S_sendconsume(int s, string& sendBuffer, string logString) {
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty())
         return true; // Assume no error, still alive
 
     // Send as much as we can
-    ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
-    if (numSent > 0)
+    size_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
+
+    // FIXME: Remove once we have debugged the slow escalation responses to peers.
+    if (!logString.empty()) {
+        SINFO("Sent " << numSent << " bytes of " << (int)sendBuffer.size() << " for message " << logString);
+    }
+    
+    if (numSent > 0) {
         SConsumeFront(sendBuffer, numSent);
+    }
 
     // Exit of no error
     if (numSent >= 0) {

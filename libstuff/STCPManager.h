@@ -24,6 +24,7 @@ struct STCPManager {
         bool send(const string& buffer);
         bool recv();
         uint64_t id;
+        string logString;
 
         bool sendBufferEmpty();
         string sendBufferCopy();

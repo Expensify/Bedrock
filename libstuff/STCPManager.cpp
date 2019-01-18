@@ -260,7 +260,7 @@ bool STCPManager::Socket::send() {
     if (ssl) {
         result = SSSLSendConsume(ssl, sendBuffer);
     } else if (s > 0) {
-        result = S_sendconsume(s, sendBuffer);
+        result = S_sendconsume(s, sendBuffer, logString);
     }
     lastSendTime = STimeNow();
     return result;

@@ -688,7 +688,7 @@ inline string S_recv(int s) {
     S_recvappend(s, buf);
     return buf;
 }
-bool S_sendconsume(int s, string& sendBuffer);
+bool S_sendconsume(int s, string& sendBuffer, string logString="");
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
