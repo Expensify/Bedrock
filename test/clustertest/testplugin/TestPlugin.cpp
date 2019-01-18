@@ -299,7 +299,7 @@ SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url,
     //transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+    SAUTOLOCK(_listMutex);
     _activeTransactionList.push_front(transaction);
     return transaction;
 }
