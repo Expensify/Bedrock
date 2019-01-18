@@ -15,6 +15,9 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
+// Tracing can only be enabled or disabled globally, not per object.
+atomic<bool> SQLite::enableTrace(false);
+
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
     whitelist(nullptr),
@@ -35,7 +38,8 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
-    _isDeterministicQuery(false)
+    _isDeterministicQuery(false),
+    _checkpointThreadBusy(0)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -133,6 +137,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // Do our own checkpointing.
     sqlite3_wal_hook(_db, _sqliteWALCallback, this);
 
+    // Enable tracing for performance analysis.
+    sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
+
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
     SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
@@ -223,6 +230,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
+int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
+    if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
+    }
+    return 0;
+}
+
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
     SQLite* object = static_cast<SQLite*>(data);
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
@@ -248,12 +262,17 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
+        int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
+        if (alreadyCheckpointing) {
+            SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
+            return SQLITE_OK;
+        }
         thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
             // Lock the mutex that keeps anyone from starting a new transaction.
-            object->_sharedData->blockNewTransactionsMutex.lock();
+            lock_guard<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
 
             while (1) {
                 // Lock first, this prevents anyone from updating the count while we're operating here.
@@ -291,8 +310,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
-                    // We're done. Unlock and anyone can start a new transaction.
-                    object->_sharedData->blockNewTransactionsMutex.unlock();
+                    // We're done. Anyone can start a new transaction.
                     break;
                 }
 
@@ -300,6 +318,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // someone says the count has changed, and try again.
                 object->_sharedData->blockNewTransactionsCV.wait(lock);
             }
+
+            // Allow the next checkpointer.
+            object->_checkpointThreadBusy.store(0);
         }).detach();
     }
     return SQLITE_OK;

@@ -8,7 +8,7 @@ SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const stri
 { }
 
 SHTTPSManager::~SHTTPSManager() {
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
 
     // Clean up outstanding transactions
     SASSERTWARN(_activeTransactionList.empty());
@@ -25,7 +25,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction == nullptr) {
         return;
     }
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
 
     // Clean up the socket and done
     _activeTransactionList.remove(transaction);
@@ -54,23 +54,6 @@ int SHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-SHTTPSManager::Socket* SHTTPSManager::openSocket(const string& host, SX509* x509) {
-    // Just call the base class function but in a thread-safe way.
-    return STCPManager::openSocket(host, x509, &_listMutex);
-}
-
-void SHTTPSManager::closeSocket(Socket* socket) {
-    // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    STCPManager::closeSocket(socket);
-}
-
-void SHTTPSManager::prePoll(fd_map& fdm) {
-    // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    return STCPManager::prePoll(fdm);
-}
-
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     list<SHTTPSManager::Transaction*> completedRequests;
     map<Transaction*, uint64_t> transactionTimeouts;
@@ -83,7 +66,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
 }
 
 void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
 
     // Let the base class do its thing
     STCPManager::postPoll(fdm);
@@ -171,7 +154,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
     _completedTransactionList.push_front(transaction);
     return transaction;
 }
@@ -189,7 +172,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    Socket* s = openSocket(host, x509);
+    shared_ptr<Socket> s = openSocket(host, x509);
     if (!s) {
         return _createErrorTransaction();
     }
@@ -203,7 +186,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    SAUTOLOCK(_listMutex);
+    lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
     _activeTransactionList.push_front(transaction);
     return transaction;
 }

@@ -1903,23 +1903,41 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
     // functions.
 
     // Build a vector we can use to pass data to poll().
-    vector<pollfd> pollvec;
+    vector<pollfd> pollvec(fdm.size());
+    size_t i = 0;
     for (pair<int, pollfd> pfd : fdm) {
-        pollvec.push_back(pfd.second);
+        pollvec[i] = pfd.second;
+        i++;
     }
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
     int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
-
-    // And write our returned events back to our original structure.
-    for (pollfd pfd : pollvec) {
-        fdm[pfd.fd].revents = pfd.revents;
-    }
-
     if (returnValue == -1) {
         SWARN("Poll failed with response '" << strerror(S_errno) << "' (#" << S_errno << "), ignoring");
     }
+
+    // We're only going to return the entries that had activity, so clear out the whole structure.
+    fdm.clear();
+
+    // If there were no sockets with activity, we can return early.
+    if (returnValue == 0) {
+        return 0;
+    }
+
+    // And for anything that had a result, re-insert it.
+    int count = 0;
+    for (pollfd& pfd : pollvec) {
+        if (pfd.revents) {
+            fdm[pfd.fd] = pfd;
+            count++;
+            if (count == returnValue) {
+                // There are no more, we got them all.
+                break;
+            }
+        }
+    }
+
     return returnValue;
 }
 

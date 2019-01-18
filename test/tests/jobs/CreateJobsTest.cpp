@@ -159,7 +159,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         command["name"] = "createWithParentMocked_child1";
         command["mockRequest"] = "true";
         STable response2 = tester->executeWaitVerifyContentTable(command);
-        int child1ID = stoi(response2["jobID"]);
+        int64_t child1ID = stol(response2["jobID"]);
         responseJSON = SParseJSONObject(response2["data"]);
         ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
 
@@ -168,7 +168,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         command["name"] = "createWithParentMocked_child2";
         command["mockRequest"] = "true";
         response2 = tester->executeWaitVerifyContentTable(command);
-        int child2ID = stoi(response2["jobID"]);
+        int64_t child2ID = stol(response2["jobID"]);
         responseJSON = SParseJSONObject(response2["data"]);
         ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
 
@@ -186,7 +186,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContent(command);
 
         // Now make sure these are gone.
-        list<int> jobIDs = {child1ID, child2ID, stoi(parentID)};
+        list<int64_t> jobIDs = {child1ID, child2ID, stol(parentID)};
         SQResult result;
         string query = "SELECT jobID, state FROM jobs WHERE jobID in (" + SQList(jobIDs) + ");";
         tester->readDB(query, result);

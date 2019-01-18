@@ -25,6 +25,25 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
+int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
+{
+    int64_t newID = 0;
+    while (!newID) {
+        // Make sure this fits even in a signed int64_t, and is positive.
+        newID = SRandom::rand64();
+        if (newID < 0) {
+            newID = -newID;
+        }
+        newID %= INT64_MAX;
+        string result = db.read( "SELECT jobID FROM jobs WHERE jobID = " + to_string(newID) + ";");
+        if (!result.empty()) {
+            // This one exists! Pick a new one.
+            newID = 0;
+        }
+    }
+    return newID;
+}
+
 // ==========================================================================
 void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // Create or verify the jobs table
@@ -49,11 +68,6 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
     SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
-
-    SQResult nextIDResult;
-    db.read("SELECT MAX(jobID) FROM jobs;", nextIDResult);
-    lastJobID = nextIDResult.empty() ? 1 : SToInt64(nextIDResult[0][0]);
-    SINFO("Initializing jobs plugin, last jobID used is " << SToStr(lastJobID));
 }
 
 // ==========================================================================
@@ -82,8 +96,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //
         //     Parameters:
         //     - name - list of name patterns of jobs to match. If only one name is passed, you can use '*' to match any job.
-        //     - numResults - maximum number of jobs to dequeue
+        //     - numResults - (optional) Optional for GetJob, required for GetJobs. Maximum number of jobs to dequeue.
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
+        //     - jobPriority - (optional) Only check for jobs with this priority
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
         //
         //     Returns:
@@ -106,44 +121,13 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Get the list
-        SQResult result;
-        const list<string> nameList = SParseList(request["name"]);
-        bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        if (!db.read("SELECT 1 "
-                     "FROM jobs "
-                     "WHERE state in ('QUEUED', 'RUNQUEUED') "
-                        "AND priority IN (0, 500, 1000) "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " + 
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                     "LIMIT 1;",
-                     result)) {
-            STHROW("502 Query failed");
-        }
-
-        // If we didn't get any results, just return an empty list
-        if (result.empty() || SToInt(result[0][0]) == 0) {
-            // Did the caller set "Connection: wait"?  If so, put a "hold"
-            // on this request -- we'll clear the hold when we get a new
-            // job.
-            if (SIEquals(request["Connection"], "wait")) {
-                // Place a hold on this request waiting for new jobs in this
-                // state.
-                SINFO("No results found and 'Connection: wait'; placing request on hold until we get a new job "
-                      "matching name '"
-                      << request["name"] << "'");
-                request["HeldBy"] = "Jobs:" + request["name"];
-                response.clear(); // Clear default response so we don't accidentally think we're done
-                return false;     // Not processed
-            } else {
-                // Don't hold, just respond with no results
-                STHROW("404 No job found");
+        if (request.isSet("jobPriority")) {
+            int64_t priority = request.calc64("jobPriority");
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                STHROW("402 Invalid priority value");
             }
         }
 
-        // Looks like there might be results -- queue this for processing
-        SINFO("Found results, but waiting for processCommand to update");
         return false;
     }
 
@@ -248,7 +232,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
             // Also verify that the parent job doesn't have a retryAfter set.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
@@ -340,12 +324,12 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // If the job has any children, we are using the command in the wrong way
-        if (SToInt(result[0][3]) != 0) {
+        if (SToInt64(result[0][3]) != 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job with children");
         }
 
         // The command should only be called from a child job, throw if the job doesn't have a parent
-        if (SToInt(result[0][2]) == 0) {
+        if (SToInt64(result[0][2]) == 0) {
             STHROW("404 Invalid jobID - Cannot cancel a job without a parent");
         }
 
@@ -464,7 +448,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
             }
 
-            uint64_t updateJobID = 0;
+            int64_t updateJobID = 0;
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
@@ -540,7 +524,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt(job["parentJobID"]) : 0;
+            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
                 if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
@@ -605,7 +589,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int jobIDToUse = ++lastJobID;
+                const int64_t jobIDToUse = getNextID(db);
                 SINFO("Next jobID to be used " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
@@ -656,43 +640,56 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        string selectQuery =
-            "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=1000 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+        string selectQuery;
+        if (request.isSet("jobPriority")) {
+            selectQuery =
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "FROM jobs "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                    "AND priority=" + SQ(request.calc("jobPriority")) + " "
+                    "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                    "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                    string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
+        } else {
+            selectQuery =
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=1000 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=500 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=0 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
                 ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=500 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            "UNION ALL "
-                "SELECT * FROM ("
-                    "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
-                    "FROM jobs "
-                    "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                        "AND priority=0 "
-                        "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                        "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                        string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                    "ORDER BY nextRun ASC LIMIT " + safeNumResults +
-                ") "
-            ") "
-            "ORDER BY priority DESC "
-            "LIMIT " + safeNumResults + ";";
+                "ORDER BY priority DESC "
+                "LIMIT " + safeNumResults + ";";
+        }
         if (!db.read(selectQuery, result)) {
             STHROW("502 Query failed");
         }
@@ -850,7 +847,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             STHROW("502 Select failed");
         }
-        if (result.empty() || !SToInt(result[0][0])) {
+        if (result.empty() || !SToInt64(result[0][0])) {
             STHROW("404 No job with this jobID");
         }
 
@@ -925,7 +922,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
         string repeat = result[0][3];
-        int64_t parentJobID = SToInt(result[0][4]);
+        int64_t parentJobID = SToInt64(result[0][4]);
         bool mockRequest = result[0][5] == "1";
 
         // Make sure we're finishing a job that's actually running
@@ -1059,7 +1056,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 // At this point, all child jobs should already be deleted, but
                 // let's double check.
                 if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
-                    SWARN("Child jobs still exist when deleting parent job, ignoring.");
+                    STHROW("405 Failed to delete a job with outstanding children");
                 }
             }
         }
@@ -1099,7 +1096,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                      result)) {
             STHROW("502 Select failed");
         }
-        if (SToInt(result[0][0]) == 0) {
+        if (SToInt64(result[0][0]) == 0) {
             SINFO("Cancelled last QUEUED child, resuming the parent: " << safeParentJobID);
             if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' WHERE jobID=" + safeParentJobID + ";")) {
                 STHROW("502 Failed to update job data");
@@ -1354,4 +1351,3 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
 void BedrockPlugin_Jobs::initialize(const SData& args, BedrockServer& server) {
     _server = &server;
 }
-
