@@ -20,7 +20,7 @@ bool SimpleHTTPSManager::_onRecv(Transaction* transaction) {
 
 SimpleHTTPSManager::Transaction* SimpleHTTPSManager::send(const string& url, const SData& request) {
     // Open a non https socket, bedrock doesn't use https
-    Socket* s = openSocket(url, nullptr);
+    auto s = openSocket(url, nullptr);
     if (!s) {
         cout << "[ALRT] Whoa failed to open a socket to " << url << endl;
         return _createErrorTransaction();
@@ -35,7 +35,7 @@ SimpleHTTPSManager::Transaction* SimpleHTTPSManager::send(const string& url, con
     transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    SAUTOLOCK(_listMutex);
+    SAUTOLOCK(socketSetMutex);
     _activeTransactionList.push_front(transaction);
     return transaction;
 }
