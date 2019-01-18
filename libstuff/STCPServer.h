@@ -23,8 +23,8 @@ struct STCPServer : public STCPManager {
     void closePorts(list<Port*> except = {});
 
     // Tries to accept a new incoming socket
-    shared_ptr<Socket> acceptSocket(Port*& port, bool deferRead = false);
-    shared_ptr<Socket> acceptSocket() {
+    Socket* acceptSocket(Port*& port, bool deferRead = false);
+    Socket* acceptSocket() {
         Port* ignore;
         return acceptSocket(ignore);
     }
