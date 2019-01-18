@@ -1854,6 +1854,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
         SIEquals(command.request.methodLine, "Attach")                 ||
         SIEquals(command.request.methodLine, "SetConflictParams")      ||
         SIEquals(command.request.methodLine, "SetCheckpointIntervals") ||
+        SIEquals(command.request.methodLine, "SetSocketOption")        ||
         SIEquals(command.request.methodLine, "EnableSQLTracing")
         ) {
         return true;
@@ -1907,6 +1908,13 @@ void BedrockServer::_control(BedrockCommand& command) {
                 _maxConflictRetries.store(retries);
             }
         }
+    } else if (SIEquals(command.request.methodLine, "SetSocketOption")) {
+        bool oldNoDelayVal = Socket::noDelay.load();
+        if (command.request.isSet("TCP_NODELAY")) {
+            SINFO("Setting Socket::noDelay to " << (command.request.test("TCP_NODELAY") ? "true" : "false"));
+            Socket::noDelay.store(command.request.test("TCP_NODELAY"));
+        }
+        response["OLD_TCP_NODELAY"] = oldNoDelayVal ? "true" : "false";
     } else if (SIEquals(command.request.methodLine, "EnableSQLTracing")) {
         response["oldValue"] = SQLite::enableTrace ? "true" : "false";
         if (command.request.isSet("enable")) {

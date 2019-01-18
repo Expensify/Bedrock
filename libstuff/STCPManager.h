@@ -29,6 +29,8 @@ struct STCPManager {
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
 
+        static atomic<bool> noDelay;
+
       private:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;

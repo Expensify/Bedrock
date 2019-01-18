@@ -1,6 +1,8 @@
 #include "libstuff.h"
+#include <netinet/tcp.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
+atomic<bool> STCPManager::Socket::noDelay(false);
 
 STCPManager::~STCPManager() {
     SASSERTWARN(socketList.empty());
@@ -219,7 +221,12 @@ void STCPManager::closeSocket(Socket* socket) {
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
-{ }
+{
+    if (noDelay.load()) {
+        int one = 1;
+        setsockopt(s, SOL_TCP, TCP_NODELAY, &one, sizeof(one));
+    }
+}
 
 STCPManager::Socket::~Socket() {
     ::close(s);

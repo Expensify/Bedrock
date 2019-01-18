@@ -4,6 +4,7 @@
 ///
 #include <libstuff/libstuff.h>
 #include <libstuff/version.h>
+#include "libstuff/STCPManager.h"
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
 #include "plugins/Cache.h"
@@ -290,6 +291,10 @@ int main(int argc, char* argv[]) {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");
         SASSERT(SFileExists(args["-db"]));
+    }
+    if (args.isSet("-noDelay")) {
+        SINFO("Starting up with  STCPManager::Socket::noDelay = true");
+        STCPManager::Socket::noDelay.store(true);
     }
 
     // Log stack traces if we have unhandled exceptions.
