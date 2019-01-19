@@ -1849,13 +1849,13 @@ bool S_sendconsume(int s, string& sendBuffer, string logString) {
         return true; // Assume no error, still alive
 
     // Send as much as we can
-    size_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
+    ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
 
     // FIXME: Remove once we have debugged the slow escalation responses to peers.
     if (!logString.empty()) {
         SINFO("Sent " << numSent << " bytes of " << (int)sendBuffer.size() << " for message " << logString);
     }
-    
+
     if (numSent > 0) {
         SConsumeFront(sendBuffer, numSent);
     }
