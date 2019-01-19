@@ -218,7 +218,8 @@ void STCPManager::closeSocket(Socket* socket) {
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509),
+    sentBytes(0), recvBytes(0)
 { }
 
 STCPManager::Socket::~Socket() {
@@ -253,15 +254,33 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, re
     return socket;
 }
 
+void STCPManager::Socket::resetCounters() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    sentBytes = 0;
+    recvBytes = 0;
+}
+
+uint64_t STCPManager::Socket::getRecvBytes() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    return recvBytes;
+}
+
+uint64_t STCPManager::Socket::getSentBytes() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    return sentBytes;
+}
+
 bool STCPManager::Socket::send() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Send data
     bool result = false;
+    size_t oldSize = sendBuffer.size();
     if (ssl) {
         result = SSSLSendConsume(ssl, sendBuffer);
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer, logString);
     }
+    sentBytes += (oldSize - sendBuffer.size());
     lastSendTime = STimeNow();
     return result;
 }
@@ -309,6 +328,7 @@ bool STCPManager::Socket::recv() {
 
     // We've received new data
     if (oldSize != recvBuffer.size()) {
+        recvBytes += (recvBuffer.size() - oldSize);
         lastRecvTime = STimeNow();
     }
     return result;

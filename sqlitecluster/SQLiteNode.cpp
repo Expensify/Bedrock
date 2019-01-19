@@ -46,7 +46,8 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
+      _lastNetStatTime(chrono::steady_clock::now())
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -310,6 +311,25 @@ list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
 // -----------------
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
+
+    // Log network timing info.
+    auto now = chrono::steady_clock::now();
+    if (now > (_lastNetStatTime + 10s)) {
+        auto elapsed = (now - _lastNetStatTime);
+        _lastNetStatTime = now;
+        string logMsg = "[performance] Network stats: " +
+                        to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
+                        " ms elapsed. ";
+        for (auto& p : peerList) {
+            if (p->s) {
+                logMsg += p->name + " sent " + to_string(p->s->getSentBytes()) + " bytes, recv " + to_string(p->s->getRecvBytes()) + " bytes. ";
+            } else {
+                logMsg += p->name + " has no socket. ";
+            }
+        }
+        SINFO(logMsg);
+    }
+
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known
