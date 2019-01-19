@@ -323,6 +323,7 @@ bool SQLiteNode::update() {
         for (auto& p : peerList) {
             if (p->s) {
                 logMsg += p->name + " sent " + to_string(p->s->getSentBytes()) + " bytes, recv " + to_string(p->s->getRecvBytes()) + " bytes. ";
+                p->s->resetCounters();
             } else {
                 logMsg += p->name + " has no socket. ";
             }
