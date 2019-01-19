@@ -16,14 +16,14 @@ VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
 # Turn on C++14.
 CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
 CXXFLAGS =-std=gnu++14
-CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include -Werror -Wno-unused-result
+CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include -Werror -Wno-unused-result -Wconversion
 
 # This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
 PRODUCTION=false
 ifeq ($(PRODUCTION),true)
 # Extra build stuff
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
-CFLAGS +=-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security
+CFLAGS +=-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security -Wconversion
 else
 CFLAGS +=-O0
 endif

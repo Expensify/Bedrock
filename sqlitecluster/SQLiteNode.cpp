@@ -1506,8 +1506,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
         uint64_t transitTimeUS = slaveDequeueTimestamp - masterSentTimestamp;
         uint64_t applyTimeUS = STimeNow() - slaveDequeueTimestamp;
-        float transitTimeMS = (float)transitTimeUS / 1000.0;
-        float applyTimeMS = (float)applyTimeUS / 1000.0;
+        double transitTimeMS = (double)transitTimeUS / 1000.0;
+        double applyTimeMS = (double)applyTimeUS / 1000.0;
         PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by master at " << masterSentTimestamp
               << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||

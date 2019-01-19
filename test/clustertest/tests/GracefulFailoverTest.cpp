@@ -25,7 +25,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             // Start a thread.
             BedrockClusterTester* localTester = tester;
             threads.emplace_back([localTester, i, &mu, &done, &allresults, &counts, &commandID]() {
-                int currentNodeIndex = i % 3;
+                size_t currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
                     vector<SData> requests;
@@ -35,8 +35,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
                         // We ask for `756` responses to verify we don't accidentally get back something besides what
                         // we expect (some default value).
-                        int randNum = SRandom::rand64();
-                        int randNum2 = SRandom::rand64();
+                        int randNum = (int)SRandom::rand64();
+                        int randNum2 = (int)SRandom::rand64();
                         if (randNum % 10 == 0) {
                             if (randNum2 % 5 == 0) {
                                 SData query("sendrequest" + randCommand);

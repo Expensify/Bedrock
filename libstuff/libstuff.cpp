@@ -140,7 +140,7 @@ string SToHex(uint64_t value, int digits) {
         // Get the hex digit and add
         char digit = (char)(value % 16);
         value /= 16;
-        working[c] = (digit < 10 ? '0' + digit : 'A' + (digit - 10));
+        working[c] = (char)(digit < 10 ? '0' + digit : 'A' + (digit - 10));
     }
     return working;
 }
@@ -152,8 +152,8 @@ string SToHex(const string& value) {
     for (size_t c = 0; c < value.size(); ++c) {
         // Add two digits per byte
         unsigned char digit = (unsigned char)value[c];
-        working += ((digit >> 4) < 10 ? '0' + (digit >> 4) : 'A' + (digit >> 4) - 10);
-        working += ((digit & 0xF) < 10 ? '0' + (digit & 0xF) : 'A' + (digit & 0xF) - 10);
+        working += ((digit >> 4) < 10 ? (char)('0' + (digit >> 4)) : (char)('A' + (digit >> 4) - 10));
+        working += ((digit & 0xF) < 10 ? (char)('0' + (digit & 0xF)) : (char)('A' + (digit & 0xF) - 10));
     }
     return working;
 }
@@ -345,7 +345,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0x07ff) {
                     // UTF-8 2 byte header is 110.
                     // 1100.0000 | Top 5 bits of utfValue
-                    char byte = 0xc0 | (utfValue >> 6);
+                    char byte = (char)(0xc0 | (utfValue >> 6));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -358,7 +358,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0xffff) {
                     // UTF-8 3 byte header is 1110.
                     // 1110.0000 | Top 4 bits of utfValue.
-                    char byte = 0xe0 | (utfValue >> 12);
+                    char byte = (char)(0xe0 | (utfValue >> 12));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -371,7 +371,7 @@ string SUnescape(const char* lhs, char escaper) {
                 for (; additionalBytes > 0; --additionalBytes) {
                     // UTF-8 trailing byte header is 10.
                     // 1000.0000 | The bottom 6 bits of utfValue.
-                    char byte = 0x80 | (utfValue & 0x003f);
+                    char byte = (char)(0x80 | (utfValue & 0x003f));
 
                     // Shift out the bottom 6 bits (we just used them above).
                     utfValue >>= 6;
@@ -867,11 +867,11 @@ int _SDecodeURIChar(const char* buffer, int length, string& out) {
     // Decode three characters
     char outChar = 0;
     if (SWITHIN('0', buffer[1], '9'))
-        outChar |= (buffer[1] - '0' + 0) << 4;
+        outChar |= (char)((buffer[1] - '0' + 0) << 4);
     else if (SWITHIN('a', buffer[1], 'f'))
-        outChar |= (buffer[1] - 'a' + 10) << 4;
+        outChar |= (char)((buffer[1] - 'a' + 10) << 4);
     else if (SWITHIN('A', buffer[1], 'F'))
-        outChar |= (buffer[1] - 'A' + 10) << 4;
+        outChar |= (char)((buffer[1] - 'A' + 10) << 4);
     else {
         // Invalid -- not sure what's going on.  Cancel decode.
         out += "%";
@@ -879,11 +879,11 @@ int _SDecodeURIChar(const char* buffer, int length, string& out) {
         return 2;
     }
     if (SWITHIN('0', buffer[2], '9'))
-        outChar |= (buffer[2] - '0' + 0);
+        outChar |= (char)(buffer[2] - '0' + 0);
     else if (SWITHIN('a', buffer[2], 'f'))
-        outChar |= (buffer[2] - 'a' + 10);
+        outChar |= (char)(buffer[2] - 'a' + 10);
     else if (SWITHIN('A', buffer[2], 'F'))
-        outChar |= (buffer[2] - 'A' + 10);
+        outChar |= (char)(buffer[2] - 'A' + 10);
     else {
         // Invalid -- not sure what's going on.  Cancel decode.
         out += "%";
@@ -1514,7 +1514,7 @@ string SGUnzip (const string& content) {
         return "";
     }
 
-    strm.avail_in = content.size();
+    strm.avail_in = (unsigned int)content.size();
     strm.next_in = (unsigned char*)content.c_str();
 
     do {
@@ -1817,14 +1817,12 @@ bool S_recvappend(int s, string& recvBuffer) {
 
     // Keep trying to receive as long as we can
     char buffer[4096];
-    int totalRecv = 0;
     ssize_t numRecv = 0;
     sockaddr_in fromAddr;
     socklen_t fromAddrLen = sizeof(fromAddr);
     while ((numRecv = recvfrom(s, buffer, sizeof(buffer), 0, (sockaddr*)&fromAddr, &fromAddrLen)) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        totalRecv += numRecv;
 
         // If this is a blocking socket, don't try again, once is enough
         if (blocking)
@@ -2122,7 +2120,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
                     SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
                 }
                 completeBytes += numRead;
-                int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
+                int percent = (int)(fromSize ? ((completeBytes * 100) / fromSize) : 0);
                 if (percent > completePercent) {
                     SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
                     completePercent = percent;
@@ -2195,7 +2193,7 @@ string SHashSHA256(const string& buffer) {
 
 // --------------------------------------------------------------------------
 
-string SEncodeBase64(const unsigned char* buffer, int size) {
+string SEncodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_encode(0, 0, &olen, buffer, size);
@@ -2212,7 +2210,7 @@ string SEncodeBase64(const string& bufferString) {
 }
 
 // --------------------------------------------------------------------------
-string SDecodeBase64(const unsigned char* buffer, int size) {
+string SDecodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_decode(0, 0, &olen, buffer, size);
@@ -2237,8 +2235,8 @@ string SHMACSHA1(const string& key, const string& buffer) {
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
     for (int c = 0; c < (int)key.size(); ++c) {
         // XOR front of opadSecret/ipadSecret with secret access key
-        ipadSecret[c] ^= key[c];
-        opadSecret[c] ^= key[c];
+        ipadSecret[c] = ipadSecret[c] ^ key[c];
+        opadSecret[c] = opadSecret[c] ^ key[c];
     }
 
     // Then use it to make the hashes
@@ -2256,8 +2254,8 @@ string SHMACSHA256(const string& key, const string& buffer) {
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
     for (int c = 0; c < (int)key.size(); ++c) {
         // XOR front of opadSecret/ipadSecret with secret access key
-        ipadSecret[c] ^= key[c];
-        opadSecret[c] ^= key[c];
+        ipadSecret[c] = ipadSecret[c] ^ key[c];
+        opadSecret[c] = opadSecret[c] ^ key[c];
     }
 
     // Then use it to make the hashes

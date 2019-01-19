@@ -722,9 +722,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
-string SEncodeBase64(const unsigned char* buffer, const int size);
+string SEncodeBase64(const unsigned char* buffer, const size_t size);
 string SEncodeBase64(const string& buffer);
-string SDecodeBase64(const unsigned char* buffer, const int size);
+string SDecodeBase64(const unsigned char* buffer, const size_t size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)

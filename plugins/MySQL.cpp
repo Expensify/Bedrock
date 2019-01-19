@@ -10,7 +10,7 @@ MySQLPacket::MySQLPacket() {
 
 string MySQLPacket::serialize() {
     // Wrap in a 3-byte header
-    uint32_t payloadLength = payload.size();
+    uint32_t payloadLength = (uint32_t)payload.size();
     string header;
     header.resize(4);
     memcpy(&header[0], &payloadLength, 3);
@@ -125,7 +125,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
 
     // First the column count
     MySQLPacket columnCount;
-    columnCount.sequenceID = ++sequenceID;
+    columnCount.sequenceID = (uint8_t)++sequenceID;
     columnCount.payload = lenEncInt(result.headers.size());
     sendBuffer += columnCount.serialize();
 
@@ -133,7 +133,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     for (const auto& header : result.headers) {
         // Now a column description
         MySQLPacket column;
-        column.sequenceID = ++sequenceID;
+        column.sequenceID = (uint8_t)++sequenceID;
         column.payload += lenEncStr("def");     // catalog (lenenc_str) -- catalog (always "def")
         column.payload += lenEncStr("unknown"); // schema (lenenc_str) -- schema-name
         column.payload += lenEncStr("unknown"); // table (lenenc_str) -- virtual table-name
@@ -168,7 +168,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
 
     // EOF packet to signal no more columns
     MySQLPacket eofPacket;
-    eofPacket.sequenceID = ++sequenceID;
+    eofPacket.sequenceID = (uint8_t)++sequenceID;
     SAppend(eofPacket.payload, "\xFE", 1); // EOF
     uint32_t zero = 0;
     SAppend(eofPacket.payload, &zero, 4); // EOF
@@ -178,7 +178,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     for (const auto& row : result.rows) {
         // Now the row
         MySQLPacket rowPacket;
-        rowPacket.sequenceID = ++sequenceID;
+        rowPacket.sequenceID = (uint8_t)++sequenceID;
         for (const auto& cell : row) {
             rowPacket.payload += lenEncStr(cell);
         }
@@ -187,7 +187,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     }
 
     // Finish with another EOF packet
-    eofPacket.sequenceID = ++sequenceID;
+    eofPacket.sequenceID = (uint8_t)++sequenceID;
     sendBuffer += eofPacket.serialize();
 
     // Done!
@@ -197,7 +197,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
 string MySQLPacket::serializeOK(int sequenceID) {
     // Just fill out the packet
     MySQLPacket ok;
-    ok.sequenceID = sequenceID + 1;
+    ok.sequenceID = (uint8_t)(sequenceID + 1);
     ok.payload += lenEncInt(0); // OK
     ok.payload += lenEncInt(0); // Affected rows
     ok.payload += lenEncInt(0); // Last insert ID
@@ -214,7 +214,7 @@ string MySQLPacket::serializeOK(int sequenceID) {
 string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& message) {
     // Fill it with our custom error message
     MySQLPacket err;
-    err.sequenceID = sequenceID + 1;
+    err.sequenceID = (uint8_t)(sequenceID + 1);
     err.payload += "\xFF";                     // Header of the ERR packet
     SAppend(err.payload, &code, sizeof(code)); // Error code
     err.payload += message;                    // Error message
@@ -346,7 +346,7 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         }
     } else {
         // Failure -- pass along the message
-        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt(command.response.methodLine),
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), (uint16_t)SToInt(command.response.methodLine),
                                           command.response["error"]));
     }
 }

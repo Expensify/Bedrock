@@ -8,9 +8,9 @@ uint64_t SRandom::rand64() { return _distribution64(_generator); }
 string SRandom::randStr(uint& length) {
     string str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     string newstr;
-    int pos;
+    size_t pos;
     while(newstr.size() != length) {
-        pos = (rand64() % (str.size() - 1));
+        pos = (size_t)(rand64() % (str.size() - 1));
         newstr += str.substr(pos,1);
     }
     return newstr;

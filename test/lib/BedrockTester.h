@@ -69,9 +69,9 @@ class BedrockTester {
     int getServerPID() { return _serverPID; }
 
     // Expose the ports that the server is listening on.
-    int getServerPort();
-    int getNodePort();
-    int getControlPort();
+    uint16_t getServerPort();
+    uint16_t getNodePort();
+    uint16_t getControlPort();
 
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
@@ -79,7 +79,7 @@ class BedrockTester {
 
     // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
     // it takes the OS a few seconds to make the port available again.
-    static int waitForPort(int port);
+    static int waitForPort(uint16_t port);
 
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`

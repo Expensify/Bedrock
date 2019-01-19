@@ -20,7 +20,7 @@ class SLockTimer : public SPerformanceTimer {
     LOCKTYPE& _lock;
 
     // Each thread keeps it's own counter of wait and lock time.
-    map<string, pair<int,int>> _perThreadTiming;
+    map<string, pair<uint64_t,uint64_t>> _perThreadTiming;
 };
 
 template<typename LOCKTYPE>
@@ -110,9 +110,9 @@ void SLockTimer<LOCKTYPE>::log() {
             // we don't handle `reverse` for SLockTimer.
             SWARN("`reverse` flag incorrectly specified for SLockTimer.");
         } else {
-            lockPercent = 100.0 * ((double)lockTime / (_timeLogged + _timeNotLogged));
-            waitPercent = 100.0 * ((double)waitTime / (_timeLogged + _timeNotLogged));
-            freePercent = 100.0 * ((double)freeTime / (_timeLogged + _timeNotLogged));
+            lockPercent = 100.0 * ((double)lockTime / (double)(_timeLogged + _timeNotLogged));
+            waitPercent = 100.0 * ((double)waitTime / (double)(_timeLogged + _timeNotLogged));
+            freePercent = 100.0 * ((double)freeTime / (double)(_timeLogged + _timeNotLogged));
         }
         char lockBuffer[7] = {0};
         snprintf(lockBuffer, 7, "%.2f", lockPercent);

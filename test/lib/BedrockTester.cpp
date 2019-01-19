@@ -53,9 +53,9 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     }
 
     // Set the ports.
-    _serverPort = 8989 + threadID;
-    _nodePort = 9889 + threadID;
-    _controlPort = 19999 + threadID;
+    _serverPort = (uint16_t)(8989 + threadID);
+    _nodePort = (uint16_t)(9889 + threadID);
+    _controlPort = (uint16_t)(19999 + threadID);
 
     // Set these values from the arguments if provided, or the defaults if not.
     try {
@@ -488,15 +488,15 @@ bool BedrockTester::readDB(const string& query, SQResult& result)
     return getSQLiteDB().read(query, result);
 }
 
-int BedrockTester::getServerPort() {
+uint16_t BedrockTester::getServerPort() {
     return _serverPort;
 }
 
-int BedrockTester::getNodePort() {
+uint16_t BedrockTester::getNodePort() {
     return _nodePort;
 }
 
-int BedrockTester::getControlPort() {
+uint16_t BedrockTester::getControlPort() {
     return _controlPort;
 }
 
@@ -518,7 +518,7 @@ bool BedrockTester::waitForState(string state, uint64_t timeoutUS)
     return false;
 }
 
-int BedrockTester::waitForPort(int port) {
+int BedrockTester::waitForPort(uint16_t port) {
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     int i = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));

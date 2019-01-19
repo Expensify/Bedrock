@@ -58,10 +58,10 @@ void SPerformanceTimer::log() {
     string adj;
     double percentage;
     if (_reverse) {
-        percentage = 100.0 * ((double)_timeNotLogged / (_timeLogged + _timeNotLogged));
+        percentage = 100.0 * ((double)_timeNotLogged / (double)(_timeLogged + _timeNotLogged));
         adj = "active";
     } else {
-        percentage = 100.0 * ((double)_timeLogged / (_timeLogged + _timeNotLogged));
+        percentage = 100.0 * ((double)_timeLogged / (double)(_timeLogged + _timeNotLogged));
         adj = "other";
     }
     char buffer[7];
