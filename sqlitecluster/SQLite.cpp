@@ -287,11 +287,12 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // Lets re-check if we still need a full check point, it could be that a passive check point runs
                 // after we have started this loop and check points a large chunk or all of the pages we were trying
                 // to check point here. That means that this thread is now blocking new transactions waiting to run a
-                // full check point for no reason. If that's the case, just break out of the this loop and wait for the
-                // next full check point to be required.
+                // full check point for no reason. We wait for the page count to be less than half of the required amount
+                // to prevent bouncing off of this check every loop. If that's the case, just break out of the this loop
+                // and wait for the next full check point to be required.
                 int pageCount = object->_sharedData->_currentPageCount.load();
-                if (pageCount < fullCheckpointPageMin.load()) {
-                    SINFO("[checkpoint] Page count decreased below threshold, count is now " << pageCount << ", exiting full checkpoint loop.");
+                if (pageCount < (fullCheckpointPageMin.load() / 2)) {
+                    SINFO("[checkpoint] Page count decreased below half the threshold, count is now " << pageCount << ", exiting full checkpoint loop.");
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
@@ -1046,5 +1047,6 @@ bool SQLite::getUpdateNoopMode() const {
 }
 
 SQLite::SharedData::SharedData() :
-currentTransactionCount(0)
+currentTransactionCount(0),
+_currentPageCount(0)
 { }

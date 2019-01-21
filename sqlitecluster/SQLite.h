@@ -271,7 +271,7 @@ class SQLite {
         set<SQLite*> validObjects;
 
         // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
-        // we need to store it across callbacks so we can check if the full check point thread still needs to run.  
+        // we need to store it across callbacks so we can check if the full check point thread still needs to run.
         atomic<int> _currentPageCount;
     };
 
