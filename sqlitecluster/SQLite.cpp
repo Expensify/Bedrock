@@ -239,6 +239,7 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
     SQLite* object = static_cast<SQLite*>(data);
+    object->_sharedData->_currentPageCount.store(pageCount);
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (!object->_enableFullCheckpoints || pageCount < fullCheckpointPageMin.load()) {
@@ -262,14 +263,13 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
-        int& pageCountCopy = pageCount;
         int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
         if (alreadyCheckpointing) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
-        SDEBUG("[checkpoint] starting thread with count: " << pageCountCopy);
-        thread([object, filename, dbNameCopy, pageCountCopy]() {
+        SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
+        thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
@@ -289,8 +289,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // to check point here. That means that this thread is now blocking new transactions waiting to run a
                 // full check point for no reason. If that's the case, just break out of the this loop and wait for the
                 // next full check point to be required.
-                if (pageCountCopy < fullCheckpointPageMin.load()) {
-                    SINFO("[checkpoint] Page count decreased below threshold, count is now " << pageCountCopy << ", exiting full checkpoint loop.");
+                int pageCount = object->_sharedData->_currentPageCount.load();
+                if (pageCount < fullCheckpointPageMin.load()) {
+                    SINFO("[checkpoint] Page count decreased below threshold, count is now " << pageCount << ", exiting full checkpoint loop.");
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
