@@ -262,12 +262,14 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
+        int& pageCountCopy = pageCount;
         int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
         if (alreadyCheckpointing) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
-        thread([object, filename, dbNameCopy]() {
+        SDEBUG("[checkpoint] starting thread with count: " << pageCountCopy);
+        thread([object, filename, dbNameCopy, pageCountCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
@@ -281,7 +283,18 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // Now that we have the lock, check the count. If there are no outstanding transactions, we can
                 // checkpoint immediately, and then we'll return.
                 int count = object->_sharedData->currentTransactionCount.load();
-                SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
+
+                // Lets re-check if we still need a full check point, it could be that a passive check point runs
+                // after we have started this loop and check points a large chunk or all of the pages we were trying
+                // to check point here. That means that this thread is now blocking new transactions waiting to run a
+                // full check point for no reason. If that's the case, just break out of the this loop and wait for the
+                // next full check point to be required.
+                if (pageCountCopy < fullCheckpointPageMin.load()) {
+                    SINFO("[checkpoint] Page count decreased below threshold, count is now " << pageCountCopy << ", exiting full checkpoint loop.");
+                    break;
+                } else {
+                    SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
+                }
 
                 if (count == 0) {
                     // Grab the global commit lock. Then we can look up this object and see if it still exists.
@@ -349,7 +362,7 @@ SQLite::~SQLite() {
     SINFO("Locking g_commitLock in destructor.");
     SQLITE_COMMIT_AUTOLOCK;
     SINFO("g_commitLock acquired in destructor.");
-    
+
     // Remove ourself from the list of valid objects.
     _sharedData->validObjects.erase(this);
 
