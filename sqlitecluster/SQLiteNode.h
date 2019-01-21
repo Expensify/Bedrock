@@ -206,4 +206,7 @@ class SQLiteNode : public STCPNode {
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale reponses to old changes.
     int _stateChangeCount;
+
+    // Last time we recorded network stats.
+    chrono::steady_clock::time_point _lastNetStatTime;
 };
