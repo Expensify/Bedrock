@@ -186,7 +186,7 @@ class SQLite {
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
-    
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -269,6 +269,10 @@ class SQLite {
         // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
         // if the SQLite object that initiated it has been deleted since it started.
         set<SQLite*> validObjects;
+
+        // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
+        // we need to store it across callbacks so we can check if the full check point thread still needs to run.
+        atomic<int> _currentPageCount;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
@@ -283,7 +287,7 @@ class SQLite {
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
     // database file. It's a map of canonicalized filename to a sharedData object.
-    static map<string, SharedData*> _sharedDataLookupMap; 
+    static map<string, SharedData*> _sharedDataLookupMap;
 
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
