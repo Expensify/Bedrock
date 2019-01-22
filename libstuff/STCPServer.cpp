@@ -33,6 +33,7 @@ void STCPServer::closePorts(list<Port*> except) {
         while (it != portList.end()) {
             if  (find(except.begin(), except.end(), &(*it)) == except.end()) {
                 // Close this port
+                ::shutdown(it->s, SHUT_RDWR);
                 ::close(it->s);
                 SINFO("Close ports closing " << it->host << ".");
                 it = portList.erase(it);
@@ -46,10 +47,10 @@ void STCPServer::closePorts(list<Port*> except) {
     }
 }
 
-STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
+shared_ptr<STCPManager::Socket> STCPServer::acceptSocket(Port*& portOut, bool deferRead) {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     portOut = 0;
-    Socket* socket = nullptr;
+    shared_ptr<Socket> socket = nullptr;
 
     // See if we can accept on any port
     lock_guard <decltype(portListMutex)> lock(portListMutex);
@@ -60,12 +61,15 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
         if (s > 0) {
             // Received a socket, wrap
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            socket = new Socket(s, Socket::CONNECTED);
+            socket = make_shared<Socket>(s, Socket::CONNECTED);
             socket->addr = addr;
-            socketList.push_back(socket);
+            lock_guard<decltype(socketSetMutex)> lock(socketSetMutex);
+            socketSet.insert(socket);
 
             // Try to read immediately
-            S_recvappend(socket->s, socket->recvBuffer);
+            if (!deferRead) {
+                S_recvappend(socket->s, socket->recvBuffer);
+            }
 
             // Record what port it was accepted on
             portOut = &port;
