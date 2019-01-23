@@ -80,7 +80,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         if (mmapSizeGB) {
             SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
             const int64_t GB = 1024 * 1024 * 1024;
-            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, _sqliteLogCallback, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
+            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
         }
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
