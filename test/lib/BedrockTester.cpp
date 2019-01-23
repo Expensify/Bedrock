@@ -78,6 +78,7 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
         {"-priority",         "200"},
         {"-plugins",          "db"},
         {"-workerThreads",    "8"},
+        {"-mmapSizeGB",       "1"},
         {"-maxJournalSize",   "25000"},
         {"-v",                ""},
         {"-quorumCheckpoint", "50"},

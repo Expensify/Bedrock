@@ -120,6 +120,10 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
+    if (mmapSizeGB) {
+        SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+    }
+
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
     SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
