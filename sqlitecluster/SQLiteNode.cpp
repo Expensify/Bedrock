@@ -100,6 +100,7 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     SData escalate("ESCALATE_RESPONSE");
     escalate["ID"] = command.id;
     escalate.content = command.response.serialize();
+    SINFO("Sending ESCALATE_RESPONSE to " << peer->name << " for " << command.id << ".");
     _sendToPeer(peer, escalate);
 }
 
