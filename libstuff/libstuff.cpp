@@ -1849,7 +1849,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         return true; // Assume no error, still alive
     }
 
-    if (SContains(sendBuffer, "ESCALATE_RESPONSE")) {
+    if (SStartsWith(sendBuffer, "ESCALATE_RESPONSE")) {
         SData tempData;
         tempData.deserialize(sendBuffer);
         string id = tempData["id"];
