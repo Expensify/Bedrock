@@ -64,6 +64,11 @@ class SQLite {
     // table is already there with the wrong schema, it returns false.
     bool verifyTable(const string& name, const string& sql, bool& created);
 
+    // Verifies an index exists on the given table with the given definition. Optionally create it if it doesn't exist.
+    // Be careful, creating an index can be expensive on large tables!
+    // Returns false if the index does not exist and was not created.
+    bool verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool createIfNotExists = false);
+
     // Adds a column to a table.
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 

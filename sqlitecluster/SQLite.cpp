@@ -483,6 +483,27 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
     }
 }
 
+bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool createIfNotExists) {
+    SINFO("Verifying index " << indexName);
+    SQResult result;
+    SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
+
+    string createSQL = "CREATE INDEX " + indexName + " ON " + tableName + " " + indexSQLDefinition;
+    if (result.empty()) {
+        if (!createIfNotExists) {
+            SINFO("Index '" << indexName << "' does not exist on table '" << tableName << "'.");
+            return false;
+        }
+        SINFO("Creating index '" << indexName << "' on table '" << tableName << "': " << indexSQLDefinition << ". Executing '" << createSQL << "'.");
+        SASSERT(write(createSQL + ";"));
+        return true;
+    } else {
+        // Index exists, verify it is correct.
+        SASSERT(!result[0].empty());
+        return SCollapse(createSQL) == SCollapse(result[0][0]);
+    }
+}
+
 bool SQLite::addColumn(const string& tableName, const string& column, const string& columnType) {
     // Add a column to the table if it does not exist.  Totally freak out on error.
     const string& sql =
