@@ -1,5 +1,6 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
+#include <plugins/Jobs.h>
 
 struct RetryJobTest : tpunit::TestFixture {
     RetryJobTest()
@@ -31,8 +32,11 @@ struct RetryJobTest : tpunit::TestFixture {
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
-        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+        for (int64_t i = 0; i < BedrockPlugin_Jobs::TABLE_COUNT; i++) {
+            string tableName = BedrockPlugin_Jobs::getTableName(i);
+            command["query"] = "DELETE FROM " + tableName + " WHERE jobID > 0;";
+            tester->executeWaitVerifyContent(command);
+        }
     }
 
     void tearDownClass() { delete tester; }
@@ -87,7 +91,8 @@ struct RetryJobTest : tpunit::TestFixture {
         // We'll manually put the child in the RUNNING state to hit this condition
         command.clear();
         command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + childID + ";";
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(childID));
+        command["query"] = "UPDATE " + tableName + " SET state = 'RUNNING' WHERE jobID = " + childID + ";";
         tester->executeWaitVerifyContent(command);
 
         // Retry the child
@@ -141,7 +146,8 @@ struct RetryJobTest : tpunit::TestFixture {
         // The parent may have other children from mock requests, delete them.
         command.clear();
         command.methodLine = "Query";
-        command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(parentID));
+        command["Query"] = "DELETE FROM " + tableName + " WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
         tester->executeWaitVerifyContent(command);
 
         // Cancel a child
@@ -169,7 +175,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         SQResult result;
-        tester->readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(parentID));
+        tester->readDB("SELECT count(*) FROM " + tableName + " WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
         ASSERT_EQUAL(SToInt(result[0][0]), 0);
     }
 
@@ -199,7 +206,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm the data updated
         SQResult result;
-        tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT data FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
     }
 
@@ -235,7 +243,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Get a timestamp from before we update nextRun.
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         string minimumLastRun = result[0][0];
 
         // Get the job
@@ -256,7 +265,8 @@ struct RetryJobTest : tpunit::TestFixture {
         string maximumLastRun = result[0][0];
 
         // Get the actual value of nextRun.
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         string actualNextRun = result[0][0];
 
         // Because nextRun is updated during RetryJob based on the *current time*, we don't know exactly what it should
@@ -283,7 +293,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Get the nextRun value
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         string originalNextRun = result[0][0];
 
         // Get the job
@@ -323,7 +334,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour
         SQResult result;
-        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT lastRun, nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         time_t createdTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
@@ -346,7 +358,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNQUEUED
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Retry it
@@ -356,7 +369,8 @@ struct RetryJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confrim the job is back in the QUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT state FROM " + tableName + " WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
@@ -384,7 +398,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun updated correctly
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], nextRun);
     }
 
@@ -412,7 +427,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm the data updated
         SQResult result;
-        tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT name FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "newName");
     }
 
@@ -440,7 +456,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour, not in the given nextRun time
         SQResult result;
-        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT lastRun, nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
@@ -474,7 +491,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun is in 1 hour, not in the 5 second delay
         SQResult result;
-        tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT lastRun, nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         struct tm tm1;
         struct tm tm2;
         strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
@@ -509,7 +527,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun updated correctly
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], nextRun);
     }
 
@@ -537,7 +556,8 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm nextRun updated correctly
         SQResult result;
-        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        string tableName = BedrockPlugin_Jobs::getTableName(stol(jobID));
+        tester->readDB("SELECT nextRun FROM " + tableName + " WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], nextRun);
     }
 

@@ -1,4 +1,5 @@
 #include <test/lib/BedrockTester.h>
+#include <plugins/Jobs.h>
 
 struct QueryJobTest : tpunit::TestFixture {
     QueryJobTest()
@@ -15,8 +16,11 @@ struct QueryJobTest : tpunit::TestFixture {
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
-        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+        for (int64_t i = 0; i < BedrockPlugin_Jobs::TABLE_COUNT; i++) {
+            string tableName = BedrockPlugin_Jobs::getTableName(i);
+            command["query"] = "DELETE FROM " + tableName + " WHERE jobID > 0;";
+            tester->executeWaitVerifyContent(command);
+        }
     }
 
     void tearDownClass() { delete tester; }
