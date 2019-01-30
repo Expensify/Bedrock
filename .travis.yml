@@ -13,4 +13,4 @@ notifications:
         on_success: never
 before_install:
 script: ./travis.sh
-
+dist: xenial
