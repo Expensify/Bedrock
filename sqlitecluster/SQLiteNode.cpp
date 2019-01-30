@@ -506,6 +506,7 @@ bool SQLiteNode::update() {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
         Peer* highestPriorityPeer = nullptr;
+        int highestPriorityPeerEffectivePriority = 0;
         Peer* freshestPeer = nullptr;
         Peer* currentMaster = nullptr;
         for (auto peer : peerList) {
@@ -520,11 +521,14 @@ bool SQLiteNode::update() {
                         freshestPeer = peer;
 
                     // See if it's the highest priority
-                    if (!highestPriorityPeer || peer->calc("Priority") > highestPriorityPeer->calc("Priority"))
+                    const string& peerState = (*peer)["State"];
+                    int peerEffectivePriority = SIEquals(peerState, "SYNCHRONIZING") ? 0 : peer->calc("Priority"); 
+                    if (!highestPriorityPeer || peerEffectivePriority > highestPriorityPeerEffectivePriority) {
                         highestPriorityPeer = peer;
+                        highestPriorityPeerEffectivePriority = peerEffectivePriority;
+                    }
 
                     // See if it is currently the master (or standing up/down)
-                    const string& peerState = (*peer)["State"];
                     if (SIEquals(peerState, "STANDINGUP") || SIEquals(peerState, "MASTERING") ||
                         SIEquals(peerState, "STANDINGDOWN")) {
                         // Found the current master
@@ -550,7 +554,7 @@ bool SQLiteNode::update() {
         // If there is already a master that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
-        if (currentMaster && _priority < highestPriorityPeer->calc("Priority") &&
+        if (currentMaster && _priority < highestPriorityPeerEffectivePriority &&
             SIEquals((*currentMaster)["State"], "MASTERING")) {
             // Subscribe to the master
             SINFO("Subscribing to master '" << currentMaster->name << "'");
@@ -576,7 +580,7 @@ bool SQLiteNode::update() {
         // connected to enough full peers to achieve quorum we should be
         // master.
         if (!currentMaster && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > highestPriorityPeer->calc("Priority")) {
+            _priority > highestPriorityPeerEffectivePriority) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
             SASSERT(_priority > 0); // Permaslave should never stand up
