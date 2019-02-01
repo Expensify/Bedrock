@@ -963,6 +963,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 STHROW("500 Mock Mismatch");
             }
 
+            // If the Job data indicates that this job should be deleted, clear the repeat value so that we delete this job further down.
+            if (SContains(newData, "delete") && newData["delete"] == "true") {
+                SINFO("Job was marked for deletion in the data object, clearing repeat value.");
+                repeat = "";
+            }
+
             // Update the data to the new value.
             if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
