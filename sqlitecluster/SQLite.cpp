@@ -500,7 +500,7 @@ bool SQLite::verifyIndex(const string& indexName, const string& tableName, const
     } else {
         // Index exists, verify it is correct.
         SASSERT(!result[0].empty());
-        return SCollapse(createSQL) == SCollapse(SReplace(result[0][0], " on ", " ON "));
+        return SIEquals(SCollapse(createSQL), SCollapse(result[0][0]));
     }
 }
 
