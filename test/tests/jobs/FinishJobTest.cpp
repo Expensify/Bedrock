@@ -17,6 +17,7 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::hasRepeatWithDelay),
                               TEST(FinishJobTest::hasDelay),
                               TEST(FinishJobTest::hasRepeatWithNextRun),
+                              TEST(FinishJobTest::hasDataDelete),
                               TEST(FinishJobTest::hasNextRun),
                               TEST(FinishJobTest::simpleFinishJobWithHttp),
                               AFTER(FinishJobTest::tearDown),
@@ -497,6 +498,36 @@ struct FinishJobTest : tpunit::TestFixture {
         strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
         time_t nextRunTime = mktime(&tm2);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // FinishJob should delete any job with data.delete = true
+    void hasDataDelete() {
+        // Create the recurring job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Finish it
+        STable data;
+        data["delete"] = true;
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["data"] = SComposeJSONObject(data);
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the job was deleted instead of being rescheduled
+        SQResult result;
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_TRUE(result.empty());
     }
 
     // FinishJob should ignore the 'nextRun' parameter
