@@ -67,7 +67,7 @@ class SQLite {
     // Verifies an index exists on the given table with the given definition. Optionally create it if it doesn't exist.
     // Be careful, creating an index can be expensive on large tables!
     // Returns false if the index does not exist and was not created.
-    bool verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool createIfNotExists = false);
+    bool verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists = false);
 
     // Adds a column to a table.
     bool addColumn(const string& tableName, const string& column, const string& columnType);
