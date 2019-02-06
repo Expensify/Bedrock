@@ -1609,14 +1609,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
                 STHROW("couldn't set non-blocking");
         }
 
-        // Set the lingering option to enabled and no timeout, this makes it so that once the servers goes offline,
-        // clients that send data to it, get an immediate error instead of getting it later.
-        struct linger so_linger;
-        so_linger.l_onoff = 1;
-        so_linger.l_linger = 0;
-        if (setsockopt(s, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger)))
-            STHROW("couldn't set linger option");
-
         // If this is a port, bind
         if (isPort) {
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and

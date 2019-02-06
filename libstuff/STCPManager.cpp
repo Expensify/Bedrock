@@ -211,6 +211,16 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
+
+    // Set the lingering option to enabled and no timeout, this makes it so that once the servers goes offline,
+    // clients that send data to it, get an immediate error instead of getting it later.
+    struct linger so_linger;
+    so_linger.l_onoff = 1;
+    so_linger.l_linger = 0;
+    if (setsockopt(socket->s, SOL_SOCKET, SO_LINGER, &so_linger, sizeof(so_linger))) {
+        STHROW("couldn't set linger option");
+    }
+
     socketList.remove(socket);
 
     delete socket;
