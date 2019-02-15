@@ -206,6 +206,15 @@ bool SIContains(const string& lhs, const string& rhs) {
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
+bool SStartsWith(const string& haystack, const string& needle)
+{
+    if (needle.size() > haystack.size()) {
+        return false;
+    }
+
+    return strncmp(haystack.c_str(), needle.c_str(), needle.size()) == 0;
+}
+
 // --------------------------------------------------------------------------
 string STrim(const string& lhs) {
     // Just trim off the front and back whitespace
@@ -1861,8 +1870,12 @@ bool S_sendconsume(int s, string& sendBuffer) {
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
+    string errorMessage;
+    if (numSent == -1) {
+        errorMessage = " Error: "s + strerror(errno);
+    }
     SINFO("Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
-        << " ms and sent " << numSent << " of " << (int)sendBuffer.size() << " bytes.");
+        << " ms and sent " << numSent << " of " << (int)sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
         SConsumeFront(sendBuffer, numSent);
