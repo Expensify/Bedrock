@@ -476,7 +476,7 @@ inline bool SContains(const STable& nameValueMap, const string& name) {
 // General testing functions
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
 bool SIContains(const string& haystack, const string& needle);
-inline bool SStartsWith(const string& haystack, const string& needle) { return haystack.find(needle) == 0; }
+bool SStartsWith(const string& haystack, const string& needle);
 inline bool SEndsWith(const string& haystack, const string& needle) {
     if (needle.size() > haystack.size())
         return false;
