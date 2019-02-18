@@ -278,6 +278,9 @@ class SQLite {
         // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
         atomic<int> _currentPageCount;
+
+        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+        atomic<int> _checkpointThreadBusy;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
@@ -422,7 +425,4 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
-
-    // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
-    atomic<int> _checkpointThreadBusy;
 };
