@@ -38,8 +38,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
-    _isDeterministicQuery(false),
-    _checkpointThreadBusy(0)
+    _isDeterministicQuery(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -264,7 +263,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
-        int alreadyCheckpointing = object->_checkpointThreadBusy.fetch_add(1);
+        int alreadyCheckpointing = object->_sharedData->_checkpointThreadBusy.fetch_add(1);
         if (alreadyCheckpointing) {
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
@@ -336,7 +335,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             }
 
             // Allow the next checkpointer.
-            object->_checkpointThreadBusy.store(0);
+            object->_sharedData->_checkpointThreadBusy.store(0);
         }).detach();
     }
     return SQLITE_OK;
@@ -1070,5 +1069,6 @@ bool SQLite::getUpdateNoopMode() const {
 
 SQLite::SharedData::SharedData() :
 currentTransactionCount(0),
-_currentPageCount(0)
+_currentPageCount(0),
+_checkpointThreadBusy(0)
 { }
