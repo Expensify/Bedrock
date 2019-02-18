@@ -114,9 +114,6 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
     SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
 
-    // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
-    sqlite3_busy_timeout(_db, 1000);
-
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
