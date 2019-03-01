@@ -484,20 +484,19 @@ bool SQLite::verifyIndex(const string& indexName, const string& tableName, const
     SQResult result;
     SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
 
+    string createSQL = "CREATE" + string(isUnique ? " UNIQUE " : " ") + "INDEX " + indexName + " ON " + tableName + " " + indexSQLDefinition;
     if (result.empty()) {
         if (!createIfNotExists) {
             SINFO("Index '" << indexName << "' does not exist on table '" << tableName << "'.");
             return false;
         }
-        string createSQL = "CREATE" + string(isUnique ? " UNIQUE " : " ") + "INDEX " + indexName + " ON " + tableName + " " + indexSQLDefinition + ";";
         SINFO("Creating index '" << indexName << "' on table '" << tableName << "': " << indexSQLDefinition << ". Executing '" << createSQL << "'.");
-        SASSERT(write(createSQL));
+        SASSERT(write(createSQL + ";"));
         return true;
     } else {
-        // Index exists, verify it is correct. This is almost the same as the createSQL, except there is no ';', we ignore multi-spaces and ignore 'style' around '( ' and ' )'.
+        // Index exists, verify it is correct. Ignore spaces.
         SASSERT(!result[0].empty());
-        string expectedSQL = SReplace(SReplace(SCollapse("CREATE" + string(isUnique ? " UNIQUE " : " ") + "INDEX " + indexName + " ON " + tableName + " " + indexSQLDefinition), "( ", "("), " )", ")");
-        return SIEquals(expectedSQL, SReplace(SReplace(SCollapse(result[0][0]), "( ", "("), " )", ")"));
+        return SIEquals(SReplace(createSQL, " ", ""), SReplace(result[0][0], " ", ""));
     }
 }
 
