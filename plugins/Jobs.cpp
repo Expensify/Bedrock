@@ -1142,7 +1142,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
             SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
-            STHROW("405 Can only fail RUNNING jobs");
+            STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
 
         // Are we updating the data too?
