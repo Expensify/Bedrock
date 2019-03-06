@@ -1139,9 +1139,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         }
         const string& state = result[0][0];
 
-        // Make sure we're failing a job that's actually running
-        if (state != "RUNNING") {
-            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING (" << state << ")");
+        // Make sure we're failing a job that's actually running or running with a retryAfter
+        if (state != "RUNNING" && state != "RUNQUEUED") {
+            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only fail RUNNING jobs");
         }
 
