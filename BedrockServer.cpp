@@ -2100,8 +2100,12 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     lock_guard<mutex> lock(_httpsCommandMutex);
     int commandsCompleted = 0;
     for (auto transaction : completedHTTPSRequests) {
-        // We assume this is found, we should never be looking for a transaction in this list that isn't there.
         auto transactionIt = _outstandingHTTPSRequests.find(transaction);
+        if (transactionIt == _outstandingHTTPSRequests.end()) {
+            // We should never be looking for a transaction in this list that isn't there.
+            SWARN("Couldn't locate transaction in _outstandingHTTPSRequests. Skipping.");
+            continue;
+        }
         auto commandPtr = transactionIt->second;
 
         // It's possible that we've already completed this command (imagine if completedHTTPSRequests contained more
