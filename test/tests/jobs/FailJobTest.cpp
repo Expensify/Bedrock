@@ -66,7 +66,7 @@ struct FailJobTest : tpunit::TestFixture {
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command);
 
-        // Fail the job should remove it from the table
+        // Failing the job should succeed and set it as FAILED
         SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "FAILED");
@@ -97,7 +97,7 @@ struct FailJobTest : tpunit::TestFixture {
         command["jobID"] = jobID;
         tester->executeWaitVerifyContent(command);
 
-        // Fail the job should remove it from the table
+        // Failing the job should succeed and set it as FAILED
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
