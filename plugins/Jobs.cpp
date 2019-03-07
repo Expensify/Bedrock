@@ -236,25 +236,22 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
                     STHROW("404 parentJobID does not exist");
                 }
-                if (result[0][1] != "") {
-                    STHROW("402 Auto-retrying parents cannot have children");
-                }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                    STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
 
                 // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
                 // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
                 // any change made here will happen early enough for all of our existing checks to work correctly, and
                 // everything should be good when we get to `processCommand`.
-                STable parentData = SParseJSONObject(result[0][2]);
+                STable parentData = SParseJSONObject(result[0][1]);
                 bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
                 bool childIsMocked = command.request.isSet("mockRequest");
 
@@ -533,9 +530,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (result.empty()) {
                     STHROW("404 parentJobID does not exist");
                 }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
-                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
+                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING, RUNQUEUED or PAUSED (" << result[0][0] << ")");
+                    STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
 
                 // Verify that the parent and child job have the same `mockRequest` setting.
@@ -580,7 +577,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 auto initialState = "QUEUED";
                 if (parentJobID) {
                     auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-                    if (SIEquals(parentState, "RUNNING")) {
+                    if (SIEquals(parentState, "RUNNING") || SIEquals(parentState, "RUNQUEUED")) {
                         initialState = "PAUSED";
                     }
                 }
@@ -739,32 +736,31 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 retriableJobs.push_back(job);
             } else {
                 nonRetriableJobs.push_back(result[c][0]);
+            }
 
-                // Only non-retryable jobs can have children so see if this job has any
-                // FINISHED/CANCELLED child jobs, indicating it is being resumed
-                SQResult childJobs;
-                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
-                    STHROW("502 Failed to select finished child jobs");
-                }
+            // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
+            SQResult childJobs;
+            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                STHROW("502 Failed to select finished child jobs");
+            }
 
-                if (!childJobs.empty()) {
-                    // Add associative arrays of all children depending on their states
-                    list<string> finishedChildJobArray;
-                    list<string> cancelledChildJobArray;
-                    for (auto row : childJobs.rows) {
-                        STable childJob;
-                        childJob["jobID"] = row[0];
-                        childJob["data"] = row[1];
+            if (!childJobs.empty()) {
+                // Add associative arrays of all children depending on their states
+                list<string> finishedChildJobArray;
+                list<string> cancelledChildJobArray;
+                for (auto row : childJobs.rows) {
+                    STable childJob;
+                    childJob["jobID"] = row[0];
+                    childJob["data"] = row[1];
 
-                        if (row[2] ==  "FINISHED") {
-                            finishedChildJobArray.push_back(SComposeJSONObject(childJob));
-                        } else {
-                            cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
-                        }
+                    if (row[2] ==  "FINISHED") {
+                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                    } else {
+                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
                     }
-                    job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
-                    job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
                 }
+                job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
 
             jobList.push_back(SComposeJSONObject(job));

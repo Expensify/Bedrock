@@ -35,6 +35,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testMultipleNames),
                               TEST(GetJobTest::testPriorityParameter),
                               TEST(GetJobTest::testInvalidJobPriority),
+                              TEST(GetJobTest::testRetryableParentJobs),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
@@ -699,5 +700,100 @@ struct GetJobTest : tpunit::TestFixture {
         command["jobPriority"] = "111";
         tester->executeWaitVerifyContent(command, "402 Invalid priority value");
     }
+
+    void testRetryableParentJobs() {
+        // Create the parent job
+        SData createJobCommand("CreateJob");
+        createJobCommand["name"] = "ParentJob";
+        createJobCommand["retryAfter"] = "+2 SECONDS";
+        string parentJobID = tester->executeWaitVerifyContentTable(createJobCommand)["jobID"];
+        ASSERT_GREATER_THAN(stol(parentJobID), 0);
+
+        // Get it
+        SData getJobCommand("GetJob");
+        getJobCommand["name"] = "ParentJob";
+        STable getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
+
+        // Verify we have a RUNQUEUED job
+        ASSERT_EQUAL(getJobResponse["jobID"], parentJobID);
+        string state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(state, "RUNQUEUED");
+
+        // Create a child
+        createJobCommand.clear();
+        createJobCommand.methodLine = "CreateJob";
+        createJobCommand["name"] = "ChildJob";
+        createJobCommand["parentJobID"] = parentJobID;
+        string childJobID = tester->executeWaitVerifyContentTable(createJobCommand)["jobID"];
+        string childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(childState, "PAUSED");
+
+        // Wait a bit for retryAfter to kick in
+        sleep(3);
+
+        // The child job is still not ready.
+        getJobCommand["name"] = "ChildJob";
+        tester->executeWaitVerifyContent(getJobCommand, "404 No job found");
+
+        // Verify we get this job again, and everything is still in the expected states
+        getJobCommand["name"] = "ParentJob";
+        getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
+        ASSERT_EQUAL(getJobResponse["jobID"], parentJobID);
+        state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(state, "RUNQUEUED");
+
+        childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(childState, "PAUSED");
+
+        // The child job is still not ready.
+        getJobCommand["name"] = "ChildJob";
+        tester->executeWaitVerifyContent(getJobCommand, "404 No job found");
+
+        // Finish the parent job this time
+        SData finishJobCommand("FinishJob");
+        finishJobCommand["jobID"] = parentJobID;
+        tester->executeWaitVerifyContentTable(finishJobCommand);
+
+        // Now the parent is PAUSED and the child is QUEUED for running.
+        state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(state, "PAUSED");
+        childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(childState, "QUEUED");
+
+        // The child job is ready.
+        getJobCommand["name"] = "ChildJob";
+        getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
+        ASSERT_EQUAL(getJobResponse["jobID"], childJobID);
+
+        state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(state, "PAUSED");
+        childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(childState, "RUNNING");
+
+        // Finally finish the child so the parent can resume
+        finishJobCommand["jobID"] = childJobID;
+        tester->executeWaitVerifyContentTable(finishJobCommand);
+        childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(childState, "FINISHED");
+        state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(state, "QUEUED");
+        state = tester->readDB("SELECT nextRun FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+
+        // Because we set nextRun in GetJob, we have to wait for 'retryAfter' time until the job is ready to be picked up again.
+        sleep(3);
+
+        // Finish everything
+        getJobCommand["name"] = "ParentJob";
+        getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
+        ASSERT_EQUAL(getJobResponse["jobID"], parentJobID);
+
+        finishJobCommand["jobID"] = parentJobID;
+        tester->executeWaitVerifyContentTable(finishJobCommand);
+        string childCount = tester->readDB("SELECT COUNT() FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
+        ASSERT_EQUAL(stoi(childCount), 0);
+        string parentCount = tester->readDB("SELECT COUNT() FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_EQUAL(stoi(parentCount), 0);
+    }
+
 } __GetJobTest;
 
