@@ -766,7 +766,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             jobList.push_back(SComposeJSONObject(job));
         }
 
-        // Update jobs without retryAfter
         if (!nonRetriableJobs.empty()) {
             SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
             string updateQuery = "UPDATE jobs "
@@ -778,7 +777,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Update jobs with retryAfter
         if (!retriableJobs.empty()) {
             SINFO("Updating jobs with retryAfter");
             for (auto job : retriableJobs) {
@@ -973,9 +971,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(requestVerb, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
-            // Update the parent job to PAUSED
+            // Update the parent job to PAUSED. Also update its nextRun: in case it has a retryAfter, GetJobs set the nextRun too far in the future (to account for retryAfter), so set it to what it should
+            // be now that it is waiting on its children to complete.
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
+            string nextRunDateTime = _constructNextRunDATETIME(nextRun, !lastRun.empty() ? lastRun : nextRun, repeat);
+            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + SQ(nextRunDateTime) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
 

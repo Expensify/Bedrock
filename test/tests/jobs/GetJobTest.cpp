@@ -779,9 +779,6 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(state, "QUEUED");
         state = tester->readDB("SELECT nextRun FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
 
-        // Because we set nextRun in GetJob, we have to wait for 'retryAfter' time until the job is ready to be picked up again.
-        sleep(3);
-
         // Finish everything
         getJobCommand["name"] = "ParentJob";
         getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
