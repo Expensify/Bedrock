@@ -227,7 +227,7 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "child";
         command["parentJobID"] = parentID;
-        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING or PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
     }
 
     // Cannot create a job with a running grandparent
@@ -480,6 +480,6 @@ struct CreateJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "testRetryableChild";
         command["parentJobID"] = jobID;
-        tester->executeWaitVerifyContent(command, "402 Auto-retrying parents cannot have children");
+        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
     }
 } __CreateJobTest;
