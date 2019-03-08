@@ -47,6 +47,7 @@ struct FailJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Can only fail RUNNING or RUNQUEUED jobs");
     }
 
+    // Fail job in RUNNING state
     void failJobInRunningState() {
         // Create a job
         SData command("CreateJob");
@@ -72,6 +73,7 @@ struct FailJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 
+    // Fail job in RUNQUEUED state
     void failJobInRunqueuedState() {
         // Create a job
         SData command("CreateJob");
