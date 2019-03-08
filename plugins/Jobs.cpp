@@ -974,8 +974,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // Update the parent job to PAUSED. Also update its nextRun: in case it has a retryAfter, GetJobs set the nextRun too far in the future (to account for retryAfter), so set it to what it should
             // be now that it is waiting on its children to complete.
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            string nextRunDateTime = _constructNextRunDATETIME(nextRun, !lastRun.empty() ? lastRun : nextRun, repeat);
-            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + SQ(nextRunDateTime) + " WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + SQ(lastRun) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
 

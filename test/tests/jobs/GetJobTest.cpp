@@ -752,7 +752,9 @@ struct GetJobTest : tpunit::TestFixture {
         // Finish the parent job this time
         SData finishJobCommand("FinishJob");
         finishJobCommand["jobID"] = parentJobID;
+        uint64_t start = STimeNow();
         tester->executeWaitVerifyContentTable(finishJobCommand);
+        uint64_t end= STimeNow();
 
         // Now the parent is PAUSED and the child is QUEUED for running.
         state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
@@ -778,13 +780,17 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(childState, "FINISHED");
         state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
         ASSERT_EQUAL(state, "QUEUED");
-        state = tester->readDB("SELECT nextRun FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
 
-        // Finish everything
+        // The parent should be ready to resume as soon as the child finishes
+        string nextRun = tester->readDB("SELECT nextRun FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+        ASSERT_TRUE(isBetweenSecondsInclusive(start, end, nextRun));
+
+        // Finally, get the parent job
         getJobCommand["name"] = "ParentJob";
         getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
         ASSERT_EQUAL(getJobResponse["jobID"], parentJobID);
 
+        // ... and finish it, which finishes everything.
         finishJobCommand["jobID"] = parentJobID;
         tester->executeWaitVerifyContentTable(finishJobCommand);
         string childCount = tester->readDB("SELECT COUNT() FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
