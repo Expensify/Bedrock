@@ -760,11 +760,12 @@ struct GetJobTest : tpunit::TestFixture {
         childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
         ASSERT_EQUAL(childState, "QUEUED");
 
-        // The child job is ready.
+        // The child job is ready, get it.
         getJobCommand["name"] = "ChildJob";
         getJobResponse = tester->executeWaitVerifyContentTable(getJobCommand);
         ASSERT_EQUAL(getJobResponse["jobID"], childJobID);
 
+        // The child is now RUNNING, the parent is still PAUSED.
         state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
         ASSERT_EQUAL(state, "PAUSED");
         childState = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(childJobID) + ";");
