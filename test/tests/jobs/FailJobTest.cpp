@@ -40,7 +40,7 @@ struct FailJobTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Finish it
+        // Fail it
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
@@ -52,33 +52,6 @@ struct FailJobTest : tpunit::TestFixture {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
-        command["retryAfter"] = "+1 MINUTES";
-        STable response = tester->executeWaitVerifyContentTable(command);
-        string jobID = response["jobID"];
-
-        command.clear();
-        command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + jobID + ";";
-        tester->executeWaitVerifyContent(command);
-
-        // Fail it
-        command.clear();
-        command.methodLine = "FailJob";
-        command["jobID"] = jobID;
-        tester->executeWaitVerifyContent(command);
-
-        // Failing the job should succeed and set it as FAILED
-        SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
-        ASSERT_EQUAL(result[0][0], "FAILED");
-    }
-
-    // Fail job in RUNQUEUED state
-    void failJobInRunqueuedState() {
-        // Create a job
-        SData command("CreateJob");
-        command["name"] = "job";
-        command["retryAfter"] = "+1 SECOND";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -88,7 +61,38 @@ struct FailJobTest : tpunit::TestFixture {
         command["name"] = "job";
         tester->executeWaitVerifyContent(command);
 
-        // Confirm the job is in RUNQUEUED
+        // Assert job is in RUNNING state
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
+
+        // Fail it
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Failing the job should succeed and set it as FAILED
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_EQUAL(result[0][0], "FAILED");
+    }
+
+    // Fail job in RUNQUEUED state
+    void failJobInRunqueuedState() {
+        // Create a job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["retryAfter"] = "+1 MINUTES";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm the job is in RUNQUEUED state
         SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
