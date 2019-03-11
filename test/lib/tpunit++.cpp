@@ -164,17 +164,15 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                     // Determine if this test even should run.
                     bool should_run = true;
                     if (_include.size()) {
-                       if (!f->_name) {
-                            should_run = false;
-                       }
+                        should_run = false;
 
-                       should_run = false;
-
-                       // Include by matching substrings.
-                       for (string includedName : _include) {
-                           if (string(f->_name).find(includedName) != string::npos) {
-                               should_run = true;
-                           }
+                        if (f->_name) {
+                            // Include by matching substrings.
+                            for (string includedName : _include) {
+                                if (string(f->_name).find(includedName) != string::npos) {
+                                    should_run = true;
+                                }
+                            }
                         }
                     }
                     else if (f->_name && (_exclude.find(std::string(f->_name)) != _exclude.end())) {
