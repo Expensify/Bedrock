@@ -31,8 +31,8 @@ tpunit::TestFixture::perFixtureStats::perFixtureStats()
     , _traces(0)
     {}
 
-tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4, 
-                         method* m5,  method* m6,  method* m7,  method* m8,  method* m9, 
+tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
+                         method* m5,  method* m6,  method* m7,  method* m8,  method* m9,
                          method* m10, method* m11, method* m12, method* m13, method* m14,
                          method* m15, method* m16, method* m17, method* m18, method* m19,
                          method* m20, method* m21, method* m22, method* m23, method* m24,
@@ -104,7 +104,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     // Make local, mutable copies of the include and exclude lists.
     set<string> _include = include;
     set<string> _exclude = exclude;
-    
+
     // Create a list of threads, and have them each pull tests of the queue.
     list<thread> threadList;
     recursive_mutex m;
@@ -164,9 +164,18 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                     // Determine if this test even should run.
                     bool should_run = true;
                     if (_include.size()) {
-                       if (!f->_name || (_include.find(std::string(f->_name)) == _include.end())) {
-                          should_run = false;
+                       if (!f->_name) {
+                            should_run = false;
                        }
+
+                       should_run = false;
+
+                       // Include by matching substrings.
+                       for (string includedName : _include) {
+                           if (string(f->_name).find(includedName) != string::npos) {
+                               should_run = true;
+                           }
+                        }
                     }
                     else if (f->_name && (_exclude.find(std::string(f->_name)) != _exclude.end())) {
                        should_run = false;
