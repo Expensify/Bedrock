@@ -188,6 +188,36 @@ string SStrFromHex(const string& buffer) {
     return retVal;
 }
 
+string SBase32HexStringFromBase32(const string& buffer) {
+    string base32HexString = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+    string base32String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    string newBase32HexString = "";
+
+    for (uint i = 0; i < buffer.length(); i++) {
+        size_t val = base32String.find(buffer[i]);
+        if (val < 0) {
+            STHROW("404 Character not found in base32 alphabet.");
+        }
+        newBase32HexString.insert(i, 1, base32HexString[val]);
+    }
+
+    return string(newBase32HexString);
+}
+
+string SHexStringFromBase32(const string& buffer) {
+    if (buffer.length() % 8 != 0) {
+        STHROW("404 Incorrect string length.");
+    }
+
+    string hex = "";
+    for (size_t i = 0; i < buffer.length(); i += 8) {
+        uint64_t val = stoull(buffer.substr(buffer.length() - 8 - i, 8), 0, 32);
+        hex.insert(0, SToHex(val, 10));
+    }
+
+    return hex;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // String stuff
 /////////////////////////////////////////////////////////////////////////////
