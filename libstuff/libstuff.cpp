@@ -196,7 +196,7 @@ string SBase32HexStringFromBase32(const string& buffer) {
     for (uint i = 0; i < buffer.length(); i++) {
         size_t val = base32String.find(buffer[i]);
         if (val < 0) {
-            STHROW("404 Character not found in base32 alphabet.");
+            STHROW("Character not found in base32 alphabet.");
         }
         newBase32HexString.insert(i, 1, base32HexString[val]);
     }
@@ -206,7 +206,7 @@ string SBase32HexStringFromBase32(const string& buffer) {
 
 string SHexStringFromBase32(const string& buffer) {
     if (buffer.length() % 8 != 0) {
-        STHROW("404 Incorrect string length.");
+        STHROW("Incorrect string length.");
     }
 
     string hex = "";
