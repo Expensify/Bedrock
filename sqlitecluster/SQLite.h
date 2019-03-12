@@ -64,6 +64,11 @@ class SQLite {
     // table is already there with the wrong schema, it returns false.
     bool verifyTable(const string& name, const string& sql, bool& created);
 
+    // Verifies an index exists on the given table with the given definition. Optionally create it if it doesn't exist.
+    // Be careful, creating an index can be expensive on large tables!
+    // Returns false if the index does not exist and was not created.
+    bool verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists = false);
+
     // Adds a column to a table.
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 
@@ -183,7 +188,10 @@ class SQLite {
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
     static atomic<int> fullCheckpointPageMin;
-    
+
+    // Enable/disable SQL statement tracing.
+    static atomic<bool> enableTrace;
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -266,6 +274,13 @@ class SQLite {
         // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
         // if the SQLite object that initiated it has been deleted since it started.
         set<SQLite*> validObjects;
+
+        // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
+        // we need to store it across callbacks so we can check if the full check point thread still needs to run.
+        atomic<int> _currentPageCount;
+
+        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
+        atomic<int> _checkpointThreadBusy;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
@@ -280,7 +295,7 @@ class SQLite {
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
     // database file. It's a map of canonicalized filename to a sharedData object.
-    static map<string, SharedData*> _sharedDataLookupMap; 
+    static map<string, SharedData*> _sharedDataLookupMap;
 
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
@@ -359,6 +374,9 @@ class SQLite {
 
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten;
+
+    // Callback to trace internal sqlite state (used for logging normalized queries).
+    static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
 
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);

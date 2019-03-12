@@ -1,6 +1,5 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include <libstuff/SWaitCounter.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include "BedrockPlugin.h"
@@ -223,6 +222,9 @@ class BedrockServer : public SQLiteServer {
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
 
+    // These are commands that will be processed in a blacking fashion.
+    BedrockCommandQueue _blockingCommandQueue;
+
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
 
@@ -345,10 +347,6 @@ class BedrockServer : public SQLiteServer {
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
-    // This counts the number of commands currently being processed (which might not be in any of our queues). We use
-    // this value to prevent us from standing down until this value is 0 and our main queue is empty.
-    atomic<int> _commandsInProgress;
-
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
@@ -374,7 +372,7 @@ class BedrockServer : public SQLiteServer {
 
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _blacklistedParallelCommands;
-    static recursive_mutex  _blacklistedParallelCommandMutex;
+    static shared_timed_mutex _blacklistedParallelCommandMutex;
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _gracefulShutdownTimeout;
@@ -449,15 +447,18 @@ class BedrockServer : public SQLiteServer {
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const BedrockCommand& command);
 
-    // Keep track of the number of threads waiting to commit changes.
-    SWaitCounter _pendingCommitCount;
-
-    // This is the maximum number of threads we'll allow to wait for the commit lock. It's configurable via command
-    // line or control command.
-    atomic<int64_t> _maxPendingCommits;
-
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const BedrockCommand* command);
 
     static void _addRequestID(SData& request);
+
+    // The number of seconds to wait between forcing a command to QUORUM.
+    uint64_t _quorumCheckpointSeconds;
+
+    // Timestamp for the last time we promoted a command to QUORUM.
+    atomic<uint64_t> _lastQuorumCommandTime;
+
+    // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
+    // that just needs to be returned to a peer.
+    BedrockTimeoutCommandQueue _completedCommands;
 };

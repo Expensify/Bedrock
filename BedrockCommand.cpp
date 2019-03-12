@@ -1,6 +1,8 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
 
+atomic<size_t> BedrockCommand::_commandCount(0);
+
 int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
     int64_t timeout =  DEFAULT_TIMEOUT;
@@ -23,26 +25,16 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     return timeout + start;
 }
 
-BedrockCommand::BedrockCommand() :
-    SQLiteCommand(),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    onlyProcessOnSyncThread(false),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-}
-
 BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->owner.closeTransaction(request);
     }
+    if (countCommand) {
+        _commandCount--;
+    }
 }
 
-BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
+BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     SQLiteCommand(move(from)),
     priority(PRIORITY_NORMAL),
     peekCount(0),
@@ -51,9 +43,13 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from) :
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(dontCount != DONT_COUNT)
 {
     _init();
+    if (countCommand) {
+        _commandCount++;
+    }
 }
 
 BedrockCommand::BedrockCommand(BedrockCommand&& from) :
@@ -68,12 +64,14 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(move(from.crashIdentifyingValues)),
     _inProgressTiming(from._inProgressTiming),
-    _timeout(from._timeout)
+    _timeout(from._timeout),
+    countCommand(true)
 {
     // The move constructor (and likewise, the move assignment operator), don't simply copy these pointer values, but
     // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
     // closed.
     from.httpsRequests.clear();
+    _commandCount++;
 }
 
 BedrockCommand::BedrockCommand(SData&& _request) :
@@ -85,9 +83,11 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(true)
 {
     _init();
+    _commandCount++;
 }
 
 BedrockCommand::BedrockCommand(SData _request) :
@@ -99,9 +99,11 @@ BedrockCommand::BedrockCommand(SData _request) :
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(true)
 {
     _init();
+    _commandCount++;
 }
 
 BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {

@@ -15,6 +15,9 @@ SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitL
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
+// Tracing can only be enabled or disabled globally, not per object.
+atomic<bool> SQLite::enableTrace(false);
+
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
     whitelist(nullptr),
@@ -76,7 +79,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         if (mmapSizeGB) {
             SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
             const int64_t GB = 1024 * 1024 * 1024;
-            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, _sqliteLogCallback, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
+            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
         }
 
         // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
@@ -110,11 +113,12 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
     SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
 
-    // Set a one-second timeout for automatic retries in case of SQLITE_BUSY.
-    sqlite3_busy_timeout(_db, 1000);
-
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
+
+    if (mmapSizeGB) {
+        SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+    }
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
@@ -132,6 +136,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
     // Do our own checkpointing.
     sqlite3_wal_hook(_db, _sqliteWALCallback, this);
+
+    // Enable tracing for performance analysis.
+    sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
@@ -223,8 +230,16 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
+int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
+    if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
+    }
+    return 0;
+}
+
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
     SQLite* object = static_cast<SQLite*>(data);
+    object->_sharedData->_currentPageCount.store(pageCount);
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (!object->_enableFullCheckpoints || pageCount < fullCheckpointPageMin.load()) {
@@ -248,12 +263,18 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
         // This thread will run independently. We capture the variables we need here and pass them by value.
         string filename = object->_filename;
         string dbNameCopy = dbName;
+        int alreadyCheckpointing = object->_sharedData->_checkpointThreadBusy.fetch_add(1);
+        if (alreadyCheckpointing) {
+            SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
+            return SQLITE_OK;
+        }
+        SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
         thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
             // Lock the mutex that keeps anyone from starting a new transaction.
-            object->_sharedData->blockNewTransactionsMutex.lock();
+            lock_guard<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
 
             while (1) {
                 // Lock first, this prevents anyone from updating the count while we're operating here.
@@ -262,7 +283,20 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // Now that we have the lock, check the count. If there are no outstanding transactions, we can
                 // checkpoint immediately, and then we'll return.
                 int count = object->_sharedData->currentTransactionCount.load();
-                SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
+
+                // Lets re-check if we still need a full check point, it could be that a passive check point runs
+                // after we have started this loop and check points a large chunk or all of the pages we were trying
+                // to check point here. That means that this thread is now blocking new transactions waiting to run a
+                // full check point for no reason. We wait for the page count to be less than half of the required amount
+                // to prevent bouncing off of this check every loop. If that's the case, just break out of the this loop
+                // and wait for the next full check point to be required.
+                int pageCount = object->_sharedData->_currentPageCount.load();
+                if (pageCount < (fullCheckpointPageMin.load() / 2)) {
+                    SINFO("[checkpoint] Page count decreased below half the threshold, count is now " << pageCount << ", exiting full checkpoint loop.");
+                    break;
+                } else {
+                    SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
+                }
 
                 if (count == 0) {
                     // Grab the global commit lock. Then we can look up this object and see if it still exists.
@@ -291,8 +325,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
-                    // We're done. Unlock and anyone can start a new transaction.
-                    object->_sharedData->blockNewTransactionsMutex.unlock();
+                    // We're done. Anyone can start a new transaction.
                     break;
                 }
 
@@ -300,6 +333,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 // someone says the count has changed, and try again.
                 object->_sharedData->blockNewTransactionsCV.wait(lock);
             }
+
+            // Allow the next checkpointer.
+            object->_sharedData->_checkpointThreadBusy.store(0);
         }).detach();
     }
     return SQLITE_OK;
@@ -328,7 +364,7 @@ SQLite::~SQLite() {
     SINFO("Locking g_commitLock in destructor.");
     SQLITE_COMMIT_AUTOLOCK;
     SINFO("g_commitLock acquired in destructor.");
-    
+
     // Remove ourself from the list of valid objects.
     _sharedData->validObjects.erase(this);
 
@@ -440,6 +476,27 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
             SHMMM("'" << tableName << "' has incorrect schema, need to upgrade? Is '" << collapsedResult << "' expected  '" << collapsedSQL << "'");
             return false;
         }
+    }
+}
+
+bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists) {
+    SINFO("Verifying index '" << indexName << "'. isUnique? " << to_string(isUnique));
+    SQResult result;
+    SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
+
+    string createSQL = "CREATE" + string(isUnique ? " UNIQUE " : " ") + "INDEX " + indexName + " ON " + tableName + " " + indexSQLDefinition;
+    if (result.empty()) {
+        if (!createIfNotExists) {
+            SINFO("Index '" << indexName << "' does not exist on table '" << tableName << "'.");
+            return false;
+        }
+        SINFO("Creating index '" << indexName << "' on table '" << tableName << "': " << indexSQLDefinition << ". Executing '" << createSQL << "'.");
+        SASSERT(write(createSQL + ";"));
+        return true;
+    } else {
+        // Index exists, verify it is correct. Ignore spaces.
+        SASSERT(!result[0].empty());
+        return SIEquals(SReplace(createSQL, " ", ""), SReplace(result[0][0], " ", ""));
     }
 }
 
@@ -1011,5 +1068,7 @@ bool SQLite::getUpdateNoopMode() const {
 }
 
 SQLite::SharedData::SharedData() :
-currentTransactionCount(0)
+currentTransactionCount(0),
+_currentPageCount(0),
+_checkpointThreadBusy(0)
 { }

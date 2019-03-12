@@ -44,10 +44,10 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "QUORUM"};
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
-                       const string& peerList, int priority, uint64_t firstTimeout, const string& version,
-                       int quorumCheckpoint)
+                       const string& peerList, int priority, uint64_t firstTimeout, const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0)
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
+      _lastNetStatTime(chrono::steady_clock::now())
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -56,8 +56,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _masterPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
-    _commitsSinceCheckpoint = 0;
-    _quorumCheckpoint = quorumCheckpoint;
 
     // Get this party started
     _changeState(SEARCHING);
@@ -102,6 +100,7 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     SData escalate("ESCALATE_RESPONSE");
     escalate["ID"] = command.id;
     escalate.content = command.response.serialize();
+    SINFO("Sending ESCALATE_RESPONSE to " << peer->name << " for " << command.id << ".");
     _sendToPeer(peer, escalate);
 }
 
@@ -233,9 +232,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         commit["Hash"] = hash;
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
-
-        // Commits made by other threads are implicitly not quorum commits. We'll update our counter.
-        _commitsSinceCheckpoint++;
     }
     unsentTransactions.store(false);
 }
@@ -314,6 +310,26 @@ list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
 // -----------------
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
+
+    // Log network timing info.
+    auto now = chrono::steady_clock::now();
+    if (now > (_lastNetStatTime + 10s)) {
+        auto elapsed = (now - _lastNetStatTime);
+        _lastNetStatTime = now;
+        string logMsg = "[performance] Network stats: " +
+                        to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
+                        " ms elapsed. ";
+        for (auto& p : peerList) {
+            if (p->s) {
+                logMsg += p->name + " sent " + to_string(p->s->getSentBytes()) + " bytes, recv " + to_string(p->s->getRecvBytes()) + " bytes. ";
+                p->s->resetCounters();
+            } else {
+                logMsg += p->name + " has no socket. ";
+            }
+        }
+        SINFO(logMsg);
+    }
+
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known
@@ -490,6 +506,7 @@ bool SQLiteNode::update() {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
         Peer* highestPriorityPeer = nullptr;
+        int highestPriorityPeerEffectivePriority = 0;
         Peer* freshestPeer = nullptr;
         Peer* currentMaster = nullptr;
         for (auto peer : peerList) {
@@ -504,11 +521,14 @@ bool SQLiteNode::update() {
                         freshestPeer = peer;
 
                     // See if it's the highest priority
-                    if (!highestPriorityPeer || peer->calc("Priority") > highestPriorityPeer->calc("Priority"))
+                    const string& peerState = (*peer)["State"];
+                    int peerEffectivePriority = SIEquals(peerState, "SYNCHRONIZING") ? 0 : peer->calc("Priority"); 
+                    if (!highestPriorityPeer || peerEffectivePriority > highestPriorityPeerEffectivePriority) {
                         highestPriorityPeer = peer;
+                        highestPriorityPeerEffectivePriority = peerEffectivePriority;
+                    }
 
                     // See if it is currently the master (or standing up/down)
-                    const string& peerState = (*peer)["State"];
                     if (SIEquals(peerState, "STANDINGUP") || SIEquals(peerState, "MASTERING") ||
                         SIEquals(peerState, "STANDINGDOWN")) {
                         // Found the current master
@@ -534,7 +554,7 @@ bool SQLiteNode::update() {
         // If there is already a master that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
-        if (currentMaster && _priority < highestPriorityPeer->calc("Priority") &&
+        if (currentMaster && _priority < highestPriorityPeerEffectivePriority &&
             SIEquals((*currentMaster)["State"], "MASTERING")) {
             // Subscribe to the master
             SINFO("Subscribing to master '" << currentMaster->name << "'");
@@ -560,7 +580,7 @@ bool SQLiteNode::update() {
         // connected to enough full peers to achieve quorum we should be
         // master.
         if (!currentMaster && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > highestPriorityPeer->calc("Priority")) {
+            _priority > highestPriorityPeerEffectivePriority) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
             SASSERT(_priority > 0); // Permaslave should never stand up
@@ -751,8 +771,7 @@ bool SQLiteNode::update() {
                    << ", writeConsistency="       << consistencyLevelNames[_commitConsistency]
                    << ", consistencyRequired="    << consistencyLevelNames[_commitConsistency]
                    << ", consistentEnough="       << consistentEnough
-                   << ", everybodyResponded="     << everybodyResponded
-                   << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
+                   << ", everybodyResponded="     << everybodyResponded);
 
             // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
             // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
@@ -801,9 +820,8 @@ bool SQLiteNode::update() {
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed master transaction for '"
                           << _db.getCommitCount() << " (" << _db.getCommittedHash() << "). "
-                          << _commitsSinceCheckpoint << " commits since quorum (consistencyRequired="
-                          << consistencyLevelNames[_commitConsistency] << "), " << numFullApproved << " of "
-                          << numFullPeers << " approved (" << peerList.size() << " total) in "
+                          << " (consistencyRequired=" << consistencyLevelNames[_commitConsistency] << "), "
+                          << numFullApproved << " of " << numFullPeers << " approved (" << peerList.size() << " total) in "
                           << totalElapsed / 1000 << " ms ("
                           << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
                           << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
@@ -814,27 +832,19 @@ bool SQLiteNode::update() {
                     SData commit("COMMIT_TRANSACTION");
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
-                    
+
                     // clear the unsent transactions, we've sent them all (including this one);
                     _db.getCommittedTransactions();
 
                     // Update the last sent transaction ID to reflect that this is finished.
                     _lastSentTransactionID = _db.getCommitCount();
 
-                    // If this was a quorum commit, we'll reset our counter, otherwise, we'll update it.
-                    if (_commitConsistency == QUORUM) {
-                        _commitsSinceCheckpoint = 0;
-                    } else {
-                        _commitsSinceCheckpoint++;
-                    }
-
                     // Done!
                     _commitState = CommitState::SUCCESS;
                 }
             } else {
                 // Not consistent enough, but not everyone's responded yet, so we'll wait.
-                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[_commitConsistency]
-                      << ", commitsSinceCheckpoint=" << _commitsSinceCheckpoint);
+                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[_commitConsistency]);
 
                 // We're going to need to read from the network to finish this.
                 return false;
@@ -853,12 +863,6 @@ bool SQLiteNode::update() {
             // Lock the database. We'll unlock it when we complete in a future update cycle.
             SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
-
-            // Figure out how much consistency we need. Go with whatever the caller specified, unless we're over our
-            // checkpoint limit.
-            if (_commitsSinceCheckpoint >= _quorumCheckpoint) {
-                _commitConsistency = QUORUM;
-            }
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
             // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
@@ -1298,11 +1302,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't do this when mastering,
-        // because these commands may not be handled quickly, if a commit is in progress. The catastrophic case for
-        // this means that these messages are all handled late, and the synchronizing peer never catches up. We don't
-        // do it in any other state, as the server isn't expected to be able to process commands except when MASTERING
-        // or SLAVING.
+        // If we're SLAVING, we'll let worker threads handle SYNCHRONIZATION messages. We don't on master, because if
+        // there's a backlog of commands, these can get stale, and by the time they reach the slave, it's already
+        // behind, thus never catching up.
         if (_state == SLAVING) {
             // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
@@ -1469,6 +1471,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
             STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1));
         }
+        _db.waitForCheckpoint();
         if (!_db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
@@ -1742,7 +1745,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. " << message.serialize());
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         // ESCALATE_RESPONSE: Sent when the master aborts processing an escalated command. Re-submit to the new master.
@@ -2125,6 +2128,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             SALERT("Synchronized blank query");
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
             STHROW("commit index mismatch");
+        _db.waitForCheckpoint();
         if (!_db.beginTransaction())
             STHROW("failed to begin transaction");
         try {
@@ -2185,7 +2189,7 @@ void SQLiteNode::_updateSyncPeer()
             newSyncPeer = peer;
         }
     }
-    
+
     // Log that we've changed peers.
     if (_syncPeer != newSyncPeer) {
         string from, to;

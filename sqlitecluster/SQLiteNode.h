@@ -49,7 +49,7 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
-               int priority, uint64_t firstTimeout, const string& version, int quorumCheckpoint = 0);
+               int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.
@@ -168,12 +168,12 @@ class SQLiteNode : public STCPNode {
     // Master's version string.
     string _masterVersion;
 
-    // The maximum number of commits we'll allow before we force a quorum commit. This can be violated when commits
+    // The maximum number of seconds we'll allow before we force a quorum commit. This can be violated when commits
     // are performed outside of SQLiteNode, but we'll catch up the next time we do a commit.
-    int _quorumCheckpoint;
+    int _quorumCheckpointSeconds;
 
-    // The number of commits we've actually done since the last quorum command.
-    int _commitsSinceCheckpoint;
+    // The timestamp of the (end of) the last quorum commit.
+    uint64_t _lastQuorumTime;
 
     // Helper methods
     void _sendToPeer(Peer* peer, const SData& message);
@@ -206,4 +206,7 @@ class SQLiteNode : public STCPNode {
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale reponses to old changes.
     int _stateChangeCount;
+
+    // Last time we recorded network stats.
+    chrono::steady_clock::time_point _lastNetStatTime;
 };

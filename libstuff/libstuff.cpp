@@ -206,6 +206,15 @@ bool SIContains(const string& lhs, const string& rhs) {
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
+bool SStartsWith(const string& haystack, const string& needle)
+{
+    if (needle.size() > haystack.size()) {
+        return false;
+    }
+
+    return strncmp(haystack.c_str(), needle.c_str(), needle.size()) == 0;
+}
+
 // --------------------------------------------------------------------------
 string STrim(const string& lhs) {
     // Just trim off the front and back whitespace
@@ -1845,13 +1854,32 @@ bool S_recvappend(int s, string& recvBuffer) {
 bool S_sendconsume(int s, string& sendBuffer) {
     SASSERT(s);
     // If empty, nothing to do
-    if (sendBuffer.empty())
+    if (sendBuffer.empty()) {
         return true; // Assume no error, still alive
+    }
+
+    if (SStartsWith(sendBuffer, "ESCALATE_RESPONSE")) {
+        SData tempData;
+        tempData.deserialize(sendBuffer);
+        string id = tempData["id"];
+        SINFO("Sending an ESCALATE_RESPONSE for id " << id);
+    }
+
+    // Timer for tracking how long the call to send is taking to debug slow ESCALATE_RESPONSEs
+    chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
-    if (numSent > 0)
+    string errorMessage;
+    if (numSent == -1) {
+        errorMessage = " Error: "s + strerror(errno);
+    }
+    SINFO("Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
+        << " ms and sent " << numSent << " of " << (int)sendBuffer.size() << " bytes." << errorMessage);
+
+    if (numSent > 0) {
         SConsumeFront(sendBuffer, numSent);
+    }
 
     // Exit of no error
     if (numSent >= 0) {
