@@ -745,7 +745,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
 
             if (!childJobs.empty()) {
-                // Add associative arrays of all children depending on their states
+                // Add arrays of children jobs to our response, 2 arrays to clearly distinguish between finished and cancelled children.
                 list<string> finishedChildJobArray;
                 list<string> cancelledChildJobArray;
                 for (auto row : childJobs.rows) {
