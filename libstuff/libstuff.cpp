@@ -189,19 +189,19 @@ string SStrFromHex(const string& buffer) {
 }
 
 string SBase32HexStringFromBase32(const string& buffer) {
-    string base32HexString = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
-    string base32String = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    string newBase32HexString = "";
-
-    for (uint i = 0; i < buffer.length(); i++) {
-        size_t val = base32String.find(buffer[i]);
-        if (val < 0) {
+    static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
+    static const int mapLength = sizeof(map);
+    string out = buffer;
+    int shiftedIndex;
+    for (size_t i = 0; i < out.size(); i++) {
+        shiftedIndex = out[i] - 50;
+        if (mapLength < shiftedIndex || map[shiftedIndex] == 0) {
             STHROW("Character not found in base32 alphabet.");
         }
-        newBase32HexString.insert(i, 1, base32HexString[val]);
+        out[i] = map[shiftedIndex];
     }
 
-    return string(newBase32HexString);
+    return out;
 }
 
 string SHexStringFromBase32(const string& buffer) {
@@ -209,7 +209,7 @@ string SHexStringFromBase32(const string& buffer) {
         STHROW("Incorrect string length.");
     }
 
-    string hex = "";
+    string hex;
     for (size_t i = 0; i < buffer.length(); i += 8) {
         uint64_t val = stoull(buffer.substr(buffer.length() - 8 - i, 8), 0, 32);
         hex.insert(0, SToHex(val, 10));
