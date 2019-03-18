@@ -434,6 +434,8 @@ inline string SToHex(uint32_t value) { return SToHex(value, 8); }
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
 string SStrFromHex(const string& buffer);
+string SBase32HexStringFromBase32(const string& buffer);
+string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
