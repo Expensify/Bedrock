@@ -178,6 +178,57 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         return true; // Successfully processed
     }
 
+    else if (SIEquals(requestVerb, "QueryJobs")) {
+        // - QueryJobs( [jobID], [jobIDList] )
+        //
+        //     Returns all known information about a given job.
+        //
+        //     Parameters:
+        //     - jobIDList - List of jobs to query
+        //
+        //     Returns:
+        //     - 200 - OK
+        //         . created - creation time of this job
+        //         . jobID - unique ID of the job
+        //         . state - One of QUEUED, RUNNING, FINISHED
+        //         . name  - name of the actual job matched
+        //         . nextRun - timestamp of next scheduled run
+        //         . lastRun - timestamp it was last run
+        //         . repeat - recurring description
+        //         . data - JSON data associated with this job
+        //     - 404 - No jobs found
+        //
+        verifyAttributeSize(request, "jobIDList", 1, MAX_SIZE_QUERY);
+
+        // Verify there is a job like this
+        SQResult result;
+        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter, priority "
+                     "FROM jobs "
+                     "WHERE jobID IN (" + SQList(request["jobIDList"]) + ");",
+                     result)) {
+            STHROW("502 Select failed");
+        }
+        if (result.empty()) {
+            STHROW("404 No jobs with this jobIDs");
+        }
+        list<string> jsonJobs;
+        for (auto& row : result.rows) {
+            STable job;
+            job["created"] = row[0];
+            job["jobID"] = row[1];
+            job["state"] = row[2];
+            job["name"] = row[3];
+            job["nextRun"] = row[4];
+            job["lastRun"] = row[5];
+            job["repeat"] = row[6];
+            job["data"] = row[7];
+            job["retryAfter"] = row[8];
+            job["priority"] = row[9];
+            jsonJobs.push_back(SComposeJSONObject(job));
+        }
+        content["jobs"] = SComposeJSONArray(jsonJobs);
+        return true; // Successfully processed
+    }
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         list<STable> jsonJobs;
