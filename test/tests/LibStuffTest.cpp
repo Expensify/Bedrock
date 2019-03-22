@@ -409,7 +409,16 @@ struct LibStuff : tpunit::TestFixture {
         // We can create an empty file
         ASSERT_TRUE(SFileCreate(path));
 
-        // We can create a file
+        // The file exists
+        ASSERT_TRUE(SFileExists(path));
+
+        // We can delete the file
+        ASSERT_TRUE(SFileDelete(path));
+
+        // The file no longer exists
+        ASSERT_TRUE(!SFileExists(path));
+
+        // We can create a file (with contents)
         ASSERT_TRUE(SFileSave(path, contents));
 
         // The file exists
