@@ -279,9 +279,15 @@ int main(int argc, char* argv[]) {
 
     // Reset the database if requested
     if (args.isSet("-clean")) {
-        // Remove it
         SDEBUG("Resetting database");
+
         string db = args["-db"];
+        if (!SFileExists(db)) {
+            // Touch file.
+            SASSERT(SFileCreate(db));
+        }
+
+        // Remove it
         unlink(db.c_str());
     } else if (args.isSet("-bootstrap")) {
         // Allow for bootstraping a node with no database file in place.

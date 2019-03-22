@@ -2069,6 +2069,17 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
+bool SFileCreate(const string& path) {
+    // Return true if it was successfully created
+    FILE* fp = fopen(path.c_str(), "a+");
+    if (!fp)
+        return false;
+
+    if (!fclose(fp))
+        SDEBUG("SFileCreate: Could not close file.");
+
+    return true;
+}
 bool SFileExists(const string& path) {
     // Return true if it exists and is a file
     struct stat out;
