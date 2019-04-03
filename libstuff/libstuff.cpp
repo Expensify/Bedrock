@@ -188,6 +188,36 @@ string SStrFromHex(const string& buffer) {
     return retVal;
 }
 
+string SBase32HexStringFromBase32(const string& buffer) {
+    static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
+    static const int mapLength = sizeof(map);
+    string out = buffer;
+    int shiftedIndex;
+    for (size_t i = 0; i < out.size(); i++) {
+        shiftedIndex = out[i] - 50;
+        if (mapLength < shiftedIndex || map[shiftedIndex] == 0) {
+            STHROW("Character not found in base32 alphabet.");
+        }
+        out[i] = map[shiftedIndex];
+    }
+
+    return out;
+}
+
+string SHexStringFromBase32(const string& buffer) {
+    if (buffer.length() % 8 != 0) {
+        STHROW("Incorrect string length.");
+    }
+
+    string hex;
+    for (size_t i = 0; i < buffer.length(); i += 8) {
+        uint64_t val = stoull(buffer.substr(buffer.length() - 8 - i, 8), 0, 32);
+        hex.insert(0, SToHex(val, 10));
+    }
+
+    return hex;
+}
+
 /////////////////////////////////////////////////////////////////////////////
 // String stuff
 /////////////////////////////////////////////////////////////////////////////
