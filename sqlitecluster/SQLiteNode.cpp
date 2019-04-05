@@ -898,7 +898,7 @@ bool SQLiteNode::update() {
             // And send it to everyone who's subscribed.
             uint64_t beforeSend = STimeNow();
             _sendToAllPeers(transaction, true);
-            SINFO("SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/1000) << "ms.");
+            SINFO("[performance] SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend)/1000) << "ms.");
 
             // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
             // asynchronous.
@@ -1949,7 +1949,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     SQLiteNode::State oldState = _state;
     if (newState != oldState) {
         // Depending on the state, set a timeout
-        SDEBUG("Switching from '" << stateNames[_state] << "' to '" << stateNames[newState] << "'");
+        SINFO("Switching from '" << stateNames[_state] << "' to '" << stateNames[newState] << "'");
         uint64_t timeout = 0;
         if (newState == STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
