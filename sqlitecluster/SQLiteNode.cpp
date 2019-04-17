@@ -1116,6 +1116,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Peer switched from '" << oldState << "' to '" << newState << "' commit #" << message["CommitCount"]
                   << " (" << message["Hash"] << ")");
             int from = 0, to = 0;
+
             // Make sure "to" and "from" are known states
             for (from = SEARCHING; from <= SLAVING; from++) {
                 if (SIEquals(oldState, stateNames[from])) {
@@ -1133,6 +1134,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (to > SLAVING) {
                 PWARN("Peer going to unrecognized state '" << newState << "'");
             }
+
             // Make sure transition states are an approved pair
             bool okTransition = false;
             switch (from) {
