@@ -555,7 +555,7 @@ bool SQLiteNode::update() {
         // If there is already a master that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
-        if (currentMaster && _priority < highestPriorityPeer->calc("Priority") &&
+        if (currentMaster && _priority < currentMaster->calc("Priority") &&
             SIEquals((*currentMaster)["State"], "MASTERING")) {
             // Subscribe to the master
             SINFO("Subscribing to master '" << currentMaster->name << "'");
