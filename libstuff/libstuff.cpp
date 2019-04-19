@@ -539,7 +539,7 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
         if (component.empty() && *ptr == ' ') {
         }
 
-        // Is this a delimiter?  If so, let's add a new component to the list
+        // Is this a delimiter?  If so, let's add our current component to the list and start a new one
         else if (*ptr == separator) {
             // Only add if the component is non-empty
             if (!component.empty())

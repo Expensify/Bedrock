@@ -1116,6 +1116,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Peer switched from '" << oldState << "' to '" << newState << "' commit #" << message["CommitCount"]
                   << " (" << message["Hash"] << ")");
             int from = 0, to = 0;
+
+            // Make sure "to" and "from" are known states
             for (from = SEARCHING; from <= SLAVING; from++) {
                 if (SIEquals(oldState, stateNames[from])) {
                     break;
@@ -1132,6 +1134,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (to > SLAVING) {
                 PWARN("Peer going to unrecognized state '" << newState << "'");
             }
+
+            // Make sure transition states are an approved pair
             bool okTransition = false;
             switch (from) {
             case SEARCHING:
@@ -1655,7 +1659,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Reject escalation because we're no longer mastering
             if (_state != STANDINGDOWN) {
                 // Don't warn if we're standing down, this is expected.
-                PWARN("Received ESCALATE but not MASTERING or STANDINGDOWN, aborting.");
+                PWARN("Received ESCALATE but not MASTERING or STANDINGDOWN, aborting command.");
             }
             SData aborted("ESCALATE_ABORTED");
             aborted["ID"] = message["ID"];
@@ -1942,7 +1946,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
     // We send any unsent transactions here before we finish switching states. Normally, this does nothing, unless
     // we're switching down from MASTERING or STANDINGDOWN, but we need to make sure these are all sent to the new
-    // mater before we complete the transition.
+    // master before we complete the transition.
     _sendOutstandingTransactions();
 
     // Did we actually change _state?
