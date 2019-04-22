@@ -148,7 +148,7 @@ void BedrockServer::sync(SData& args,
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // A minumum of *2* worker threads are required. One for blocking writes, one for other commands.
-    if (workerThreads < 2) { 
+    if (workerThreads < 2) {
         workerThreads = 2;
     }
 
@@ -1530,7 +1530,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Log the timing of this loop.
     uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / 1000;
-    SINFO("Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
+    SINFO("[performance] Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
           << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
 
     // Now we can close any sockets that we need to.
@@ -2122,7 +2122,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
                 commandsCompleted++;
             }
         }
-        
+
         // Now we can erase the transaction, as it's no longer outstanding.
         _outstandingHTTPSRequests.erase(transactionIt);
     }

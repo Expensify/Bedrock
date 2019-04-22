@@ -269,7 +269,7 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     // Log all this info.
-    SINFO("command '" << request.methodLine << "' timing info (ms): "
+    SINFO("[performance] command '" << request.methodLine << "' timing info (ms): "
           << peekTotal/1000 << " (" << peekCount << "), "
           << processTotal/1000 << " (" << processCount << "), "
           << commitWorkerTotal/1000 << ", "
