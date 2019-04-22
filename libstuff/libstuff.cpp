@@ -1904,7 +1904,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
     if (numSent == -1) {
         errorMessage = " Error: "s + strerror(errno);
     }
-    SINFO("Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
+    SINFO("[performance] Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
         << " ms and sent " << numSent << " of " << (int)sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
