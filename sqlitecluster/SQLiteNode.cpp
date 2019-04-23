@@ -50,7 +50,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
       _lastNetStatTime(chrono::steady_clock::now())
     {
     SASSERT(priority >= 0);
-    _priority = priority;
+    _originalPriority = priority;
+    _priority = 0;
     _state = SEARCHING;
     _syncPeer = nullptr;
     _masterPeer = nullptr;
@@ -1082,9 +1083,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (peer->params["Permaslave"] == "true" && message.calc("Priority")) {
             STHROW("you're supposed to be a 0-priority permaslave");
         }
-        if (peer->params["Permaslave"] != "true" && !message.calc("Priority")) {
-            STHROW("you're *not* supposed to be a 0-priority permaslave");
-        }
+
         // It's an error to have to peers configured with the same priority, except 0.
         SASSERT(!_priority || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
@@ -2016,6 +2015,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                     "Switching from '" << stateNames[_state] << "' to '" << stateNames[newState]
                                        << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
+        } else if (newState == WAITING) {
+            // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
+            _priority = _originalPriority;
         }
 
         // Send to everyone we're connected to, whether or not
