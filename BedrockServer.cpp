@@ -1680,6 +1680,7 @@ list<STable> BedrockServer::getPeerInfo() {
                 peerData.emplace_back(peer->nameValueMap);
                 peerData.back()["host"] = peer->host;
                 peerData.back()["name"] = peer->name;
+                peerData.back()["State"] = SQLiteNode::stateName(peer->state);
             }
         }
     }
