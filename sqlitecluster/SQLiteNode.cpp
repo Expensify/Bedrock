@@ -1014,7 +1014,7 @@ bool SQLiteNode::update() {
         // If the leader stops leading (or standing down), we'll go SEARCHING, which allows us to look for a new
         // leader. We don't want to go searching before that, because we won't know when leader is done sending its
         // final transactions.
-        if (_leadPeer->state != LEADING && _leadPeer->state != LEADING && _leadPeer->state != STANDINGDOWN) {
+        if (_leadPeer->state != LEADING && _leadPeer->state != STANDINGDOWN) {
             // Leader stepping down
             SHMMM("Leader stepping down, re-queueing commands.");
 
@@ -1233,14 +1233,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                                 // We need to contest this standup
                                 response["Response"] = "deny";
                                 response["Reason"] = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
-                                uint64_t recvTime = 0;
-                                if (otherPeer->s) {
-                                    recvTime = otherPeer->s->lastRecvTime;
-                                }
-                                cout << "When was the last time we heard from this guy (" << otherPeer->name << ")? " << recvTime << endl;
-                                SData ping("PING");
-                                ping["Timestamp"] = to_string(STimeNow());
-                                _sendToPeer(otherPeer, ping);
                                 break;
                             }
                         }
@@ -1313,7 +1305,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
             // The following properties are only used to expand out our log macros.
-            request["state"] = to_string(_state);
             request["name"] = name;
             request["peerName"] = peer->name;
 
@@ -1388,7 +1379,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // occurred after it completed SYNCHRONIZING but before this SUBSCRIBE was received). Tag this peer as
         // "subscribed" for use in the LEADING and STANDINGDOWN update loops. Finally, if there is an outstanding
         // distributed transaction being processed, send it to this new follower.
-        if (_state != LEADING && _state != LEADING) {
+        if (_state != LEADING) {
             STHROW("not leading");
         }
         PINFO("Received SUBSCRIBE, accepting new follower");
@@ -1955,7 +1946,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     _sendOutstandingTransactions();
 
     // Did we actually change _state?
-    SQLiteNode::State oldState = _state;
+    State oldState = _state;
     if (newState != oldState) {
         // Depending on the state, set a timeout
         SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
@@ -1977,7 +1968,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
-        if (SWITHIN(LEADING, _state, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
+        if (SWITHIN(LEADING, oldState, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
             // We are no longer leading.  Are we processing a command?
             if (commitInProgress()) {
                 // Abort this command

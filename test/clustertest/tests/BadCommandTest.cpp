@@ -22,7 +22,6 @@ struct BadCommandTest : tpunit::TestFixture {
         BedrockTester* leader = tester->getBedrockTester(0);
         BedrockTester* follower = tester->getBedrockTester(1);
 
-        cout << "A" << endl;
         // This is here because we can use it to test crashIdentifyingValues, though that isn't currently implemented.
         int userID = 31;
 
@@ -36,7 +35,6 @@ struct BadCommandTest : tpunit::TestFixture {
             throw;
         }
 
-        cout << "B" << endl;
         // Same in process.
         cmd = SData("exceptioninprocess");
         cmd["userID"] = to_string(userID++);
@@ -47,11 +45,9 @@ struct BadCommandTest : tpunit::TestFixture {
             throw;
         }
 
-        cout << "C" << endl;
         // Then for three other commands, verify they kill the leader, but the follower then refuses the same command.
         // This tests cases where keeping leader alive isn't feasible.
         for (auto commandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
-        cout << "D (" << commandName << ")" << endl;
             
             // Create the command with the current userID.
             userID++;
@@ -81,7 +77,6 @@ struct BadCommandTest : tpunit::TestFixture {
             // Bring leader back up.
             leader->startServer();
             ASSERT_TRUE(leader->waitForStates({"LEADING", "MASTERING"}));
-        cout << "E (done)" << endl;
         }
     }
 

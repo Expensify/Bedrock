@@ -175,6 +175,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Verify everything was either a 202 or a 756.
         for (auto& p : *counts) {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
+            cout << "method: " << p.first << ", count: " << p.second << endl;
         }
         
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.

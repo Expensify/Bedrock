@@ -47,6 +47,7 @@ struct STCPNode : public STCPServer {
         bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
         void reset() {
             clear();
+            state = SEARCHING;
             s = nullptr;
             latency = 0;
         }
