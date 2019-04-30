@@ -236,7 +236,7 @@ void BedrockCommand::finalizeTimingInfo() {
         {"unaccountedTime", unaccountedTime},
     };
 
-    // We also want to know what master did if we're on a slave.
+    // We also want to know what leader did if we're on a follower.
     uint64_t upstreamPeekTime = 0;
     uint64_t upstreamProcessTime = 0;
     uint64_t upstreamUnaccountedTime = 0;
@@ -244,7 +244,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Now promote any existing values that were set upstream. This prepends `upstream` and makes the first existing
     // character of the name uppercase, (i.e. myValue -> upstreamMyValue), letting us keep anything that was set by the
-    // master server. We clear these values after setting the new ones, so that we can add our own values.
+    // leader server. We clear these values after setting the new ones, so that we can add our own values.
     for (const auto& p : valuePairs) {
         auto it = response.nameValueMap.find(p.first);
         if (it != response.nameValueMap.end()) {

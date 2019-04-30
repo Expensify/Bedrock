@@ -9,15 +9,15 @@ class BedrockClusterTester {
     };
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
-    // their creation (i.e., node 0 is highest priority and will become master.
+    // their creation (i.e., node 0 is highest priority and will become leader.
     // You can also specify plugins to load if for some reason you need to override the default configuration.
     BedrockClusterTester(ClusterSize size, list<string> queries = {}, int threadID = 0, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs");
     BedrockClusterTester(int threadID, string pluginsToLoad = "db,cache,jobs");
     ~BedrockClusterTester();
 
-    // Returns the index of the node that's mastering. Returns a negative number on error:
-    // -1: no master
-    // -2: multiple masters
+    // Returns the index of the node that's leader. Returns a negative number on error:
+    // -1: no leader
+    // -2: multiple leader
     int getMasterNodeIndex();
 
     // Runs the given query on all nodes and verifies the output is the same. Make sure you include "ORDER BY" if you

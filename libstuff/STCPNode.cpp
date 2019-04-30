@@ -21,6 +21,53 @@ STCPNode::~STCPNode() {
     peerList.clear();
 }
 
+const string& STCPNode::stateName(STCPNode::State state) {
+    // This returns the legacy names MASTERING/SLAVING until all nodes have been updated to be able to
+    // understand the new LEADING/FOLLOWING names.
+    static string placeholder = "";
+    static map<State, string> lookup = {
+        {UNKNOWN, "UNKNOWN"},
+        {SEARCHING, "SEARCHING"},
+        {SYNCHRONIZING, "SYNCHRONIZING"},
+        {WAITING, "WAITING"},
+        {STANDINGUP, "STANDINGUP"},
+        {LEADING, "MASTERING"},
+        {STANDINGDOWN, "STANDINGDOWN"},
+        {SUBSCRIBING, "SUBSCRIBING"},
+        {FOLLOWING, "SLAVING"},
+    };
+    auto it = lookup.find(state);
+    if (it == lookup.end()) {
+        return placeholder;
+    } else {
+        return it->second;
+    }
+}
+
+STCPNode::State STCPNode::stateFromName(const string& name) {
+    string normalizedName = SToUpper(name);
+
+    // Accept both old and new state names, but map them all to the new states.
+    static map<string, State> lookup = {
+        {"SEARCHING", SEARCHING},
+        {"SYNCHRONIZING", SYNCHRONIZING},
+        {"WAITING", WAITING},
+        {"STANDINGUP", STANDINGUP},
+        {"LEADING", LEADING},
+        {"MASTERING", LEADING},
+        {"STANDINGDOWN", STANDINGDOWN},
+        {"SUBSCRIBING", SUBSCRIBING},
+        {"FOLLOWING", FOLLOWING},
+        {"SLAVING", FOLLOWING},
+    };
+    auto it = lookup.find(normalizedName);
+    if (it == lookup.end()) {
+        return UNKNOWN;
+    } else {
+        return it->second;
+    }
+}
+
 void STCPNode::addPeer(const string& peerName, const string& host, const STable& params) {
     // Create a new peer and ready it for connection
     SASSERT(SHostIsValid(host));

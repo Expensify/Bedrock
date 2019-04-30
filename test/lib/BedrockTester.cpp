@@ -501,13 +501,18 @@ int BedrockTester::getControlPort() {
     return _controlPort;
 }
 
-bool BedrockTester::waitForState(string state, uint64_t timeoutUS)
+bool BedrockTester::waitForState(string state, uint64_t timeoutUS) {
+    return waitForStates({state}, timeoutUS);
+}
+
+bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS)
 {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
             STable json = SParseJSONObject(executeWaitVerifyContent(SData("Status")));
-            if (json["state"] == state) {
+            auto it = states.find(json["state"]);
+            if (it != states.end()) {
                 return true;
             }
             // It's still not there, let it try again.

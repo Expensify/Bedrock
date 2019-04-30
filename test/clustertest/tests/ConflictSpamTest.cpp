@@ -214,7 +214,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         ASSERT_EQUAL(allResults[0], allResults[1]);
         ASSERT_EQUAL(allResults[1], allResults[2]);
 
-        // Let's query the master DB's journals, and see how many rows each had.
+        // Let's query the leader DB's journals, and see how many rows each had.
         {
             BedrockTester* brtester = tester->getBedrockTester(0);
 
@@ -239,7 +239,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 lines.pop_front();
             }
             // We can't verify the size of the journal, because we can insert any number of 'upgrade database' rows as
-            // each node comes online as master during startup.
+            // each node comes online as leader during startup.
             // ASSERT_EQUAL(totalRows, 69);
         }
 

@@ -52,7 +52,7 @@ struct TimingTest : tpunit::TestFixture {
             uint64_t processTime = SToUInt64(result["processTime"]);
             uint64_t totalTime = SToUInt64(result["totalTime"]);
 
-            // Only master is expected to have these set.
+            // Only leader is expected to have these set.
             if (i == 0) {
                 if (peekTime <= 0 || processTime <= 0) {
                     cout << "peekTime: " << peekTime << endl;
@@ -78,7 +78,7 @@ struct TimingTest : tpunit::TestFixture {
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
 
             if (i != 0) {
-                // Extra data on slaves.
+                // Extra data on followers.
                 uint64_t escalationTime = SToUInt64(result["escalationTime"]);
                 uint64_t upstreamPeekTime = SToUInt64(result["upstreamPeekTime"]);
                 uint64_t upstreamProcessTime = SToUInt64(result["upstreamProcessTime"]);

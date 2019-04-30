@@ -19,7 +19,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
     }
 
     void FutureExecution() {
-        // We only care about master because future execution only works on Master.
+        // We only care about leader because future execution only works on leader.
         BedrockTester* brtester = tester->getBedrockTester(0);
 
         // Let's run a command in the future.
@@ -27,7 +27,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
 
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
-        query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_master") + ");";
+        query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_leader") + ");";
         string result = brtester->executeWaitVerifyContent(query, "202"); 
 
         // Ok, Now let's wait a second

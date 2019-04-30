@@ -3,7 +3,7 @@
 class SQLiteCommand;
 class SQLiteServer;
 
-// Distributed, master/slave, failover, transactional DB cluster
+// Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
     // This exists to expose internal state to a test harness. It is not used otherwise.
     friend class SQLiteNodeTester;
@@ -15,23 +15,9 @@ class SQLiteNode : public STCPNode {
     // Separate timeout for receiving and applying synchronization commits.
     static const uint64_t SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT;
 
-    // Possible states of a node in a DB cluster
-    enum State {
-        SEARCHING,     // Searching for peers
-        SYNCHRONIZING, // Synchronizing with highest priority peer
-        WAITING,       // Waiting for an opportunity to master or slave
-        STANDINGUP,    // Taking over master-ship
-        MASTERING,     // Acting as master node
-        STANDINGDOWN,  // Giving up master role
-        SUBSCRIBING,   // Preparing to slave to the master
-        SLAVING,       // Slaving to the master node
-        NUM_STATES
-    };
-    static const string stateNames[NUM_STATES];
-
     // Write consistencies available
     enum ConsistencyLevel {
-        ASYNC,  // Fully asynchronous write, no slave approval required.
+        ASYNC,  // Fully asynchronous write, no follower approval required.
         ONE,    // Require exactly one approval (likely from a peer on the same LAN)
         QUORUM, // Require majority approval
         NUM_CONSISTENCY_LEVELS
@@ -55,7 +41,7 @@ class SQLiteNode : public STCPNode {
     // Simple Getters. See property definitions for details.
     State         getState()         { return _state; }
     int           getPriority()      { return _priority; }
-    const string& getMasterVersion() { return _masterVersion; }
+    const string& getLeaderVersion() { return _leaderVersion; }
     const string& getVersion()       { return _version; }
     uint64_t      getCommitCount()   { return _db.getCommitCount(); }
 
@@ -84,13 +70,13 @@ class SQLiteNode : public STCPNode {
     // commitInProgress() will return true until the commit completes.
     void startCommit(ConsistencyLevel consistency);
 
-    // If we have a command that can't be handled on a slave, we can escalate it to the master node. The SQLiteNode
-    // takes ownership of the command until it receives a response from the slave. When the command completes, it will
+    // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
+    // takes ownership of the command until it receives a response from the follower. When the command completes, it will
     // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
-    // If the 'forget' flag is set, we will not expect a response from master for this command.
+    // If the 'forget' flag is set, we will not expect a response from leader for this command.
     void escalateCommand(SQLiteCommand&& command, bool forget = false);
 
-    // This takes a completed command and sends the response back to the originating peer. If we're not the master
+    // This takes a completed command and sends the response back to the originating peer. If we're not the leader
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
     void sendResponse(const SQLiteCommand& command);
 
@@ -137,14 +123,14 @@ class SQLiteNode : public STCPNode {
     static uint64_t _lastSentTransactionID;
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
-    // the highest priority in the cluster will attempt to become the MASTER.
+    // the highest priority in the cluster will attempt to become the leader.
     int _priority;
 
     // Our current State.
     State _state;
     
-    // Pointer to the peer that is the master. Null if we're the master, or if we don't have a master yet.
-    Peer* _masterPeer;
+    // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
+    Peer* _leadPeer;
 
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;
@@ -165,8 +151,8 @@ class SQLiteNode : public STCPNode {
     // Our version string. Supplied by constructor.
     string _version;
 
-    // Master's version string.
-    string _masterVersion;
+    // leader's version string.
+    string _leaderVersion;
 
     // The maximum number of seconds we'll allow before we force a quorum commit. This can be violated when commits
     // are performed outside of SQLiteNode, but we'll catch up the next time we do a commit.
@@ -184,7 +170,7 @@ class SQLiteNode : public STCPNode {
     void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
 
     // Queue a SYNCHRONIZE message based on pre-computed state of the node. This version is thread-safe.
-    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, int _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll);
+    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
@@ -192,8 +178,8 @@ class SQLiteNode : public STCPNode {
     bool _isNothingBlockingShutdown();
     bool _majoritySubscribed();
 
-    // When we're a slave, we can escalate a command to the master. When we do so, we store that command in the
-    // following map of commandID to Command until the slave responds.
+    // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
+    // following map of commandID to Command until the follower responds.
     map<string, SQLiteCommand> _escalatedCommandMap;
 
     // Replicates any transactions that have been made on our database by other threads to peers.
