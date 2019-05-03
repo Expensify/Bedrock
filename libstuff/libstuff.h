@@ -321,7 +321,7 @@ void SLogStackTrace();
                    + "] "
 
 // Simply logs a stream to the debugger
-// **NOTE: rsyslog max line size is 8k bytes.  We split on 7k byte bounderies in order to fit the
+// **NOTE: rsyslog default max line size is 8k bytes.  We split on 7k byte bounderies in order to fit the
 //         syslog line prefix and the expanded \r\n to #015#012
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
