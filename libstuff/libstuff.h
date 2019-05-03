@@ -321,7 +321,7 @@ void SLogStackTrace();
                    + "] "
 
 // Simply logs a stream to the debugger
-// **NOTE: rsyslog max line size is 2048 bytes.  We split on 1500 byte bounderies in order to fit the
+// **NOTE: rsyslog default max line size is 8k bytes.  We split on 7k byte bounderies in order to fit the
 //         syslog line prefix and the expanded \r\n to #015#012
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
@@ -330,8 +330,8 @@ void SLogStackTrace();
             ostringstream __out;                                                                                       \
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
-            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
-                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());                        \
+            for (int __i = 0; __i < (int)__s.size(); __i += 7168)                                                      \
+                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 7168).c_str()).c_str());                        \
         }                                                                                                              \
     } while (false)
 
