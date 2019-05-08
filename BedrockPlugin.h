@@ -28,6 +28,7 @@ class BedrockPlugin {
 
     // Standard constructor, inserts the created plugin in `g_registeredPluginList`.
     BedrockPlugin();
+    virtual ~BedrockPlugin();
 
     // Returns a version string indicating the version of this plugin. This needs to be implemented in a thread-safe
     // manner, as it will be called from a different thread than any processing commands.

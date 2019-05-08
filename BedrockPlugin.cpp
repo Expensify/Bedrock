@@ -16,6 +16,9 @@ BedrockPlugin::BedrockPlugin() {
     g_registeredPluginList->push_back(this);
 }
 
+BedrockPlugin::~BedrockPlugin() {
+}
+
 void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize) {
     if (request[name].size() < minSize) {
         STHROW("402 Missing " + name);
