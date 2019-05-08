@@ -40,9 +40,9 @@ struct MasteringTest : tpunit::TestFixture {
                 results[i] = json["state"];
             }
 
-            if (results[0] == "MASTERING" &&
-                results[1] == "SLAVING" &&
-                results[2] == "SLAVING")
+            if ((results[0] == "LEADING" || results[0] == "MASTERING") &&
+                (results[1] == "FOLLOWING" || results[1] == "SLAVING") &&
+                (results[2] == "FOLLOWING" || results[2] == "SLAVING"))
             {
                 success = true;
                 break;
@@ -63,7 +63,7 @@ struct MasteringTest : tpunit::TestFixture {
             SData cmd("Status");
             string response = newMaster->executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["state"] == "MASTERING") {
+            if (json["state"] == "LEADING" || json["state"] == "MASTERING") {
                 success = true;
                 break;
             }
@@ -75,7 +75,7 @@ struct MasteringTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
     }
 
-    // The only point of this test is to verify that a new master comes up even if the old one has a stuck HTTPS
+    // The only point of this test is to verify that a new leader comes up even if the old one has a stuck HTTPS
     // request. It's slow so is disabled.
     void standDownTimeout() {
         BedrockTester* newMaster = tester->getBedrockTester(1);
@@ -116,9 +116,9 @@ struct MasteringTest : tpunit::TestFixture {
             STable json1 = SParseJSONObject(responses[1]);
             STable json2 = SParseJSONObject(responses[2]);
 
-            if (json0["state"] == "MASTERING" && 
-                json1["state"] == "SLAVING" && 
-                json2["state"] == "SLAVING") {
+            if ((json0["state"] == "LEADING" || json0["state"] == "MASTERING") && 
+                (json1["state"] == "FOLLOWING" || json1["state"] == "SLAVING") && 
+                (json2["state"] == "FOLLOWING" || json2["state"] == "SLAVING")) {
 
                 break;
             }
@@ -129,7 +129,7 @@ struct MasteringTest : tpunit::TestFixture {
     }
 
     void synchronizing() {
-        // Stop a slave.
+        // Stop a follower.
         tester->stopNode(1);
 
         // Create a bunch of commands.
@@ -148,25 +148,25 @@ struct MasteringTest : tpunit::TestFixture {
             }
         }
 
-        // Send these all to master.
-        BedrockTester* master = tester->getBedrockTester(0);
-        master->executeWaitMultipleData(requests);
+        // Send these all to leader.
+        BedrockTester* leader = tester->getBedrockTester(0);
+        leader->executeWaitMultipleData(requests);
 
-        // Start the slave back up.
+        // Start the follower back up.
         bool wasSynchronizing = false;
-        bool wasSlaving = false;
+        bool wasFollowing = false;
         string startstatus = tester->startNodeDontWait(1);
         STable json = SParseJSONObject(startstatus);
         if (json["state"] == "SYNCHRONIZING") {
             wasSynchronizing = true;
         }
 
-        // Verify it goes SYNCHRONIZING and then SLAVING.
-        BedrockTester* slave = tester->getBedrockTester(1);
+        // Verify it goes SYNCHRONIZING and then FOLLOWING.
+        BedrockTester* follower = tester->getBedrockTester(1);
         int tries = 0;
         while (1) {
             SData status("Status");
-            auto result = slave->executeWaitVerifyContent(status, "200", true);
+            auto result = follower->executeWaitVerifyContent(status, "200", true);
             STable json = SParseJSONObject(result);
 
             if (!wasSynchronizing) {
@@ -175,20 +175,20 @@ struct MasteringTest : tpunit::TestFixture {
                     continue;
                 }
             }
-            if(json["state"] == "SLAVING") {
-                // Make sure it was slaving before it was synchronizing.
+            if(json["state"] == "FOLLOWING" || json["state"] == "SLAVING") {
+                // Make sure it was following before it was synchronizing.
                 ASSERT_TRUE(wasSynchronizing);
-                wasSlaving = true;
+                wasFollowing = true;
                 break;
             }
             tries++;
             if (tries > 6000) {
-                STHROW("Timed out waiting for synchronizing and then mastering.");
+                STHROW("Timed out waiting for synchronizing and then leader.");
             }
             usleep(10'000); // 1/100th of a second
         }
         ASSERT_TRUE(wasSynchronizing);
-        ASSERT_TRUE(wasSlaving);
+        ASSERT_TRUE(wasFollowing);
     }
 
 } __MasteringTest;

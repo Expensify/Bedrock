@@ -48,9 +48,9 @@ struct StatusTest : tpunit::TestFixture {
             STable json = SParseJSONObject(responses[i]);
             auto peers = SParseJSONArray(json["peerList"]);
             if (i == 0) {
-                ASSERT_EQUAL(json["isMaster"], "true");
+                ASSERT_EQUAL(json["isLeader"], "true");
             } else {
-                ASSERT_EQUAL(json["isMaster"], "false");
+                ASSERT_EQUAL(json["isLeader"], "false");
             }
             ASSERT_EQUAL(peers.size(), 2);
         }

@@ -20,8 +20,8 @@ struct BroadcastCommandTest : tpunit::TestFixture {
 
     void test()
     {
-        BedrockTester* master = tester->getBedrockTester(0);
-        BedrockTester* slave = tester->getBedrockTester(1);
+        BedrockTester* leader = tester->getBedrockTester(0);
+        BedrockTester* follower = tester->getBedrockTester(1);
 
         // We want to test when this command runs.
         uint64_t now = STimeNow();
@@ -29,19 +29,19 @@ struct BroadcastCommandTest : tpunit::TestFixture {
         // Make sure unhandled exceptions send the right response.
         SData cmd("broadcastwithtimeouts");
         try {
-            master->executeWaitVerifyContent(cmd);
+            leader->executeWaitVerifyContent(cmd);
         } catch (...) {
             cout << "Couldn't send broadcastwithtimeouts" << endl;
             throw;
         }
 
-        // Now wait for the slave to have received and run the command.
+        // Now wait for the follower to have received and run the command.
         sleep(5);
 
         SData cmd2("getbroadcasttimeouts");
         vector<SData> results;
         try {
-            results = slave->executeWaitMultipleData({cmd2});
+            results = follower->executeWaitMultipleData({cmd2});
         } catch (...) {
             cout << "Couldn't send getbroadcasttimeouts" << endl;
             throw;

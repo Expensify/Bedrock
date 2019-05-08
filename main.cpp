@@ -243,7 +243,7 @@ int main(int argc, char* argv[]) {
         cout << "- Put each Bedrock node on a different server." << endl;
         cout << endl;
         cout << "- Assign each node a different priority (greater than 0).  The highest priority node will be the "
-                "'master', which will coordinate distributed transactions."
+                "'leader', which will coordinate distributed transactions."
              << endl;
         cout << endl;
         return 1;

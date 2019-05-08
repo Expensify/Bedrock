@@ -102,7 +102,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread>* threads = new list<thread>();
@@ -118,24 +118,24 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Let the clients get some activity going, we want everything to be busy.
         sleep(2);
 
-        // Now our clients are spamming all our nodes. Shut down master.
+        // Now our clients are spamming all our nodes. Shut down leader.
         tester->stopNode(0);
 
-        // Wait for node 1 to be master.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
+        // Wait for node 1 to be leader.
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({"LEADING", "MASTERING"}));
 
-        // Let the spammers keep spamming on the new master.
+        // Let the spammers keep spamming on the new leader.
         sleep(3);
 
-        // Bring master back up.
+        // Bring leader back up.
         tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
         sleep(15);
 
-        // Now let's  stop a slave and make sure everything keeps working.
+        // Now let's  stop a follower and make sure everything keeps working.
         tester->stopNode(2);
 
-        // Wait up to 90 seconds for master to think the slave is down.
+        // Wait up to 90 seconds for leader to think the follower is down.
         uint64_t start = STimeNow();
         bool success = false;
         while (STimeNow() < start + 90'000'000) {
@@ -145,7 +145,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             list<string> peers = SParseJSONArray(peerList);
             for (auto& peer : peers) {
                 STable peerInfo = SParseJSONObject(peer);
-                if (peerInfo["name"] == "brcluster_node_2" && peerInfo["State"] == "") {
+                if (peerInfo["name"] == "brcluster_node_2" && (peerInfo["State"] == "" || peerInfo["State"] == "SEARCHING")) {
                     success = true;
                     break;
                 }
@@ -159,7 +159,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // And bring it back up.
         tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({"FOLLOWING", "SLAVING"}));
 
         // We're done, let spammers finish.
         done.store(true);
@@ -184,25 +184,25 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Wait for them to be busy.
         sleep(2);
 
-        // Blow up master.
+        // Blow up leader.
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
-        // Wait for node 1 to be master.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("MASTERING"));
+        // Wait for node 1 to be leader.
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({"LEADING", "MASTERING"}));
 
-        // Now bring master back up.
+        // Now bring leader back up.
         sleep(2);
         tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("MASTERING"));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
 
-        // Blow up a slave.
+        // Blow up a follower.
         sleep(2);
         tester->getBedrockTester(2)->stopServer(SIGKILL);
 
         // And bring it back up.
         sleep(2);
         tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("SLAVING"));
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({"FOLLOWING", "SLAVING"}));
 
         // We're really done, let everything finish a last time.
         done.store(true);

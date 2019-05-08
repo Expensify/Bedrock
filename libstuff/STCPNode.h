@@ -5,6 +5,21 @@ struct STCPNode : public STCPServer {
     STCPNode(const string& name, const string& host, const uint64_t recvTimeout_ = STIME_US_PER_M);
     virtual ~STCPNode();
 
+    // Possible states of a node in a DB cluster
+    enum State {
+        UNKNOWN,
+        SEARCHING,     // Searching for peers
+        SYNCHRONIZING, // Synchronizing with highest priority peer
+        WAITING,       // Waiting for an opportunity to leader or follower
+        STANDINGUP,    // Taking over leadership
+        LEADING,       // Acting as leader node
+        STANDINGDOWN,  // Giving up leader role
+        SUBSCRIBING,   // Preparing to follow the leader
+        FOLLOWING      // Following the leader node
+    };
+    static const string& stateName(State state);
+    static State stateFromName(const string& name);
+
     // Updates all peers
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
@@ -18,6 +33,7 @@ struct STCPNode : public STCPServer {
         string name;
         string host;
         STable params;
+        State state;
         uint64_t latency;
         uint64_t nextReconnect;
         uint64_t id;
@@ -25,12 +41,13 @@ struct STCPNode : public STCPServer {
 
         // Helper methods
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), latency(0), nextReconnect(0), id(id_),
+          : name(name_), host(host_), params(params_), state(SEARCHING), latency(0), nextReconnect(0), id(id_),
             failedConnections(0), s(nullptr)
         { }
         bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
         void reset() {
             clear();
+            state = SEARCHING;
             s = nullptr;
             latency = 0;
         }

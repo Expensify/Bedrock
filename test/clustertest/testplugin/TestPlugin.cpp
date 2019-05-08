@@ -66,8 +66,8 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.response["stored_not_special"] = arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (_server->getState() != SQLiteNode::MASTERING && _server->getState() != SQLiteNode::STANDINGDOWN) {
-            // Only start HTTPS requests on master, otherwise, we'll escalate.
+        if (_server->getState() != SQLiteNode::LEADING && _server->getState() != SQLiteNode::STANDINGDOWN) {
+            // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }
         int requestCount = 1;
@@ -97,9 +97,9 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         return true;
     } else if (SStartsWith(command.request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
-        // when there's a blocking command and master needs to stand down, to verify the timeout for that works.
+        // when there's a blocking command and leader needs to stand down, to verify the timeout for that works.
         // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
-        // up correctly on the former master.
+        // up correctly on the former leader.
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
         auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);

@@ -13,7 +13,7 @@
  * However, to actually verify that you saw a conflict during the test, you can look at the logs for something like:
  *
  * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
- *     {brcluster_node_0/MASTERING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
+ *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
 struct HTTPSTest : tpunit::TestFixture {
     HTTPSTest()
@@ -55,7 +55,7 @@ struct HTTPSTest : tpunit::TestFixture {
         // to cause a conflict.
         mutex m;
 
-        // Every 10th request on master is an HTTP request.
+        // Every 10th request on leader is an HTTP request.
         int nthHasRequest = 10;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
@@ -89,7 +89,7 @@ struct HTTPSTest : tpunit::TestFixture {
         }
         threads.clear();
 
-        // Look at all the responses from master, to make sure they're all 200s, and either had a body or did not,
+        // Look at all the responses from leader, to make sure they're all 200s, and either had a body or did not,
         // according with what sort of command they were.
         for (size_t i = 0; i < responses[0].size(); i++) {
             string code = responses[0][i].methodLine;
