@@ -73,6 +73,9 @@ class BedrockTester {
     int getNodePort();
     int getControlPort();
 
+    // Get the highest journal ID
+    int getCommitCount();
+
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
     bool waitForState(string state, uint64_t timeoutUS = 60'000'000);
