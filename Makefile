@@ -7,10 +7,10 @@ ifndef CC
 	CC = gcc-6
 endif
 
-GIT_REVISION = $(shell git rev-parse --short HEAD)
+VERSION_STRING = $(shell echo `date --rfc-3339=date`_r_`git rev-parse --short HEAD`)
 PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
-CXXFLAGS = -g -std=c++14 -fpic -O2 -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
+CXXFLAGS = -g -std=c++14 -fpic -O2 -Wall -Werror -Wformat-security -DVERSION_STRING=$(VERSION_STRING) $(INCLUDE)
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
 
 # We'll stick object and dependency files in here so we don't need to look at them.
