@@ -1,4 +1,5 @@
 // Manages connections to a single instance of the bedrock server.
+#include <bedrockVersion.h>
 #include <libstuff/libstuff.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
@@ -1109,7 +1110,7 @@ BedrockServer::BedrockServer(const SData& args)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
 {
-    _version = SVERSION;
+    _version = VERSION;
 
     // Output the list of plugins.
     map<string, BedrockPlugin*> registeredPluginMap;

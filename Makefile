@@ -7,26 +7,11 @@ ifndef CC
 	CC = gcc-6
 endif
 
-# We use our project directory as a search path so we don't need "../../../.." all over the place.
-PROJECT = $(shell pwd)
-
-# Extract our version information from git.
-VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
-
-# Turn on C++14.
-CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
-CXXFLAGS =-std=gnu++14
-CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include -Werror -Wno-unused-result
-
-# This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
-PRODUCTION=false
-ifeq ($(PRODUCTION),true)
-# Extra build stuff
+GIT_REVISION = $(shell git rev-parse --short HEAD)
+PROJECT = $(shell git rev-parse --show-toplevel)
+INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+CXXFLAGS = -g -std=c++14 -fpic -O2 -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
-CFLAGS +=-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security
-else
-CFLAGS +=-O0
-endif
 
 # We'll stick object and dependency files in here so we don't need to look at them.
 INTERMEDIATEDIR = .build

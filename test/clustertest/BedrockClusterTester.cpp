@@ -66,7 +66,9 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         string peerString = SComposeList(peerList, ",");
 
         char cwd[1024];
-        getcwd(cwd, sizeof(cwd));
+        if (!getcwd(cwd, sizeof(cwd))) {
+            STHROW("Couldn't get CWD");
+        }
 
         // Ok, build a legit map out of these.
         map <string, string> args = {
