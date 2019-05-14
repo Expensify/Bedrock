@@ -183,6 +183,12 @@ struct SData {
     SData();
     SData(const string& method);
 
+    // Allow forwarding emplacements directly so SData can act like `std::map`.
+    template <typename... Ts>
+    pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args) {
+        return nameValueMap.emplace(forward<Ts>(args)...);
+    }
+
     // Operators
     string& operator[](const string& name);
     string operator[](const string& name) const;

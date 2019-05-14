@@ -24,11 +24,19 @@ bool BedrockPlugin_TestPlugin::preventAttach() {
 }
 
 bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+    // Always blacklist on userID.
+    command.crashIdentifyingValues.insert("userID");
+
+    // Now that we've blacklisted, mutate the command and see if things break!
+    if (command.request.isSet("userID")) {
+        command.request["userID"] = to_string(stoll(command.request["userID"]) + 1000);
+    }
+
+    // Sleep if requested.
     if (command.request.calc("PeekSleep")) {
         usleep(command.request.calc("PeekSleep") * 1000);
     }
-    // Always blacklist on userID.
-    command.crashIdentifyingValues.insert("userID");
+
     // This should never exist when calling peek.
     SASSERT(!command.httpsRequests.size());
     if (SStartsWith(command.request.methodLine,"testcommand")) {

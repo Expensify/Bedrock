@@ -22,7 +22,6 @@ struct BadCommandTest : tpunit::TestFixture {
         BedrockTester* leader = tester->getBedrockTester(0);
         BedrockTester* follower = tester->getBedrockTester(1);
 
-        // This is here because we can use it to test crashIdentifyingValues, though that isn't currently implemented.
         int userID = 31;
 
         // Make sure unhandled exceptions send an error response, but don't crash the server.
