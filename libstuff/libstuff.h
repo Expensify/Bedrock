@@ -342,6 +342,7 @@ void SLogStackTrace();
 #define SHMMM(_MSG_) SSYSLOG(LOG_WARNING, "[hmmm] " << SLOGPREFIX << _MSG_)
 #define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
 #define SALERT(_MSG_) SSYSLOG(LOG_WARNING, "[alrt] " << SLOGPREFIX << _MSG_)
+#define SSECURITY(_MSG_) SSYSLOG(LOG_INFO, "[info] [security] " << SLOGPREFIX << _MSG_)
 #define SERROR(_MSG_)                                                                                                  \
     do {                                                                                                               \
         SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
