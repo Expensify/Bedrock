@@ -88,7 +88,29 @@ class BedrockCommand : public SQLiteCommand {
     // i.e., if this command has set this to {userID, reportList}, and the server crashes while processing this
     // command, then any other command with the same methodLine, userID, and reportList will be flagged as likely to
     // cause a crash, and not processed.
-    set<string> crashIdentifyingValues;
+    class CrashMap : public map<string, SString> {
+      public:
+        pair<CrashMap::iterator, bool> insert(const string& key) {
+            if (cmd.request.isSet(key)) {
+                return map<string, SString>::insert(make_pair(key, cmd.request.nameValueMap.at(key)));
+            }
+            return make_pair(end(), false);
+        }
+
+      private:
+        // We make BedrockCommand a friend so it can call our private constructors/assignment operators.
+        friend class BedrockCommand;
+        CrashMap(BedrockCommand& _cmd) : cmd(_cmd) { }
+        CrashMap(BedrockCommand& _cmd, CrashMap&& other) : map<string, SString>(move(other)), cmd(_cmd) { }
+        CrashMap& operator=(CrashMap&& other) {
+            map<string, SString>::operator=(move(other));
+            return *this;
+        }
+
+        // This is a reference to the command that created this object.
+        BedrockCommand& cmd;
+    };
+    CrashMap crashIdentifyingValues;
 
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }

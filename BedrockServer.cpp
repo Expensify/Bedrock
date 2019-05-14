@@ -2015,11 +2015,8 @@ bool BedrockServer::shouldBackup() {
 SData BedrockServer::_generateCrashMessage(const BedrockCommand* command) {
     SData message("CRASH_COMMAND");
     SData subMessage(command->request.methodLine);
-    for (auto& field : command->crashIdentifyingValues) {
-        auto it = command->request.nameValueMap.find(field);
-        if (it != command->request.nameValueMap.end()) {
-            subMessage[field] = it->second;
-        }
+    for (auto& pair : command->crashIdentifyingValues) {
+        subMessage.emplace(pair);
     }
     message.content = subMessage.serialize();
     return message;

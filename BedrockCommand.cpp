@@ -42,6 +42,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
+    crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(dontCount != DONT_COUNT)
@@ -62,7 +63,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     processedBy(from.processedBy),
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
-    crashIdentifyingValues(move(from.crashIdentifyingValues)),
+    crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
     _inProgressTiming(from._inProgressTiming),
     _timeout(from._timeout),
     countCommand(true)
@@ -82,6 +83,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
+    crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -98,6 +100,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     peekedBy(nullptr),
     processedBy(nullptr),
     onlyProcessOnSyncThread(false),
+    crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
