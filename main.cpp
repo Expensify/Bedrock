@@ -3,7 +3,7 @@
 /// Process entry point for Bedrock server.
 ///
 #include <libstuff/libstuff.h>
-#include <libstuff/version.h>
+#include <bedrockVersion.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
 #include "plugins/Cache.h"
@@ -163,9 +163,13 @@ int main(int argc, char* argv[]) {
         umask(0);
         SASSERT(setsid() >= 0);
         SASSERT(chdir("/") >= 0);
-        freopen("/dev/null", "r", stdin);
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
+        if (!freopen("/dev/null", "r", stdin) ||
+            !freopen("/dev/null", "w", stdout) ||
+            !freopen("/dev/null", "w", stderr)
+        ) {
+            cout << "Couldn't daemonize." << endl;
+            return -1;
+        }
     }
 
     // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
@@ -175,7 +179,7 @@ int main(int argc, char* argv[]) {
 
     if (args.isSet("-version")) {
         // Just output the version
-        cout << SVERSION << endl;
+        cout << VERSION << endl;
         return 0;
     }
     if (args.isSet("-h") || args.isSet("-?") || args.isSet("-help")) {
