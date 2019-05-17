@@ -1209,6 +1209,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 RequeueJobs update failed");
             }
+
+            // If we want to update the name, let's do that
+            const string& name = request["name"];
+            if (!name.empty()) {
+                if (!db.writeIdempotent("UPDATE jobs SET name = " + SQ(name) + " WHERE jobID IN(" + SQList(jobIDs)+ ");")) {
+                    STHROW("502 Failed to update job name");
+                }
+            }
         }
 
         return true;
