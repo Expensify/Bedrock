@@ -823,7 +823,7 @@ void BedrockServer::worker(SData& args,
 
             // We can only peek a command if we're connected to a master on the same version as us. Otherwise, we'll
             // potentially be operating on an outdated schema.
-            bool canPeek = (state == SQLiteNode::LEADING) || (_leaderVersion.load() == _version);
+            bool canPeek = (state == SQLiteNode::LEADING) || (server._leaderVersion.load() == server._version);
 
             // See if this is a feasible command to write parallel. If not, then be ready to forward it to the sync
             // thread, if it doesn't finish in peek.

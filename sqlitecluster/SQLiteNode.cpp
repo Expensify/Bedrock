@@ -2002,6 +2002,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Abort all remote initiated commands if no longer LEADING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SEARCHING) {
+            _leaderVersion = "";
             if (!_escalatedCommandMap.empty()) {
                 // This isn't supposed to happen, though we've seen in logs where it can.
                 // So what we'll do is try and correct the problem and log the state we're coming from to see if that
