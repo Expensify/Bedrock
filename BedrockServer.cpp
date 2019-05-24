@@ -1288,23 +1288,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
-
-    // If we're a follower, and the leader's on a different version than us, we don't open the command port.
-    // If we do, we'll escalate all of our commands to the leader, which causes undue load on leader during upgrades.
-    // Instead, we'll simply not respond and let this request get re-directed to another follower.
-    string leaderVersion = _leaderVersion.load();
-    if (!_suppressCommandPort && state == SQLiteNode::FOLLOWING && (leaderVersion != _version)) {
-        SINFO("Node " << _args["-nodeName"] << " following on version " << _version << ", leader is version: "
-              << leaderVersion << ", not opening command port.");
-        suppressCommandPort("leader version mismatch", true);
-    } else if (_suppressCommandPort && (state == SQLiteNode::LEADING || (leaderVersion == _version))) {
-        // If we become leader, or if leader's version resumes matching ours, open the command port again.
-        if (!_suppressCommandPortManualOverride) {
-            // Only generate this logline if we haven't manually blocked this.
-            SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
-        }
-        suppressCommandPort("leader version match", false);
-    }
     if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) &&
         _shutdownState.load() == RUNNING) {
         // Open the port
