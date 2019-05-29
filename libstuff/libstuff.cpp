@@ -1923,7 +1923,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
-        SConsumeFront(sendBuffer, (size_t)numSent);
+        SConsumeFront(sendBuffer, numSent);
     }
 
     // Exit if no error
