@@ -58,7 +58,6 @@
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
 #define S_EPIPE EPIPE
-#define S_EAGAIN EAGAIN
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -1931,9 +1930,10 @@ bool S_sendconsume(int s, string& sendBuffer) {
         return true; // No error; still alive
     }
 
-    // EAGAIN/EWOULDBLOCK are fatal for send cases
-    if (errno == S_EAGAIN) {
-        SWARN("Closing socket after EAGAIN error in send.");
+    // If we failed to send with over 1GB in the buffer, return false, even if the error would normally be non-fatal.
+    if (sendBuffer.size() > 1024 * 1024 * 1024) {
+        SWARN("send() failed with response '" << strerror(errornumber) << "' (#" << errornumber
+              << "), and buffer size: " << sendBuffer.size() << ", closing.");
         return false;
     }
 
