@@ -58,6 +58,7 @@
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
 #define S_EPIPE EPIPE
+#define S_EAGAIN EAGAIN
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -566,21 +567,23 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 
 // --------------------------------------------------------------------------
 void SConsumeFront(string& lhs, ssize_t num) {
-    SASSERT((int)lhs.size() >= num);
+    ssize_t lhsSize = lhs.size();
+    SASSERT(lhsSize >= num);
     // If nothing, early out
-    if (!num)
+    if (!num){
         return;
+    }
 
     // If we're clearing the whole thing, early out
-    if ((int)lhs.size() == num) {
+    if (lhsSize == num) {
         // Clear and done
         lhs.clear();
         return;
     }
 
     // Otherwise, move the end forward and resize
-    memmove(&lhs[0], &lhs[num], (int)lhs.size() - num);
-    lhs.resize((int)lhs.size() - num);
+    memmove(&lhs[0], &lhs[num], lhsSize - num);
+    lhs.resize(lhsSize - num);
 }
 
 // --------------------------------------------------------------------------
@@ -1839,8 +1842,8 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         // And these aren't interesting enough to say anything about at all (and aren't fatal).
         case S_EINTR:
         case S_EINPROGRESS:
-        case S_EWOULDBLOCK:
         case S_ESHUTDOWN:
+        case S_EWOULDBLOCK: // Same as S_EAGAIN in some distros (including Ubuntu)
             return true; // Socket still alive
     }
 }
@@ -1854,6 +1857,17 @@ bool S_recvappend(int s, string& recvBuffer) {
     int flags = fcntl(s, F_GETFL);
     bool blocking = !(flags & O_NONBLOCK);
 
+    // Log size of the buffer before we read from it.
+    int bytesInBuffer = 0;
+    int ret = 0;
+    ret = ioctl(s, FIONREAD, &bytesInBuffer);
+
+    if (ret < 0) {
+        SHMMM("Unable to get length of socket buffer error: " << strerror(S_errno));
+    } else {
+        SINFO("[performance] " << bytesInBuffer << " bytes in the socket buffer before receiving.");
+    }
+
     // Keep trying to receive as long as we can
     char buffer[4096];
     int totalRecv = 0;
@@ -1866,8 +1880,9 @@ bool S_recvappend(int s, string& recvBuffer) {
         totalRecv += numRecv;
 
         // If this is a blocking socket, don't try again, once is enough
-        if (blocking)
+        if (blocking) {
             return true; // We're still alive
+        }
     }
 
     // See how we finished
@@ -1899,21 +1914,27 @@ bool S_sendconsume(int s, string& sendBuffer) {
     chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
     // Send as much as we can
-    ssize_t numSent = send(s, sendBuffer.c_str(), (int)sendBuffer.size(), MSG_NOSIGNAL);
+    ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
     string errorMessage;
     if (numSent == -1) {
         errorMessage = " Error: "s + strerror(errno);
     }
     SINFO("[performance] Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
-        << " ms and sent " << numSent << " of " << (int)sendBuffer.size() << " bytes." << errorMessage);
+        << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
         SConsumeFront(sendBuffer, numSent);
     }
 
-    // Exit of no error
+    // Exit if no error
     if (numSent >= 0) {
         return true; // No error; still alive
+    }
+
+    // EAGAIN/EWOULDBLOCK are fatal for send cases
+    if (errno == S_EAGAIN) {
+        SWARN("Closing socket after EAGAIN error in send.");
+        return false;
     }
 
     // Error, what kind?
