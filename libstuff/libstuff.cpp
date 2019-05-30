@@ -1932,8 +1932,8 @@ bool S_sendconsume(int s, string& sendBuffer) {
 
     // If we failed to send with over 1GB in the buffer, return false, even if the error would normally be non-fatal.
     if (sendBuffer.size() > 1024 * 1024 * 1024) {
-        SWARN("send() failed with response '" << strerror(errornumber) << "' (#" << errornumber
-              << "), and buffer size: " << sendBuffer.size() << ", closing.");
+        SWARN("send() failed with response '" << strerror(errno) << "' (#" << errno << "), and buffer size: "
+              << sendBuffer.size() << ", closing.");
         return false;
     }
 
