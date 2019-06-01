@@ -13,6 +13,11 @@ INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 CXXFLAGS = -g -std=c++14 -fpic -O2 -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),CYGWIN_NT-10.0)
+CXXFLAGS += -D_XOPEN_SOURCE=600 -D_DEFAULT_SOURCE
+endif
+
 # We'll stick object and dependency files in here so we don't need to look at them.
 INTERMEDIATEDIR = .build
 
