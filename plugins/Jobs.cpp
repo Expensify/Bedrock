@@ -1204,18 +1204,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(requestVerb, "RequeueJobs")) {
         SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
         list<int64_t> jobIDs = SParseIntegerList(command.request["jobIDs"]);
+        
         if (jobIDs.size()) {
-            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID IN(" + SQList(jobIDs)+ ");";
+            const string& name = request["name"];
+            string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
+            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ")"+ nameQuery +" WHERE jobID IN(" + SQList(jobIDs)+ ");";
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 RequeueJobs update failed");
-            }
-
-            // If we want to update the name, let's do that
-            const string& name = request["name"];
-            if (!name.empty()) {
-                if (!db.writeIdempotent("UPDATE jobs SET name = " + SQ(name) + " WHERE jobID IN(" + SQList(jobIDs)+ ");")) {
-                    STHROW("502 Failed to update job name");
-                }
             }
         }
 
