@@ -53,6 +53,18 @@ uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
     return min(processTimeout, adjustedTimeout);
 }
 
+bool BedrockCore::isTimedOut(BedrockCommand& command) {
+    try {
+        _getRemainingTime(command);
+    } catch (const SException& e) {
+        // Yep, timed out.
+        _handleCommandException(command, e);
+        command.complete = true;
+        return true;
+    }
+    return false;
+}
+
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.

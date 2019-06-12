@@ -703,6 +703,22 @@ void BedrockServer::worker(SData& args,
                 continue;
             }
 
+            // If the command has already timed out when we get it, we can return early here without peeking it.
+            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
+            // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
+            // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
+            // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
+            // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
+            if (core.isTimedOut(command)) {
+                if (command.initiatingPeerID) {
+                    // Escalated command. Give it back to the sync thread to respond.
+                    syncNodeCompletedCommands.push(move(command));
+                } else {
+                    server._reply(command);
+                }
+                continue;
+            }
+
             // Check if this command would be likely to cause a crash
             if (server._wouldCrash(command)) {
                 // If so, make a lot of noise, and respond 500 without processing it.
