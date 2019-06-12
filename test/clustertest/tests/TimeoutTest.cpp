@@ -9,6 +9,7 @@ struct TimeoutTest : tpunit::TestFixture {
                               TEST(TimeoutTest::test),
                               TEST(TimeoutTest::testprocess),
                               TEST(TimeoutTest::totalTimeout),
+                              TEST(TimeoutTest::quorumHTTPS),
                               TEST(TimeoutTest::futureCommitTimeout)) { }
 
     BedrockClusterTester* tester;
@@ -35,6 +36,14 @@ struct TimeoutTest : tpunit::TestFixture {
         slow["size"] = "10000";
         slow["count"] = "10000";
         brtester->executeWaitVerifyContent(slow, "555 Timeout peeking command");
+    }
+
+    void quorumHTTPS () {
+        BedrockTester* brtester = tester->getBedrockTester(0);
+        SData request("httpstimeout");
+        request["writeConsistency"] = "2"; // QUORUM.
+        request["timeout"] = "100"; // 100ms.
+        brtester->executeWaitVerifyContent(request, "555 Timeout");
     }
 
     void testprocess()
