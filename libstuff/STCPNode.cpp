@@ -22,8 +22,6 @@ STCPNode::~STCPNode() {
 }
 
 const string& STCPNode::stateName(STCPNode::State state) {
-    // This returns the legacy names MASTERING/SLAVING until all nodes have been updated to be able to
-    // understand the new LEADING/FOLLOWING names.
     static string placeholder = "";
     static map<State, string> lookup = {
         {UNKNOWN, "UNKNOWN"},
@@ -31,10 +29,10 @@ const string& STCPNode::stateName(STCPNode::State state) {
         {SYNCHRONIZING, "SYNCHRONIZING"},
         {WAITING, "WAITING"},
         {STANDINGUP, "STANDINGUP"},
-        {LEADING, "MASTERING"},
+        {LEADING, "LEADING"},
         {STANDINGDOWN, "STANDINGDOWN"},
         {SUBSCRIBING, "SUBSCRIBING"},
-        {FOLLOWING, "SLAVING"},
+        {FOLLOWING, "FOLLOWING"},
     };
     auto it = lookup.find(state);
     if (it == lookup.end()) {
@@ -48,6 +46,8 @@ STCPNode::State STCPNode::stateFromName(const string& name) {
     string normalizedName = SToUpper(name);
 
     // Accept both old and new state names, but map them all to the new states.
+    // We can remove the old state names once no nodes in the cluster can send them (i.e., we're not going to upgrade
+    // from or downgrade to a version that broadcasts old state names.)
     static map<string, State> lookup = {
         {"SEARCHING", SEARCHING},
         {"SYNCHRONIZING", SYNCHRONIZING},

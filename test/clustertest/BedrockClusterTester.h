@@ -15,11 +15,6 @@ class BedrockClusterTester {
     BedrockClusterTester(int threadID, string pluginsToLoad = "db,cache,jobs");
     ~BedrockClusterTester();
 
-    // Returns the index of the node that's leader. Returns a negative number on error:
-    // -1: no leader
-    // -2: multiple leader
-    int getMasterNodeIndex();
-
     // Runs the given query on all nodes and verifies the output is the same. Make sure you include "ORDER BY" if you
     // want to verify this across multiple rows, as they're not guaranteed to be returned in the same order for all
     // nodes.

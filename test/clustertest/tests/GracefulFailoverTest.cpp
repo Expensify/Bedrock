@@ -102,7 +102,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread>* threads = new list<thread>();
@@ -122,14 +122,14 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->stopNode(0);
 
         // Wait for node 1 to be leader.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({"LEADING", "MASTERING"}));
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("LEADING"));
 
         // Let the spammers keep spamming on the new leader.
         sleep(3);
 
         // Bring leader back up.
         tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
         sleep(15);
 
         // Now let's  stop a follower and make sure everything keeps working.
@@ -159,7 +159,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // And bring it back up.
         tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({"FOLLOWING", "SLAVING"}));
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("FOLLOWING"));
 
         // We're done, let spammers finish.
         done.store(true);
@@ -188,12 +188,12 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->getBedrockTester(0)->stopServer(SIGKILL);
 
         // Wait for node 1 to be leader.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForStates({"LEADING", "MASTERING"}));
+        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("LEADING"));
 
         // Now bring leader back up.
         sleep(2);
         tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForStates({"LEADING", "MASTERING"}));
+        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
 
         // Blow up a follower.
         sleep(2);
@@ -202,7 +202,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // And bring it back up.
         sleep(2);
         tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForStates({"FOLLOWING", "SLAVING"}));
+        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("FOLLOWING"));
 
         // We're really done, let everything finish a last time.
         done.store(true);

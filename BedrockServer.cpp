@@ -1659,8 +1659,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
 }
 
 bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
-    if (SIEquals(command.request.methodLine, STATUS_IS_SLAVE)          ||
-        SIEquals(command.request.methodLine, STATUS_IS_FOLLOWER)       ||
+    if (SIEquals(command.request.methodLine, STATUS_IS_FOLLOWER)       ||
         SIEquals(command.request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command.request.methodLine, STATUS_PING)              ||
         SIEquals(command.request.methodLine, STATUS_STATUS)            ||
@@ -1705,17 +1704,16 @@ void BedrockServer::_status(BedrockCommand& command) {
     SData& response = command.response;
 
     // We'll return whether or not this server is following.
-    if (SIEquals(request.methodLine, STATUS_IS_SLAVE) || SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
+    if (SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
         // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
         // HAProxy interprets 2xx/3xx level responses as alive, 4xx/5xx level responses as dead.
         SQLiteNode::State state = _replicationState.load();
-        string verbing = SIEquals(request.methodLine, STATUS_IS_FOLLOWER) ? "Following" : "Slaving";
         if (state == SQLiteNode::FOLLOWING) {
-            response.methodLine = "HTTP/1.1 200 "+ verbing;
+            response.methodLine = "HTTP/1.1 200 Following";
         } else {
-            response.methodLine = "HTTP/1.1 500 Not " + verbing + ". State=" + SQLiteNode::stateName(state);
+            response.methodLine = "HTTP/1.1 500 Not Following. State=" + SQLiteNode::stateName(state);
         }
     }
 
@@ -1727,7 +1725,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            response.methodLine = "HTTP/1.1 200 Slaving";
+            response.methodLine = "HTTP/1.1 200 Following";
         }
     }
 
@@ -1747,9 +1745,6 @@ void BedrockServer::_status(BedrockCommand& command) {
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isLeader"] = state == SQLiteNode::LEADING ? "true" : "false";
-
-        // TODO: Remove this line when everything has been updated to use 'leader'.
-        content["isMaster"] = content["isLeader"];
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;

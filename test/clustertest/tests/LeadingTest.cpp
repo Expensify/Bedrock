@@ -1,16 +1,16 @@
 #include "../BedrockClusterTester.h"
 
-struct MasteringTest : tpunit::TestFixture {
-    MasteringTest()
-        : tpunit::TestFixture("Mastering",
-                              BEFORE_CLASS(MasteringTest::setup),
-                              AFTER_CLASS(MasteringTest::teardown),
-                              TEST(MasteringTest::clusterUp),
-                              TEST(MasteringTest::failover),
+struct LeadingTest : tpunit::TestFixture {
+    LeadingTest()
+        : tpunit::TestFixture("Leading",
+                              BEFORE_CLASS(LeadingTest::setup),
+                              AFTER_CLASS(LeadingTest::teardown),
+                              TEST(LeadingTest::clusterUp),
+                              TEST(LeadingTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
-                              // TEST(MasteringTest::standDownTimeout),
-                              TEST(MasteringTest::restoreMaster),
-                              TEST(MasteringTest::synchronizing)
+                              // TEST(LeadingTest::standDownTimeout),
+                              TEST(LeadingTest::restoreLeader),
+                              TEST(LeadingTest::synchronizing)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -40,9 +40,9 @@ struct MasteringTest : tpunit::TestFixture {
                 results[i] = json["state"];
             }
 
-            if ((results[0] == "LEADING" || results[0] == "MASTERING") &&
-                (results[1] == "FOLLOWING" || results[1] == "SLAVING") &&
-                (results[2] == "FOLLOWING" || results[2] == "SLAVING"))
+            if ((results[0] == "LEADING") &&
+                (results[1] == "FOLLOWING") &&
+                (results[2] == "FOLLOWING"))
             {
                 success = true;
                 break;
@@ -55,15 +55,15 @@ struct MasteringTest : tpunit::TestFixture {
     void failover()
     {
         tester->stopNode(0);
-        BedrockTester* newMaster = tester->getBedrockTester(1);
+        BedrockTester* newLeader = tester->getBedrockTester(1);
 
         int count = 0;
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = newMaster->executeWaitVerifyContent(cmd);
+            string response = newLeader->executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["state"] == "LEADING" || json["state"] == "MASTERING") {
+            if (json["state"] == "LEADING") {
                 success = true;
                 break;
             }
@@ -78,13 +78,13 @@ struct MasteringTest : tpunit::TestFixture {
     // The only point of this test is to verify that a new leader comes up even if the old one has a stuck HTTPS
     // request. It's slow so is disabled.
     void standDownTimeout() {
-        BedrockTester* newMaster = tester->getBedrockTester(1);
+        BedrockTester* newLeader = tester->getBedrockTester(1);
         SData cmd("httpstimeout");
         cmd["Connection"] = "forget";
-        auto result = newMaster->executeWaitVerifyContent(cmd, "202");
+        auto result = newLeader->executeWaitVerifyContent(cmd, "202");
     }
 
-    void restoreMaster()
+    void restoreLeader()
     {
         tester->startNode(0);
 
@@ -116,9 +116,9 @@ struct MasteringTest : tpunit::TestFixture {
             STable json1 = SParseJSONObject(responses[1]);
             STable json2 = SParseJSONObject(responses[2]);
 
-            if ((json0["state"] == "LEADING" || json0["state"] == "MASTERING") && 
-                (json1["state"] == "FOLLOWING" || json1["state"] == "SLAVING") && 
-                (json2["state"] == "FOLLOWING" || json2["state"] == "SLAVING")) {
+            if ((json0["state"] == "LEADING") && 
+                (json1["state"] == "FOLLOWING") && 
+                (json2["state"] == "FOLLOWING")) {
 
                 break;
             }
@@ -175,7 +175,7 @@ struct MasteringTest : tpunit::TestFixture {
                     continue;
                 }
             }
-            if(json["state"] == "FOLLOWING" || json["state"] == "SLAVING") {
+            if(json["state"] == "FOLLOWING") {
                 // Make sure it was following before it was synchronizing.
                 ASSERT_TRUE(wasSynchronizing);
                 wasFollowing = true;
@@ -191,4 +191,4 @@ struct MasteringTest : tpunit::TestFixture {
         ASSERT_TRUE(wasFollowing);
     }
 
-} __MasteringTest;
+} __LeadingTest;
