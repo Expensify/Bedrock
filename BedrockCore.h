@@ -21,6 +21,11 @@ class BedrockCore : public SQLiteCore {
         uint64_t _start;
     };
 
+    // Checks if a command has already timed out. Like `peekCommand` without doing any work. Returns `true` and sets
+    // the same command state as `peekCommand` would if the command has timed out. Returns `false` and does nothing if
+    // the command hasn't timed out.
+    bool isTimedOut(BedrockCommand& command);
+
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
     // command, and it *may be called multiple times*. Preventing duplicate actions on calling peek multiple times is
     // up to the implementer, and may happen *across multiple servers*. I.e., a follower server may call `peek`, and on
