@@ -1687,8 +1687,7 @@ bool BedrockServer::_isStatusCommand(BedrockCommand& command) {
     return false;
 }
 
-list<STable> BedrockServer::getPeerInfo() {
-    list<STable> peerData;
+bool BedrockServer::getPeerInfo(list<STable>& peerData) {
     if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
         lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
         auto _syncNodeCopy = _syncNode;
@@ -1700,7 +1699,15 @@ list<STable> BedrockServer::getPeerInfo() {
                 peerData.back()["State"] = SQLiteNode::stateName(peer->state);
             }
         }
+    } else {
+        return false;
     }
+    return true;
+}
+
+list<STable> BedrockServer::getPeerInfo() {
+    list<STable> peerData;
+    getPeerInfo(peerData);
     return peerData;
 }
 
@@ -1791,7 +1798,6 @@ void BedrockServer::_status(BedrockCommand& command) {
 
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
-        list<STable> peerData = getPeerInfo();
         list<string> escalated;
         {
             if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
@@ -1815,10 +1821,18 @@ void BedrockServer::_status(BedrockCommand& command) {
             }
         }
 
-        // Coalesce all of the peer data into one value to return.
+        // Coalesce all of the peer data into one value to return or return
+        // an error message if we timed out getting the peerList data.
         list<string> peerList;
-        for (const STable& peerTable : peerData) {
-            peerList.push_back(SComposeJSONObject(peerTable));
+        list<STable> peerData;
+        if (getPeerInfo(peerData)) {
+            for (const STable& peerTable : peerData) {
+                peerList.push_back(SComposeJSONObject(peerTable));
+            }
+        } else {
+            STable peerListResponse;
+            peerListResponse["peerListBlocked"] = "true";
+            peerList.push_back(SComposeJSONObject(peerListResponse));
         }
 
         // We can use the `each` functionality to pass a lambda that will grab each method line in
