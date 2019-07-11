@@ -656,7 +656,8 @@ inline string SGetJSONArrayFront(const string& jsonArray) {
 // --------------------------------------------------------------------------
 // Network stuff
 // --------------------------------------------------------------------------
-inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << to_string(addr); }
+// Converts a sockaddr_in to a string of the form "aaa.bbb.ccc.ddd:port"
+inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << to_string(inet_ntoa(addr.sin_addr)) + ":" + to_string(ntohs(addr.sin_port)); }
 
 // map of FDs to pollfds
 typedef map<int, pollfd> fd_map;
