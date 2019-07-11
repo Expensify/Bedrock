@@ -154,7 +154,7 @@ int main(int argc, char* argv[]) {
         if (pid > 0) {
             // Successful fork -- write the pidfile (if requested) and exit
             if (args.isSet("-pidfile"))
-                SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
+                SASSERT(SFileSave(args["-pidfile"], to_string(pid)));
             return 0;
         }
 
@@ -272,7 +272,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-nodeHost", "localhost:8889");
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
-    SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
+    SETDEFAULT("-cacheSize", to_string(1024 * 1024)); // 1024 * 1024KB = 1GB.
     SETDEFAULT("-plugins", "db,jobs,cache,mysql");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");

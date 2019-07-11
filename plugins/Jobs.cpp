@@ -58,7 +58,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                "lastRun     TIMESTAMP, "
                                "repeat      TEXT NOT NULL, "
                                "data        TEXT NOT NULL, "
-                               "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
+                               "priority    INTEGER NOT NULL DEFAULT " + to_string(JOBS_DEFAULT_PRIORITY) + ", "
                                "parentJobID INTEGER NOT NULL DEFAULT 0, "
                                "retryAfter  TEXT NOT NULL DEFAULT \"\")",
                            ignore));
@@ -562,12 +562,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(updateJobID);
+                    content["jobID"] = to_string(updateJobID);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(updateJobID));
+                jobIDs.push_back(to_string(updateJobID));
             } else {
                 // Normal jobs start out in the QUEUED state, meaning they are ready to run immediately.
                 // Child jobs normally start out in the PAUSED state, and are switched to QUEUED when the parent
@@ -606,12 +606,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 }
 
                 if (SIEquals(requestVerb, "CreateJob")) {
-                    content["jobID"] = SToStr(jobIDToUse);
+                    content["jobID"] = to_string(jobIDToUse);
                     return true;
                 }
 
                 // Append new jobID to list of created jobs.
-                jobIDs.push_back(SToStr(jobIDToUse));
+                jobIDs.push_back(to_string(jobIDToUse));
             }
         }
 
@@ -723,7 +723,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
             if (parentJobID) {
                 // Has a parent job, add the parent data
-                job["parentJobID"] = SToStr(parentJobID);;
+                job["parentJobID"] = to_string(parentJobID);;
                 job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
 
@@ -1010,7 +1010,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (delay < 0) {
                     STHROW("402 Must specify a non-negative delay when retrying");
                 }
-                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+                repeat = "FINISHED, +" + to_string(delay) + " SECONDS";
                 safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
                 if (safeNewNextRun.empty()) {
                     STHROW("402 Malformed delay");
@@ -1042,7 +1042,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
                 // Resume the parent if this is the last pending child
                 if (!_hasPendingChildJobs(db, parentJobID)) {
-                    SINFO("Job has parentJobID: " + SToStr(parentJobID) +
+                    SINFO("Job has parentJobID: " + to_string(parentJobID) +
                           " and no other pending children, resuming parent job");
                     if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED' where jobID=" + SQ(parentJobID) + ";")) {
                         STHROW("502 Update failed");

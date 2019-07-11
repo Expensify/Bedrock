@@ -131,7 +131,7 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
         // Worked!  Let's save the last inserted row id
         const string& upperQuery = SToUpper(STrim(query));
         if (SStartsWith(upperQuery, "INSERT ")) {
-            response["lastInsertRowID"] = SToStr(db.getLastInsertRowID());
+            response["lastInsertRowID"] = to_string(db.getLastInsertRowID());
         }
 
         // Successfully processed

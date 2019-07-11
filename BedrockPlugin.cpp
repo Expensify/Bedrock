@@ -23,7 +23,7 @@ void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& nam
     if (request[name].size() < minSize) {
         STHROW("402 Missing " + name);
     }
-    if (!request[name].empty() && request[name] != SToStr(SToInt64(request[name]))) {
+    if (!request[name].empty() && request[name] != to_string(SToInt64(request[name]))) {
         STHROW("402 Malformed " + name);
     }
 }

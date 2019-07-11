@@ -932,7 +932,7 @@ bool SQLiteNode::update() {
                         } else if (peer->calcU64("CommitCount") > _db.getCommitCount()) {
                             // It's got data that we don't, stand down so we can get it.
                             standDownReason = "Found WAITING peer (" + peer->name +
-                                              ") with more data than us (we have " + SToStr(_db.getCommitCount()) +
+                                              ") with more data than us (we have " + to_string(_db.getCommitCount()) +
                                               "/" + _db.getCommittedHash() + ", it has " + (*peer)["CommitCount"] +
                                               "/" + (*peer)["Hash"] + ") while LEADING, STANDINGDOWN";
                         }
@@ -1502,7 +1502,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 // Not a permafollower, approve the transaction
                 PINFO(verb << " #" << _db.getCommitCount() + 1 << " (" << message["NewHash"] << ").");
                 SData response(verb);
-                response["NewCount"] = SToStr(_db.getCommitCount() + 1);
+                response["NewCount"] = to_string(_db.getCommitCount() + 1);
                 response["NewHash"] = success ? _db.getUncommittedHash() : message["NewHash"];
                 response["ID"] = message["ID"];
                 _sendToPeer(_leadPeer, response);
@@ -1909,7 +1909,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Piggyback on whatever we're sending to add the CommitCount/Hash, but only serialize once before broadcasting.
     SData messageCopy = message;
     if (!messageCopy.isSet("CommitCount")) {
-        messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
+        messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     }
     if (!messageCopy.isSet("Hash")) {
         messageCopy["Hash"] = _db.getCommittedHash();
@@ -2021,7 +2021,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         SData state("STATE");
         state["StateChangeCount"] = to_string(++_stateChangeCount);
         state["State"] = stateName(_state);
-        state["Priority"] = SToStr(_priority);
+        state["Priority"] = to_string(_priority);
         _sendToAllPeers(state);
     }
 }
@@ -2083,12 +2083,12 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
 
         // Wrap everything into one huge message
         PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << targetCommit);
-        response["NumCommits"] = SToStr(result.size());
+        response["NumCommits"] = to_string(result.size());
         for (size_t c = 0; c < result.size(); ++c) {
             // Queue the result
             SASSERT(result[c].size() == 2);
             SData commit("COMMIT");
-            commit["CommitIndex"] = SToStr(peerCommitCount + c + 1);
+            commit["CommitIndex"] = to_string(peerCommitCount + c + 1);
             commit["Hash"] = result[c][0];
             commit.content = result[c][1];
             response.content += commit.serialize();

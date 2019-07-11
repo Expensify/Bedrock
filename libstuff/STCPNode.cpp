@@ -312,7 +312,7 @@ void STCPNode::_sendPING(Peer* peer) {
     // Send a PING message, including our current timestamp
     SASSERT(peer);
     SData ping("PING");
-    ping["Timestamp"] = SToStr(STimeNow());
+    ping["Timestamp"] = to_string(STimeNow());
     peer->s->send(ping.serialize());
 }
 

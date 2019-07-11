@@ -324,7 +324,7 @@ inline void SLogLevel(int level) {
 void SLogStackTrace();
 
 #define SWHEREAMI                                                                                                      \
-    SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName \
+    SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + to_string(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName \
                    + "] "
 
 // Simply logs a stream to the debugger
@@ -446,17 +446,6 @@ string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
-
-// --------------------------------------------------------------------------
-// String stuff
-// --------------------------------------------------------------------------
-// General utility to convert non-string input to string output
-// **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
-template <class T> inline string SToStr(const T& t) {
-    ostringstream ss;
-    ss << t;
-    return ss.str();
-}
 
 // Numeric conversion
 inline float SToFloat(const string& val) { return (float)atof(val.c_str()); }
@@ -588,7 +577,7 @@ inline string SComposeHTTP(const string& methodLine, const STable& nameValueMap,
     return buffer;
 }
 string SComposePOST(const STable& nameValueMap);
-inline string SComposeHost(const string& host, int port) { return (host + ":" + SToStr(port)); }
+inline string SComposeHost(const string& host, int port) { return (host + ":" + to_string(port)); }
 bool SParseHost(const string& host, string& domain, uint16_t& port);
 inline bool SHostIsValid(const string& host) {
     string domain;
@@ -630,7 +619,7 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
     }
     string working;
     for(auto value : valueList) {
-        working += SToStr(value);
+        working += to_string(value);
         working += separator;
     }
     return working.substr(0, working.size() - separator.size());
@@ -669,10 +658,7 @@ inline string SGetJSONArrayFront(const string& jsonArray) {
 // --------------------------------------------------------------------------
 
 // Converts a sockaddr_in to a string of the form "aaa.bbb.ccc.ddd:port"
-inline string SToStr(const sockaddr_in& addr) {
-    return SToStr(inet_ntoa(addr.sin_addr)) + ":" + SToStr(ntohs(addr.sin_port));
-}
-inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << SToStr(addr); }
+inline ostream& operator<<(ostream& os, const sockaddr_in& addr) { return os << to_string(addr); }
 
 // map of FDs to pollfds
 typedef map<int, pollfd> fd_map;
@@ -753,11 +739,11 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 #include "SQResult.h"
 inline string SQ(const char* val) { return "'" + SEscape(val, "'", '\'') + "'"; }
 inline string SQ(const string& val) { return SQ(val.c_str()); }
-inline string SQ(int val) { return SToStr(val); }
-inline string SQ(unsigned val) { return SToStr(val); }
-inline string SQ(uint64_t val) { return SToStr(val); }
-inline string SQ(int64_t val) { return SToStr(val); }
-inline string SQ(double val) { return SToStr(val); }
+inline string SQ(int val) { return to_string(val); }
+inline string SQ(unsigned val) { return to_string(val); }
+inline string SQ(uint64_t val) { return to_string(val); }
+inline string SQ(int64_t val) { return to_string(val); }
+inline string SQ(double val) { return to_string(val); }
 string SQList(const string& val, bool integersOnly = true);
 
 template <typename Container> string SQList(const Container& valueList) {

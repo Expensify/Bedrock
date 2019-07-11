@@ -1063,7 +1063,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     }
 
     // Always add a Content-Length, even if no content, so there is no ambiguity
-    buffer += "Content-Length: " + SToStr(finalContent.size()) + "\r\n";
+    buffer += "Content-Length: " + to_string(finalContent.size()) + "\r\n";
 
     // Finish the message and add the content, if any
     buffer += "\r\n";
@@ -1176,7 +1176,7 @@ extern const char* _SParseJSONValue(const char* ptr, const char* end, string& va
 
 string SToJSON(const string& value, const bool forceString) {
     // Is it an integer?
-    if (SToStr(SToInt64(value.c_str())) == value)
+    if (to_string(SToInt64(value.c_str())) == value)
         return value;
 
     // Is it boolean?
@@ -2008,9 +2008,9 @@ string SGetPeerName(int s) {
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*)&addr, &socklen);
     if (result == 0) {
-        return SToStr(addr);
+        return to_string(addr);
     } else {
-        return "(errno#" + SToStr(S_errno) + ")";
+        return "(errno#" + to_string(S_errno) + ")";
     }
 }
 
@@ -2351,7 +2351,7 @@ string SQList(const string& val, bool integersOnly) {
     for (string& dirty : dirtyList) {
         // Make sure it's clean
         if (integersOnly) {
-            const string& clean = SToStr(SToInt64(dirty));
+            const string& clean = to_string(SToInt64(dirty));
             if (!clean.empty() && (clean == dirty))
                 cleanList.push_back(clean);
         } else
@@ -2458,7 +2458,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
         const string& csvRow =
-            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sql), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
+            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sql), "\"", '"') + "\", " + to_string(elapsed) + "\n";
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
