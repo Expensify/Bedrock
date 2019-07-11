@@ -1,9 +1,11 @@
 #include "BedrockClusterTester.h"
 
 BedrockClusterTester::BedrockClusterTester(int threadID, string pluginsToLoad)
-  : BedrockClusterTester(THREE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, threadID, {}, {}, pluginsToLoad) {}
+  : BedrockClusterTester(THREE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"},
+                            threadID, {}, {}, pluginsToLoad) {}
 
-BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID, map<string, string> _args, list<string> uniquePorts, string pluginsToLoad)
+BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize size, list<string> queries, int threadID,
+                                            map<string, string> _args, list<string> uniquePorts, string pluginsToLoad)
 : _size(size)
 {
     // Make sure we won't re-allocate.
@@ -51,15 +53,18 @@ BedrockClusterTester::BedrockClusterTester(BedrockClusterTester::ClusterSize siz
         string nodeHost    = "127.0.0.1:" + to_string(nodePort);
         string controlHost = "127.0.0.1:" + to_string(controlPort);
         string db          = BedrockTester::getTempFileName("cluster_node_" + to_string(nodePort));
-        string priority    = to_string(100 - (i * 10));
         string nodeName    = nodeNamePrefix + to_string(i);
+
+        // If we're building a 6 node cluster, make the last node a permafollower
+        string priority    = i < 5 ? to_string(100 - (i * 10)) : to_string(0);
+
 
         // Construct our list of peers.
         int j = 0;
         list<string> peerList;
         for (auto p : ports) {
             if (p[0] != nodePort) {
-                peerList.push_back("127.0.0.1:"s + to_string(p[0]) + "?nodeName=" + nodeNamePrefix + to_string(j));
+                peerList.push_back("127.0.0.1:"s + to_string(p[0]) + "?nodeName=" + nodeNamePrefix + to_string(j) + (j == 5 ? "&Permafollower=true" : ""));
             }
             j++;
         }

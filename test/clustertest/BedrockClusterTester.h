@@ -6,6 +6,7 @@ class BedrockClusterTester {
         ONE_NODE_CLUSTER   = 1,
         THREE_NODE_CLUSTER = 3,
         FIVE_NODE_CLUSTER  = 5,
+        SIX_NODE_CLUSTER  = 6,
     };
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
@@ -14,20 +15,6 @@ class BedrockClusterTester {
     BedrockClusterTester(ClusterSize size, list<string> queries = {}, int threadID = 0, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs");
     BedrockClusterTester(int threadID, string pluginsToLoad = "db,cache,jobs");
     ~BedrockClusterTester();
-
-    // Returns the index of the node that's leader. Returns a negative number on error:
-    // -1: no leader
-    // -2: multiple leader
-    int getMasterNodeIndex();
-
-    // Runs the given query on all nodes and verifies the output is the same. Make sure you include "ORDER BY" if you
-    // want to verify this across multiple rows, as they're not guaranteed to be returned in the same order for all
-    // nodes.
-    bool VerifyQuery(string query);
-
-    // Wait until all nodes have the same highest commit count. Optional timeout, set to 0 for no timeout.
-    // Returns true on sync, false on timeout.
-    bool waitForSync(int timeout_usec = 0);
 
     // Returns the bedrock tester at the given index in the cluster.
     BedrockTester* getBedrockTester(size_t index);
