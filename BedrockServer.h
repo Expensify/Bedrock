@@ -195,6 +195,7 @@ class BedrockServer : public SQLiteServer {
 
     // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
     // sync node.
+    bool getPeerInfo(list<STable>& peerData);
     list<STable> getPeerInfo();
 
     // Send a command to all of our peers. It will be wrapped appropriately.
