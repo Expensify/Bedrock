@@ -278,7 +278,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
-            int timeoutAutoRetries = 3;
+            int timeoutAutoRetries = 1;
             size_t myIndex = 0;
             SData myRequest;
             while (true) {
@@ -316,6 +316,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 if (timedOut && timeoutAutoRetries--) {
                     // reuse last request.
                     cout << "Timed out a request, auto-retrying. Might work." << endl;
+                    cout << myRequest.serialize() << endl;
                 } else {
                     // Get a request to work on.
                     SAUTOLOCK(listLock);
