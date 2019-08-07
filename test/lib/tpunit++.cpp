@@ -179,7 +179,10 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                             // Include by matching substrings.
                             for (string includedName : _include) {
                                 if (string(f->_name).find(includedName) != string::npos) {
-                                    should_run = true;
+                                    // If it matches, we should run it, unless it's explicitly excluded.
+                                    if (_exclude.find(std::string(f->_name)) == _exclude.end()) {
+                                        should_run = true;
+                                    }
                                 }
                             }
                         }
