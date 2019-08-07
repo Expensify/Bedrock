@@ -1,5 +1,6 @@
 #include "tpunit++.hpp"
 #include <string.h>
+#include <libstuff/libstuff.h>
 using namespace tpunit;
 
 bool tpunit::TestFixture::exitFlag = false;
@@ -86,6 +87,8 @@ int tpunit::TestFixture::tpunit_detail_do_run(int threads) {
     return tpunit_detail_do_run(include, exclude, before, after, threads);
 }
 
+void nothing() {}
+
 int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads) {
     /*
@@ -143,6 +146,12 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
+
+             SInitialize();
+             SInitializeSignals();
+             // Default handler to do nothing.
+             SSetSignalHandlerDieFunc(nothing);
+
             try {
                 // Do test.
                 while (1) {
