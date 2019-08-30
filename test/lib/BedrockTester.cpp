@@ -30,6 +30,10 @@ string BedrockTester::getServerName() {
             return location;
         }
     }
+    cout << "Couldn't find bedrock server" << endl;
+    exit(1);
+
+    // Won't get hit.
     return "";
 }
 
@@ -189,7 +193,11 @@ string BedrockTester::startServer(bool dontWait) {
         execvp(serverName.c_str(), cargs);
 
         // The above line should only ever return if it failed, so let's check for that.
-        cout << "Starting bedrock failed." << endl;
+        cout << "Starting bedrock failed: " << serverName;
+        for (auto& arg : args) {
+            cout << " " << arg;
+        }
+        cout << endl;
         exit(1);
     } else {
         // We'll kill this later.
