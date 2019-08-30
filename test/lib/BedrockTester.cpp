@@ -147,6 +147,10 @@ BedrockTester::~BedrockTester() {
 string BedrockTester::startServer(bool dontWait) {
     string serverName = getServerName();
     int childPID = fork();
+    if (childPID == -1) {
+        cout << "Fork failed, acting like server died." << endl;
+        exit(1);
+    }
     if (!childPID) {
         // We are the child!
         list<string> args;
@@ -183,6 +187,10 @@ string BedrockTester::startServer(bool dontWait) {
 
         // And then start the new server!
         execvp(serverName.c_str(), cargs);
+
+        // The above line should only ever return if it failed, so let's check for that.
+        cout << "Starting bedrock failed." << endl;
+        exit(1);
     } else {
         // We'll kill this later.
         _serverPID = childPID;
