@@ -1,4 +1,6 @@
 #pragma once
+#include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteNode.h>
 
 class SHTTPSManager : public STCPManager {
   public:
@@ -18,10 +20,17 @@ class SHTTPSManager : public STCPManager {
         SHTTPSManager& owner;
         bool isDelayedSend;
         uint64_t sentTime;
+
+        class NotLeading : public exception {
+            const char* what() {
+                return "Can't create SHTTPSManager::Transaction when not leading";
+            }
+        };
     };
 
     // Constructor/Destructor
     SHTTPSManager();
+    SHTTPSManager(const atomic<SQLiteNode::State>& replicationState);
     SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
@@ -59,4 +68,10 @@ class SHTTPSManager : public STCPManager {
     // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
     // multiple threads can add/remove from them.
     recursive_mutex _listMutex;
+
+    // Reference to the server's replication state. This is used to be able to tell if we're LEADER or FOLLOWER.
+    const atomic<SQLiteNode::State>& _replicationState;
+
+    // A default object that can be used as the above for backwards compatibility.
+    static const atomic<SQLiteNode::State> _defaultReplicationState;
 };

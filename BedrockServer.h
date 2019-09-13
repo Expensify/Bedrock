@@ -177,7 +177,7 @@ class BedrockServer : public SQLiteServer {
     bool shutdownComplete();
 
     // Exposes the replication state to plugins.
-    SQLiteNode::State getState() const { return _replicationState.load(); }
+    atomic<SQLiteNode::State>& getState() { return _replicationState; }
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);

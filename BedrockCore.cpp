@@ -150,6 +150,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
+    } catch (const SHTTPSManager::Transaction::NotLeading& e) {
+        _db.rollback();
+        _db.read("PRAGMA query_only = false;");
+        _db.resetTiming();
+        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+        return false;
     } catch (...) {
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
