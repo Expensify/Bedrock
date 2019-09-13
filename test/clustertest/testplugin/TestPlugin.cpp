@@ -9,12 +9,20 @@ extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
-  _server(nullptr)
+  httpsManager(nullptr), _server(nullptr)
 { }
+
+BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
+{
+    if (httpsManager) {
+        delete httpsManager;
+    }
+}
 
 void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& server) {
     if (httpsManagers.empty()) {
-        httpsManagers.push_back(&httpsManager);
+        httpsManager = new TestHTTPSManager(server.getState());
+        httpsManagers.push_back(httpsManager);
     }
     _server = &server;
 }
@@ -85,7 +93,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         for (int i = 0; i < requestCount; i++) {
             SData request("GET / HTTP/1.1");
             request["Host"] = "www.google.com";
-            command.httpsRequests.push_back(httpsManager.send("https://www.google.com/", request));
+            command.httpsRequests.push_back(httpsManager->send("https://www.google.com/", request));
         }
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
@@ -110,7 +118,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         // up correctly on the former leader.
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
-        auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
+        auto transaction = httpsManager->httpsDontSend("https://www.google.com/", request);
         command.httpsRequests.push_back(transaction);
         if (command.request["neversend"].empty()) {
             thread([transaction, request](){
@@ -253,7 +261,7 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
 }
 
 
-bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
+bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
     size_t offset = methodLine.find_first_of(' ', 0);
@@ -272,14 +280,14 @@ bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     return false;
 }
 
-TestHTTPSMananager::~TestHTTPSMananager() {
+TestHTTPSManager::~TestHTTPSManager() {
 }
 
-TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
+TestHTTPSManager::Transaction* TestHTTPSManager::send(const string& url, const SData& request) {
     return _httpsSend(url, request);
 }
 
-SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url, const SData& request) {
+SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, const SData& request) {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;

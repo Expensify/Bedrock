@@ -2,20 +2,22 @@
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
 
-class TestHTTPSMananager : public SHTTPSManager {
+class TestHTTPSManager : public SHTTPSManager {
   public:
+    TestHTTPSManager(const atomic<SQLiteNode::State>& replicationState) : SHTTPSManager(replicationState) { }
     Transaction* send(const string& url, const SData& request);
     virtual bool _onRecv(Transaction* transaction);
 
     // Like _httpsSend in the base class, but doesn't actually send, so we can test timeouts.
     Transaction* httpsDontSend(const string& url, const SData& request);
-    virtual ~TestHTTPSMananager();
+    virtual ~TestHTTPSManager();
 };
 
 class BedrockPlugin_TestPlugin : public BedrockPlugin
 {
   public:
     BedrockPlugin_TestPlugin();
+    ~BedrockPlugin_TestPlugin();
     void upgradeDatabase(SQLite& db);
     virtual string getName() { return "TestPlugin"; }
     virtual bool preventAttach();
@@ -24,7 +26,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     bool processCommand(SQLite& db, BedrockCommand& command);
 
   private:
-    TestHTTPSMananager httpsManager;
+    TestHTTPSManager* httpsManager;
     BedrockServer* _server;
     bool shouldPreventAttach = false;
 

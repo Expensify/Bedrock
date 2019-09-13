@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
 
 struct SSLTest : tpunit::TestFixture {
@@ -6,8 +7,13 @@ struct SSLTest : tpunit::TestFixture {
         : tpunit::TestFixture("SSL",
                               TEST(SSLTest::testPayPal),
                               TEST(SSLTest::testGoogle),
-                              TEST(SSLTest::testFailure)) { }
+                              TEST(SSLTest::testFailure)),
 
+            state(SQLiteNode::LEADING),
+            https(state)
+    { }
+
+    atomic<SQLiteNode::State> state;
     TestHTTPS https;
 
     // Simplified version of the loop that's used in bedrock to poll for data.

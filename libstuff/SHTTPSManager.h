@@ -29,9 +29,9 @@ class SHTTPSManager : public STCPManager {
     };
 
     // Constructor/Destructor
-    SHTTPSManager();
+    //SHTTPSManager();
     SHTTPSManager(const atomic<SQLiteNode::State>& replicationState);
-    SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
+    SHTTPSManager(const atomic<SQLiteNode::State>& replicationState, const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.

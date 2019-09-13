@@ -3,7 +3,7 @@
 
 class TestHTTPS : public SHTTPSManager {
   public:
-    TestHTTPS();
+    TestHTTPS(const atomic<SQLiteNode::State>& replicationState) : SHTTPSManager(replicationState) { }
     virtual ~TestHTTPS();
 
     // SHTTPSManager API

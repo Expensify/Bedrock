@@ -2,16 +2,18 @@
 
 const atomic<SQLiteNode::State> SHTTPSManager::_defaultReplicationState(SQLiteNode::LEADING);
 
+/*
 SHTTPSManager::SHTTPSManager() : SHTTPSManager(_defaultReplicationState)
 {
     SWARN("Creating SHTTPSManager with default replication state");
 }
+*/
 
 SHTTPSManager::SHTTPSManager(const atomic<SQLiteNode::State>& replicationState) : _replicationState(replicationState)
 { }
 
-SHTTPSManager::SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt)
-  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), _replicationState(_defaultReplicationState)
+SHTTPSManager::SHTTPSManager(const atomic<SQLiteNode::State>& replicationState, const string& pem, const string& srvCrt, const string& caCrt)
+  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), _replicationState(replicationState)
 { }
 
 SHTTPSManager::~SHTTPSManager() {
