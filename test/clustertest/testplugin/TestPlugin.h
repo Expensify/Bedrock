@@ -4,7 +4,7 @@
 
 class TestHTTPSManager : public SHTTPSManager {
   public:
-    TestHTTPSManager(const atomic<SQLiteNode::State>& replicationState) : SHTTPSManager(replicationState) { }
+    TestHTTPSManager(const BedrockPlugin& plugin_) : SHTTPSManager(plugin_) { }
     Transaction* send(const string& url, const SData& request);
     virtual bool _onRecv(Transaction* transaction);
 

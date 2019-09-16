@@ -3,7 +3,7 @@
 
 class TestHTTPS : public SHTTPSManager {
   public:
-    TestHTTPS(const atomic<SQLiteNode::State>& replicationState) : SHTTPSManager(replicationState) { }
+    TestHTTPS(const BedrockPlugin& plugin_) : SHTTPSManager(plugin_) { }
     virtual ~TestHTTPS();
 
     // SHTTPSManager API

@@ -1,19 +1,12 @@
 #include "libstuff.h"
+#include <BedrockPlugin.h>
+#include <BedrockServer.h>
 
-const atomic<SQLiteNode::State> SHTTPSManager::_defaultReplicationState(SQLiteNode::LEADING);
-
-/*
-SHTTPSManager::SHTTPSManager() : SHTTPSManager(_defaultReplicationState)
-{
-    SWARN("Creating SHTTPSManager with default replication state");
-}
-*/
-
-SHTTPSManager::SHTTPSManager(const atomic<SQLiteNode::State>& replicationState) : _replicationState(replicationState)
+SHTTPSManager::SHTTPSManager(const BedrockPlugin& plugin_) : plugin(plugin_)
 { }
 
-SHTTPSManager::SHTTPSManager(const atomic<SQLiteNode::State>& replicationState, const string& pem, const string& srvCrt, const string& caCrt)
-  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), _replicationState(replicationState)
+SHTTPSManager::SHTTPSManager(const BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
+  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), plugin(plugin_)
 { }
 
 SHTTPSManager::~SHTTPSManager() {
@@ -159,17 +152,17 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     }
 }
 
-SHTTPSManager::Transaction::Transaction(SHTTPSManager& owner_) :
+SHTTPSManager::Transaction::Transaction(SHTTPSManager& manager_) :
     s(nullptr),
     created(STimeNow()),
     finished(0),
     response(0),
-    owner(owner_),
+    manager(manager_),
     isDelayedSend(0),
     sentTime(0)
 {
     // These can only be created on a leader node.
-    if (owner._replicationState != SQLiteNode::LEADING) {
+    if (manager.plugin.server.getState() != SQLiteNode::LEADING) {
         throw NotLeading();
     }
 }

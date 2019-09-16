@@ -8,15 +8,14 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-BedrockPlugin(s), httpsManager(new TestHTTPSManager(server.getState()))
+BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
 {
+    httpsManagers.push_back(httpsManager);
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
-    if (httpsManager) {
-        delete httpsManager;
-    }
+    delete httpsManager;
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
@@ -82,8 +81,12 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         }
         for (int i = 0; i < requestCount; i++) {
             SData request("GET / HTTP/1.1");
-            request["Host"] = "www.google.com";
-            command.httpsRequests.push_back(httpsManager->send("https://www.google.com/", request));
+            string host = command.request["Host"];
+            if (host.empty()) {
+                host = "www.google.com";
+            }
+            request["Host"] = host;
+            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
         }
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
@@ -152,39 +155,48 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         usleep(command.request.calc("ProcessSleep") * 1000);
     }
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        // Assert if we got here with no requests.
-        if (command.httpsRequests.empty()) {
-            SINFO ("Calling process with no https request: " << command.request.methodLine);
-            SASSERT(false);
-        }
-        // If any of our responses were bad, we want to know that.
-        bool allGoodResponses = true;
-        for (auto& request : command.httpsRequests) {
-            // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(request->response);
-
-            // Concatenate all of our responses into the body.
-            command.response.content += to_string(request->response) + "\n";
-
-            // If our response is an error, store that.
-            if (request->response >= 400) {
-                allGoodResponses = false;
+        if (command.request.test("passthrough")) {
+            command.response.methodLine = command.httpsRequests.front()->fullResponse.methodLine;
+            if (command.httpsRequests.front()->response == 503) {
+                // Error transaction, couldn't send.
+                command.response.methodLine = "NO_RESPONSE";
             }
-        }
-        
-        // Update the response method line.
-        if (!command.request["response"].empty() && allGoodResponses) {
-            command.response.methodLine = command.request["response"];
+            command.response["Host"] = command.httpsRequests.front()->fullRequest["Host"];
         } else {
-            command.response.methodLine = "200 OK";
-        }
+            // Assert if we got here with no requests.
+            if (command.httpsRequests.empty()) {
+                SINFO ("Calling process with no https request: " << command.request.methodLine);
+                SASSERT(false);
+            }
+            // If any of our responses were bad, we want to know that.
+            bool allGoodResponses = true;
+            for (auto& request : command.httpsRequests) {
+                // If we're calling `process` on a command with a https request, it had better be finished.
+                SASSERT(request->response);
 
-        // Update the DB so we can test conflicts.
-        SQResult result;
-        db.read("SELECT MAX(id) FROM test", result);
-        SASSERT(result.size());
-        int nextID = SToInt(result[0][0]) + 1;
-        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+                // Concatenate all of our responses into the body.
+                command.response.content += to_string(request->response) + "\n";
+
+                // If our response is an error, store that.
+                if (request->response >= 400) {
+                    allGoodResponses = false;
+                }
+            }
+
+            // Update the response method line.
+            if (!command.request["response"].empty() && allGoodResponses) {
+                command.response.methodLine = command.request["response"];
+            } else {
+                command.response.methodLine = "200 OK";
+            }
+
+            // Update the DB so we can test conflicts.
+            SQResult result;
+            db.read("SELECT MAX(id) FROM test", result);
+            SASSERT(result.size());
+            int nextID = SToInt(result[0][0]) + 1;
+            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+        }
 
         // Done.
         return true;

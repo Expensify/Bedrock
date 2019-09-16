@@ -1,12 +1,14 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
+class BedrockPlugin;
 
 class SHTTPSManager : public STCPManager {
   public:
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SHTTPSManager& owner_);
+        Transaction(SHTTPSManager& manager_);
+
         ~Transaction();
 
         // Attributes
@@ -17,7 +19,7 @@ class SHTTPSManager : public STCPManager {
         SData fullResponse;
         int response;
         STable values;
-        SHTTPSManager& owner;
+        SHTTPSManager& manager;
         bool isDelayedSend;
         uint64_t sentTime;
 
@@ -30,8 +32,8 @@ class SHTTPSManager : public STCPManager {
 
     // Constructor/Destructor
     //SHTTPSManager();
-    SHTTPSManager(const atomic<SQLiteNode::State>& replicationState);
-    SHTTPSManager(const atomic<SQLiteNode::State>& replicationState, const string& pem, const string& srvCrt, const string& caCrt);
+    SHTTPSManager(const BedrockPlugin& plugin_);
+    SHTTPSManager(const BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
@@ -69,9 +71,6 @@ class SHTTPSManager : public STCPManager {
     // multiple threads can add/remove from them.
     recursive_mutex _listMutex;
 
-    // Reference to the server's replication state. This is used to be able to tell if we're LEADER or FOLLOWER.
-    const atomic<SQLiteNode::State>& _replicationState;
-
-    // A default object that can be used as the above for backwards compatibility.
-    static const atomic<SQLiteNode::State> _defaultReplicationState;
+    // Reference to the plugin that owns this object.
+    const BedrockPlugin& plugin;
 };
