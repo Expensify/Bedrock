@@ -157,7 +157,7 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
         if (command.request.test("passthrough")) {
             command.response.methodLine = command.httpsRequests.front()->fullResponse.methodLine;
-            if (command.httpsRequests.front()->response == 503) {
+            if (command.httpsRequests.front()->response >= 500 && command.httpsRequests.front()->response <= 503) {
                 // Error transaction, couldn't send.
                 command.response.methodLine = "NO_RESPONSE";
             }
