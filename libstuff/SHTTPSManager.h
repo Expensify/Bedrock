@@ -32,8 +32,8 @@ class SHTTPSManager : public STCPManager {
 
     // Constructor/Destructor
     //SHTTPSManager();
-    SHTTPSManager(const BedrockPlugin& plugin_);
-    SHTTPSManager(const BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
+    SHTTPSManager(BedrockPlugin& plugin_);
+    SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SHTTPSManager();
 
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
@@ -72,5 +72,5 @@ class SHTTPSManager : public STCPManager {
     recursive_mutex _listMutex;
 
     // Reference to the plugin that owns this object.
-    const BedrockPlugin& plugin;
+    BedrockPlugin& plugin;
 };

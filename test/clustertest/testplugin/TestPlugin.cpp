@@ -10,7 +10,6 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
 BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
 {
-    httpsManagers.push_back(httpsManager);
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()

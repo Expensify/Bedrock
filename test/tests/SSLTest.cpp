@@ -40,7 +40,7 @@ struct SSLTest : tpunit::TestFixture {
             request["Connection"] = "Close";
             request["passthrough"] = "true";
             vector<SData> results = tester->executeWaitMultipleData({request}, 1);
-            cout << results[0].methodLine << ":" << url.second << endl;
+            cout << url.first << "> " << results[0].methodLine << ":" << url.second << endl;
             ASSERT_TRUE(SStartsWith(results[0].methodLine, url.second));
         }
     }

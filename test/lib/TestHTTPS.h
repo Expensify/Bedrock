@@ -3,7 +3,7 @@
 
 class TestHTTPS : public SHTTPSManager {
   public:
-    TestHTTPS(const BedrockPlugin& plugin_) : SHTTPSManager(plugin_) { }
+    TestHTTPS(BedrockPlugin& plugin_) : SHTTPSManager(plugin_) { }
     virtual ~TestHTTPS();
 
     // SHTTPSManager API

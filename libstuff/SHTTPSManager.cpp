@@ -2,12 +2,16 @@
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
 
-SHTTPSManager::SHTTPSManager(const BedrockPlugin& plugin_) : plugin(plugin_)
-{ }
+SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
+{
+    plugin.httpsManagers.push_back(this);
+}
 
-SHTTPSManager::SHTTPSManager(const BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
+SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
   : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), plugin(plugin_)
-{ }
+{
+    plugin.httpsManagers.push_back(this);
+}
 
 SHTTPSManager::~SHTTPSManager() {
     SAUTOLOCK(_listMutex);
