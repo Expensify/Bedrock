@@ -145,12 +145,11 @@ class BedrockServer : public SQLiteServer {
         DONE
     };
 
-    // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
-    // initialized at construction based on the arguments passed in.
-    list<BedrockPlugin*> plugins;
+    // All of our available plugins, indexed by the name they supply.
+    map<string, BedrockPlugin*> plugins;
 
     // Our only constructor.
-    BedrockServer(const SData& args);
+    BedrockServer(const SData& args_);
 
     // Destructor
     virtual ~BedrockServer();
@@ -213,12 +212,12 @@ class BedrockServer : public SQLiteServer {
     // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
     atomic<bool> shutdownWhileDetached;
 
+    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
+    const SData& args;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
-
-    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
-    SData _args;
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
@@ -287,7 +286,7 @@ class BedrockServer : public SQLiteServer {
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
-    static void sync(SData& args,
+    static void sync(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& leaderVersion,
@@ -295,7 +294,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Wraps the sync thread main function to make it easy to add exception handling.
-    static void syncWrapper(SData& args,
+    static void syncWrapper(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
                      atomic<string>& leaderVersion,
@@ -303,7 +302,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SData& args,
+    static void worker(const SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& leaderVersion,

@@ -80,18 +80,16 @@ set<string> loadPlugins(SData& args) {
     // Those are stored here.
     set <string> postProcessedNames;
 
-    // Instantiate all of our built-in plugins.
-    map<string, BedrockPlugin*> standardPluginMap = {
-        {"DB",     new BedrockPlugin_DB()},
-        {"JOBS",   new BedrockPlugin_Jobs()},
-        {"CACHE",  new BedrockPlugin_Cache()},
-        {"MYSQL",  new BedrockPlugin_MySQL()}
-    };
+    // Register all of our built-in plugins.
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB",    [](BedrockServer& s){return new BedrockPlugin_DB(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS",  [](BedrockServer& s){return new BedrockPlugin_Jobs(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("CACHE", [](BedrockServer& s){return new BedrockPlugin_Cache(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){return new BedrockPlugin_MySQL(s);}));
 
     for (string pluginName : plugins) {
-        // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
-        if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
-            postProcessedNames.insert(SToUpper(pluginName));
+        // If it's one of our standard plugins, just move on to the next one.
+        if (BedrockPlugin::g_registeredPluginList.find(SToUpper(pluginName)) != BedrockPlugin::g_registeredPluginList.end()) {
+            postProcessedNames.emplace(SToUpper(pluginName));
             continue;
         }
 
@@ -128,7 +126,7 @@ set<string> loadPlugins(SData& args) {
                 SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
-                ((void(*)()) sym)();
+                BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
             }
         }
     }

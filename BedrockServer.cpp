@@ -94,7 +94,7 @@ bool BedrockServer::canStandDown() {
     }
 }
 
-void BedrockServer::syncWrapper(SData& args,
+void BedrockServer::syncWrapper(const SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& leaderVersion,
@@ -131,7 +131,7 @@ void BedrockServer::syncWrapper(SData& args,
     }
 }
 
-void BedrockServer::sync(SData& args,
+void BedrockServer::sync(const SData& args,
                          atomic<SQLiteNode::State>& replicationState,
                          atomic<bool>& upgradeInProgress,
                          atomic<string>& leaderVersion,
@@ -654,7 +654,7 @@ void BedrockServer::sync(SData& args,
     server._syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(SData& args,
+void BedrockServer::worker(const SData& args,
                            atomic<SQLiteNode::State>& replicationState,
                            atomic<bool>& upgradeInProgress,
                            atomic<string>& leaderVersion,
@@ -1119,8 +1119,8 @@ void BedrockServer::_resetServer() {
     _gracefulShutdownTimeout.alarmDuration = 0;
 }
 
-BedrockServer::BedrockServer(const SData& args)
-  : SQLiteServer(""), shutdownWhileDetached(false), _args(args), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+BedrockServer::BedrockServer(const SData& args_)
+  : SQLiteServer(""), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
@@ -1128,25 +1128,19 @@ BedrockServer::BedrockServer(const SData& args)
 {
     _version = VERSION;
 
-    // Output the list of plugins.
-    map<string, BedrockPlugin*> registeredPluginMap;
-    for (BedrockPlugin* plugin : *BedrockPlugin::g_registeredPluginList) {
-        // Add one more plugin
-        const string& pluginName = SToLower(plugin->getName());
-        SINFO("Registering plugin '" << pluginName << "'");
-        registeredPluginMap[pluginName] = plugin;
-    }
-
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
+    SINFO("Loading plugins: " << args["-plugins"]);
     vector<string> versions = {_version};
     for (string& pluginName : pluginNameList) {
-        BedrockPlugin* plugin = registeredPluginMap[SToLower(pluginName)];
-        if (!plugin) {
+        auto it = BedrockPlugin::g_registeredPluginList.find(SToUpper(pluginName));
+        if (it == BedrockPlugin::g_registeredPluginList.end()) {
             SERROR("Cannot find plugin '" << pluginName << "', aborting.");
         }
-        plugin->initialize(args, *this);
-        plugins.push_back(plugin);
+
+        // Create an instance of this plugin.
+        BedrockPlugin* plugin = it->second(*this);
+        plugins.emplace(make_pair(plugin->getName(), plugin));
 
         // If the plugin has version info, add it to the list.
         auto info = plugin->getInfo();
@@ -1157,6 +1151,12 @@ BedrockServer::BedrockServer(const SData& args)
     }
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
+
+    list<string> pluginString;
+    for (auto& p : plugins) {
+        pluginString.emplace_back(p.first);
+    }
+    SINFO("Creating BedrockServer with plugins: " << SComposeList(pluginString));
 
     // If `versionOverride` is set, we throw away what we just did and use the overridden value.
     // We'll destruct, sort, and then reconstruct the version string passed in so we aren't relying
@@ -1192,8 +1192,8 @@ BedrockServer::BedrockServer(const SData& args)
     }
 
     // Allow sending control commands when the server's not LEADING/FOLLOWING.
-    SINFO("Opening control port on '" << _args["-controlPort"] << "'");
-    _controlPort = openPort(_args["-controlPort"]);
+    SINFO("Opening control port on '" << args["-controlPort"] << "'");
+    _controlPort = openPort(args["-controlPort"]);
 
     // If we're bootstraping this node we need to go into detached mode here.
     // The syncWrapper will handle this for us.
@@ -1207,7 +1207,7 @@ BedrockServer::BedrockServer(const SData& args)
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(syncWrapper,
-                     ref(_args),
+                     ref(args),
                      ref(_replicationState),
                      ref(_upgradeInProgress),
                      ref(_leaderVersion),
@@ -1234,6 +1234,11 @@ BedrockServer::~BedrockServer() {
             Socket* s = *socketIt++;
             closeSocket(s);
         }
+    }
+
+    // Delete our plugins.
+    for (auto& p : plugins) {
+        delete p.second;
     }
 }
 
@@ -1310,14 +1315,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Instead, we'll simply not respond and let this request get re-directed to another follower.
     string leaderVersion = _leaderVersion.load();
     if (!_suppressCommandPort && state == SQLiteNode::FOLLOWING && (leaderVersion != _version)) {
-        SINFO("Node " << _args["-nodeName"] << " following on version " << _version << ", leader is version: "
+        SINFO("Node " << args["-nodeName"] << " following on version " << _version << ", leader is version: "
               << leaderVersion << ", not opening command port.");
         suppressCommandPort("leader version mismatch", true);
     } else if (_suppressCommandPort && (state == SQLiteNode::LEADING || (leaderVersion == _version))) {
         // If we become leader, or if leader's version resumes matching ours, open the command port again.
         if (!_suppressCommandPortManualOverride) {
             // Only generate this logline if we haven't manually blocked this.
-            SINFO("Node " << _args["-nodeName"] << " disabling previously suppressed command port after version check.");
+            SINFO("Node " << args["-nodeName"] << " disabling previously suppressed command port after version check.");
         }
         suppressCommandPort("leader version match", false);
     }
@@ -1325,21 +1330,21 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         _shutdownState.load() == RUNNING) {
         // Open the port
         if (!_commandPort) {
-            SINFO("Ready to process commands, opening command port on '" << _args["-serverHost"] << "'");
-            _commandPort = openPort(_args["-serverHost"]);
+            SINFO("Ready to process commands, opening command port on '" << args["-serverHost"] << "'");
+            _commandPort = openPort(args["-serverHost"]);
         }
         if (!_controlPort) {
-            SINFO("Opening control port on '" << _args["-controlPort"] << "'");
-            _controlPort = openPort(_args["-controlPort"]);
+            SINFO("Opening control port on '" << args["-controlPort"] << "'");
+            _controlPort = openPort(args["-controlPort"]);
         }
 
         // Open any plugin ports on enabled plugins
         for (auto plugin : plugins) {
-            string portHost = plugin->getPort();
+            string portHost = plugin.second->getPort();
             if (!portHost.empty()) {
                 bool alreadyOpened = false;
                 for (auto pluginPorts : _portPluginMap) {
-                    if (pluginPorts.second == plugin) {
+                    if (pluginPorts.second == plugin.second) {
                         // We've already got this one.
                         alreadyOpened = true;
                         break;
@@ -1347,9 +1352,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 }
                 // Open the port and associate it with the plugin
                 if (!alreadyOpened) {
-                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin->getName() << "'");
+                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
                     Port* port = openPort(portHost);
-                    _portPluginMap[port] = plugin;
+                    _portPluginMap[port] = plugin.second;
                 }
             }
         }
@@ -1503,7 +1508,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // This is important! All commands passed through the entire cluster must have unique IDs, or they
                     // won't get routed properly from follower to leader and back.
-                    command.id = _args["-nodeName"] + "#" + to_string(_requestCount++);
+                    command.id = args["-nodeName"] + "#" + to_string(_requestCount++);
 
                     // And we and keep track of the client that initiated this command, so we can respond later, except
                     // if we received connection:forget in which case we don't respond later
@@ -1557,9 +1562,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If any plugin timers are firing, let the plugins know.
     for (auto plugin : plugins) {
-        for (SStopwatch* timer : plugin->timers) {
+        for (SStopwatch* timer : plugin.second->timers) {
             if (timer->ding()) {
-                plugin->timerFired(timer);
+                plugin.second->timerFired(timer);
             }
         }
     }
@@ -1603,7 +1608,7 @@ void BedrockServer::_reply(BedrockCommand& command) {
     // Do we have a socket for this command?
     auto socketIt = _socketIDMap.find(command.initiatingClientID);
     if (socketIt != _socketIDMap.end()) {
-        command.response["nodeName"] = _args["-nodeName"];
+        command.response["nodeName"] = args["-nodeName"];
 
         // Is a plugin handling this command? If so, it gets to send the response.
         string& pluginName = command.request["plugin"];
@@ -1617,9 +1622,9 @@ void BedrockServer::_reply(BedrockCommand& command) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command.response.methodLine
                   << "' to request '" << command.request.methodLine << "'");
-            BedrockPlugin* plugin = BedrockPlugin::getPluginByName(pluginName);
-            if (plugin) {
-                plugin->onPortRequestComplete(command, socketIt->second);
+            auto it = plugins.find(pluginName);
+            if (it != plugins.end()) {
+                it->second->onPortRequestComplete(command, socketIt->second);
             } else {
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
@@ -1768,8 +1773,8 @@ void BedrockServer::_status(BedrockCommand& command) {
         SQLiteNode::State state = _replicationState.load();
         list<string> pluginList;
         for (auto plugin : plugins) {
-            STable pluginData = plugin->getInfo();
-            pluginData["name"] = plugin->getName();
+            STable pluginData = plugin.second->getInfo();
+            pluginData["name"] = plugin.second->getName();
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isLeader"] = state == SQLiteNode::LEADING ? "true" : "false";
@@ -1779,7 +1784,7 @@ void BedrockServer::_status(BedrockCommand& command) {
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
-        content["host"]     = _args["-nodeHost"];
+        content["host"]     = args["-nodeHost"];
 
         {
             // Make it known if anything is known to cause crashes.
@@ -1920,8 +1925,8 @@ void BedrockServer::_control(BedrockCommand& command) {
         // Ensure none of our plugins are blocking attaching
         list<string> blockingPlugins;
         for (auto plugin : plugins) {
-            if (plugin->preventAttach()) {
-                blockingPlugins.emplace_back(plugin->getName());
+            if (plugin.second->preventAttach()) {
+                blockingPlugins.emplace_back(plugin.second->getName());
             }
         }
         if (blockingPlugins.size()) {
@@ -1959,7 +1964,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     // These all get conglomerated into one big query.
     db.beginTransaction();
     for (auto plugin : plugins) {
-        plugin->upgradeDatabase(db);
+        plugin.second->upgradeDatabase(db);
     }
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
@@ -1969,7 +1974,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
 
 void BedrockServer::_prePollPlugins(fd_map& fdm) {
     for (auto plugin : plugins) {
-        for (auto manager : plugin->httpsManagers) {
+        for (auto manager : plugin.second->httpsManagers) {
             manager->prePoll(fdm);
         }
     }
@@ -1992,7 +1997,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     }
 
     for (auto plugin : plugins) {
-        for (auto manager : plugin->httpsManagers) {
+        for (auto manager : plugin.second->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
             auto _syncNodeCopy = _syncNode;
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
@@ -2014,7 +2019,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _detach = detach;
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason
-              << "', closing command port on '" << _args["-serverHost"] << "'");
+              << "', closing command port on '" << args["-serverHost"] << "'");
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
         _gracefulShutdownTimeout.start();
 

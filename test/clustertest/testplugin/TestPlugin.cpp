@@ -3,28 +3,20 @@
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
-extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
-    // Register the global instance
-    new BedrockPlugin_TestPlugin();
+extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
+    return new BedrockPlugin_TestPlugin(s);
 }
 
-BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
-  httpsManager(nullptr), _server(nullptr)
-{ }
+BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
+BedrockPlugin(s), httpsManager(new TestHTTPSManager(server.getState()))
+{
+}
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
     if (httpsManager) {
         delete httpsManager;
     }
-}
-
-void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& server) {
-    if (httpsManagers.empty()) {
-        httpsManager = new TestHTTPSManager(server.getState());
-        httpsManagers.push_back(httpsManager);
-    }
-    _server = &server;
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
@@ -61,9 +53,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         subCommand["processTimeout"] = to_string(5001);
         subCommand["timeout"] = to_string(5002);
         subCommand["not_special"] = "whatever";
-        if (_server) {
-            _server->broadcastCommand(subCommand);
-        }
+        server.broadcastCommand(subCommand);
         return true;
     } else if (SStartsWith(command.request.methodLine, "storeboradcasttimeouts")) {
         // This is the command that will be broadcast to peers, it will store some data.
@@ -82,7 +72,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.response["stored_not_special"] = arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (_server->getState() != SQLiteNode::LEADING && _server->getState() != SQLiteNode::STANDINGDOWN) {
+        if (server.getState() != SQLiteNode::LEADING && server.getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }

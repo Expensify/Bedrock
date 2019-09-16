@@ -1,4 +1,5 @@
 #include "Cache.h"
+#include "BedrockServer.h"
 
 // ==========================================================================
 BedrockPlugin_Cache::LRUMap::LRUMap() {
@@ -58,21 +59,11 @@ string BedrockPlugin_Cache::LRUMap::popLRU() {
 }
 
 // ==========================================================================
-BedrockPlugin_Cache::BedrockPlugin_Cache()
-    : _maxCacheSize(0) // Will be set inside initialize()
+BedrockPlugin_Cache::BedrockPlugin_Cache(BedrockServer& s)
+    : BedrockPlugin(s), _maxCacheSize(0) // Will be set inside initialize()
 {
-    // Nothing to initialize
-}
-
-// ==========================================================================
-BedrockPlugin_Cache::~BedrockPlugin_Cache() {
-    // Nothing to clean up
-}
-
-// ==========================================================================
-void BedrockPlugin_Cache::initialize(const SData& args, BedrockServer& server) {
     // Check the configuration
-    const string& maxCache = SToUpper(args["-cache.max"]);
+    const string& maxCache = SToUpper(server.args["-cache.max"]);
     int64_t maxCacheSize = SToInt64(maxCache);
     if (SEndsWith(maxCache, "KB"))
         maxCacheSize *= 1024;
@@ -91,6 +82,11 @@ void BedrockPlugin_Cache::initialize(const SData& args, BedrockServer& server) {
     // Save this in a class constant, to enable us to access it safely in an
     // unsynchronized manner from other threads.
     *((int64_t*)&_maxCacheSize) = maxCacheSize;
+}
+
+// ==========================================================================
+BedrockPlugin_Cache::~BedrockPlugin_Cache() {
+    // Nothing to clean up
 }
 
 #undef SLOGPREFIX

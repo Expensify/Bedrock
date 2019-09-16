@@ -222,6 +222,10 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     return err.serialize();
 }
 
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
+{
+}
+
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
     // Send Protocol::HandshakeV10
     SINFO("Accepted MySQL request from '" << s->addr << "'");

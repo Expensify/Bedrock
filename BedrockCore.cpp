@@ -97,12 +97,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
             // Try each plugin, and go with the first one that says it succeeded.
             for (auto plugin : _server.plugins) {
-                shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
+                shouldSuppressTimeoutWarnings = plugin.second->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                if (plugin->peekCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                    command.peekedBy = plugin;
+                if (plugin.second->peekCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
+                    command.peekedBy = plugin.second;
                     pluginPeeked = true;
                     break;
                 }
@@ -206,13 +206,13 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             bool (*handler)(int, const char*, string&) = nullptr;
-            bool enable = plugin->shouldEnableQueryRewriting(_db, command, &handler);
+            bool enable = plugin.second->shouldEnableQueryRewriting(_db, command, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
-                if (plugin->processCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
+                if (plugin.second->processCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
-                    command.processedBy = plugin;
+                    command.processedBy = plugin.second;
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {

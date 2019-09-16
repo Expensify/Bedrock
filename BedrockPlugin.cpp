@@ -2,18 +2,9 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
-list<BedrockPlugin*>* BedrockPlugin::g_registeredPluginList = nullptr;
+map<string, function<BedrockPlugin*(BedrockServer&)>> BedrockPlugin::g_registeredPluginList;
 
-BedrockPlugin::BedrockPlugin() {
-    // Auto-register this instance into the global static list, initializing the list if that hasn't yet been done.
-    // This just makes it available for enabling via the command line: by default all plugins start out disabled.
-    //
-    // NOTE: This code runs *before* main(). This means that libstuff hasn't yet been initialized, so there is no
-    // logging.
-    if (!g_registeredPluginList) {
-        g_registeredPluginList = new list<BedrockPlugin*>;
-    }
-    g_registeredPluginList->push_back(this);
+BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s) {
 }
 
 BedrockPlugin::~BedrockPlugin() {
@@ -59,8 +50,6 @@ string BedrockPlugin::getName() {
     SERROR("No name defined by this plugin, aborting.");
 }
 
-void BedrockPlugin::initialize(const SData& args, BedrockServer& server) {}
-
 bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
@@ -80,23 +69,6 @@ bool BedrockPlugin::preventAttach() {
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
-
-BedrockPlugin* BedrockPlugin::getPluginByName(const string& name) {
-    // If our global list isn't set, there's no plugin to return.
-    if (!g_registeredPluginList) {
-        return nullptr;
-    }
-
-    // If we find our plugin in our list, we'll return it.
-    for (auto& plugin : *g_registeredPluginList) {
-        if (SIEquals(plugin->getName(), name)) {
-            return plugin;
-        }
-    }
-
-    // Didn't find it.
-    return nullptr;
-}
 
 void BedrockPlugin::handleFailedReply(const BedrockCommand& command) {
     // Default implementation does nothing.
