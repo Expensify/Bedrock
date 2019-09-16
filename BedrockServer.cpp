@@ -1119,6 +1119,9 @@ void BedrockServer::_resetServer() {
     _gracefulShutdownTimeout.alarmDuration = 0;
 }
 
+BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
+{}
+
 BedrockServer::BedrockServer(const SData& args_)
   : SQLiteServer(""), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),

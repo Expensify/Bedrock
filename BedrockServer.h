@@ -148,8 +148,12 @@ class BedrockServer : public SQLiteServer {
     // All of our available plugins, indexed by the name they supply.
     map<string, BedrockPlugin*> plugins;
 
-    // Our only constructor.
+    // Our primary constructor.
     BedrockServer(const SData& args_);
+
+    // A constructor that builds an object that does nothing. This exists only to pass to stubbed-out test methods that
+    // require a BedrockServer object.
+    BedrockServer(SQLiteNode::State state, const SData& args_);
 
     // Destructor
     virtual ~BedrockServer();
