@@ -29,8 +29,10 @@ struct SSLTest : tpunit::TestFixture {
 
     void test() {
         for (auto& url : (map<string, string>){
-            {"www.google.com", "HTTP/1.1 200 OK"},
-            {"svcs.paypal.com", "HTTP/1.1 403 Forbidden"},
+            // Verify we get some HTTP response from google and paypal. We don't care what it is, just that it's valid
+            // HTTP. We want to notice that our fake URL, fails, though.
+            {"www.google.com", "HTTP/1.1"},
+            {"svcs.paypal.com", "HTTP/1.1"},
             {"www.notarealplaceforsure.com.fake", "NO_RESPONSE"},
         }) {
             SData request("sendrequest");
@@ -38,8 +40,7 @@ struct SSLTest : tpunit::TestFixture {
             request["Connection"] = "Close";
             request["passthrough"] = "true";
             vector<SData> results = tester->executeWaitMultipleData({request}, 1);
-            cout << results[0].methodLine << ":" << url.second << endl;;
-            ASSERT_EQUAL(results[0].methodLine, url.second);
+            ASSERT_TRUE(SStartsWith(results[0].methodLine, url.second));
         }
     }
 } __SSLTest;
