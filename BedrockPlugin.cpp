@@ -8,6 +8,9 @@ BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s) {
 }
 
 BedrockPlugin::~BedrockPlugin() {
+    for (auto httpsManager : httpsManagers) {
+        delete httpsManager;
+    }
 }
 
 void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize) {
