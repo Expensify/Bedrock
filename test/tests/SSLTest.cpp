@@ -32,7 +32,7 @@ struct SSLTest : tpunit::TestFixture {
             // Verify we get some HTTP response from google and paypal. We don't care what it is, just that it's valid
             // HTTP. We want to notice that our fake URL, fails, though.
             {"www.google.com", "HTTP/1.1"},
-            {"svcs.paypal.com", "HTTP/1.1"},
+            //{"svcs.paypal.com", "HTTP/1.1"},
             {"www.notarealplaceforsure.com.fake", "NO_RESPONSE"},
         }) {
             SData request("sendrequest");
