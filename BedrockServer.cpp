@@ -1221,7 +1221,9 @@ BedrockServer::BedrockServer(const SData& args_)
 BedrockServer::~BedrockServer() {
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
-    _syncThread.join();
+    if (_syncThread.joinable()) {
+        _syncThread.join();
+    }
     SINFO("Threads closed.");
 
     // Close any sockets that are still open. We wait until the sync thread has completed to do this, as until it's
