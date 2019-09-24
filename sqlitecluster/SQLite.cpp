@@ -9,6 +9,8 @@ recursive_mutex SQLite::_commitLock;
 // Global map for looking up shared data by file when creating new instances.
 map<string, SQLite::SharedData*> SQLite::_sharedDataLookupMap;
 
+map<string, sqlite3_stmt*> SQLite::_queries;
+
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
@@ -232,9 +234,19 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
     if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
-        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
+        sqlite3_stmt* q = (sqlite3_stmt*)p;
+//        _queries[hashed(q)] = q;
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql(q));
     }
     return 0;
+}
+
+void SQLite::logSlowQueryIfNeeded(const string& sql, int64_t elapsed, int64_t warnThreshold) {
+    if (elapsed > warnThreshold) {
+//        sqlite3_stmt* q = _queries[hashed(sql)];
+//        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sqlite3_normalized_sql(q));
+//        _queries.erase(hashed(sql));
+    }
 }
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {

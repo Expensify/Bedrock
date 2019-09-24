@@ -297,6 +297,8 @@ class SQLite {
     // database file. It's a map of canonicalized filename to a sharedData object.
     static map<string, SharedData*> _sharedDataLookupMap;
 
+    static map<string, sqlite3_stmt*> _queries;
+
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
     SharedData* _sharedData;
