@@ -91,6 +91,8 @@ class SQLite {
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
 
+    void timedSQuery(const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn);
+
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     bool prepare();
@@ -191,6 +193,8 @@ class SQLite {
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
+
+    static atomic<sqlite3_stmt*> _lastQuery;
 
   private:
 
@@ -297,8 +301,6 @@ class SQLite {
     // database file. It's a map of canonicalized filename to a sharedData object.
     static map<string, SharedData*> _sharedDataLookupMap;
 
-    static map<string, sqlite3_stmt*> _queries;
-
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
     SharedData* _sharedData;
@@ -382,8 +384,6 @@ class SQLite {
 
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
-
-    static void logSlowQueryIfNeeded(const string& sql, int64_t elapsed, int64_t warnThreshold);
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);

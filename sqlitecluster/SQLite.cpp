@@ -9,8 +9,6 @@ recursive_mutex SQLite::_commitLock;
 // Global map for looking up shared data by file when creating new instances.
 map<string, SQLite::SharedData*> SQLite::_sharedDataLookupMap;
 
-map<string, sqlite3_stmt*> SQLite::_queries;
-
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
 SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
 
@@ -19,6 +17,8 @@ atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are ass
 
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
+
+atomic<sqlite3_stmt*> SQLite::_lastQuery;
 
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
@@ -234,19 +234,10 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
     if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
-        sqlite3_stmt* q = (sqlite3_stmt*)p;
-//        _queries[hashed(q)] = q;
-        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql(q));
+        _lastQuery = (sqlite3_stmt*)p;
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql(_lastQuery));
     }
     return 0;
-}
-
-void SQLite::logSlowQueryIfNeeded(const string& sql, int64_t elapsed, int64_t warnThreshold) {
-    if (elapsed > warnThreshold) {
-//        sqlite3_stmt* q = _queries[hashed(sql)];
-//        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sqlite3_normalized_sql(q));
-//        _queries.erase(hashed(sql));
-    }
 }
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
@@ -1077,6 +1068,14 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
 bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
+}
+
+void SQLite::timedSQuery(const char *e, const string &sql, SQResult &result, int64_t warnThreshold, bool skipWarn) {
+    uint64_t startTime = STimeNow();
+    SQuery(_db, e, sql, result, skipWarn);
+    uint64_t elapsed = STimeNow() - startTime;
+    if ((int64_t)elapsed > warnThreshold)
+        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sqlite3_normalized_sql(_lastQuery));
 }
 
 SQLite::SharedData::SharedData() :
