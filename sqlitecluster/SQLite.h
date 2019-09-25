@@ -383,6 +383,8 @@ class SQLite {
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
 
+    static void logSlowQueryIfNeeded(const string& sql, int64_t elapsed, int64_t warnThreshold);
+
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
     uint64_t _timeoutLimit;
