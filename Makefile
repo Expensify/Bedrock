@@ -27,6 +27,27 @@ clustertest: test/clustertest/clustertest testplugin
 testplugin:
 	cd test/clustertest/testplugin && $(MAKE)
 
+.PHONY: docker udf
+
+docker:
+	docker build -t bedbugs $(PROJECT)/docker/bedbugs
+	docker run -t --rm -v $(PROJECT):/src bedbugs bedrock udf
+	cp $(PROJECT)/bedrock $(PROJECT)/docker/bedrook/bedrock
+	cp $(PROJECT)/udf.so $(PROJECT)/docker/bedrook/udf.so
+	docker build -t bedrock $(PROJECT)/docker/bedrook
+
+udf: udf.so
+
+UDFSRC = udf.c
+UDFCPP = udfplug.cpp
+UDFOBJ = $(UDFSRC:%.c=$(INTERMEDIATEDIR)/%.o)
+UDFOBJ += $(UDFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+
+CFLAGS += -fPIC -I$(PROJECT)/libstuff
+
+udf.so: $(UDFOBJ)
+	$(GXX) $(CXXFLAGS) -shared -o $@ $(UDFOBJ)
+
 # Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
 # Including it here causes it to be generated.
 # Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
@@ -35,7 +56,9 @@ PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
 	$(GXX) $(CXXFLAGS) -MMD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
+ ifneq ($(MAKECMDGOALS),docker)
 -include  libstuff/libstuff.d
+ endif
 endif
 
 clean:
@@ -65,7 +88,7 @@ STUFFC = $(shell find libstuff -name '*.c')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
+LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -name udfplug.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
@@ -84,11 +107,13 @@ CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
 ifneq ($(MAKECMDGOALS),clean)
+ ifneq ($(MAKECMDGOALS),docker)
 -include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
 -include $(BEDROCKDEP)
 #-include $(TESTDEP)
 #-include $(CLUSTERTESTDEP)
+ endif
 endif
 
 # Our static libraries just depend on their object files.
@@ -99,7 +124,7 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 
 # We use the same library paths and required libraries for both binaries.
 LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+LIBRARIES =-lbedrock -lstuff -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lexecinfo
 
 # The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
 # times in parallel.

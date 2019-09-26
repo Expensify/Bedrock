@@ -1,0 +1,8 @@
+#!/bin/sh
+
+echo makeme "$@"
+	
+export GXX=g++
+export CC=gcc
+
+make -C /src -e "$@"

@@ -1,0 +1,26 @@
+#!/bin/sh
+
+export NODE=ohio
+export DB=/db/bedrock.db
+export CFG=/db/bedrock.cfg
+export PEERS=/db/bedrock.peers
+export PRIO=30
+export RUN=/var/run/bedrock.pid
+
+syslogd -S
+
+if [ ! -f $CFG ]
+then
+	echo "-plugins db,jobs,cache,mysql" >$CFG
+fi
+
+touch $DB $PEERS
+
+cat $CFG $PEERS | xargs bedrock -fork -v -db $DB -pidfile $RUN
+
+#bedrock -fork -nodeName $NODE -db $DB \
+#	 -serverHost 0.0.0.0:8888 -nodeHost 0.0.0.0:8889 -priority $PRIO -pidfile $RUN \
+#	 -quorumCheckpoint 100 -readThreads 4 -cache 10001 -plugins status,db,jobs,cache,mysql \
+#	 -v
+
+sh -i
