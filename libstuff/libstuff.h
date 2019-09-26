@@ -772,11 +772,10 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result,
-           int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
-inline int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool skipWarn = false);
+inline int SQuery(sqlite3* db, const char* e, const string& sql, bool skipWarn = false) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
+    return SQuery(db, e, sql, ignore, skipWarn);
 }
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);

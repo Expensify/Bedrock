@@ -91,7 +91,11 @@ class SQLite {
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
 
-    void timedSQuery(const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn);
+    int timedSQuery(const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
+    inline int timedSQuery(const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false) {
+        SQResult ignore;
+        return timedSQuery(e, sql, ignore, warnThreshold, skipWarn);
+    }
 
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
