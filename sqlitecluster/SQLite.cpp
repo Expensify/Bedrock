@@ -231,8 +231,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 }
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
-    if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
-        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
+    if (traceCode == SQLITE_TRACE_STMT) {
+        SQLite* sqlite = static_cast<SQLite*>(c);
+        sqlite3_stmt* statement = static_cast<sqlite3_stmt*>(p);
+        sqlite->_lastQuery = sqlite3_normalized_sql(statement);
+        if (enableTrace) {
+            SINFO("NORMALIZED_SQL:" << sqlite->_lastQuery);
+        }
     }
     return 0;
 }
@@ -538,7 +543,7 @@ bool SQLite::read(const string& query, SQResult& result) {
         }
     }
     _isDeterministicQuery = true;
-    bool queryResult = !SQuery(_db, "read only query", query, result);
+    bool queryResult = !timedQuery("read only query", query, result);
     if (_useCache && _isDeterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
@@ -609,19 +614,19 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     bool result = false;
     bool usedRewrittenQuery = false;
     if (_enableRewrite) {
-        int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        int resultCode = timedQuery("read/write transaction", query, chrono::milliseconds(2000), true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            result = !SQuery(_db, "read/write transaction", _rewrittenQuery);
+            result = !timedQuery("read/write transaction", _rewrittenQuery);
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         } else {
             result = !resultCode;
         }
     } else {
-        result = !SQuery(_db, "read/write transaction", query);
+        result = !timedQuery("read/write transaction", query);
     }
     _checkTiming("timeout in SQLite::write"s);
     _writeElapsed += STimeNow() - before;
@@ -1065,6 +1070,22 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
 bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
+}
+
+int SQLite::timedQuery(const char *e, const string &sql, SQResult &result, chrono::milliseconds warnThreshold, bool skipWarn) {
+    auto start = chrono::steady_clock::now();
+    int queryResult = SQuery(_db, e, sql, result, skipWarn);
+    auto end = chrono::steady_clock::now();
+    auto elapsed = chrono::duration_cast<chrono::milliseconds>(end - start);
+    if (elapsed > warnThreshold) {
+        SWARN("Slow query (" << elapsed.count() << "ms) " << ": " << _lastQuery);
+    }
+    return queryResult;
+}
+
+int SQLite::timedQuery(const char* e, const string& sql, chrono::milliseconds warnThreshold, bool skipWarn) {
+    SQResult ignore;
+    return timedQuery(e, sql, ignore, warnThreshold, skipWarn);
 }
 
 SQLite::SharedData::SharedData() :

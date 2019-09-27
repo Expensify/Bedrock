@@ -91,6 +91,11 @@ class SQLite {
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
 
+    int timedQuery(const char* e, const string& sql, SQResult& result, chrono::milliseconds warnThreshold = chrono::milliseconds(2000),
+            bool skipWarn = false);
+    int timedQuery(const char* e, const string& sql, chrono::milliseconds warnThreshold = chrono::milliseconds(2000),
+            bool skipWarn = false);
+
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     bool prepare();
@@ -425,4 +430,7 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    // Last query to log
+    string _lastQuery;
 };
