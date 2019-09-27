@@ -198,7 +198,7 @@ class SQLite {
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 
-    static atomic<sqlite3_stmt*> _lastQuery;
+    string _lastQuery;
 
   private:
 

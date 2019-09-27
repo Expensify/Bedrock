@@ -18,8 +18,6 @@ atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are ass
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
-atomic<sqlite3_stmt*> SQLite::_lastQuery;
-
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
                int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB) :
     whitelist(nullptr),
@@ -234,9 +232,12 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
     if (traceCode == SQLITE_TRACE_STMT) {
-        _lastQuery = (sqlite3_stmt*)p;
-        if (enableTrace)
-            SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql(_lastQuery));
+        SQLite* sqlite = static_cast<SQLite*>(c);
+        sqlite3_stmt* statement = static_cast<sqlite3_stmt*>(p);
+        sqlite->_lastQuery = sqlite3_normalized_sql(statement);
+        if (enableTrace) {
+            SINFO("NORMALIZED_SQL:" << sqlite->_lastQuery);
+        }
     }
     return 0;
 }
@@ -1075,8 +1076,9 @@ int SQLite::timedSQuery(const char *e, const string &sql, SQResult &result, int6
     uint64_t startTime = STimeNow();
     int queryResult = SQuery(_db, e, sql, result, skipWarn);
     uint64_t elapsed = STimeNow() - startTime;
-    if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sqlite3_normalized_sql(_lastQuery));
+    if ((int64_t)elapsed > warnThreshold) {
+        SWARN("Slow query (" << elapsed / 1000 << "ms) " << ": " << _lastQuery);
+    }
     return queryResult;
 }
 
