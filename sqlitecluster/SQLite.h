@@ -91,8 +91,10 @@ class SQLite {
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
 
-    int timedQuery(const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
-    inline int timedQuery(const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false) {
+    int timedQuery(const char* e, const string& sql, SQResult& result, chrono::milliseconds warnThreshold = chrono::milliseconds(2000),
+            bool skipWarn = false);
+    inline int timedQuery(const char* e, const string& sql,  chrono::milliseconds warnThreshold = chrono::milliseconds(2000),
+            bool skipWarn = false) {
         SQResult ignore;
         return timedQuery(e, sql, ignore, warnThreshold, skipWarn);
     }
