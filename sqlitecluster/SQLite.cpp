@@ -114,25 +114,25 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     SASSERT(!sqlite3_open_v2(filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
 
     // WAL is what allows simultaneous read/writing.
-    SASSERT(!timedSQuery("enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
+    SASSERT(!timedQuery("enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
 
     if (mmapSizeGB) {
-        SASSERT(!timedSQuery("enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+        SASSERT(!timedQuery("enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
-    SASSERT(!timedSQuery("new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
+    SASSERT(!timedQuery("new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
     // Check if synchronous has been set and run query to use a custom synchronous setting
     if (!synchronous.empty()) {
-        SASSERT(!timedSQuery("setting custom synchronous commits", "PRAGMA synchronous = " + SQ(synchronous)  + ";"));
+        SASSERT(!timedQuery("setting custom synchronous commits", "PRAGMA synchronous = " + SQ(synchronous)  + ";"));
     } else {
         DBINFO("Using SQLite default PRAGMA synchronous");
     }
 
     // These other pragmas only relate to read/write databases.
-    SASSERT(!timedSQuery("disabling change counting", "PRAGMA count_changes = OFF;"));
+    SASSERT(!timedQuery("disabling change counting", "PRAGMA count_changes = OFF;"));
 
     // Do our own checkpointing.
     sqlite3_wal_hook(_db, _sqliteWALCallback, this);
@@ -142,7 +142,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
     // Update the cache. -size means KB; +size means pages
     SINFO("Setting cache_size to " << cacheSize << "KB");
-    timedSQuery("increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
+    timedQuery("increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
 
     // Now we (if we're the initializer) verify (and create if non-existent) all of our required journal tables.
     if (initializer) {
@@ -179,9 +179,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
     // Look up the min and max values in the database.
     SQResult result;
-    SASSERT(!timedSQuery("getting commit min", minQuery, result));
+    SASSERT(!timedQuery("getting commit min", minQuery, result));
     uint64_t min = SToUInt64(result[0][0]);
-    SASSERT(!timedSQuery("getting commit max", maxQuery, result));
+    SASSERT(!timedQuery("getting commit max", maxQuery, result));
     uint64_t max = SToUInt64(result[0][0]);
 
     // And save the difference as the size of the journal.
@@ -410,7 +410,7 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     _sharedData->blockNewTransactionsCV.notify_one();
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
-    _insideTransaction = !timedSQuery("starting db transaction", "BEGIN TRANSACTION");
+    _insideTransaction = !timedQuery("starting db transaction", "BEGIN TRANSACTION");
     _queryCache.clear();
     _transactionName = transactionName;
     _useCache = useCache;
@@ -436,7 +436,7 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& transaction
     _sharedData->blockNewTransactionsCV.notify_one();
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
-    _insideTransaction = !timedSQuery("starting db transaction", "BEGIN CONCURRENT");
+    _insideTransaction = !timedQuery("starting db transaction", "BEGIN CONCURRENT");
     _queryCache.clear();
     _transactionName = transactionName;
     _useCache = useCache;
@@ -543,7 +543,7 @@ bool SQLite::read(const string& query, SQResult& result) {
         }
     }
     _isDeterministicQuery = true;
-    bool queryResult = !timedSQuery("read only query", query, result);
+    bool queryResult = !timedQuery("read only query", query, result);
     if (_useCache && _isDeterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
@@ -604,7 +604,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // First, check our current state
     SQResult results;
-    SASSERT(!timedSQuery("looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!timedQuery("looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -614,19 +614,19 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     bool result = false;
     bool usedRewrittenQuery = false;
     if (_enableRewrite) {
-        int resultCode = timedSQuery("read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        int resultCode = timedQuery("read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            result = !timedSQuery("read/write transaction", _rewrittenQuery);
+            result = !timedQuery("read/write transaction", _rewrittenQuery);
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         } else {
             result = !resultCode;
         }
     } else {
-        result = !timedSQuery("read/write transaction", query);
+        result = !timedQuery("read/write transaction", query);
     }
     _checkTiming("timeout in SQLite::write"s);
     _writeElapsed += STimeNow() - before;
@@ -635,7 +635,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     }
 
     // See if the query changed anything
-    SASSERT(!timedSQuery("looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!timedQuery("looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
@@ -669,7 +669,7 @@ bool SQLite::prepare() {
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData->_inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
 
-    int result = timedSQuery("updating journal", query);
+    int result = timedQuery("updating journal", query);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -698,13 +698,13 @@ int SQLite::commit() {
         string query = "DELETE FROM " + _journalName + " "
                        "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
                        "LIMIT 10";
-        SASSERT(!timedSQuery("Deleting oldest journal rows", query));
+        SASSERT(!timedQuery("Deleting oldest journal rows", query));
 
         // Figure out the new journal size.
         SQResult result;
-        SASSERT(!timedSQuery("getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
+        SASSERT(!timedQuery("getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
         uint64_t min = SToUInt64(result[0][0]);
-        SASSERT(!timedSQuery("getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
+        SASSERT(!timedQuery("getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
         uint64_t max = SToUInt64(result[0][0]);
         newJournalSize = max - min;
 
@@ -721,7 +721,7 @@ int SQLite::commit() {
 
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
-    result = timedSQuery("committing db transaction", "COMMIT");
+    result = timedQuery("committing db transaction", "COMMIT");
     SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
     // And record pages after the commit.
@@ -808,7 +808,7 @@ void SQLite::rollback() {
                 SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
             }
             uint64_t before = STimeNow();
-            SASSERT(!timedSQuery("rolling back db transaction", "ROLLBACK"));
+            SASSERT(!timedQuery("rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
 
@@ -861,7 +861,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     // Look up the query and hash for the given commit
     string q= _getJournalQuery({"SELECT query, hash FROM", "WHERE id = " + SQ(id)});
     SQResult result;
-    SASSERT(!timedSQuery("getting commit", q, result));
+    SASSERT(!timedQuery("getting commit", q, result));
     if (!result.empty()) {
         query = result[0][0];
         hash = result[0][1];
@@ -889,7 +889,7 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-    return !timedSQuery("getting commits", query, result);
+    return !timedQuery("getting commits", query, result);
 }
 
 int64_t SQLite::getLastInsertRowID() {
@@ -908,7 +908,7 @@ uint64_t SQLite::_getCommitCount() {
     string query = _getJournalQuery({"SELECT MAX(id) as maxIDs FROM"}, true);
     query = "SELECT MAX(maxIDs) FROM (" + query + ")";
     SQResult result;
-    SASSERT(!timedSQuery("getting commit count", query, result));
+    SASSERT(!timedQuery("getting commit count", query, result));
     if (result.empty()) {
         return 0;
     }
@@ -1058,7 +1058,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
     // Enable or disable this query.
     string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
-    timedSQuery("setting noop-update mode", query);
+    timedQuery("setting noop-update mode", query);
     _noopUpdateMode = enabled;
 
     // If we're inside a transaction, make sure this gets saved so it can be replicated.
@@ -1072,7 +1072,7 @@ bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
 }
 
-int SQLite::timedSQuery(const char *e, const string &sql, SQResult &result, int64_t warnThreshold, bool skipWarn) {
+int SQLite::timedQuery(const char *e, const string &sql, SQResult &result, int64_t warnThreshold, bool skipWarn) {
     uint64_t startTime = STimeNow();
     int queryResult = SQuery(_db, e, sql, result, skipWarn);
     uint64_t elapsed = STimeNow() - startTime;
