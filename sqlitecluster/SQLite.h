@@ -197,8 +197,6 @@ class SQLite {
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 
-    string _lastQuery;
-
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -432,4 +430,7 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    // Last query to log
+    string _lastQuery;
 };
