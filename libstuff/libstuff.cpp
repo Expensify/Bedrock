@@ -2462,6 +2462,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool
     return error;
 }
 
+int SQuery(sqlite3* db, const char* e, const string& sql, bool skipWarn) {
+    SQResult ignore;
+    return SQuery(db, e, sql, ignore, skipWarn);
+}
+
 // --------------------------------------------------------------------------
 // Creates a table, if not there, or verifies it's defined correctly
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {

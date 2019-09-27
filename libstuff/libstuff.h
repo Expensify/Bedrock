@@ -773,10 +773,7 @@ void SQueryLogClose();
 
 // Returns an SQLite result code.
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool skipWarn = false);
-inline int SQuery(sqlite3* db, const char* e, const string& sql, bool skipWarn = false) {
-    SQResult ignore;
-    return SQuery(db, e, sql, ignore, skipWarn);
-}
+int SQuery(sqlite3* db, const char* e, const string& sql, bool skipWarn = false);
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);

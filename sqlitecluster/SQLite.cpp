@@ -1083,6 +1083,11 @@ int SQLite::timedQuery(const char *e, const string &sql, SQResult &result, chron
     return queryResult;
 }
 
+int SQLite::timedQuery(const char* e, const string& sql, chrono::milliseconds warnThreshold, bool skipWarn) {
+    SQResult ignore;
+    return timedQuery(e, sql, ignore, warnThreshold, skipWarn);
+}
+
 SQLite::SharedData::SharedData() :
 currentTransactionCount(0),
 _currentPageCount(0),
