@@ -2423,9 +2423,10 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool skipWarn) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
+    uint64_t startTime = STimeNow();
     int error = 0;
     int extErr = 0;
     for (int tries = 0; tries < MAX_TRIES; tries++) {
@@ -2446,6 +2447,20 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool
             sleep(1);
         }
     }
+    uint64_t elapsed = STimeNow() - startTime;
+
+    // Warn if it took longer than the specified threshold
+    if ((int64_t)elapsed > warnThreshold)
+        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+
+    // Log this if enabled
+    if (_g_sQueryLogFP) {
+        // Log this query as an SQL statement ready for insertion
+        const string& dbFilename = sqlite3_db_filename(db, "main");
+        const string& csvRow =
+            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sql), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
+        SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
+    }
 
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
@@ -2460,11 +2475,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, bool
         return extErr;
     }
     return error;
-}
-
-int SQuery(sqlite3* db, const char* e, const string& sql, bool skipWarn) {
-    SQResult ignore;
-    return SQuery(db, e, sql, ignore, skipWarn);
 }
 
 // --------------------------------------------------------------------------
