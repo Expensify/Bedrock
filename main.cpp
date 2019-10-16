@@ -81,8 +81,8 @@ set<string> loadPlugins(SData& args) {
     set <string> postProcessedNames;
 
     // Register all of our built-in plugins.
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB",    [](BedrockServer& s){return new BedrockPlugin_DB(s);}));
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS",  [](BedrockServer& s){return new BedrockPlugin_Jobs(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB", [](BedrockServer& s){return new BedrockPlugin_DB(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS", [](BedrockServer& s){return new BedrockPlugin_Jobs(s);}));
     BedrockPlugin::g_registeredPluginList.emplace(make_pair("CACHE", [](BedrockServer& s){return new BedrockPlugin_Cache(s);}));
     BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){return new BedrockPlugin_MySQL(s);}));
 

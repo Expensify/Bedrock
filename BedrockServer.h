@@ -216,7 +216,7 @@ class BedrockServer : public SQLiteServer {
     // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
     atomic<bool> shutdownWhileDetached;
 
-    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
+    // Arguments passed on the command line.
     const SData& args;
 
   private:
