@@ -8,12 +8,28 @@ SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 }
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
-  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), plugin(plugin_)
+  : SStandaloneHTTPSManager(pem, srvCrt, caCrt), plugin(plugin_)
 {
     plugin.httpsManagers.push_back(this);
 }
 
-SHTTPSManager::~SHTTPSManager() {
+void SHTTPSManager::validate() {
+    // These can only be created on a leader node.
+    if (plugin.server.getState() != SQLiteNode::LEADING) {
+        throw NotLeading();
+    }
+}
+
+SStandaloneHTTPSManager::SStandaloneHTTPSManager()
+{
+}
+
+SStandaloneHTTPSManager::SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt)
+  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt)
+{
+}
+
+SStandaloneHTTPSManager::~SStandaloneHTTPSManager() {
     SAUTOLOCK(_listMutex);
 
     // Clean up outstanding transactions
@@ -27,7 +43,7 @@ SHTTPSManager::~SHTTPSManager() {
     }
 }
 
-void SHTTPSManager::closeTransaction(Transaction* transaction) {
+void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction == nullptr) {
         return;
     }
@@ -43,7 +59,7 @@ void SHTTPSManager::closeTransaction(Transaction* transaction) {
     delete transaction;
 }
 
-int SHTTPSManager::getHTTPResponseCode(const string& methodLine) {
+int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     // This code looks for the first space in the methodLine, and then for the first non-space
     // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
     // integer, we default to 400.
@@ -60,35 +76,35 @@ int SHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-SHTTPSManager::Socket* SHTTPSManager::openSocket(const string& host, SX509* x509) {
+SStandaloneHTTPSManager::Socket* SStandaloneHTTPSManager::openSocket(const string& host, SX509* x509) {
     // Just call the base class function but in a thread-safe way.
     return STCPManager::openSocket(host, x509, &_listMutex);
 }
 
-void SHTTPSManager::closeSocket(Socket* socket) {
+void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
     STCPManager::closeSocket(socket);
 }
 
-void SHTTPSManager::prePoll(fd_map& fdm) {
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
     return STCPManager::prePoll(fdm);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    list<SHTTPSManager::Transaction*> completedRequests;
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    list<SStandaloneHTTPSManager::Transaction*> completedRequests;
     map<Transaction*, uint64_t> transactionTimeouts;
     postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
     map<Transaction*, uint64_t> transactionTimeouts;
     postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
@@ -136,7 +152,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
             SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
             active->response = active->s->sendBufferEmpty() ? 501 : 500;
             if (active->response == 501) {
-                SHMMM("SHTTPSManager: '" << active->fullRequest.methodLine
+                SHMMM("SStandaloneHTTPSManager: '" << active->fullRequest.methodLine
                       << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
             }
         } else {
@@ -156,7 +172,7 @@ void SHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SHTTPSMan
     }
 }
 
-SHTTPSManager::Transaction::Transaction(SHTTPSManager& manager_) :
+SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_) :
     s(nullptr),
     created(STimeNow()),
     finished(0),
@@ -165,17 +181,14 @@ SHTTPSManager::Transaction::Transaction(SHTTPSManager& manager_) :
     isDelayedSend(0),
     sentTime(0)
 {
-    // These can only be created on a leader node.
-    if (manager.plugin.server.getState() != SQLiteNode::LEADING) {
-        throw NotLeading();
-    }
+    manager.validate();
 }
 
-SHTTPSManager::Transaction::~Transaction() {
+SStandaloneHTTPSManager::Transaction::~Transaction() {
     SASSERT(!s);
 }
 
-SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction() {
     // Sometimes we have to create transactions without an attempted connect. This could happen if we don't have the
     // host or service id yet.
     SWARN("We had to create an error transaction instead of attempting a real one.");
@@ -187,7 +200,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_createErrorTransaction() {
     return transaction;
 }
 
-SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const SData& request) {
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request) {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;
@@ -219,7 +232,7 @@ SHTTPSManager::Transaction* SHTTPSManager::_httpsSend(const string& url, const S
     return transaction;
 }
 
-bool SHTTPSManager::_onRecv(Transaction* transaction)
+bool SStandaloneHTTPSManager::_onRecv(Transaction* transaction)
 {
     transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
     return false;
