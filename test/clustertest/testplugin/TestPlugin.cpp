@@ -154,6 +154,9 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         usleep(command.request.calc("ProcessSleep") * 1000);
     }
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
+        // This flag makes us pass through the response we got from the server, rather than returning 200 if every
+        // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
+        // 400, we return 200 except when this flag is set.
         if (command.request.test("passthrough")) {
             command.response.methodLine = command.httpsRequests.front()->fullResponse.methodLine;
             if (command.httpsRequests.front()->response >= 500 && command.httpsRequests.front()->response <= 503) {
