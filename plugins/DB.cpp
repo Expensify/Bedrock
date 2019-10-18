@@ -1,7 +1,12 @@
 #include "DB.h"
+#include "BedrockServer.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << _args["-nodeName"] << ":" << getName() << "} "
+#define SLOGPREFIX "{" << server.args["-nodeName"] << ":" << getName() << "} "
+
+BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
+{
+}
 
 bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     // Pull out some helpful variables

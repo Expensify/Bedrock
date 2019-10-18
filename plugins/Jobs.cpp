@@ -25,6 +25,10 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
+BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
+{
+}
+
 int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
 {
     int64_t newID = 0;
@@ -1337,21 +1341,13 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
             }
         }
         SINFO("Failed sending response to '" << command.request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
-        if(_server) {
-            SData requeue("RequeueJobs");
-            requeue["jobIDs"] = SComposeList(jobIDs);
+        SData requeue("RequeueJobs");
+        requeue["jobIDs"] = SComposeList(jobIDs);
 
-            // Keep the request ID so we'll be able to associate these in the logs.
-            requeue["requestID"] = command.request["requestID"];
-            SQLiteCommand cmd(move(requeue));
-            cmd.initiatingClientID = -1;
-            _server->acceptCommand(move(cmd));
-        } else {
-            SWARN("No server, can't re-queue jobs: " << SComposeList(jobIDs));
-        }
+        // Keep the request ID so we'll be able to associate these in the logs.
+        requeue["requestID"] = command.request["requestID"];
+        SQLiteCommand cmd(move(requeue));
+        cmd.initiatingClientID = -1;
+        server.acceptCommand(move(cmd));
     }
-}
-
-void BedrockPlugin_Jobs::initialize(const SData& args, BedrockServer& server) {
-    _server = &server;
 }

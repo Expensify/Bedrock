@@ -2,15 +2,6 @@
 #include "BedrockCommand.h"
 class BedrockServer;
 
-// BREGISTER_PLUGIN is a macro to auto-instantiate a global instance of a plugin (_CT_). This lets plugin implementors
-// just write `BREGISTER_PLUGIN(MyPluginName)` at the bottom of an implementation cpp file and get the plugin
-// automatically registered with Bedrock.
-// Why the weird `EXPAND{N}` macros? Because the pre-processor doesn't do recursive macro expansion with concatenation.
-// See: http://stackoverflow.com/questions/1597007/
-#define BREGISTER_PLUGIN_EXPAND2(_CT_, _NUM_) _CT_ __BREGISTER_PLUGIN_##_CT_##_NUM_
-#define BREGISTER_PLUGIN_EXPAND1(_CT_, _NUM_) BREGISTER_PLUGIN_EXPAND2(_CT_, _NUM_)
-#define BREGISTER_PLUGIN(_CT_) BREGISTER_PLUGIN_EXPAND1(_CT_, __COUNTER__)
-
 // Simple plugin system to add functionality to a node at runtime.
 class BedrockPlugin {
   public:
@@ -26,8 +17,7 @@ class BedrockPlugin {
     static void verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize);
     static void verifyAttributeBool(const SData& request, const string& name, bool require = true);
 
-    // Standard constructor, inserts the created plugin in `g_registeredPluginList`.
-    BedrockPlugin();
+    BedrockPlugin(BedrockServer& s);
     virtual ~BedrockPlugin();
 
     // Returns a version string indicating the version of this plugin. This needs to be implemented in a thread-safe
@@ -36,11 +26,6 @@ class BedrockPlugin {
 
     // Returns a short, descriptive name of this plugin
     virtual string getName();
-
-    // Initializes it with command-line arguments and a reference to the server object that will call this plugin.
-    // This may be called multiple times, it's up to a plugin to handle that in a reasonable way. Note that `server`
-    // may change between calls to this function.
-    virtual void initialize(const SData& args, BedrockServer& server);
 
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
@@ -94,10 +79,9 @@ class BedrockPlugin {
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.
     virtual void handleFailedReply(const BedrockCommand& command);
 
-  public:
-    // A global static list of all registered plugins.
-    static list<BedrockPlugin*>* g_registeredPluginList;
+    // Map of plugin names to functions that will return a new plugin of the given type.
+    static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 
-    // Look up a plugin by its name.
-    static BedrockPlugin* getPluginByName(const string& name);
+    // Reference to the BedrockServer object that owns this plugin.
+    BedrockServer& server;
 };

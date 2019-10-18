@@ -54,7 +54,7 @@ SSynchronizedQueue<T>::~SSynchronizedQueue() {
         close(_pipeFD[0]);
     }
     if (_pipeFD[1] != -1) {
-        close(_pipeFD[0]);
+        close(_pipeFD[1]);
     }
 }
 

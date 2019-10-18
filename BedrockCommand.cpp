@@ -27,7 +27,7 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
 
 BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
-        request->owner.closeTransaction(request);
+        request->manager.closeTransaction(request);
     }
     if (countCommand) {
         _commandCount--;
@@ -117,7 +117,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
             if (!request->response) {
                 SWARN("Closing unfinished httpRequest by assigning over it. This was probably a mistake.");
             }
-            request->owner.closeTransaction(request);
+            request->manager.closeTransaction(request);
         }
         httpsRequests = move(from.httpsRequests);
         from.httpsRequests.clear();
