@@ -879,12 +879,12 @@ void BedrockServer::worker(const SData& args,
                           << ((STimeNow() - preLockTime)/1000) << "ms.");
                 }
 
-                // If the command doesn't already have an httpsRequest from a previous peek attempt, try peeking it
-                // now. We don't duplicate peeks for commands that make https requests.
+                // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
+                // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
                 bool peekResult = false;
-                if (!command.httpsRequests.size()) {
+                if (command.repeek || !command.httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
@@ -908,7 +908,7 @@ void BedrockServer::worker(const SData& args,
                         }
 
                         // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
-                        if (!command.areHttpsRequestsComplete()) {
+                        if (command.repeek || !command.areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
@@ -2138,7 +2138,9 @@ void BedrockServer::waitForHTTPS(BedrockCommand&& command) {
 
     // Insert each request pointing at the given object.
     for (auto request : commandPtr->httpsRequests) {
-        _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+        if (!request->response) {
+            _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+        }
     }
 }
 

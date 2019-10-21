@@ -76,6 +76,8 @@ class BedrockCommand : public SQLiteCommand {
     BedrockPlugin* peekedBy;
     BedrockPlugin* processedBy;
 
+    bool repeek;
+
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
