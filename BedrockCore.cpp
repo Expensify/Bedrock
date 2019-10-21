@@ -147,16 +147,19 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
+        command.repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
     } catch (const SHTTPSManager::NotLeading& e) {
+        command.repeek = false;
         _db.rollback();
         _db.read("PRAGMA query_only = false;");
         _db.resetTiming();
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
         return false;
     } catch (...) {
+        command.repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
