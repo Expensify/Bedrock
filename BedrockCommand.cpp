@@ -41,6 +41,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     processCount(0),
     peekedBy(nullptr),
     processedBy(nullptr),
+    repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
@@ -61,6 +62,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     processCount(from.processCount),
     peekedBy(from.peekedBy),
     processedBy(from.processedBy),
+    repeek(from.repeek),
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
@@ -82,6 +84,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     processCount(0),
     peekedBy(nullptr),
     processedBy(nullptr),
+    repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
@@ -99,6 +102,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     processCount(0),
     peekedBy(nullptr),
     processedBy(nullptr),
+    repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     _inProgressTiming(INVALID, 0, 0),
@@ -127,6 +131,7 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         processCount = from.processCount;
         peekedBy = from.peekedBy;
         processedBy = from.processedBy;
+        repeek = from.repeek;
         priority = from.priority;
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;

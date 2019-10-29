@@ -35,8 +35,6 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         usleep(command.request.calc("PeekSleep") * 1000);
     }
 
-    // This should never exist when calling peek.
-    SASSERT(!command.httpsRequests.size());
     if (SStartsWith(command.request.methodLine,"testcommand")) {
         if (!command.request["response"].empty()) {
             command.response.methodLine = command.request["response"];
@@ -144,6 +142,37 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             shouldPreventAttach = false;
         }).detach();
         return true;
+    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+        // Let's see what the user wanted to request.
+        if (command.request.test("pendingResult")) {
+            if (command.httpsRequests.empty()) {
+                STHROW("Pending Result flag set but no requests!");
+            }
+            // There was a previous request, let's record it's result.
+            command.response.content += command.httpsRequests.back()->fullRequest["Host"] + ":" + to_string(command.httpsRequests.back()->response) + "\n";
+        }
+        list<string> remainingURLs = SParseList(command.request["urls"]);
+        if (remainingURLs.size()) {
+            SData request("GET / HTTP/1.1");
+            string host = remainingURLs.front();
+            request["Host"] = host;
+            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
+
+            // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
+            command.request["pendingResult"] = "true";
+            command.repeek = true;
+
+            // re-write the URL list for the next iteration.
+            remainingURLs.pop_front();
+            command.request["urls"] = SComposeList(remainingURLs);
+        } else {
+            // There are no URLs left.
+            command.repeek = false;
+
+            // But we still want to call `process`. We make this explicit for clarity, even though its the fall-through
+            // case
+            return false;
+        }
     }
 
     return false;
@@ -253,6 +282,9 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
     } else if (SStartsWith(command.request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return true;
+    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+        // Note that we eventually got to process, though we write nothing to the DB.
+        command.response.content += "PROCESSED\n";
     }
     return false;
 }

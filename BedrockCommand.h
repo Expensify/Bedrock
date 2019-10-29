@@ -76,6 +76,11 @@ class BedrockCommand : public SQLiteCommand {
     BedrockPlugin* peekedBy;
     BedrockPlugin* processedBy;
 
+    // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
+    // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
+    // all HTTPS requests are complete. It will be automatically cleared if the command throws an exception.
+    bool repeek;
+
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
