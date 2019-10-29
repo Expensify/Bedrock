@@ -32,10 +32,10 @@ struct MasteringTest : tpunit::TestFixture {
         int count = 0;
         while (count++ < 50) {
             for (int i : {0, 1, 2}) {
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData cmd("Status");
-                string response = brtester->executeWaitVerifyContent(cmd);
+                string response = brtester.executeWaitVerifyContent(cmd);
                 STable json = SParseJSONObject(response);
                 results[i] = json["state"];
             }
@@ -55,13 +55,13 @@ struct MasteringTest : tpunit::TestFixture {
     void failover()
     {
         tester->stopNode(0);
-        BedrockTester* newMaster = tester->getBedrockTester(1);
+        BedrockTester& newMaster = tester->getTester(1);
 
         int count = 0;
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = newMaster->executeWaitVerifyContent(cmd);
+            string response = newMaster.executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
             if (json["state"] == "LEADING" || json["state"] == "MASTERING") {
                 success = true;
@@ -78,10 +78,10 @@ struct MasteringTest : tpunit::TestFixture {
     // The only point of this test is to verify that a new leader comes up even if the old one has a stuck HTTPS
     // request. It's slow so is disabled.
     void standDownTimeout() {
-        BedrockTester* newMaster = tester->getBedrockTester(1);
+        BedrockTester& newMaster = tester->getTester(1);
         SData cmd("httpstimeout");
         cmd["Connection"] = "forget";
-        auto result = newMaster->executeWaitVerifyContent(cmd, "202");
+        auto result = newMaster.executeWaitVerifyContent(cmd, "202");
     }
 
     void restoreMaster()
@@ -95,12 +95,12 @@ struct MasteringTest : tpunit::TestFixture {
             vector<string> responses(3);
             for (int i : {0, 1, 2}) {
                 threads.emplace_back([this, i, &responses, &m](){
-                    BedrockTester* brtester = tester->getBedrockTester(i);
+                    BedrockTester& brtester = tester->getTester(i);
 
                     SData status("Status");
                     status["writeConsistency"] = "ASYNC";
 
-                    auto result = brtester->executeWaitVerifyContent(status);
+                    auto result = brtester.executeWaitVerifyContent(status);
                     lock_guard<decltype(m)> lock(m);
                     responses[i] = result;
                 });
@@ -149,8 +149,8 @@ struct MasteringTest : tpunit::TestFixture {
         }
 
         // Send these all to leader.
-        BedrockTester* leader = tester->getBedrockTester(0);
-        leader->executeWaitMultipleData(requests);
+        BedrockTester& leader = tester->getTester(0);
+        leader.executeWaitMultipleData(requests);
 
         // Start the follower back up.
         bool wasSynchronizing = false;
@@ -162,11 +162,11 @@ struct MasteringTest : tpunit::TestFixture {
         }
 
         // Verify it goes SYNCHRONIZING and then FOLLOWING.
-        BedrockTester* follower = tester->getBedrockTester(1);
+        BedrockTester& follower = tester->getTester(1);
         int tries = 0;
         while (1) {
             SData status("Status");
-            auto result = follower->executeWaitVerifyContent(status, "200", true);
+            auto result = follower.executeWaitVerifyContent(status, "200", true);
             STable json = SParseJSONObject(result);
 
             if (!wasSynchronizing) {

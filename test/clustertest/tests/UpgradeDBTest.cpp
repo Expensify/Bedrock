@@ -20,12 +20,12 @@ struct UpgradeDBTest : tpunit::TestFixture {
     void test()
     {
         for (auto i : {0,1,2}) {
-            BedrockTester* brtester = tester->getBedrockTester(i);
+            BedrockTester& brtester = tester->getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("Query");
             query["Query"] = "INSERT INTO dbupgrade VALUES(" + SQ(1 + i) + ", " + SQ("val") + ");";
-            string result = brtester->executeWaitVerifyContent(query, "200");
+            string result = brtester.executeWaitVerifyContent(query, "200");
         }
     }
 } __UpgradeDBTest;

@@ -26,13 +26,13 @@ struct StatusTest : tpunit::TestFixture {
         vector<string> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &responses, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData status("Status");
                 status["writeConsistency"] = "ASYNC";
 
                 // Ok, send them all!
-                auto result = brtester->executeWaitVerifyContent(status);
+                auto result = brtester.executeWaitVerifyContent(status);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = result;
             });
