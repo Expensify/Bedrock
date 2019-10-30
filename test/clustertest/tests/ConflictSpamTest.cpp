@@ -22,7 +22,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
         // happen as expected.
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
         for (int i = 0; i < 3; i++) {
             BedrockTester& node = tester->getTester(i);
             SData controlCommand("SetCheckpointIntervals");

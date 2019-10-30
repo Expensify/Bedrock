@@ -26,7 +26,7 @@ struct HTTPSTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup () {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {

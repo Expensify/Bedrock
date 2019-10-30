@@ -6,6 +6,7 @@ string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibili
 string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
 SData BedrockTester::globalArgs;
 mutex BedrockTester::_testersMutex;
+PortMap BedrockTester::ports;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
     "../bedrock",
@@ -44,22 +45,35 @@ void BedrockTester::stopAll() {
     }
 }
 
-BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished) :
-    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished)
+BedrockTester::BedrockTester(const map<string, string>& args,
+                             const list<string>& queries,
+                             bool startImmediately,
+                             bool keepFilesWhenFinished,
+                             uint16_t serverPort,
+                             uint16_t nodePort,
+                             uint16_t controlPort,
+                             bool ownPorts) :
+    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished, serverPort, nodePort, controlPort, ownPorts)
 { }
 
-BedrockTester::BedrockTester(int threadID, const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
-  : _keepFilesWhenFinished(keepFilesWhenFinished)
+BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
+                             const list<string>& queries,
+                             bool startImmediately,
+                             bool keepFilesWhenFinished,
+                             uint16_t serverPort,
+                             uint16_t nodePort,
+                             uint16_t controlPort,
+                             bool ownPorts)
+  : _keepFilesWhenFinished(keepFilesWhenFinished),
+    _serverPort(ownPorts ? ports.getPort() : serverPort),
+    _nodePort(ownPorts ? ports.getPort() : nodePort),
+    _controlPort(ownPorts ? ports.getPort() : controlPort),
+    _ownPorts(ownPorts)
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
     }
-
-    // Set the ports.
-    _serverPort = 8989 + threadID;
-    _nodePort = 9889 + threadID;
-    _controlPort = 19999 + threadID;
 
     // Set these values from the arguments if provided, or the defaults if not.
     try {
@@ -103,10 +117,11 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     _controlAddr = _args["-controlPort"];
 
     // And reset the ports from the arguments in case they were supplied there.
-    string ignore;
-    SParseHost(_args.at("-serverHost"), ignore, _serverPort);
-    SParseHost(_args.at("-nodeHost"), ignore, _nodePort);
-    SParseHost(_args.at("-controlPort"), ignore, _controlPort);
+    // TODO: This is broken and obsolete, nobody should overwrite these.
+    string ignoreStr;
+    SParseHost(_args.at("-serverHost"), ignoreStr, _serverPort);
+    SParseHost(_args.at("-nodeHost"), ignoreStr, _nodePort);
+    SParseHost(_args.at("-controlPort"), ignoreStr, _controlPort);
 
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
@@ -146,6 +161,12 @@ BedrockTester::~BedrockTester() {
     }
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
+
+    if (_ownPorts) {
+        ports.returnPort(_serverPort);
+        ports.returnPort(_nodePort);
+        ports.returnPort(_controlPort);
+    }
 }
 
 string BedrockTester::startServer(bool dontWait) {

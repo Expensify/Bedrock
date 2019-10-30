@@ -4,6 +4,37 @@
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
 
+// Find an available TCP port to use.
+class PortMap {
+  public:
+    uint64_t getPort()
+    {
+        lock_guard<mutex> lock(_m);
+        if (_returned.size()) {
+            uint64_t port = *_returned.begin();
+            _returned.erase(_returned.begin());
+            return port;
+        }
+        uint64_t port = _from;
+        _from++;
+        return port;
+    }
+
+    void returnPort(uint64_t port)
+    {
+        lock_guard<mutex> lock(_m);
+        _returned.insert(port);
+    }
+
+    PortMap(uint64_t from = 8989) : _from(from)
+    {}
+
+  private:
+    uint64_t _from;
+    set<uint64_t> _returned;
+    mutex _m;
+};
+
 class BedrockTester {
   public:
 
@@ -26,21 +57,32 @@ class BedrockTester {
     // Shuts down all bedrock servers associated with any testers.
     static void stopAll();
 
+    // This is a counter for available port numbers. This assumes that all ports are unused.
+    static PortMap ports;
+
     // Returns the address of this server.
     string getServerAddr() { return _serverAddr; };
 
     // Constructor/destructor
-    // Automatically use the default threadID (won't work correctly with multi-threaded tests)
     BedrockTester(const map<string, string>& args = {},
                   const list<string>& queries = {},
                   bool startImmediately = true,
-                  bool keepFilesWhenFinished = false);
+                  bool keepFilesWhenFinished = false,
+                  uint16_t serverPort = 0,
+                  uint16_t nodePort = 0,
+                  uint16_t controlPort = 0,
+                  bool ownPorts = true);
 
-    // Supply a threadID.
-    BedrockTester(int threadID, const map<string, string>& args = {},
+    // Supply a threadID (now obsolete)
+    BedrockTester(int threadID,
+                  const map<string, string>& args = {},
                   const list<string>& queries = {},
                   bool startImmediately = true,
-                  bool keepFilesWhenFinished = false);
+                  bool keepFilesWhenFinished = false,
+                  uint16_t serverPort = 0,
+                  uint16_t nodePort = 0,
+                  uint16_t controlPort = 0,
+                  bool ownPorts = true);
     ~BedrockTester();
 
     // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
@@ -114,4 +156,5 @@ class BedrockTester {
     uint16_t _serverPort;
     uint16_t _nodePort;
     uint16_t _controlPort;
+    const bool _ownPorts;
 };
