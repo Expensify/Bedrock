@@ -25,13 +25,13 @@ class ClusterTester {
     T* getBedrockTester(size_t index);
 
     // Starts a given node, given the same arguments given by the constructor.
-    string startNode(size_t nodeIndex);
+    string startNode(size_t index);
 
     // Same as above but don't wait for the command port to be ready.
-    string startNodeDontWait(size_t nodeIndex);
+    string startNodeDontWait(size_t index);
 
     // Stops a given node.
-    void stopNode(size_t nodeIndex);
+    void stopNode(size_t index);
 
   private:
 
@@ -39,7 +39,7 @@ class ClusterTester {
     int _size;
 
     // A list of all our testers that make up our cluster.
-    vector<T> _cluster;
+    list<T> _cluster;
 };
 
 typedef ClusterTester<BedrockTester> BedrockClusterTester;
@@ -69,9 +69,6 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
                                 string pluginsToLoad)
 : _size(size)
 {
-    // Make sure we won't re-allocate.
-    _cluster.reserve(size);
-
     // We need three ports for each node.
     vector<vector<uint16_t>> ports(size);
     for (size_t i = 0; i < size; i++) {
@@ -153,9 +150,9 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
 
     // Now start them all.
     list<thread> threads;
-    for (size_t i = 0; i < _cluster.size(); i++) {
-        threads.emplace_back([i, this](){
-            _cluster[i].startServer();
+    for (auto it = _cluster.begin(); it != _cluster.end(); it++) {
+        threads.emplace_back([it](){
+            it->startServer();
         });
     }
     for (auto& i : threads) {
@@ -163,9 +160,8 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
     }
 
     // Ok, now we should be able to wait for the cluster to come up. Let's wait until each server responds to 'status'.
-    vector<string> states(size);
     int count = 0;
-    for (size_t i = 0; i < size; i++) {
+    for (auto& node : _cluster) {
         while (1) {
             count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
@@ -174,9 +170,8 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
             }
             try {
                 SData status("Status");
-                string response = _cluster[i].executeWaitVerifyContent(status);
+                string response = node.executeWaitVerifyContent(status);
                 STable json = SParseJSONObject(response);
-                states[i] = json["state"];
                 break;
             } catch (...) {
                 // This will happen if the server's not up yet. We'll just try again.
@@ -200,29 +195,29 @@ ClusterTester<T>::~ClusterTester()
 template <typename T>
 T* ClusterTester<T>::getBedrockTester(size_t index)
 {
-    return &_cluster[index];
+    return &(*next(_cluster.begin(), index));
 }
 
 template <typename T>
 T& ClusterTester<T>::getTester(size_t index)
 {
-    return _cluster[index];
+    return *next(_cluster.begin(), index);
 }
 
 template <typename T>
-void ClusterTester<T>::stopNode(size_t nodeIndex)
+void ClusterTester<T>::stopNode(size_t index)
 {
-    _cluster[nodeIndex].stopServer();
+    next(_cluster.begin(), index)->stopServer();
 }
 
 template <typename T>
-string ClusterTester<T>::startNode(size_t nodeIndex)
+string ClusterTester<T>::startNode(size_t index)
 {
-    return _cluster[nodeIndex].startServer();
+    return next(_cluster.begin(), index)->startServer();
 }
 
 template <typename T>
-string ClusterTester<T>::startNodeDontWait(size_t nodeIndex)
+string ClusterTester<T>::startNodeDontWait(size_t index)
 {
-    return _cluster[nodeIndex].startServer(true);
+    return next(_cluster.begin(), index)->startServer(true);
 }

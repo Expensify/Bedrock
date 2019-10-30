@@ -7,31 +7,31 @@
 // Find an available TCP port to use.
 class PortMap {
   public:
-    uint64_t getPort()
+    uint16_t getPort()
     {
         lock_guard<mutex> lock(_m);
         if (_returned.size()) {
-            uint64_t port = *_returned.begin();
+            uint16_t port = *_returned.begin();
             _returned.erase(_returned.begin());
             return port;
         }
-        uint64_t port = _from;
+        uint16_t port = _from;
         _from++;
         return port;
     }
 
-    void returnPort(uint64_t port)
+    void returnPort(uint16_t port)
     {
         lock_guard<mutex> lock(_m);
         _returned.insert(port);
     }
 
-    PortMap(uint64_t from = 8989) : _from(from)
+    PortMap(uint16_t from = 8989) : _from(from)
     {}
 
   private:
-    uint64_t _from;
-    set<uint64_t> _returned;
+    uint16_t _from;
+    set<uint16_t> _returned;
     mutex _m;
 };
 
