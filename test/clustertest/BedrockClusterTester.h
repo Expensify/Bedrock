@@ -1,14 +1,15 @@
 #include <test/lib/BedrockTester.h>
 
+enum class ClusterSize {
+    ONE_NODE_CLUSTER = 1,
+    THREE_NODE_CLUSTER = 3,
+    FIVE_NODE_CLUSTER = 5,
+    SIX_NODE_CLUSTER = 6,
+};
+
 template <typename T>
 class ClusterTester {
   public:
-    enum ClusterSize {
-        ONE_NODE_CLUSTER = 1,
-        THREE_NODE_CLUSTER = 3,
-        FIVE_NODE_CLUSTER = 5,
-        SIX_NODE_CLUSTER = 6,
-    };
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become leader.
@@ -46,7 +47,7 @@ typedef ClusterTester<BedrockTester> BedrockClusterTester;
 
 template <typename T>
 ClusterTester<T>::ClusterTester(const string& pluginString) : ClusterTester<T>(
-    THREE_NODE_CLUSTER,
+    ClusterSize::THREE_NODE_CLUSTER,
     {},
     0,
     {},
@@ -57,21 +58,21 @@ ClusterTester<T>::ClusterTester(const string& pluginString) : ClusterTester<T>(
 
 template <typename T>
 ClusterTester<T>::ClusterTester(int threadID, string pluginsToLoad)
-  : ClusterTester<T>(THREE_NODE_CLUSTER, {},
+  : ClusterTester<T>(ClusterSize::THREE_NODE_CLUSTER, {},
                             threadID, {}, {}, pluginsToLoad, nullptr) {}
 
 template <typename T>
-ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
+ClusterTester<T>::ClusterTester(ClusterSize size,
                                 list<string> queries,
                                 int threadID,
                                 map<string, string> _args,
                                 list<string> uniquePorts,
                                 string pluginsToLoad)
-: _size(size)
+: _size((int)size)
 {
     // We need three ports for each node.
-    vector<vector<uint16_t>> ports(size);
-    for (size_t i = 0; i < size; i++) {
+    vector<vector<uint16_t>> ports((int)size);
+    for (size_t i = 0; i < (size_t)size; i++) {
         const uint16_t serverPort = BedrockTester::ports.getPort();
         const uint16_t nodePort = BedrockTester::ports.getPort();
         const uint16_t controlPort = BedrockTester::ports.getPort();
@@ -93,7 +94,7 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
     }
 
     const string nodeNamePrefix = "brcluster_node_";
-    for (size_t i = 0; i < size; i++) {
+    for (size_t i = 0; i < (size_t)size; i++) {
 
         // We already allocated our own ports earlier.
         uint16_t serverPort = ports[i][0];
