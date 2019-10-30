@@ -138,8 +138,8 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         // Now, if any args were supplied, we'll use those instead of these ones (note that this overwrites our
         // existing values).
         for (auto& a : _args) {
-            if (a.first == "-serverHost" || "-nodeHost" || "-controlPort") {
-                cout << "Skipping port overwriting" << endl;
+            if (a.first == "-serverHost" || a.first == "-nodeHost" || a.first == "-controlPort") {
+                cout << "Skipping port overwriting, " << a.first << ":" << a.second << endl;
             } else {
                 args[a.first] = a.second;
             }
