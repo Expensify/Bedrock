@@ -93,11 +93,6 @@ ClusterTester<T>::ClusterTester(ClusterTester::ClusterSize size,
     if (SFileExists(string(cwd) + "/testplugin/testplugin.so")) {
         pluginsToLoad += pluginsToLoad.size() ? pluginsToLoad += "," : "";
         pluginsToLoad += string(cwd) + "/testplugin/testplugin.so";
-
-        // And we'll also create the test table in this case.
-        if (queries.empty()) {
-            queries.push_back("CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)");
-        }
     }
 
     const string nodeNamePrefix = "brcluster_node_";

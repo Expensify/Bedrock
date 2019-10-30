@@ -10,7 +10,7 @@ struct BadCommandTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup() {
-            tester = new BedrockClusterTester();
+        tester = new BedrockClusterTester("" /*Explicitly exclude the default plugins. TODO: Why does this help?*/);
     }
 
     void teardown() {

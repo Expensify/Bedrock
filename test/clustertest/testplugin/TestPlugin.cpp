@@ -294,6 +294,7 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyTable("dbupgrade", "CREATE TABLE dbupgrade ( "
                                         "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                         "value )", ignore));
+    SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
 }
 
 
