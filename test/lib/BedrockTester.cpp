@@ -116,13 +116,6 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
     
     _controlAddr = _args["-controlPort"];
 
-    // And reset the ports from the arguments in case they were supplied there.
-    // TODO: This is broken and obsolete, nobody should overwrite these.
-    string ignoreStr;
-    SParseHost(_args.at("-serverHost"), ignoreStr, _serverPort);
-    SParseHost(_args.at("-nodeHost"), ignoreStr, _nodePort);
-    SParseHost(_args.at("-controlPort"), ignoreStr, _controlPort);
-
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
         SFileSave(_dbName, "");

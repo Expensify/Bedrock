@@ -5,6 +5,7 @@
 #include <test/lib/tpunit++.hpp>
 
 // Find an available TCP port to use.
+// This assumes that all ports aren't in use by other processes, it does no external validation on them.
 class PortMap {
   public:
     uint16_t getPort()
@@ -57,7 +58,7 @@ class BedrockTester {
     // Shuts down all bedrock servers associated with any testers.
     static void stopAll();
 
-    // This is a counter for available port numbers. This assumes that all ports are unused.
+    // This is an allocator for TCP ports.
     static PortMap ports;
 
     // Returns the address of this server.

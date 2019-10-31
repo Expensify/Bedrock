@@ -93,7 +93,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         pluginsToLoad += string(cwd) + "/testplugin/testplugin.so";
     }
 
-    const string nodeNamePrefix = "brcluster_node_";
+    const string nodeNamePrefix = "cluster_node_";
     for (size_t i = 0; i < (size_t)size; i++) {
 
         // We already allocated our own ports earlier.
