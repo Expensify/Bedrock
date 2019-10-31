@@ -105,7 +105,6 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         string serverHost  = "127.0.0.1:" + to_string(serverPort);
         string nodeHost = "127.0.0.1:" + to_string(nodePort);
         string controlHost = "127.0.0.1:" + to_string(controlPort);
-        string db = BedrockTester::getTempFileName("cluster_node_" + to_string(nodePort));
         string nodeName = nodeNamePrefix + to_string(i);
 
         // If we're building a 6 node cluster, make the last node a permafollower
@@ -127,7 +126,6 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             {"-serverHost", serverHost},
             {"-nodeHost", nodeHost},
             {"-controlPort", controlHost},
-            {"-db", db},
             {"-priority", priority},
             {"-nodeName", nodeName},
             {"-peerList", peerString},
