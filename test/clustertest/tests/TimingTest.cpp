@@ -11,7 +11,7 @@ struct TimingTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup() {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -22,7 +22,7 @@ struct TimingTest : tpunit::TestFixture {
     {
         // Test write commands.
         for (auto i : {0,1,2}) {
-            BedrockTester* brtester = tester->getBedrockTester(i);
+            BedrockTester& brtester = tester->getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("idcollision h");
@@ -31,7 +31,7 @@ struct TimingTest : tpunit::TestFixture {
             int retries = 3;
             SData result;
             while (retries) {
-                auto results = brtester->executeWaitMultipleData({query});
+                auto results = brtester.executeWaitMultipleData({query});
                 result = results[0];
                 if (result.isSet("totalTime")) {
                     break;
@@ -97,12 +97,12 @@ struct TimingTest : tpunit::TestFixture {
 
         // Test read commands
         for (auto i : {0,1,2}) {
-            BedrockTester* brtester = tester->getBedrockTester(i);
+            BedrockTester& brtester = tester->getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("Query");
             query["query"] = "SELECT * FROM test;";
-            auto results = brtester->executeWaitMultipleData({query});
+            auto results = brtester.executeWaitMultipleData({query});
             auto result = results[0];
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {

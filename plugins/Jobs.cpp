@@ -6,6 +6,17 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
+const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
+    "GetJob",
+    "GetJobs",
+    "QueryJob",
+    "CreateJob",
+    "CreateJobs",
+    "CancelJob",
+    "CreateJob",
+    "CreateJobs",
+};
+
 // Disable noop mode for the lifetime of this object.
 class scopedDisableNoopMode {
   public:
@@ -82,9 +93,18 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
-    // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
-    command.request["crashID"] = to_string(SRandom::rand64());
-    command.crashIdentifyingValues.insert("crashID");
+    // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
+    // command criteria. This is because otherwise we would blanket blacklist every command with the same name.
+    if (supportedRequestVerbs.count(requestVerb)) {
+        command.request["crashID"] = to_string(SRandom::rand64());
+        command.crashIdentifyingValues.insert("crashID");
+    } else {
+        // If this isn't a Jobs command, return early. This early return will catch anyone adding a new Jobs command
+        // but forgetting to add it to `supportedRequestVerbs` because their new command won't work in testing, rather
+        // than letting it fall through to the body of this function below, which would work, but break crash command
+        // handling.
+        return false;
+    }
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.

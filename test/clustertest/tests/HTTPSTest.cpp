@@ -26,7 +26,7 @@ struct HTTPSTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup () {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -34,20 +34,20 @@ struct HTTPSTest : tpunit::TestFixture {
     }
 
     void testMultipleRequests() {
-        BedrockTester* brtester = tester->getBedrockTester(0);
+        BedrockTester& brtester = tester->getTester(0);
         SData request("sendrequest");
         request["httpsRequestCount"] = to_string(3);
-        auto result = brtester->executeWaitVerifyContent(request);
+        auto result = brtester.executeWaitVerifyContent(request);
         auto lines = SParseList(result, '\n');
         ASSERT_EQUAL(lines.size(), 3);
     }
 
     void test() {
         // Send one request to verify that it works.
-        BedrockTester* brtester = tester->getBedrockTester(0);
+        BedrockTester& brtester = tester->getTester(0);
 
         SData request("sendrequest a");
-        auto result = brtester->executeWaitVerifyContent(request);
+        auto result = brtester.executeWaitVerifyContent(request);
         auto lines = SParseList(result, '\n');
         ASSERT_EQUAL(lines.size(), 1);
 
@@ -63,7 +63,6 @@ struct HTTPSTest : tpunit::TestFixture {
         vector<vector<SData>> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, nthHasRequest, &responses, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
                     if (i == 0 && (j % nthHasRequest == 0)) {
@@ -77,7 +76,7 @@ struct HTTPSTest : tpunit::TestFixture {
                         requests.push_back(request);
                     }
                 }
-                auto results = brtester->executeWaitMultipleData(requests);
+                auto results = tester->getTester(i).executeWaitMultipleData(requests);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = results;
             });

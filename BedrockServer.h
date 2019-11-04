@@ -217,7 +217,7 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> shutdownWhileDetached;
 
     // Arguments passed on the command line.
-    const SData& args;
+    const SData args;
 
   private:
     // The name of the sync thread.
