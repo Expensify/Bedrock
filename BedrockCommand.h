@@ -117,6 +117,10 @@ class BedrockCommand : public SQLiteCommand {
     };
     CrashMap crashIdentifyingValues;
 
+    // A command can store anything it likes here in peek, it will persist until `process` so it can be retrieved.
+    // It's up to the command to handle destroying that data.
+    void* peekData;
+
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 

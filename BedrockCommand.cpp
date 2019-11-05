@@ -44,6 +44,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(dontCount != DONT_COUNT)
@@ -66,6 +67,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
+    peekData(from.peekData),
     _inProgressTiming(from._inProgressTiming),
     _timeout(from._timeout),
     countCommand(true)
@@ -74,6 +76,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
     // closed.
     from.httpsRequests.clear();
+    from.peekData = nullptr;
     _commandCount++;
 }
 
@@ -87,6 +90,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -105,6 +109,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -136,8 +141,12 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
         crashIdentifyingValues = move(from.crashIdentifyingValues);
+        peekData = move(from.peekData);
         _inProgressTiming = from._inProgressTiming;
         _timeout = from._timeout;
+
+        // Don't delete when the old object is destroyed.
+        from.peekData = nullptr;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
