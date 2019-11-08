@@ -907,15 +907,21 @@ void BedrockServer::worker(const SData& args,
                             break;
                         }
 
-                        // If the command isn't complete, we'll move it into our map of outstanding HTTPS requests.
+                        // If the command isn't complete, we'll re-queue it.
                         if (command.repeek || !command.areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
                                 core.rollback();
                             }
 
-                            // We'll save this command until any HTTPS requests finish.
-                            server.waitForHTTPS(move(command));
+                            if (!command.areHttpsRequestsComplete()) {
+                                // If it has outstanding HTTPS requests, we'll wait for them.
+                                server.waitForHTTPS(move(command));
+                            } else if (command.repeek) {
+                                // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
+                                // back in the main queue.
+                                commandQueue.push(move(command));
+                            }
 
                             // Move on to the next command until this one finishes.
                             break;
