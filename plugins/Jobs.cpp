@@ -661,6 +661,13 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
+        bool orderByCreated = command.request.isSet("orderByCreated") ? request.test("orderByCreated") : false;
+        string orderByQuery = "ORDER BY ";
+        if (orderByCreated) {
+            orderByQuery += "created ASC";
+        } else {
+            orderByQuery += "nextRun ASC";
+        }
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
@@ -671,7 +678,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                     "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                     "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                     string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
+                orderByQuery + " LIMIT " + safeNumResults + ";";
         } else {
             selectQuery =
                 "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
@@ -683,7 +690,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                             "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                             "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                             string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                        orderByQuery + " LIMIT " + safeNumResults +
                     ") "
                 "UNION ALL "
                     "SELECT * FROM ("
@@ -694,7 +701,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                             "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                             "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                             string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                        orderByQuery +" LIMIT " + safeNumResults +
                     ") "
                 "UNION ALL "
                     "SELECT * FROM ("
@@ -705,7 +712,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                             "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                             "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                             string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
-                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                         orderByQuery + " LIMIT " + safeNumResults +
                     ") "
                 ") "
                 "ORDER BY priority DESC "

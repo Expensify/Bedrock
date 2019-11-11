@@ -30,6 +30,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::noJobFound),
                               TEST(GetJobTest::testPriorities),
                               TEST(GetJobTest::testPrioritiesWithDifferentNextRunTimes),
+                              TEST(GetJobTest::testWithOrderByCreated),
                               TEST(GetJobTest::testWithFinishedAndCancelledChildren),
                               TEST(GetJobTest::testPrioritiesWithRunQueued),
                               TEST(GetJobTest::testMultipleNames),
@@ -348,6 +349,32 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["name"], "medium");
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["name"], "low");
+    }
+
+    // test the orderByCreated parameter
+    void testWithOrderByCreated() {
+        // Create a job with an old created time
+        const uint64_t time = STimeNow();
+        string oldTime = SComposeTime("%Y-%m-%d %H:%M:%S", time - 10'000'000);
+        string futureTime = SComposeTime("%Y-%m-%d %H:%M:%S", time + 10'000'000);
+        SData command("CreateJob");
+        command["name"] = "testJob";
+        command["created"] = oldTime;
+        command["nextRun"] = time;
+        STable expected = tester->executeWaitVerifyContentTable(command);
+
+        // Make another job with an newer created time to test that we are sorting by created
+        command["created"] = time;
+        command["nextRun"] = futureTime;
+        tester->executeWaitVerifyContentTable(command);
+
+        // Verify that we have gotten the correct job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "testJob";
+        command["orderByCreated"] = "true";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(expected["jobID"], response["jobID"]);
     }
 
     // Get a parent job that has finished and cancelled jobs
