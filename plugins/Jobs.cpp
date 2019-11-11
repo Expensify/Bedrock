@@ -124,6 +124,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
         //     - connection - (optional) If "wait" will pause up to "timeout" for a match
         //     - jobPriority - (optional) Only check for jobs with this priority
         //     - timeout - (optional) maximum time (in ms) to wait, default forever
+        //     - orderByCreated - (optional) order results by created time instead of nextRun
         //
         //     Returns:
         //     - 200 - OK
@@ -661,7 +662,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
         bool mockRequest = command.request.isSet("mockRequest") || command.request.isSet("getMockedJobs");
-        bool orderByCreated = command.request.isSet("orderByCreated") ? request.test("orderByCreated") : false;
+        bool orderByCreated = request.test("orderByCreated");
         string orderByQuery = "ORDER BY ";
         if (orderByCreated) {
             orderByQuery += "created ASC";
