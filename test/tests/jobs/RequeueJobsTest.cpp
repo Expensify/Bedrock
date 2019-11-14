@@ -201,7 +201,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
         // Some time setup
         const uint64_t time = STimeNow();
         string oldTime = SComposeTime("%Y-%m-%d %H:%M:%S", time - 10'000'000);
-        string currentTime = SComposeTime("%Y-%m-%d %H:%M:%S", time - 10'000'000);
+        string currentTime = SComposeTime("%Y-%m-%d %H:%M:%S", time + 10'000'000);
 
         // Create the job we will requeue
         SData command("CreateJob");
