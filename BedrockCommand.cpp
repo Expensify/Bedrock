@@ -32,6 +32,9 @@ BedrockCommand::~BedrockCommand() {
     if (countCommand) {
         _commandCount--;
     }
+    if (deallocator && peekData) {
+        deallocator(peekData);
+    }
 }
 
 BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
@@ -45,6 +48,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(dontCount != DONT_COUNT)
@@ -68,6 +72,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
     peekData(from.peekData),
+    deallocator(from.deallocator),
     _inProgressTiming(from._inProgressTiming),
     _timeout(from._timeout),
     countCommand(true)
@@ -77,6 +82,7 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     // closed.
     from.httpsRequests.clear();
     from.peekData = nullptr;
+    from.deallocator = nullptr;
     _commandCount++;
 }
 
@@ -91,6 +97,7 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -110,6 +117,7 @@ BedrockCommand::BedrockCommand(SData _request) :
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
     peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -142,11 +150,13 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
         crashIdentifyingValues = move(from.crashIdentifyingValues);
         peekData = move(from.peekData);
+        deallocator = move(from.deallocator);
         _inProgressTiming = from._inProgressTiming;
         _timeout = from._timeout;
 
         // Don't delete when the old object is destroyed.
         from.peekData = nullptr;
+        from.deallocator = nullptr;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
