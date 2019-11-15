@@ -1232,7 +1232,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         if (jobIDs.size()) {
             const string& name = request["name"];
             string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
-            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ")"+ nameQuery +" WHERE jobID IN(" + SQList(jobIDs)+ ");";
+            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = created"+ nameQuery +" WHERE jobID IN(" + SQList(jobIDs)+ ");";
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 RequeueJobs update failed");
             }
