@@ -117,6 +117,16 @@ class BedrockCommand : public SQLiteCommand {
     };
     CrashMap crashIdentifyingValues;
 
+    // To accommodate plugins that need to store extra data for a command besides the built-in data for a
+    // BedrockCommand, we provide a pointer that the command can use to refer to extra storage. However, because the
+    // lifespan of this storage should match that of the BedrockCommand, we also need to provide a deallocation
+    // function to free this memory when the command completes.
+    // A better solution for this would be to use polymorphism and allow plugins to derive command objects from the
+    // base class of BedrockCommand, but that's too significant of a change to the architecture for the current
+    // timeline, so that is left as a future enhancement.
+    void* peekData;
+    void (*deallocator) (void*);
+
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 

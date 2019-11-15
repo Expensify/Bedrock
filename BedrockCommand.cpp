@@ -32,6 +32,9 @@ BedrockCommand::~BedrockCommand() {
     if (countCommand) {
         _commandCount--;
     }
+    if (deallocator && peekData) {
+        deallocator(peekData);
+    }
 }
 
 BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
@@ -44,6 +47,8 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(dontCount != DONT_COUNT)
@@ -66,6 +71,8 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     timingInfo(from.timingInfo),
     onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
     crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
+    peekData(from.peekData),
+    deallocator(from.deallocator),
     _inProgressTiming(from._inProgressTiming),
     _timeout(from._timeout),
     countCommand(true)
@@ -74,6 +81,8 @@ BedrockCommand::BedrockCommand(BedrockCommand&& from) :
     // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
     // closed.
     from.httpsRequests.clear();
+    from.peekData = nullptr;
+    from.deallocator = nullptr;
     _commandCount++;
 }
 
@@ -87,6 +96,8 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -105,6 +116,8 @@ BedrockCommand::BedrockCommand(SData _request) :
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
+    peekData(nullptr),
+    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request)),
     countCommand(true)
@@ -136,8 +149,14 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         timingInfo = from.timingInfo;
         onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
         crashIdentifyingValues = move(from.crashIdentifyingValues);
+        peekData = move(from.peekData);
+        deallocator = move(from.deallocator);
         _inProgressTiming = from._inProgressTiming;
         _timeout = from._timeout;
+
+        // Don't delete when the old object is destroyed.
+        from.peekData = nullptr;
+        from.deallocator = nullptr;
 
         // And call the base class's move constructor as well.
         SQLiteCommand::operator=(move(from));
