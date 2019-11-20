@@ -1,5 +1,6 @@
 sudo: false
 dist: xenial
+script: ./travis.sh
 env:
     - GXX=g++-6 CC=gcc-6
 addons:
@@ -13,5 +14,4 @@ notifications:
     email:
         on_success: never
 before_install:
-    script: ./travis.sh
     - openssl aes-256-cbc -K $encrypted_efb883363173_key -iv $encrypted_efb883363173_iv -in test/tests/backupManager/data/key.key.enc -out test/tests/backupManager/data/key.key -d
