@@ -1,12 +1,12 @@
 #include <libstuff/libstuff.h>
 #include "S3.h"
 
-S3::S3(const string& awsAccessKey, const string& awsSecretKey, const string& awsBucketName)
+S3::S3(const string& awsAccessKey, const string& awsSecretKey, const string& awsBucketName) :
+    SStandaloneHTTPSManager()
 {
     _keys["awsAccessKey"] = awsAccessKey;
     _keys["awsSecretKey"] = awsSecretKey;
     _keys["awsBucketName"] = awsBucketName;
-    SDEBUG("Created an S3 object.");
     SASSERT(!_keys["awsAccessKey"].empty());
     SASSERT(!_keys["awsSecretKey"].empty());
     SASSERT(!_keys["awsBucketName"].empty());
@@ -70,7 +70,7 @@ SData S3::_buildRequest(const string& method, const string& fileName, const stri
 
     // Put all of the pieces together for the Authorization header
     request["Authorization"] = "AWS4-HMAC-SHA256 Credential=" + awsAccessKey + "/" + scope + ",SignedHeaders="
-                                + signatures["signedHeaders"] + ",signature=" + SToLower(signatures["requestSignature"]) ;
+        + signatures["signedHeaders"] + ",signature=" + SToLower(signatures["requestSignature"]);
     return request;
 }
 
@@ -118,12 +118,12 @@ STable S3::_signRequest(const SData& request, const string& awsSecretKey, const 
 
     // compute our canonical request to sign
     string canonicalRequest = request.getVerb() + "\n" + canonicalURI + "\n" +
-                                            (!canonicalQueryString.empty() ? canonicalQueryString : "") +
-                                            "\n" + canonicalHeaders + "\n" + signedHeaders + "\n" + request["X-Amz-Content-Sha256"];
+        (!canonicalQueryString.empty() ? canonicalQueryString : "") +
+        "\n" + canonicalHeaders + "\n" + signedHeaders + "\n" + request["X-Amz-Content-Sha256"];
 
     // turn our canonical request into a string that needs signing
     string seedStringToSign = "AWS4-HMAC-SHA256\n" + request["X-Amz-Date"] + "\n" + scope + "\n" +
-                                     SToLower(SToHex(SHashSHA256(canonicalRequest)));
+        SToLower(SToHex(SHashSHA256(canonicalRequest)));
 
     // use our computed signing key to sign the string.
     string seedSignature = SToHex(SHMACSHA256(signingKey, seedStringToSign));
@@ -133,7 +133,8 @@ STable S3::_signRequest(const SData& request, const string& awsSecretKey, const 
     return signatures;
 }
 
-string S3::_composeS3HTTP(const SData& request) {
+string S3::_composeS3HTTP(const SData& request)
+{
     // S3 Requests require signed headers, so we can't modify any of them here.
     // If the values are changed after the signature is computed, then the signature
     // won't match when S3 tries to calculate it.
@@ -142,7 +143,7 @@ string S3::_composeS3HTTP(const SData& request) {
     string buffer;
     buffer += request.methodLine + "\r\n";
     for (auto& item : request.nameValueMap) {
-            buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
+        buffer += item.first + ": " + SEscape(item.second, "\r\n\t") + "\r\n";
     }
 
     // Finish the message and add the content, if any
@@ -152,8 +153,8 @@ string S3::_composeS3HTTP(const SData& request) {
     return buffer;
 }
 
-
-SHTTPSManager::Transaction* S3::_httpsSendRawData(const string& url, const SData& request) {
+SHTTPSManager::Transaction* S3::_httpsSendRawData(const string& url, const SData& request)
+{
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;

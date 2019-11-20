@@ -1,99 +1,97 @@
 #pragma once
+#include <BedrockPlugin.h>
+#include <BedrockServer.h>
+#include <bedrockVersion.h>
 #include <libstuff/libstuff.h>
-#include "../../BedrockPlugin.h"
-#include "../../BedrockServer.h"
+#include <libstuff/sqlite3.h>
 #include "S3.h"
 
-
 class BedrockPlugin_BackupManager : public BedrockPlugin {
-    public:
-        // Constructor
-        BedrockPlugin_BackupManager();
+public:
+    // Constructor
+    BedrockPlugin_BackupManager(BedrockServer& s);
 
-        // Destructor
-        ~BedrockPlugin_BackupManager();
+    // Destructor
+    ~BedrockPlugin_BackupManager();
 
-        // Initialize our plugin, sets up our HTTPSManager.
-        void initialize(const SData& args, BedrockServer& server);
+    bool peekCommand(SQLite& db, BedrockCommand& command);
 
-        bool peekCommand(SQLite& db, BedrockCommand& command);
+    virtual string getName()
+    {
+        return "BackupManager";
+    }
 
-        virtual string getName() { return "backupManager"; }
+    bool preventAttach();
 
-        virtual bool preventAttach();
+    // Returns info back to BedrockServer
+    STable getInfo();
 
-        static bool serverDetached();
+    bool serverDetached();
 
-    private:
+    bool canBackup();
 
-        // Our BedrockServer Instance
-        BedrockServer* _server;
+private:
+    SData localArgs;
+    SData keys;
 
-        static SData localArgs;
-        static STable keys;
+    // Used to store details for backup/restores.
+    STable details;
 
-        // Instance of ourselves.
-        static BedrockPlugin_BackupManager* _instance;
+    // Used to prevent two backups from running at the same time.
+    bool operationInProgress;
+    mutex operationMutex;
 
-        // Used to store details for backup/restores.
-        static STable details;
+    // Mutex to wrap our fileMainfest. Necessary because any thread could be
+    // attempting to modify the manifest at any given time.
+    mutex fileManifestMutex;
 
-        // Used to prevent two backups from running at the same time.
-        static bool operationInProgress;
-        static mutex operationMutex;
+    // An STable containing all of our file piece and details (size and offset)
+    // for each piece. For uploads we append to this manifest in each thread
+    // then turn it into JSON when we call _saveManifest. For downloads
+    // we read this STable out of the downloaded manifest and use it to
+    // download the correct files and know the given details for each file.
+    STable fileManifest;
 
-        // Mutex to wrap our fileMainfest. Necessary because any thread could be
-        // attempting to modify the manifest at any given time.
-        static mutex fileManifestMutex;
+    // Wrapper function that spawns the upload worker threads. Detaches the
+    // database by sending a `Detach` command to bedrock. Once we're done it
+    // sends an `Attach` command, to let bedrock know we're done.
+    static void _beginBackup(BedrockPlugin_BackupManager& plugin, bool exitWhenComplete = false);
 
-        // An STable containing all of our file piece and details (size and offset)
-        // for each piece. For uploads we append to this manifest in each thread
-        // then turn it into JSON when we call _saveManifest. For downloads
-        // we read this STable out of the downloaded manifest and use it to
-        // download the correct files and know the given details for each file.
-        static STable fileManifest;
+    // Wrapper function that spawns our restore worker threads. Owns the single
+    // file pointer for writing out out database.
+    static void _beginRestore(BedrockPlugin_BackupManager& plugin, bool exitWhenComplete = false);
 
-        // Wrapper function that spawns the upload worker threads. Detaches the
-        // database by sending a `Detach` command to bedrock. Once we're done it
-        // sends an `Attach` command, to let bedrock know we're done.
-        static void _beginBackup(BedrockPlugin_BackupManager* plugin, bool exitWhenComplete = false);
+    // Internal function for downloading the JSON manifest from S3 and
+    // starting a bootstrap.
+    void _downloadManifest();
 
-        // Wrapper function that spawns our restore worker threads. Owns the single
-        // file pointer for writing out out database.
-        static void _beginRestore(BedrockPlugin_BackupManager* plugin, bool exitWhenComplete = false);
+    // Internal function for generating the JSON manifest file for the backup.
+    void _saveManifest();
 
-        // Internal function for downloading the JSON manifest from S3 and
-        // starting a bootstrap.
-        static void _downloadManifest();
+    // Wrapper function to loop over our wrapper functions in a thread.
+    void _poll(S3& s3, SHTTPSManager::Transaction* request);
 
-        // Internal function for generating the JSON manifest file for the backup.
-        static void _saveManifest();
+    // Wrappers for this plugin that just call the base class of the HTTPSManager.
+    void _prePoll(fd_map& fdm, S3& s3);
+    void _postPoll(fd_map& fdm, uint64_t nextActivity, S3& s3);
 
-        // Wrapper function to loop over our wrapper functions in a thread.
-        static void _poll(S3& s3, SHTTPSManager::Transaction* request);
+    // Internal function to download, gunzip, and decrypt a given file from
+    // the manifest. This function is called in worker threads so all operations
+    // need to be thread safe.
+    string _processFileChunkDownload(const string& fileName, size_t& fileSize, size_t& gzippedFileSize, S3& s3, string fileHash);
 
-        // Wrappers for this plugin that just call the base class of the HTTPSManager.
-        static void _prePoll(fd_map& fdm, S3& s3);
-        static void _postPoll(fd_map& fdm, uint64_t nextActivity, S3& s3);
+    // Internal function to encrypt, gzip, and upload a given file chunk from
+    // the database. Starts by creating a multipart upload in S3, then chunking
+    // the file into 5MB pieces and uploading each one as a "part" of the database
+    // chunk. Once it's finished it "finishes" the multipart upload which causes
+    // S3 to put all of the pieces together on their end. Finally, it adds the
+    // file details to the fileManifest. This function is called in worker threads
+    // so all operations need to be thread safe.
+    void _processFileChunkUpload(char* fileChunk, size_t& fromSize,
+                                 size_t& chunkOffset, const string& chunkNumber, S3& s3);
 
-        // Internal function to download, gunzip, and decrypt a given file from
-        // the manifest. This function is called in worker threads so all operations
-        // need to be thread safe.
-        static string _processFileChunkDownload(const string& fileName, size_t& fileSize, size_t& gzippedFileSize, S3& s3, string fileHash);
+    // Lets a thread tell all the others that it's broken and everyone should exit.
+    atomic<bool> shouldExit;
 
-        // Internal function to encrypt, gzip, and upload a given file chunk from
-        // the database. Starts by creating a multipart upload in S3, then chunking
-        // the file into 5MB pieces and uploading each one as a "part" of the database
-        // chunk. Once it's finished it "finishes" the multipart upload which causes
-        // S3 to put all of the pieces together on their end. Finally, it adds the
-        // file details to the fileManifest. This function is called in worker threads
-        // so all operations need to be thread safe.
-        static void _processFileChunkUpload(char* fileChunk, size_t& fromSize,
-                                            size_t& chunkOffset, const string& chunkNumber, S3& s3);
-
-        // Lets a thread tell all the others that it's broken and everyone should exit.
-        static atomic<bool> shouldExit;
-
-        static bool _isZero(const char* c, uint64_t size);
-
+    static bool _isZero(const char* c, uint64_t size);
 };

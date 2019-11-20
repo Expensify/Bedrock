@@ -1,77 +1,41 @@
 #include "BackupManager.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{backupManager} "
+#define SLOGPREFIX "{BackupManager} "
 
-// Globals
-BedrockPlugin_BackupManager* BedrockPlugin_BackupManager::_instance = nullptr;
-STable BedrockPlugin_BackupManager::details;
-mutex BedrockPlugin_BackupManager::fileManifestMutex;
-STable BedrockPlugin_BackupManager::fileManifest;
-SData BedrockPlugin_BackupManager::localArgs;
-bool BedrockPlugin_BackupManager::operationInProgress = false;
-mutex BedrockPlugin_BackupManager::operationMutex;
-STable BedrockPlugin_BackupManager::keys;
-atomic<bool> BedrockPlugin_BackupManager::shouldExit(false);
-
-BedrockPlugin_BackupManager::BedrockPlugin_BackupManager() :
-    _server(nullptr)
+extern "C" BedrockPlugin_BackupManager* BEDROCK_PLUGIN_REGISTER_BACKUPMANAGER(BedrockServer& s)
 {
-    _instance = this;
+    return new BedrockPlugin_BackupManager(s);
 }
 
-BedrockPlugin_BackupManager::~BedrockPlugin_BackupManager() { }
-
-bool BedrockPlugin_BackupManager::preventAttach() {
-    lock_guard<mutex> lock(operationMutex);
-    return operationInProgress;
-}
-
-bool BedrockPlugin_BackupManager::serverDetached() {
-    if (_instance && _instance->_server) {
-        return _instance->_server->isDetached();
-    }
-    return false;
-}
-
-void BedrockPlugin_BackupManager::initialize(const SData& args, BedrockServer& server) {
-    // Check if this is a live server or not
-    _server = &server;
-    localArgs = args;
+BedrockPlugin_BackupManager::BedrockPlugin_BackupManager(BedrockServer& s) :
+    BedrockPlugin(s), operationInProgress(false), shouldExit(false)
+{
+    localArgs = server.args;
     string awsAccessKey, awsSecretKey, awsBucketName, manifestKey;
-    string keyFile = args["-backupKeyFile"];
+    string keyFile = server.args["-backupKeyFile"];
 
-    // Load our backup keys from a file on disk.
-    // Note that not having a key file is not catastrophic, this is because
-    // we are loading this plugin as a default plugin, and we want to support
-    // the case where people don't want to use it. We instead check for an empty
-    // key object before doing a backup or restore, and exit if that's the case.
-    if (SFileExists(keyFile)) {
-        // Read the whole file into our key
-        if (SParseConfigFile(keyFile, keys)) {
-            SINFO("Loaded key file " << keyFile);
-        } else {
-            SHMMM("Unable to load key file " << keyFile << " as new key file, trying legacy format.");
+    if (localArgs.isSet("-live")) {
+        // Load our backup keys from a file on disk.
+        if (SFileExists(keyFile)) {
             // Read the whole file into our key
             string fileContents = SFileLoad(keyFile);
-            SData tempKey;
-            tempKey.deserialize(fileContents);
-            keys = tempKey.nameValueMap;
+            keys.deserialize(fileContents);
+            SINFO("Loaded key file " << keyFile);
+        } else {
+            SERROR("No secure data file " << keyFile << " found for BackupManager.");
         }
-
-        if (keys.empty()) {
-            SHMMM("Unable to load any keys from key file: " << keyFile);
-        }
+        manifestKey = keys["manifestKey"];
     } else {
-        SHMMM("No secure data file " << keyFile << " found for backupManager.");
+        SINFO("Running in debug mode");
+        manifestKey = "0000000000000000000000000000000000000000000000000000000000000000";
     }
-    manifestKey = keys["manifestKey"];
 
     // If no db arg is set we won't know where to get a db from or where to put one.
-    SASSERT(args.isSet("-db"));
-    details["databasePath"] = args["-db"];
-    details["manifestFileName"] = args["-bootstrap"];
-    details["hostname"] = args["-nodeName"];
+    SASSERT(server.args.isSet("-db"));
+    details["databasePath"] = server.args["-db"];
+    details["manifestFileName"] = server.args["-bootstrap"];
+    details["hostname"] = server.args["-nodeName"];
 
     // Make sure our manifest key is the correct size and add it to the details
     manifestKey = SStrFromHex(manifestKey);
@@ -79,17 +43,12 @@ void BedrockPlugin_BackupManager::initialize(const SData& args, BedrockServer& s
     details["manifestKey"] = manifestKey;
 
     // Check if we are loading into bootstrap mode.
-    if (args.isSet("-bootstrap")) {
+    if (server.args.isSet("-bootstrap")) {
         SINFO("Loading in bootstrap mode.");
         if (details["manifestFileName"].empty()) {
             // It's an error to bootstrap with no given manifest. With no
             // manifest, we have no way of knowing what to download.
             SERROR("Loading into bootstrap mode with no manifest, exiting.");
-        }
-
-        // Make sure we have keys, otherwise everything will fail.
-        if (keys.empty()) {
-            SERROR("Loading into bootstrap mode with no keys, exiting.");
         }
 
         if (SFileExists(details["databasePath"])) {
@@ -101,33 +60,96 @@ void BedrockPlugin_BackupManager::initialize(const SData& args, BedrockServer& s
             lock_guard<mutex> lock(operationMutex);
             operationInProgress = true;
         }
-        thread(_beginRestore, this, args.test("-exitAfterRestore")).detach();
+        thread(_beginRestore, ref(*this), server.args.test("-exitAfterRestore")).detach();
     }
 }
 
-bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& command) {
+BedrockPlugin_BackupManager::~BedrockPlugin_BackupManager()
+{
+}
 
+STable BedrockPlugin_BackupManager::getInfo()
+{
+    STable info;
+    info["version"] = VERSION;
+    return info;
+}
+
+bool BedrockPlugin_BackupManager::preventAttach()
+{
+    lock_guard<mutex> lock(operationMutex);
+    return operationInProgress;
+}
+
+bool BedrockPlugin_BackupManager::serverDetached()
+{
+    return server.isDetached();
+}
+
+// If we're a member of a cluster, make sure we are not going to lose quorum
+// as a result of the backup.
+bool BedrockPlugin_BackupManager::canBackup()
+{
+    list<STable> peerData;
+    while (!server.getPeerInfo(peerData)) {
+        SHMMM("Got empty peerInfo, probably a result of a mutex timeout, trying again.");
+    }
+
+    // If we're a single node cluster or if we're a permafollower, go ahead and back up.
+    if (!localArgs.isSet("-peerList") && peerData.empty()) {
+        SINFO("We're the only member of this cluster, backing up!");
+        return true;
+    } else if (stoi(localArgs["-priority"]) == 0) {
+        SINFO("We're a permafollower, backing up!");
+        return true;
+    }
+
+    // Calculate if it's safe or not to go offline for a backup. If we would be
+    // the last quorum member online, we can't back up yet.
+    int fullPeers = 0;
+    int onlineFullPeers = 0;
+    for (auto& peer: peerData) {
+        // Count all of the online full peers, which is a peer that's logged in and either following or leading.
+        if (peer["LoggedIn"] == "true" && (peer["State"] == SQLiteNode::stateName(SQLiteNode::FOLLOWING) ||
+                                           peer["State"] == SQLiteNode::stateName(SQLiteNode::LEADING)) &&
+            peer["Permafollower"] != "true") {
+            onlineFullPeers += 1;
+        }
+
+        // Count all of the peers that aren't marked as a permafollower
+        if (peer["Permafollower"] != "true") {
+            fullPeers += 1;
+        }
+    }
+
+    // If the number of online peers is higher than half + 1 full peers, then we
+    // can safely go offline to do a backup.
+    SINFO("Trying to run a backup, onlineFullPeers: " << onlineFullPeers << " fullPeers: " << fullPeers << " quroum: " << (fullPeers / 2 + 1));
+    return onlineFullPeers >= (fullPeers / 2 + 1);
+}
+
+bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& command)
+{
     SData& request = command.request;
-    SData&  response = command.response;
+    SData& response = command.response;
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
-    if (SIEquals(request.getVerb(), "BeginBackup")) {
+    if (SIEquals(request.getVerb(), "BeginExpensifyBackup")) {
         // We only allow this command to be called from localhost.
         if (!request["_source"].empty()) {
             SWARN("Got command " << request.getVerb() << " from non-localhost source: " << request["_source"]);
             STHROW("401 Unauthorized");
         }
 
-        if (keys.empty()) {
-            SALERT("Trying to run a backup with no keys, exiting early.");
-            STHROW("404 Missing keyfile");
+        // We require a 64 char length encryption key
+        verifyAttributeSize(request, "key", 64, 64);
+
+        if (!canBackup()) {
+            STHROW("501 Unable to backup, not enough peers");
         }
 
-        // We require a 64 char length encryption key
-        verifyAttributeSize(request, "key", 64 , 64);
-
         // Tell bedrock to detach from the database so we can copy it without changes.
-        _instance->_server->setDetach(true);
+        server.setDetach(true);
 
         // Allow for specifying an amount of threads different from the command line.
         if (request.isSet("threads")) {
@@ -161,11 +183,11 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
         SASSERT(details["manifestIV"].size() == SAES_BLOCK_SIZE);
 
         // Piece together our file name.
-        details["manifestFileName"] =  details["date"] + "/" +
-                                       details["hostname"] + "." +
-                                       details["randomNumber"] + ".IV-" +
-                                       details["manifestIV"] + "-" +
-                                       "manifest.json-enc";
+        details["manifestFileName"] = details["date"] + "/" +
+            "manifest-" +
+            details["hostname"] + "." +
+            details["randomNumber"] + ".IV-" +
+            details["manifestIV"] + ".json-enc";
 
         // Start the backup in a thread so that we don't have to block on returning
         // the results of this command to bedrock. This allows us to avoid any
@@ -178,7 +200,7 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
             }
             operationInProgress = true;
         }
-        thread(_beginBackup, this, request.test("ExitWhenComplete")).detach();
+        thread(_beginBackup, ref(*this), request.test("ExitWhenComplete")).detach();
 
         // We're done here
         response["manifestFileName"] = details["manifestFileName"];
@@ -187,15 +209,16 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
     return false;
 }
 
-void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plugin, bool exitWhenComplete) {
+void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager& plugin, bool exitWhenComplete)
+{
     SInitialize("backup");
 
     uint64_t startTime = STimeNow();
-    const string& fileName = details["databasePath"];
+    const string& fileName = plugin.details["databasePath"];
 
     // Wait until the server is done detaching
     SINFO("Waiting for server to detach.");
-    while (!serverDetached()) {
+    while (!plugin.serverDetached()) {
         usleep(50000);
     }
 
@@ -208,7 +231,43 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
         SDEBUG("Filesize is: " << fromSize);
     }
 
-    size_t chunkSize = stoull(details["chunkSize"]);
+    // If there's a wal or shm file present we need to wait until they are gone, or timeout is hit.
+    uint64_t retries = 100;
+    string walFile = fileName + "-wal";
+    string shmFile = fileName + "-shm";
+
+    // Try until there are no retries left or until the wal and shm files are gone or 0 bytes.
+    while (retries && ((SFileExists(walFile) && SFileSize(walFile) > 0) || (SFileExists(shmFile) && SFileSize(walFile) > 0))) {
+        // Open the DB and run a single query on it to cause a check point.
+        sqlite3* _db;
+        int walSizeFrames = 0;
+        int framesCheckpointed = 0;
+        SINFO((SFileExists(fileName) ? "Opening" : "Creating") << " database '" << fileName << "'.");
+        const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
+        SASSERT(!sqlite3_open_v2(fileName.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
+
+        // The second parameter of this API is the "name" of the database connection inside of sqlite, which
+        // is explicitly different than the file name. Unless you have a sqlite3 db connection with multiple databases
+        // attached, this is always "main".
+        int result = sqlite3_wal_checkpoint_v2(_db, "main", SQLITE_CHECKPOINT_TRUNCATE, &walSizeFrames, &framesCheckpointed);
+        if (result == SQLITE_OK) {
+            SINFO("Truncate checkpoint successful, checkpointed " << framesCheckpointed << " of " << walSizeFrames);
+        } else {
+            SWARN("Unable to complete truncate checkpoint, result: " << result << ", extended error code: " << sqlite3_extended_errcode(_db) << " error message: " << sqlite3_errmsg(_db) << " will try " << retries << " more times");
+        }
+
+        // Then close it back up.
+        SINFO("Closing database '" << fileName << ".");
+        SASSERT(!sqlite3_close(_db));
+        SINFO("Database closed.");
+        retries--;
+    }
+
+    if (SFileExists(walFile) || SFileExists(shmFile)) {
+        SWARN("We still have a wal or shm file after checkpointing. wal size: " << SFileSize(walFile) << " shm size: " << SFileSize(shmFile));
+    }
+
+    size_t chunkSize = stoull(plugin.details["chunkSize"]);
     SINFO(fileName << " is " << fromSize << " bytes, which means we should upload " << fromSize / chunkSize << " chunks");
 
     // Thread safe variables to be shared across our threads.
@@ -219,9 +278,9 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
     list<thread> uploadThreadList;
 
     // Detect the amount of threads this server can handle, at a minimum 1 thread.
-    uint threadsToUse = localArgs.isSet("-workerThreads") ? stoi(localArgs["-workerThreads"]) : thread::hardware_concurrency();
+    uint threadsToUse = plugin.localArgs.isSet("-workerThreads") ? stoi(plugin.localArgs["-workerThreads"]) : thread::hardware_concurrency();
     int workerThreads = max(1u, threadsToUse);
-    for (int threadId = 0; threadId < workerThreads ; threadId++) {
+    for (int threadId = 0; threadId < workerThreads; threadId++) {
         uploadThreadList.emplace_back([&, threadId]() {
             SInitialize("uploadWorker" + to_string(threadId));
 
@@ -236,10 +295,10 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
             SINFO("Successfully opened " << fileName << " for reading.");
 
             // Create an S3 connection to poll for data.
-            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
+            S3 s3(plugin.keys["awsAccessKey"], plugin.keys["awsSecretKey"], plugin.keys["awsBucketName"]);
 
             char* buf = new char[chunkSize];
-            while (!shouldExit) {
+            while (!plugin.shouldExit) {
                 // Read 10MB chunk off of the database file
                 size_t myChunkNumber = chunkNumber.fetch_add(1);
                 size_t myOffset = myChunkNumber * chunkSize;
@@ -258,7 +317,7 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
                 size_t numRead = fread(buf, 1, chunkSize, from);
 
                 // Upload the chunk we read
-                plugin->_processFileChunkUpload(buf, numRead, myOffset, to_string(myChunkNumber), s3);
+                plugin._processFileChunkUpload(buf, numRead, myOffset, to_string(myChunkNumber), s3);
 
                 completeBytes.fetch_add(numRead);
                 int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
@@ -290,31 +349,32 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager* plug
     }
 
     // Generate and upload the manifest for this backup.
-    _saveManifest();
+    plugin._saveManifest();
 
     // We're done!
     {
         // Need to unset operationInProgress before we join or we'll never join.
-        lock_guard<mutex> lock(operationMutex);
-        operationInProgress = false;
-        shouldExit = false;
+        lock_guard<mutex> lock(plugin.operationMutex);
+        plugin.operationInProgress = false;
+        plugin.shouldExit = false;
     }
 
     // Reattach the db if we're not shutting down.
     if (exitWhenComplete) {
-        _instance->_server->shutdownWhileDetached = true;
+        plugin.server.shutdownWhileDetached = true;
     } else {
-        _instance->_server->setDetach(false);
+        plugin.server.setDetach(false);
     }
 
-    SINFO("Backup is complete, took: " << (STimeNow() - startTime)/1'000'000  << " seconds.");
+    SINFO("Backup is complete, took: " << (STimeNow() - startTime) / 1'000'000 << " seconds.");
 }
 
-void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plugin, bool exitWhenComplete) {
+void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager& plugin, bool exitWhenComplete)
+{
     SInitialize("restore");
 
     uint64_t startTime = STimeNow();
-    const string& fileName = details["databasePath"];
+    const string& fileName = plugin.details["databasePath"];
 
     // Create the database file. If we have an old (probably corrupted) database file,
     // this will delete it. Otherwise, it creats it so we can write to it below.
@@ -325,21 +385,31 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
     }
     // We've created it, now we'll close it up and reopen in each thread for update.
     fclose(create);
+    string walFile = fileName + "-wal";
+    string shmFile = fileName + "-shm";
+
+    // If there's a wal or shm file present we need to delete those
+    if (SFileExists(walFile)) {
+        unlink(walFile.c_str());
+    }
+    if (SFileExists(shmFile)) {
+        unlink(shmFile.c_str());
+    }
 
     // Start by downloading the given manifest.
-    _downloadManifest();
+    plugin._downloadManifest();
 
     list<thread> downloadThreadList;
 
     // Detect the amount of threads this server can handle, at a minimum 1 thread.
-    uint threadsToUse = localArgs.isSet("-workerThreads") ? stoi(localArgs["-workerThreads"]) : thread::hardware_concurrency();
+    uint threadsToUse = plugin.localArgs.isSet("-workerThreads") ? stoi(plugin.localArgs["-workerThreads"]) : thread::hardware_concurrency();
     int workerThreads = max(1u, threadsToUse);
-    for (int threadId = 0; threadId < workerThreads ; threadId++) {
+    for (int threadId = 0; threadId < workerThreads; threadId++) {
         downloadThreadList.emplace_back([&, threadId]() {
             SInitialize("downloadWorker" + to_string(threadId));
 
             // Create an S3 connection to poll for data.
-            S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
+            S3 s3(plugin.keys["awsAccessKey"], plugin.keys["awsSecretKey"], plugin.keys["awsBucketName"]);
 
             // Each thread needs it's own file handle, or else another thread could call seek
             // before we call fwrite, causing this thread to write to a location other than where it seeked.
@@ -350,7 +420,7 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
             }
             SINFO("Successfully opened " << fileName << " for writing.");
 
-            while (!shouldExit) {
+            while (!plugin.shouldExit) {
                 // Get a fileName and the associated JSON details.
                 string fileName, fileDetailsJSON;
 
@@ -358,12 +428,12 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
                 // same file. Erase the file as soon as we have the details
                 // pulled out.
                 {
-                    lock_guard<mutex> lock(fileManifestMutex);
-                    auto it = fileManifest.begin();
-                    if (it != fileManifest.end()) {
+                    lock_guard<mutex> lock(plugin.fileManifestMutex);
+                    auto it = plugin.fileManifest.begin();
+                    if (it != plugin.fileManifest.end()) {
                         fileName = it->first;
                         fileDetailsJSON = it->second;
-                        fileManifest.erase(it);
+                        plugin.fileManifest.erase(it);
                     } else {
                         SINFO("No more files to download, we're done!");
                         return;
@@ -377,10 +447,10 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
                 string fileHash = fileDetails["chunkHash"];
 
                 SINFO("File " << fileName << " details, offset: " << offset << ", size: "
-                        << size << ", gzippedFileSize: " << gzippedFileSize << " fileHash: "
-                        << fileHash);
+                      << size << ", gzippedFileSize: " << gzippedFileSize << " fileHash: "
+                      << fileHash);
 
-                string buffer = plugin->_processFileChunkDownload(fileName, size, gzippedFileSize, s3, fileHash);
+                string buffer = plugin._processFileChunkDownload(fileName, size, gzippedFileSize, s3, fileHash);
 
                 // Check that the buffer returned is not completely NULL.
                 // This is to help us debug how we're possibly writing a full NULL
@@ -413,7 +483,6 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
             // Done with the file, close it up.
             fclose(to);
             SINFO("Done restoring! Closing file " << fileName);
-
         });
     }
 
@@ -425,27 +494,28 @@ void BedrockPlugin_BackupManager::_beginRestore(BedrockPlugin_BackupManager* plu
         downloadThread.join();
     }
 
-    SINFO("Bootstrap is complete, took: " << (STimeNow() - startTime)/1'000'000  << " seconds.");
+    SINFO("Bootstrap is complete, took: " << (STimeNow() - startTime) / 1'000'000 << " seconds.");
 
     {
-        lock_guard<mutex> lock(operationMutex);
-        operationInProgress = false;
-        shouldExit = false;
+        lock_guard<mutex> lock(plugin.operationMutex);
+        plugin.operationInProgress = false;
+        plugin.shouldExit = false;
     }
 
     // Tell BedrockServer we're ready to go, or shut down.
     if (exitWhenComplete) {
-        _instance->_server->shutdownWhileDetached = true;
+        plugin.server.shutdownWhileDetached = true;
     } else {
-        _instance->_server->setDetach(false);
+        plugin.server.setDetach(false);
     }
 }
 
-void BedrockPlugin_BackupManager::_downloadManifest() {
+void BedrockPlugin_BackupManager::_downloadManifest()
+{
     const string& fileName = details["manifestFileName"];
 
     // Get the IV from the file name
-    string manifestIV = SAfterUpTo(fileName, "IV-", "-");
+    string manifestIV = SAfterUpTo(fileName, "IV-", ".");
 
     // Create an S3 connection to poll for data.
     S3 s3(keys["awsAccessKey"], keys["awsSecretKey"], keys["awsBucketName"]);
@@ -494,7 +564,8 @@ void BedrockPlugin_BackupManager::_downloadManifest() {
     fileManifest = SParseJSONObject(backupManifest["files"]);
 }
 
-void BedrockPlugin_BackupManager::_saveManifest() {
+void BedrockPlugin_BackupManager::_saveManifest()
+{
     // Take the manifest we have and add some information to it.
     STable finalManifest;
     finalManifest["date"] = details["date"];
@@ -506,6 +577,10 @@ void BedrockPlugin_BackupManager::_saveManifest() {
     {
         lock_guard<mutex> lock(fileManifestMutex);
         finalManifest["files"] = SComposeJSONObject(fileManifest);
+
+        // Delete the file manifest object so that if we re-run a new backup
+        // this will be empty.
+        fileManifest.clear();
     }
 
     // Compose a JSON out of all of our other JSON/info, ship it to S3.
@@ -544,7 +619,8 @@ void BedrockPlugin_BackupManager::_saveManifest() {
     }
 }
 
-void BedrockPlugin_BackupManager::_poll(S3& s3, SHTTPSManager::Transaction* request) {
+void BedrockPlugin_BackupManager::_poll(S3& s3, SHTTPSManager::Transaction* request)
+{
     while (!request->response && !shouldExit) {
         // Our fdm holds a list of all sockets we could need to read or write to
         fd_map fdm;
@@ -555,17 +631,19 @@ void BedrockPlugin_BackupManager::_poll(S3& s3, SHTTPSManager::Transaction* requ
     }
 }
 
-void BedrockPlugin_BackupManager::_postPoll(fd_map& fdm, uint64_t nextActivity, S3& s3) {
+void BedrockPlugin_BackupManager::_postPoll(fd_map& fdm, uint64_t nextActivity, S3& s3)
+{
     list<SHTTPSManager::Transaction*> completedHTTPSRequests;
     s3.postPoll(fdm, nextActivity, completedHTTPSRequests);
 }
 
-void BedrockPlugin_BackupManager::_prePoll(fd_map& fdm, S3& s3) {
+void BedrockPlugin_BackupManager::_prePoll(fd_map& fdm, S3& s3)
+{
     s3.prePoll(fdm);
 }
 
-string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& fileName, size_t& fileSize, size_t& gzippedFileSize, S3& s3, string fileHash) {
-
+string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& fileName, size_t& fileSize, size_t& gzippedFileSize, S3& s3, string fileHash)
+{
     // Create a buffer for us to store the processed chunk in.
     string buffer;
 
@@ -604,7 +682,7 @@ string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& file
             SHMMM("S3 Request returned: " << httpsResponseCode << " when downloading " << fileName << ", going to try again.");
             SHMMM("S3 full error was: " << responseContent);
             if (httpsResponseCode == 500 || httpsResponseCode == 501 || httpsResponseCode == 503) {
-                SHMMM("Bedrock timeout (Error " << httpsResponseCode << "), retrying chunk number: " << fileName);
+                SHMMM("Expensify timeout (Error " << httpsResponseCode << "), retrying chunk number: " << fileName);
                 continue;
             } else if (httpsResponseCode == 400) {
                 SHMMM("Amazon timeout, retrying chunk number: " << fileName);
@@ -631,8 +709,8 @@ string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& file
             if ((decryptedChunk.size() - gzippedFileSize) < 16) {
                 SINFO("We're stripping " << (decryptedChunk.size() - gzippedFileSize) << " bytes off of the chunk.");
             } else {
-                SALERT("Whoa we stripped "  << (decryptedChunk.size() - gzippedFileSize) << "  off of this chunk: "
-                        << fileName << ", which is more than the max padding amount, something is very wrong.");
+                SALERT("Whoa we stripped " << (decryptedChunk.size() - gzippedFileSize) << "  off of this chunk: "
+                       << fileName << ", which is more than the max padding amount, something is very wrong.");
                 shouldExit = true;
             }
             decryptedChunk.resize(gzippedFileSize);
@@ -641,9 +719,9 @@ string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& file
         buffer = SGUnzip(decryptedChunk);
         uint64_t gzipTime = STimeNow();
         SINFO("[performance] Chunk " << fileName << " took "
-                << (gzipTime - startTime)/1'000 << "ms to process, "
-                << (decryptTime - startTime)/1'000 << "ms was spent decrypting "
-                << (gzipTime - decryptTime)/1'000 << "ms was spent gzipping." );
+              << (gzipTime - startTime) / 1'000 << "ms to process, "
+              << (decryptTime - startTime) / 1'000 << "ms was spent decrypting "
+              << (gzipTime - decryptTime) / 1'000 << "ms was spent gzipping.");
 
         string bufferHash = SToHex(SHashSHA256(buffer));
 
@@ -664,7 +742,8 @@ string BedrockPlugin_BackupManager::_processFileChunkDownload(const string& file
 }
 
 void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_t& fromSize,
-                                                             size_t& chunkOffset, const string& chunkNumber, S3& s3) {
+                                                                   size_t& chunkOffset, const string& chunkNumber, S3& s3)
+{
     // Makes for easy retries.
     string encryptedFileChunk;
 
@@ -673,10 +752,10 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
 
     while (1) {
         SINFO("Processing chunkNumber " << chunkNumber);
-        const string& fileName =  details["date"] + "/" +
-                                  details["hostname"] + "." +
-                                  details["randomNumber"] + "-" +
-                                  chunkNumber + ".enc.gz";
+        const string& fileName = details["date"] + "/" +
+            details["hostname"] + "." +
+            details["randomNumber"] + "-" +
+            chunkNumber + ".gz.enc";
 
         // We'll assign this later, we declare it here to keep it in scope.
         SHTTPSManager::Transaction* chunkRequest = nullptr;
@@ -691,7 +770,7 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
         // Also, don't bother if we've already done this (i.e., we're retrying).
         uint64_t startTime = 0, gzipTime = 0, encryptTime = 0;
         if (encryptedFileChunk.empty()) {
-            // This constructor specifies the amount of bytes to convert from c string to std::string
+            // This constructor specifies the amount of bytes to convert from c string to string
             // because otherwise it will stop at the first null byte it encounters. Since we aren't copying
             // an actual string, we will almost always encounter one before the end of the c string.
             // Gzip then encrypt the file chunk.
@@ -705,9 +784,9 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
             chunkRequest = s3.upload(fileName, encryptedFileChunk);
         }
         SINFO("[performance] Chunk " << chunkNumber << " took "
-                << (encryptTime - startTime)/1'000 << "ms to process, "
-                << (gzipTime - startTime)/1'000 << "ms was spent gzipping "
-                << (encryptTime - gzipTime)/1'000 << "ms was spent encrypting");
+              << (encryptTime - startTime) / 1'000 << "ms to process, "
+              << (gzipTime - startTime) / 1'000 << "ms was spent gzipping "
+              << (encryptTime - gzipTime) / 1'000 << "ms was spent encrypting");
 
         // Ensure we have a request object then add it to our list.
         SASSERT(chunkRequest);
@@ -734,7 +813,7 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
                 s3.closeTransaction(chunkRequest);
                 continue;
             } else if (httpsResponseCode == 500 || httpsResponseCode == 501 || httpsResponseCode == 503) {
-                SHMMM("Bedrock timeout (Error " << httpsResponseCode << "), retrying chunk number: " << chunkNumber);
+                SHMMM("Expensify timeout (Error " << httpsResponseCode << "), retrying chunk number: " << chunkNumber);
                 s3.closeTransaction(chunkRequest);
                 continue;
             } else {
@@ -743,7 +822,7 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
                 s3.closeTransaction(chunkRequest);
                 break;
             }
-            _instance->_server->setDetach(false);
+            server.setDetach(false);
         }
 
         // Store some details about this chunk.
@@ -769,7 +848,8 @@ void BedrockPlugin_BackupManager::_processFileChunkUpload(char* fileChunk, size_
     }
 }
 
-bool BedrockPlugin_BackupManager::_isZero(const char* c, uint64_t length) {
+bool BedrockPlugin_BackupManager::_isZero(const char* c, uint64_t length)
+{
     if (length) {
         for (uint64_t i = 0; i < length; i++) {
             if (c[i] != 0) {
