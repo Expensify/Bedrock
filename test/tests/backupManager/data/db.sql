@@ -5,7 +5,7 @@ WITH RECURSIVE
         SELECT RANDOM(), RANDOM()
             UNION ALL
         SELECT RANDOM(), RANDOM() FROM randdata
-        LIMIT 100*1500*2 --creates a 13MB db, adjust numbers to create larger or smaller
+        LIMIT 100*1500 --creates a 1.3MB db, adjust numbers to create larger or smaller
     )
 
 INSERT INTO table1 ( indexedColumn, nonIndexedColumn )
