@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cat test/tests/backupManager/data/key.key
+
 export GXX=g++-6
 export CC=gcc-6
 
