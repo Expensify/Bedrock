@@ -1901,7 +1901,7 @@ void BedrockServer::_status(BedrockCommand& command) {
 }
 
 bool BedrockServer::_isControlCommand(BedrockCommand& command) {
-    if (SIEquals(command.request.methodLine, "BeginBackup")            ||
+    if (SIEquals(command.request.methodLine, "BeginDatabaseCopy")      ||
         SIEquals(command.request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command.request.methodLine, "ClearCommandPort")       ||
         SIEquals(command.request.methodLine, "ClearCrashCommands")     ||
@@ -1919,7 +1919,7 @@ bool BedrockServer::_isControlCommand(BedrockCommand& command) {
 void BedrockServer::_control(BedrockCommand& command) {
     SData& response = command.response;
     response.methodLine = "200 OK";
-    if (SIEquals(command.request.methodLine, "BeginBackup")) {
+    if (SIEquals(command.request.methodLine, "BeginDatabaseCopy")) {
         _shouldBackup = true;
         _beginShutdown("Detach", true);
     } else if (SIEquals(command.request.methodLine, "SuppressCommandPort")) {

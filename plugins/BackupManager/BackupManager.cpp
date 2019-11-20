@@ -15,21 +15,18 @@ BedrockPlugin_BackupManager::BedrockPlugin_BackupManager(BedrockServer& s) :
     string awsAccessKey, awsSecretKey, awsBucketName, manifestKey;
     string keyFile = server.args["-backupKeyFile"];
 
-    if (localArgs.isSet("-live")) {
-        // Load our backup keys from a file on disk.
-        if (SFileExists(keyFile)) {
-            // Read the whole file into our key
-            string fileContents = SFileLoad(keyFile);
-            keys.deserialize(fileContents);
+    // Load our backup keys from a file on disk.
+    if (SFileExists(keyFile)) {
+        // Read the whole file into our key
+        if(SParseConfigFile(keyFile, keys)) {
             SINFO("Loaded key file " << keyFile);
         } else {
-            SERROR("No secure data file " << keyFile << " found for BackupManager.");
+            SERROR("Failed to load secure keys.");
         }
-        manifestKey = keys["manifestKey"];
     } else {
-        SINFO("Running in debug mode");
-        manifestKey = "0000000000000000000000000000000000000000000000000000000000000000";
+        SERROR("No secure data file " << keyFile << " found for BackupManager.");
     }
+    manifestKey = keys["manifestKey"];
 
     // If no db arg is set we won't know where to get a db from or where to put one.
     SASSERT(server.args.isSet("-db"));
@@ -41,6 +38,10 @@ BedrockPlugin_BackupManager::BedrockPlugin_BackupManager(BedrockServer& s) :
     manifestKey = SStrFromHex(manifestKey);
     SASSERT(manifestKey.size() == SAES_KEY_SIZE);
     details["manifestKey"] = manifestKey;
+    SDEBUG("keys: " << keys["manifestKey"]);
+    SDEBUG("keys: " << keys["awsAccessKey"]);
+    SDEBUG("keys: " << keys["awsSecretKey"]);
+    SDEBUG("keys: " << keys["awsBucketName"]);
 
     // Check if we are loading into bootstrap mode.
     if (server.args.isSet("-bootstrap")) {
@@ -134,7 +135,7 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
     SData& response = command.response;
     SDEBUG("Peeking at '" << request.methodLine << "'");
 
-    if (SIEquals(request.getVerb(), "BeginExpensifyBackup")) {
+    if (SIEquals(request.getVerb(), "BeginBackup")) {
         // We only allow this command to be called from localhost.
         if (!request["_source"].empty()) {
             SWARN("Got command " << request.getVerb() << " from non-localhost source: " << request["_source"]);
@@ -200,6 +201,11 @@ bool BedrockPlugin_BackupManager::peekCommand(SQLite& db, BedrockCommand& comman
             }
             operationInProgress = true;
         }
+
+        SDEBUG("keys: " << keys["manifestKey"]);
+        SDEBUG("keys: " << keys["awsAccessKey"]);
+        SDEBUG("keys: " << keys["awsSecretKey"]);
+        SDEBUG("keys: " << keys["awsBucketName"]);
         thread(_beginBackup, ref(*this), request.test("ExitWhenComplete")).detach();
 
         // We're done here
@@ -299,7 +305,7 @@ void BedrockPlugin_BackupManager::_beginBackup(BedrockPlugin_BackupManager& plug
 
             char* buf = new char[chunkSize];
             while (!plugin.shouldExit) {
-                // Read 10MB chunk off of the database file
+                // Read chunk off of the database file
                 size_t myChunkNumber = chunkNumber.fetch_add(1);
                 size_t myOffset = myChunkNumber * chunkSize;
 

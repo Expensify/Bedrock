@@ -2265,13 +2265,14 @@ bool SParseConfigFile(const string& path, STable& nameValueMap) {
                 continue;
             }
 
-            size_t pos = line.find("=");
+            // If the line has a colon, it's a name value pair so let's parse it.
+            size_t pos = line.find(":");
             // Split our name and values up
             if (pos != string::npos) {
                 string name = line.substr(0, pos);
                 nameValueMap[name] = line.substr(pos + 1);
             } else {
-                SWARN("Found a line that wasn't a comment but wasn't an NVP, skipping.");
+                SWARN("Found a line that wasn't a comment but wasn't an NVP, skipping. " << line);
                 continue;
             }
 

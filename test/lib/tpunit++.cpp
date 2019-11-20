@@ -242,7 +242,6 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         printf("[==============]\n");
         printf("[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
         printf("[==============]\n");
-        SDEBUG("COLE Passed: " << tpunit_detail_stats()._passes);
         return tpunit_detail_stats()._failures;
     }
     return 1;

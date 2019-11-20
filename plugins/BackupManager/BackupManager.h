@@ -32,7 +32,7 @@ public:
 
 private:
     SData localArgs;
-    SData keys;
+    STable keys;
 
     // Used to store details for backup/restores.
     STable details;

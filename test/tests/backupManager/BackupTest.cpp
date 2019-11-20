@@ -13,14 +13,20 @@ struct BackupTest : tpunit::TestFixture
     BedrockTester* uploadTester;
     BedrockTester* downloadTester;
     string manifestFileName;
+    char cwd[1024];
 
     void setupClass()
     {
+        if (!getcwd(cwd, sizeof(cwd))) {
+            STHROW("Couldn't get CWD");
+        }
         // Load our SQL file and run the queries from inside of it
-        string dbSql = SFileLoad("data/db.sql");
+        string dbSql = SFileLoad(string(cwd) + "/tests/backupManager/data/db.sql");
         const list<string>& queries = SParseList(dbSql, ';');
         uploadTester = new BedrockTester({{"-db", "/tmp/ebmtest_upload.db"},
-                                          {"-backupKeyFile", "data/key.key"}}, queries);
+                                          {"-backupKeyFile", string(cwd) + "/tests/backupManager/data/key.key"},
+                                          {"-plugins", "BackupManager"}},
+                                         queries);
     }
 
     void tearDownClass()
@@ -67,8 +73,10 @@ struct BackupTest : tpunit::TestFixture
         // Delete and recreate our tester with the bootstrap flag.
         delete uploadTester;
         downloadTester = new BedrockTester({{"-db", "/tmp/ebmtest_download.db"},
-                                            {"-backupKeyFile", "data/key.key"},
-                                            {"-bootstrap", manifestFileName}}, {});
+                                            {"-backupKeyFile", string(cwd) + "/tests/backupManager/data/key.key"},
+                                            {"-plugins", "BackupManager"},
+                                            {"-bootstrap", manifestFileName}},
+                                           {});
 
         // Wait up to 50s for it to come back up.
         int count = 0;
