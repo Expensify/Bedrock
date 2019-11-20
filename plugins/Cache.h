@@ -5,12 +5,11 @@
 class BedrockPlugin_Cache : public BedrockPlugin {
   public:
     // Constructor / Destructor
-    BedrockPlugin_Cache();
+    BedrockPlugin_Cache(BedrockServer& s);
     ~BedrockPlugin_Cache();
 
     // Implement base class interface
     virtual string getName() { return "Cache"; }
-    virtual void initialize(const SData& args, BedrockServer& server);
     virtual void upgradeDatabase(SQLite& db);
     virtual bool peekCommand(SQLite& db, BedrockCommand& command);
     virtual bool processCommand(SQLite& db, BedrockCommand& command);

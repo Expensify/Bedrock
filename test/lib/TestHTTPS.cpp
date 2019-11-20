@@ -1,7 +1,5 @@
 #include "TestHTTPS.h"
 
-TestHTTPS::TestHTTPS() {}
-
 TestHTTPS::~TestHTTPS() {}
 
 bool TestHTTPS::_onRecv(Transaction* transaction) {

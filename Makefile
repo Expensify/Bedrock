@@ -7,26 +7,11 @@ ifndef CC
 	CC = gcc-6
 endif
 
-# We use our project directory as a search path so we don't need "../../../.." all over the place.
-PROJECT = $(shell pwd)
-
-# Extract our version information from git.
-VERSION = $(shell git log -1 | head -n 1 | cut -d ' ' -f 2)
-
-# Turn on C++14.
-CFLAGS =-g -DSVERSION="\"$(VERSION)\"" -Wall
-CXXFLAGS =-std=gnu++14
-CXXFLAGS +=-I$(PROJECT) -I$(PROJECT)/mbedtls/include -Werror -Wno-unused-result
-
-# This works because 'PRODUCTION' is passed as a command-line param, and so is ignored here when set that way.
-PRODUCTION=false
-ifeq ($(PRODUCTION),true)
-# Extra build stuff
+GIT_REVISION = $(shell git rev-parse --short HEAD)
+PROJECT = $(shell git rev-parse --show-toplevel)
+INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+CXXFLAGS = -g -std=c++14 -fpic -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
 LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
-CFLAGS +=-O2 -fstack-protector --param=ssp-buffer-size=4 -Wformat -Wformat-security
-else
-CFLAGS +=-O0
-endif
 
 # We'll stick object and dependency files in here so we don't need to look at them.
 INTERMEDIATEDIR = .build
@@ -135,15 +120,15 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 # where for the object file rule, the reverse is true.
 $(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(GXX) $(CXXFLAGS) -MMD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
-	$(GXX) $(CFLAGS) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
+	$(GXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
 
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
+	$(CC) -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<

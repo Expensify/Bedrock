@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/SLockTimer.h>
 #include <libstuff/sqlite3.h>
 
 // Convenience macro for locking our static commit lock.

@@ -15,14 +15,14 @@ class BedrockServer : public SQLiteServer {
     //
     // Shutting down is pretty obvious - when we want to turn a server off, we shut it down. The shut down process
     // tries to do this without interrupting any client requests.
-    // Standing down is a little less obvious. If we're the master node in a cluster, there are two ways to stand down.
+    // Standing down is a little less obvious. If we're the leader node in a cluster, there are two ways to stand down.
     // The first is that we are shutting down, in which case we'll need to let the rest of the cluster know that it
-    // will need to pick a new master. The other is if a higher-priority master asks to stand up in our place. In this
+    // will need to pick a new leader. The other is if a higher-priority leader asks to stand up in our place. In this
     // second case, we'll stand down without shutting down.
     //
     //
     // # Shutting Down
-    // Let's start with shutting down. Standing down is a subset of shutting down (when we start out mastering), and
+    // Let's start with shutting down. Standing down is a subset of shutting down (when we start out leading), and
     // we'll get to that later.
     //
     // When a BedrockServer comes up, it's _shutdownState is RUNNING. This is the normal operational state. When the
@@ -31,13 +31,13 @@ class BedrockServer : public SQLiteServer {
     // 1. The command port is closed, and no new connections are accepted from clients.
     // 2. When we respond to commands, we add a `Connection: close` header to them, and close the socket after the
     //    response is sent.
-    // 3. We set timeouts for any HTTPS commands to five seconds. Note that if we are slaving, this has no effect on
-    //    commands that were escalated to master, we continue waiting for those commands.
+    // 3. We set timeouts for any HTTPS commands to five seconds. Note that if we are following, this has no effect on
+    //    commands that were escalated to leader, we continue waiting for those commands.
     //
     // The server then continues operating as normal until there are no client connections left (because we've stopped
     // accepting them, and closed any connections as we responded to their commands), at which point it switches to
     // CLIENTS_RESPONDED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
-    // was mastering, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
+    // was leading, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
     // next section.
     //
     // The sync node will continue STANDINGDOWN until two conditions are true:
@@ -49,9 +49,9 @@ class BedrockServer : public SQLiteServer {
     // queue. We increment the count of these commands when we dequeue a command from the main queue, and decrememnt it
     // when we respond to the command (and also in a few other exception cases where the command is abandoned or does
     // not require a response). This means that if a command has been moved to the queue of outstanding HTTPS commands,
-    // or the sync thread queue, or is currently being handled by a worker, or escalated to master, it's "in progress".
+    // or the sync thread queue, or is currently being handled by a worker, or escalated to leader, it's "in progress".
     //
-    // If we were not mastering, there is no STANDINGDOWN state to wait through - all of a slaves commands come from
+    // If we were not leading, there is no STANDINGDOWN state to wait through - all of a followers commands come from
     // local clients, and once those connections are all closed, then that means every command has been responded to,
     // implying that there are neither queued commands nor commands in progress.
     //
@@ -64,7 +64,7 @@ class BedrockServer : public SQLiteServer {
     // # Standing Down
     // Standing down when shutting down is covered in the above section, but there's an additional bit of work to do of
     // we're standing down without shutting down. The main difference is that we are not waiting on all existing
-    // clients to be disconnected while we stand down - we will be able to service these same clients as a slave as
+    // clients to be disconnected while we stand down - we will be able to service these same clients as a follower as
     // soon as we finish this operation. However, we still have the same criteria for STANDINGDOWN as listed above, no
     // commands in progress, and an empty command queue.
     //
@@ -82,7 +82,7 @@ class BedrockServer : public SQLiteServer {
     // HTTPS transaction is "in progress" until the transaction completes, but then re-queued for processing by a
     // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
     // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
-    // down, then we'd try and run processCommand() while slaving, which would be invalid. For this reason, we need to
+    // down, then we'd try and run processCommand() while following, which would be invalid. For this reason, we need to
     // make sure any command that has ever been started gets completed before we finish standing down. Unfortunately,
     // once a command has been added to the main queue, there's no way of knowing whether it's ever been started
     // without inspecting every command in the queue, hence the `_standDownQueue`.
@@ -108,14 +108,14 @@ class BedrockServer : public SQLiteServer {
     // need to support it for now. Here's the case that should look catastrophic, but is actually quite common, and what
     // we should eventually do about it:
     //
-    // A slave begins shutdown, and sets a 60 second timeout. It has escalated commands to master. It wants to wait for
+    // A follower begins shutdown, and sets a 60 second timeout. It has escalated commands to leader. It wants to wait for
     // the responses to these commands before it finishes shutting down, but *there is no timeout on escalated
     // commands*. Normally, we won't try to shut down the sync node until we've responded to all connected clients.
     // Because there will always be connected clients waiting for these responses to escalated commands, we'll wait the
     // full 60 seconds, and then we'll just die with no responses. Effectively, the sever `kill -9`'s itself here,
     // leaving clients hanging with no cleanup.
     //
-    // On master, this state could be catastrophic, though master doesn't need to worry about a lack of timeouts on
+    // On leader, this state could be catastrophic, though leader doesn't need to worry about a lack of timeouts on
     // escalations, so let's look at a different case - a command running a custom query that takes longer than our 60
     // second timeout. There will be a local client waiting for the response to this command, so the same criteria
     // breaks - we can't shut down the sync thread until it's complete, but the command it's waiting for doesn't return
@@ -145,12 +145,15 @@ class BedrockServer : public SQLiteServer {
         DONE
     };
 
-    // This is the list of plugins that we're actually using, which is a subset of all available plugins. It will be
-    // initialized at construction based on the arguments passed in.
-    list<BedrockPlugin*> plugins;
+    // All of our available plugins, indexed by the name they supply.
+    map<string, BedrockPlugin*> plugins;
 
-    // Our only constructor.
-    BedrockServer(const SData& args);
+    // Our primary constructor.
+    BedrockServer(const SData& args_);
+
+    // A constructor that builds an object that does nothing. This exists only to pass to stubbed-out test methods that
+    // require a BedrockServer object.
+    BedrockServer(SQLiteNode::State state, const SData& args_);
 
     // Destructor
     virtual ~BedrockServer();
@@ -177,7 +180,7 @@ class BedrockServer : public SQLiteServer {
     bool shutdownComplete();
 
     // Exposes the replication state to plugins.
-    SQLiteNode::State getState() const { return _replicationState.load(); }
+    atomic<SQLiteNode::State>& getState() { return _replicationState; }
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
@@ -195,6 +198,7 @@ class BedrockServer : public SQLiteServer {
 
     // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
     // sync node.
+    bool getPeerInfo(list<STable>& peerData);
     list<STable> getPeerInfo();
 
     // Send a command to all of our peers. It will be wrapped appropriately.
@@ -212,12 +216,12 @@ class BedrockServer : public SQLiteServer {
     // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
     atomic<bool> shutdownWhileDetached;
 
+    // Arguments passed on the command line.
+    const SData args;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
-
-    // Arguments passed on the command line. This is modified internally and used as a general attribute store.
-    SData _args;
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
@@ -250,9 +254,9 @@ class BedrockServer : public SQLiteServer {
     // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
     atomic<bool> _upgradeInProgress;
 
-    // This is the current version of the master node, updated after every SQLiteNode::update() iteration. A
+    // This is the current version of the leader node, updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
-    atomic<string> _masterVersion;
+    atomic<string> _leaderVersion;
 
     // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
     // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
@@ -274,7 +278,7 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _syncThreadComplete;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
-    // becomes master. It will return true if the DB has changed and needs to be committed.
+    // becomes leader. It will return true if the DB has changed and needs to be committed.
     bool _upgradeDB(SQLite& db);
 
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
@@ -286,26 +290,26 @@ class BedrockServer : public SQLiteServer {
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
-    static void sync(SData& args,
+    static void sync(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
-                     atomic<string>& masterVersion,
+                     atomic<string>& leaderVersion,
                      BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Wraps the sync thread main function to make it easy to add exception handling.
-    static void syncWrapper(SData& args,
+    static void syncWrapper(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
                      atomic<bool>& upgradeInProgress,
-                     atomic<string>& masterVersion,
+                     atomic<string>& leaderVersion,
                      BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SData& args,
+    static void worker(const SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
-                       atomic<string>& masterVersion,
+                       atomic<string>& leaderVersion,
                        BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                        BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
@@ -318,6 +322,7 @@ class BedrockServer : public SQLiteServer {
 
     // The following are constants used as methodlines by status command requests.
     static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
+    static constexpr auto STATUS_IS_FOLLOWER       = "GET /status/isFollower HTTP/1.1";
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
     static constexpr auto STATUS_STATUS            = "Status";
@@ -348,7 +353,7 @@ class BedrockServer : public SQLiteServer {
     void _beginShutdown(const string& reason, bool detach = false);
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
-    // depends on a future commit if we're a slave that's behind master, and a client makes two requests, one to a node
+    // depends on a future commit if we're a follower that's behind leader, and a client makes two requests, one to a node
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
     // we catch up, and then move them back to the regular command queue.
     multimap<uint64_t, BedrockCommand> _futureCommitCommands;
@@ -363,7 +368,7 @@ class BedrockServer : public SQLiteServer {
     // is committing. This mutex is *not* recursive.
     shared_timed_mutex _syncThreadCommitMutex;
 
-    // Set this when we switch mastering.
+    // Set this when we switch leading.
     atomic<bool> _suppressMultiWrite;
 
     // A set of command names that will always be run with QUORUM consistency level.

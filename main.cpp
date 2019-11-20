@@ -3,7 +3,7 @@
 /// Process entry point for Bedrock server.
 ///
 #include <libstuff/libstuff.h>
-#include <libstuff/version.h>
+#include <bedrockVersion.h>
 #include "BedrockServer.h"
 #include "BedrockPlugin.h"
 #include "plugins/BackupManager/BackupManager.h"
@@ -81,19 +81,17 @@ set<string> loadPlugins(SData& args) {
     // Those are stored here.
     set <string> postProcessedNames;
 
-    // Instantiate all of our built-in plugins.
-    map<string, BedrockPlugin*> standardPluginMap = {
-        {"DB",     new BedrockPlugin_DB()},
-        {"JOBS",   new BedrockPlugin_Jobs()},
-        {"CACHE",  new BedrockPlugin_Cache()},
-        {"MYSQL",  new BedrockPlugin_MySQL()},
-        {"BACKUPMANAGER",  new BedrockPlugin_BackupManager()}
-    };
+    // Register all of our built-in plugins.
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB", [](BedrockServer& s){return new BedrockPlugin_DB(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS", [](BedrockServer& s){return new BedrockPlugin_Jobs(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("CACHE", [](BedrockServer& s){return new BedrockPlugin_Cache(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){return new BedrockPlugin_MySQL(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("BACKUPMANAGER", [](BedrockServer& s){return new BedrockPlugin_BackupManager(s);}));
 
     for (string pluginName : plugins) {
-        // If it's one of our standard plugins, pass it's name through to postProcessedNames and move on.
-        if (standardPluginMap.find(SToUpper(pluginName)) != standardPluginMap.end()) {
-            postProcessedNames.insert(SToUpper(pluginName));
+        // If it's one of our standard plugins, just move on to the next one.
+        if (BedrockPlugin::g_registeredPluginList.find(SToUpper(pluginName)) != BedrockPlugin::g_registeredPluginList.end()) {
+            postProcessedNames.emplace(SToUpper(pluginName));
             continue;
         }
 
@@ -130,7 +128,7 @@ set<string> loadPlugins(SData& args) {
                 SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
-                ((void(*)()) sym)();
+                BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
             }
         }
     }
@@ -165,9 +163,13 @@ int main(int argc, char* argv[]) {
         umask(0);
         SASSERT(setsid() >= 0);
         SASSERT(chdir("/") >= 0);
-        freopen("/dev/null", "r", stdin);
-        freopen("/dev/null", "w", stdout);
-        freopen("/dev/null", "w", stderr);
+        if (!freopen("/dev/null", "r", stdin) ||
+            !freopen("/dev/null", "w", stdout) ||
+            !freopen("/dev/null", "w", stderr)
+        ) {
+            cout << "Couldn't daemonize." << endl;
+            return -1;
+        }
     }
 
     // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
@@ -177,7 +179,7 @@ int main(int argc, char* argv[]) {
 
     if (args.isSet("-version")) {
         // Just output the version
-        cout << SVERSION << endl;
+        cout << VERSION << endl;
         return 0;
     }
     if (args.isSet("-h") || args.isSet("-?") || args.isSet("-help")) {
@@ -245,7 +247,7 @@ int main(int argc, char* argv[]) {
         cout << "- Put each Bedrock node on a different server." << endl;
         cout << endl;
         cout << "- Assign each node a different priority (greater than 0).  The highest priority node will be the "
-                "'master', which will coordinate distributed transactions."
+                "'leader', which will coordinate distributed transactions."
              << endl;
         cout << endl;
         return 1;

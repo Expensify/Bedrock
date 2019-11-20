@@ -6,6 +6,17 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
+const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
+    "GetJob",
+    "GetJobs",
+    "QueryJob",
+    "CreateJob",
+    "CreateJobs",
+    "CancelJob",
+    "CreateJob",
+    "CreateJobs",
+};
+
 // Disable noop mode for the lifetime of this object.
 class scopedDisableNoopMode {
   public:
@@ -24,6 +35,10 @@ class scopedDisableNoopMode {
     SQLite& _db;
     bool _wasNoop;
 };
+
+BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
+{
+}
 
 int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
 {
@@ -78,9 +93,18 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
     STable& content = command.jsonContent;
     const string& requestVerb = request.getVerb();
 
-    // Each command is unique, so if the command causes a crash, we'll identify it on a unique random number.
-    command.request["crashID"] = to_string(SRandom::rand64());
-    command.crashIdentifyingValues.insert("crashID");
+    // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
+    // command criteria. This is because otherwise we would blanket blacklist every command with the same name.
+    if (supportedRequestVerbs.count(requestVerb)) {
+        command.request["crashID"] = to_string(SRandom::rand64());
+        command.crashIdentifyingValues.insert("crashID");
+    } else {
+        // If this isn't a Jobs command, return early. This early return will catch anyone adding a new Jobs command
+        // but forgetting to add it to `supportedRequestVerbs` because their new command won't work in testing, rather
+        // than letting it fall through to the body of this function below, which would work, but break crash command
+        // handling.
+        return false;
+    }
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
@@ -236,25 +260,22 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             if (parentJobID) {
                 SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                 SQResult result;
-                if (!db.read("SELECT state, retryAfter, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
                     STHROW("404 parentJobID does not exist");
                 }
-                if (result[0][1] != "") {
-                    STHROW("402 Auto-retrying parents cannot have children");
-                }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                    STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
 
                 // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
                 // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
                 // any change made here will happen early enough for all of our existing checks to work correctly, and
                 // everything should be good when we get to `processCommand`.
-                STable parentData = SParseJSONObject(result[0][2]);
+                STable parentData = SParseJSONObject(result[0][1]);
                 bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
                 bool childIsMocked = command.request.isSet("mockRequest");
 
@@ -281,9 +302,9 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
                     STHROW("502 Select failed");
                 }
 
-                // If there's no job or the existing job doesn't match the data we've been passed, escalate to master.
+                // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
                 if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    // Return early, no need to pass to master, there are no more jobs to create.
+                    // Return early, no need to pass to leader, there are no more jobs to create.
                     SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
                       << (command.request.isSet("mockRequest") ? "true" : "false"));
                     content["jobID"] = result[0][0];
@@ -431,7 +452,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         list<string> jobIDs;
         for (auto& job : jsonJobs) {
             // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
-            // master.
+            // leader.
 
             // If this is a mock request, we insert that into the data.
             string originalData = job["data"];
@@ -533,9 +554,9 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 if (result.empty()) {
                     STHROW("404 parentJobID does not exist");
                 }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "PAUSED")) {
-                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING or PAUSED");
+                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
+                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING, RUNQUEUED or PAUSED (" << result[0][0] << ")");
+                    STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
 
                 // Verify that the parent and child job have the same `mockRequest` setting.
@@ -580,7 +601,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 auto initialState = "QUEUED";
                 if (parentJobID) {
                     auto parentState = db.read("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
-                    if (SIEquals(parentState, "RUNNING")) {
+                    if (SIEquals(parentState, "RUNNING") || SIEquals(parentState, "RUNQUEUED")) {
                         initialState = "PAUSED";
                     }
                 }
@@ -739,38 +760,36 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 retriableJobs.push_back(job);
             } else {
                 nonRetriableJobs.push_back(result[c][0]);
+            }
 
-                // Only non-retryable jobs can have children so see if this job has any
-                // FINISHED/CANCELLED child jobs, indicating it is being resumed
-                SQResult childJobs;
-                if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
-                    STHROW("502 Failed to select finished child jobs");
-                }
+            // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
+            SQResult childJobs;
+            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+                STHROW("502 Failed to select finished child jobs");
+            }
 
-                if (!childJobs.empty()) {
-                    // Add associative arrays of all children depending on their states
-                    list<string> finishedChildJobArray;
-                    list<string> cancelledChildJobArray;
-                    for (auto row : childJobs.rows) {
-                        STable childJob;
-                        childJob["jobID"] = row[0];
-                        childJob["data"] = row[1];
+            if (!childJobs.empty()) {
+                // Add arrays of children jobs to our response, 2 arrays to clearly distinguish between finished and cancelled children.
+                list<string> finishedChildJobArray;
+                list<string> cancelledChildJobArray;
+                for (auto row : childJobs.rows) {
+                    STable childJob;
+                    childJob["jobID"] = row[0];
+                    childJob["data"] = row[1];
 
-                        if (row[2] ==  "FINISHED") {
-                            finishedChildJobArray.push_back(SComposeJSONObject(childJob));
-                        } else {
-                            cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
-                        }
+                    if (row[2] ==  "FINISHED") {
+                        finishedChildJobArray.push_back(SComposeJSONObject(childJob));
+                    } else {
+                        cancelledChildJobArray.push_back(SComposeJSONObject(childJob));
                     }
-                    job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
-                    job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
                 }
+                job["finishedChildJobs"] = SComposeJSONArray(finishedChildJobArray);
+                job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
 
             jobList.push_back(SComposeJSONObject(job));
         }
 
-        // Update jobs without retryAfter
         if (!nonRetriableJobs.empty()) {
             SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
             string updateQuery = "UPDATE jobs "
@@ -782,7 +801,6 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             }
         }
 
-        // Update jobs with retryAfter
         if (!retriableJobs.empty()) {
             SINFO("Updating jobs with retryAfter");
             for (auto job : retriableJobs) {
@@ -977,9 +995,10 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
 
         // If we are finishing a job that has child jobs, set its state to paused.
         if (SIEquals(requestVerb, "FinishJob") && _hasPendingChildJobs(db, jobID)) {
-            // Update the parent job to PAUSED
+            // Update the parent job to PAUSED. Also update its nextRun: in case it has a retryAfter, GetJobs set the nextRun too far in the future (to account for retryAfter), so set it to what it should
+            // be now that it is waiting on its children to complete.
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED' WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + SQ(lastRun) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
 
@@ -1209,8 +1228,11 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
     else if (SIEquals(requestVerb, "RequeueJobs")) {
         SINFO("Requeueing jobs with IDs: " << command.request["jobIDs"]);
         list<int64_t> jobIDs = SParseIntegerList(command.request["jobIDs"]);
+        
         if (jobIDs.size()) {
-            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = DATETIME("+ SCURRENT_TIMESTAMP() + ") WHERE jobID IN(" + SQList(jobIDs)+ ");";
+            const string& name = request["name"];
+            string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
+            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = created"+ nameQuery +" WHERE jobID IN(" + SQList(jobIDs)+ ");";
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 RequeueJobs update failed");
             }
@@ -1339,21 +1361,13 @@ void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
             }
         }
         SINFO("Failed sending response to '" << command.request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
-        if(_server) {
-            SData requeue("RequeueJobs");
-            requeue["jobIDs"] = SComposeList(jobIDs);
+        SData requeue("RequeueJobs");
+        requeue["jobIDs"] = SComposeList(jobIDs);
 
-            // Keep the request ID so we'll be able to associate these in the logs.
-            requeue["requestID"] = command.request["requestID"];
-            SQLiteCommand cmd(move(requeue));
-            cmd.initiatingClientID = -1;
-            _server->acceptCommand(move(cmd));
-        } else {
-            SWARN("No server, can't re-queue jobs: " << SComposeList(jobIDs));
-        }
+        // Keep the request ID so we'll be able to associate these in the logs.
+        requeue["requestID"] = command.request["requestID"];
+        SQLiteCommand cmd(move(requeue));
+        cmd.initiatingClientID = -1;
+        server.acceptCommand(move(cmd));
     }
-}
-
-void BedrockPlugin_Jobs::initialize(const SData& args, BedrockServer& server) {
-    _server = &server;
 }

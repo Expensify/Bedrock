@@ -92,6 +92,7 @@ struct MySQLPacket {
  */
 class BedrockPlugin_MySQL : public BedrockPlugin {
   public:
+    BedrockPlugin_MySQL(BedrockServer& s);
     // Indicate which functions we are implementing
     virtual string getName() { return "MySQL"; }
     virtual void initialize(const SData& args, BedrockServer& server) { _args = args; }

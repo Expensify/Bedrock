@@ -10,7 +10,7 @@ struct StatusTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup() {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -26,13 +26,13 @@ struct StatusTest : tpunit::TestFixture {
         vector<string> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &responses, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData status("Status");
                 status["writeConsistency"] = "ASYNC";
 
                 // Ok, send them all!
-                auto result = brtester->executeWaitVerifyContent(status);
+                auto result = brtester.executeWaitVerifyContent(status);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = result;
             });
@@ -48,9 +48,9 @@ struct StatusTest : tpunit::TestFixture {
             STable json = SParseJSONObject(responses[i]);
             auto peers = SParseJSONArray(json["peerList"]);
             if (i == 0) {
-                ASSERT_EQUAL(json["isMaster"], "true");
+                ASSERT_EQUAL(json["isLeader"], "true");
             } else {
-                ASSERT_EQUAL(json["isMaster"], "false");
+                ASSERT_EQUAL(json["isLeader"], "false");
             }
             ASSERT_EQUAL(peers.size(), 2);
         }

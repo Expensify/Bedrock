@@ -102,7 +102,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         jobs.push_back(SComposeJSONObject(job1Content));
         jobs.push_back(SComposeJSONObject(job2Content));
         command["jobs"] = SComposeJSONArray(jobs);
-        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING or PAUSED");
+        tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
     }
 
     void createWithParentMocked() {

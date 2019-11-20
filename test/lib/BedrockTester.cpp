@@ -6,6 +6,7 @@ string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibili
 string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
 SData BedrockTester::globalArgs;
 mutex BedrockTester::_testersMutex;
+PortMap BedrockTester::ports;
 set<BedrockTester*> BedrockTester::_testers;
 list<string> BedrockTester::locations = {
     "../bedrock",
@@ -30,6 +31,10 @@ string BedrockTester::getServerName() {
             return location;
         }
     }
+    cout << "Couldn't find bedrock server" << endl;
+    exit(1);
+
+    // Won't get hit.
     return "";
 }
 
@@ -40,22 +45,35 @@ void BedrockTester::stopAll() {
     }
 }
 
-BedrockTester::BedrockTester(const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished) :
-    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished)
+BedrockTester::BedrockTester(const map<string, string>& args,
+                             const list<string>& queries,
+                             bool startImmediately,
+                             bool keepFilesWhenFinished,
+                             uint16_t serverPort,
+                             uint16_t nodePort,
+                             uint16_t controlPort,
+                             bool ownPorts) :
+    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished, serverPort, nodePort, controlPort, ownPorts)
 { }
 
-BedrockTester::BedrockTester(int threadID, const map<string, string>& args, const list<string>& queries, bool startImmediately, bool keepFilesWhenFinished)
-  : _keepFilesWhenFinished(keepFilesWhenFinished)
+BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
+                             const list<string>& queries,
+                             bool startImmediately,
+                             bool keepFilesWhenFinished,
+                             uint16_t serverPort,
+                             uint16_t nodePort,
+                             uint16_t controlPort,
+                             bool ownPorts)
+  : _keepFilesWhenFinished(keepFilesWhenFinished),
+    _serverPort(ownPorts ? ports.getPort() : serverPort),
+    _nodePort(ownPorts ? ports.getPort() : nodePort),
+    _controlPort(ownPorts ? ports.getPort() : controlPort),
+    _ownPorts(ownPorts)
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
     }
-
-    // Set the ports.
-    _serverPort = 8989 + threadID;
-    _nodePort = 9889 + threadID;
-    _controlPort = 19999 + threadID;
 
     // Set these values from the arguments if provided, or the defaults if not.
     try {
@@ -98,12 +116,6 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args, cons
     
     _controlAddr = _args["-controlPort"];
 
-    // And reset the ports from the arguments in case they were supplied there.
-    string ignore;
-    SParseHost(_args.at("-serverHost"), ignore, _serverPort);
-    SParseHost(_args.at("-nodeHost"), ignore, _nodePort);
-    SParseHost(_args.at("-controlPort"), ignore, _controlPort);
-
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_dbName)) {
         SFileSave(_dbName, "");
@@ -142,11 +154,21 @@ BedrockTester::~BedrockTester() {
     }
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
+
+    if (_ownPorts) {
+        ports.returnPort(_serverPort);
+        ports.returnPort(_nodePort);
+        ports.returnPort(_controlPort);
+    }
 }
 
 string BedrockTester::startServer(bool dontWait) {
     string serverName = getServerName();
     int childPID = fork();
+    if (childPID == -1) {
+        cout << "Fork failed, acting like server died." << endl;
+        exit(1);
+    }
     if (!childPID) {
         // We are the child!
         list<string> args;
@@ -183,6 +205,14 @@ string BedrockTester::startServer(bool dontWait) {
 
         // And then start the new server!
         execvp(serverName.c_str(), cargs);
+
+        // The above line should only ever return if it failed, so let's check for that.
+        cout << "Starting bedrock failed: " << serverName;
+        for (auto& arg : args) {
+            cout << " " << arg;
+        }
+        cout << endl;
+        exit(1);
     } else {
         // We'll kill this later.
         _serverPID = childPID;
@@ -278,7 +308,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
-            int timeoutAutoRetries = 3;
+            int timeoutAutoRetries = 1;
             size_t myIndex = 0;
             SData myRequest;
             while (true) {
@@ -316,6 +346,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 if (timedOut && timeoutAutoRetries--) {
                     // reuse last request.
                     cout << "Timed out a request, auto-retrying. Might work." << endl;
+                    cout << myRequest.serialize() << endl;
                 } else {
                     // Get a request to work on.
                     SAUTOLOCK(listLock);
@@ -501,13 +532,18 @@ int BedrockTester::getControlPort() {
     return _controlPort;
 }
 
-bool BedrockTester::waitForState(string state, uint64_t timeoutUS)
+bool BedrockTester::waitForState(string state, uint64_t timeoutUS) {
+    return waitForStates({state}, timeoutUS);
+}
+
+bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS)
 {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
             STable json = SParseJSONObject(executeWaitVerifyContent(SData("Status")));
-            if (json["state"] == state) {
+            auto it = states.find(json["state"]);
+            if (it != states.end()) {
                 return true;
             }
             // It's still not there, let it try again.

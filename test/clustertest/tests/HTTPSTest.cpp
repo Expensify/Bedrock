@@ -13,7 +13,7 @@
  * However, to actually verify that you saw a conflict during the test, you can look at the logs for something like:
  *
  * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
- *     {brcluster_node_0/MASTERING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
+ *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
 struct HTTPSTest : tpunit::TestFixture {
     HTTPSTest()
@@ -26,7 +26,7 @@ struct HTTPSTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup () {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -34,20 +34,20 @@ struct HTTPSTest : tpunit::TestFixture {
     }
 
     void testMultipleRequests() {
-        BedrockTester* brtester = tester->getBedrockTester(0);
+        BedrockTester& brtester = tester->getTester(0);
         SData request("sendrequest");
         request["httpsRequestCount"] = to_string(3);
-        auto result = brtester->executeWaitVerifyContent(request);
+        auto result = brtester.executeWaitVerifyContent(request);
         auto lines = SParseList(result, '\n');
         ASSERT_EQUAL(lines.size(), 3);
     }
 
     void test() {
         // Send one request to verify that it works.
-        BedrockTester* brtester = tester->getBedrockTester(0);
+        BedrockTester& brtester = tester->getTester(0);
 
         SData request("sendrequest a");
-        auto result = brtester->executeWaitVerifyContent(request);
+        auto result = brtester.executeWaitVerifyContent(request);
         auto lines = SParseList(result, '\n');
         ASSERT_EQUAL(lines.size(), 1);
 
@@ -55,7 +55,7 @@ struct HTTPSTest : tpunit::TestFixture {
         // to cause a conflict.
         mutex m;
 
-        // Every 10th request on master is an HTTP request.
+        // Every 10th request on leader is an HTTP request.
         int nthHasRequest = 10;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
@@ -63,7 +63,6 @@ struct HTTPSTest : tpunit::TestFixture {
         vector<vector<SData>> responses(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, nthHasRequest, &responses, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
                     if (i == 0 && (j % nthHasRequest == 0)) {
@@ -77,7 +76,7 @@ struct HTTPSTest : tpunit::TestFixture {
                         requests.push_back(request);
                     }
                 }
-                auto results = brtester->executeWaitMultipleData(requests);
+                auto results = tester->getTester(i).executeWaitMultipleData(requests);
                 lock_guard<decltype(m)> lock(m);
                 responses[i] = results;
             });
@@ -89,7 +88,7 @@ struct HTTPSTest : tpunit::TestFixture {
         }
         threads.clear();
 
-        // Look at all the responses from master, to make sure they're all 200s, and either had a body or did not,
+        // Look at all the responses from leader, to make sure they're all 200s, and either had a body or did not,
         // according with what sort of command they were.
         for (size_t i = 0; i < responses[0].size(); i++) {
             string code = responses[0][i].methodLine;

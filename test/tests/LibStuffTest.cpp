@@ -23,6 +23,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testSQList),
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion),
+                                    TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains))
     { }
 
@@ -568,6 +569,14 @@ struct LibStuff : tpunit::TestFixture {
 
         string start = "I wish I was an Oscar Meyer Weiner";
         ASSERT_EQUAL(SStrFromHex(SToHex(start)), start);
+
+    }
+
+    void testBase32Conversion() {
+        ASSERT_EQUAL(SBase32HexStringFromBase32("ABCDEF"), "012345");
+        ASSERT_EQUAL(SBase32HexStringFromBase32("LMNOPQRST"), "BCDEFGHIJ");
+
+        ASSERT_EQUAL(SHexStringFromBase32("RQMRTRON"), "DEADBEEF17")
     }
 
     void testContains() {

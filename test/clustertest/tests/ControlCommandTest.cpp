@@ -11,7 +11,7 @@ struct ControlCommandTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup() {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -21,27 +21,27 @@ struct ControlCommandTest : tpunit::TestFixture {
     void testPreventAttach()
     {
         // Test a control command
-        BedrockTester* slave = tester->getBedrockTester(1);
+        BedrockTester& follower = tester->getTester(1);
 
         // Tell the plugin to prevent attaching
         SData command("preventattach");
-        slave->executeWaitVerifyContent(command, "200");
+        follower.executeWaitVerifyContent(command, "200");
 
         // Detach
         SData detachCommand("detach");
-        slave->executeWaitVerifyContent(detachCommand, "203", true);
+        follower.executeWaitVerifyContent(detachCommand, "203", true);
 
         // Wait for it to detach
         sleep(3);
         // Try to attach
         SData attachCommand("attach");
-        slave->executeWaitVerifyContent(attachCommand, "401 Attaching prevented by TestPlugin", true);
+        follower.executeWaitVerifyContent(attachCommand, "401 Attaching prevented by TestPlugin", true);
 
         sleep(5);
 
         // Try to attach again, should be allowed now that the sleep in the plugin
         // has passed.
-        slave->executeWaitVerifyContent(attachCommand, "204", true);
+        follower.executeWaitVerifyContent(attachCommand, "204", true);
     }
 
 } __ControlCommandTest;

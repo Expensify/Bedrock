@@ -54,7 +54,7 @@ SSynchronizedQueue<T>::~SSynchronizedQueue() {
         close(_pipeFD[0]);
     }
     if (_pipeFD[1] != -1) {
-        close(_pipeFD[0]);
+        close(_pipeFD[1]);
     }
 }
 
@@ -72,7 +72,9 @@ void SSynchronizedQueue<T>::postPoll(fd_map& fdm, int bytesToRead) {
     // the pipe has more data to read it will continue to "fire" so other threads also subscribing will pick up work.
     if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
         char readbuffer[bytesToRead];
-        read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+        if (read(_pipeFD[0], readbuffer, sizeof(readbuffer)) == -1) {
+            STHROW("Read from pipe failed.");
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+#include <bedrockVersion.h>
 #include "MySQL.h"
 
 #undef SLOGPREFIX
@@ -219,6 +220,10 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     SAppend(err.payload, &code, sizeof(code)); // Error code
     err.payload += message;                    // Error message
     return err.serialize();
+}
+
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
+{
 }
 
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
@@ -649,7 +654,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"unique_checks", "ON"},
     {"updatable_views_with_limit", "YES"},
     {"version", "5.1.73-log"},
-    {"version_comment", SVERSION},
+    {"version_comment", VERSION},
     {"version_compile_machine", "x86_64"},
     {"version_compile_os", "unknown-linux-gnu"},
     {"wait_timeout", "28800"},

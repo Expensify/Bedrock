@@ -53,6 +53,18 @@ uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
     return min(processTimeout, adjustedTimeout);
 }
 
+bool BedrockCore::isTimedOut(BedrockCommand& command) {
+    try {
+        _getRemainingTime(command);
+    } catch (const SException& e) {
+        // Yep, timed out.
+        _handleCommandException(command, e);
+        command.complete = true;
+        return true;
+    }
+    return false;
+}
+
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
@@ -85,12 +97,12 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
 
             // Try each plugin, and go with the first one that says it succeeded.
             for (auto plugin : _server.plugins) {
-                shouldSuppressTimeoutWarnings = plugin->shouldSuppressTimeoutWarnings();
+                shouldSuppressTimeoutWarnings = plugin.second->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                if (plugin->peekCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' peeked command '" << request.methodLine << "'");
-                    command.peekedBy = plugin;
+                if (plugin.second->peekCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
+                    command.peekedBy = plugin.second;
                     pluginPeeked = true;
                     break;
                 }
@@ -135,10 +147,19 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
+        command.repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
+    } catch (const SHTTPSManager::NotLeading& e) {
+        command.repeek = false;
+        _db.rollback();
+        _db.read("PRAGMA query_only = false;");
+        _db.resetTiming();
+        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+        return false;
     } catch (...) {
+        command.repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
@@ -188,13 +209,13 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             bool (*handler)(int, const char*, string&) = nullptr;
-            bool enable = plugin->shouldEnableQueryRewriting(_db, command, &handler);
+            bool enable = plugin.second->shouldEnableQueryRewriting(_db, command, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
-                if (plugin->processCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin->getName() << "' processed command '" << request.methodLine << "'");
+                if (plugin.second->processCommand(_db, command)) {
+                    SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
-                    command.processedBy = plugin;
+                    command.processedBy = plugin.second;
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {

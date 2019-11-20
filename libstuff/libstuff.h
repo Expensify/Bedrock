@@ -11,6 +11,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h> // for gettimeofday()
 #include <sys/types.h>
@@ -184,9 +185,16 @@ struct SData {
     SData();
     SData(const string& method);
 
+    // Allow forwarding emplacements directly so SData can act like `std::map`.
+    template <typename... Ts>
+    pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args) {
+        return nameValueMap.emplace(forward<Ts>(args)...);
+    }
+
+
     // Operators
     string& operator[](const string& name);
-    string operator[](const string& name) const;
+    const string& operator[](const string& name) const;
 
     // Two templated versions of `set` are provided. One for arithmetic types, and one for other types (which must be
     // convertible to 'string'). These allow you to do the following:
@@ -227,6 +235,7 @@ struct SData {
 
     // Create an SData object; if no Content-Length then take everything as the content
     static SData create(const string& rhs);
+    static const string placeholder;
 };
 
 // --------------------------------------------------------------------------
@@ -322,7 +331,7 @@ void SLogStackTrace();
                    + "] "
 
 // Simply logs a stream to the debugger
-// **NOTE: rsyslog max line size is 2048 bytes.  We split on 1500 byte bounderies in order to fit the
+// **NOTE: rsyslog default max line size is 8k bytes.  We split on 7k byte bounderies in order to fit the
 //         syslog line prefix and the expanded \r\n to #015#012
 // **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
 #define SSYSLOG(_PRI_, _MSG_)                                                                                          \
@@ -331,8 +340,8 @@ void SLogStackTrace();
             ostringstream __out;                                                                                       \
             __out << _MSG_ << endl;                                                                                    \
             const string& __s = __out.str();                                                                           \
-            for (int __i = 0; __i < (int)__s.size(); __i += 1500)                                                      \
-                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 1500).c_str()).c_str());                        \
+            for (int __i = 0; __i < (int)__s.size(); __i += 7168)                                                      \
+                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 7168).c_str()).c_str());                        \
         }                                                                                                              \
     } while (false)
 
@@ -435,6 +444,8 @@ inline string SToHex(uint32_t value) { return SToHex(value, 8); }
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
 string SStrFromHex(const string& buffer);
+string SBase32HexStringFromBase32(const string& buffer);
+string SHexStringFromBase32(const string& buffer);
 
 // Testing various conditions
 #define SWITHIN(_MIN_, _VAL_, _MAX_) (((_MIN_) <= (_VAL_)) && ((_VAL_) <= (_MAX_)))
