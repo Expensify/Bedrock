@@ -395,6 +395,8 @@ void BedrockServer::sync(const SData& args,
             int dropped = 0;
             try {
                 while (true) {
+                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                    command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
                     command = syncNodeQueuedCommands.pop();
                     if (command.initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
@@ -473,6 +475,9 @@ void BedrockServer::sync(const SData& args,
             if (committingCommand) {
                 continue;
             }
+
+            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+            command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
 
             // Get the next sync node command to work on.
             command = syncNodeQueuedCommands.pop();
@@ -685,6 +690,10 @@ void BedrockServer::worker(const SData& args,
                 SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
+            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+            command = BedrockCommand(move(SQLiteCommand(SData())), BedrockCommand::DONT_COUNT);
+
+            // And get another one.
             command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command.request);
