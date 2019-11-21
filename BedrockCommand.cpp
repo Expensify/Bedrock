@@ -139,6 +139,11 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         httpsRequests = move(from.httpsRequests);
         from.httpsRequests.clear();
 
+        // Same here, deallocate current data.
+        if (deallocator && peekData) {
+            deallocator(peekData);
+        }
+
         // Update our other properties.
         peekCount = from.peekCount;
         processCount = from.processCount;
@@ -153,6 +158,17 @@ BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
         deallocator = move(from.deallocator);
         _inProgressTiming = from._inProgressTiming;
         _timeout = from._timeout;
+
+        // If countCommand is changing, update the count.
+        if (countCommand && !from.countCommand) {
+            // this command is no longer counted.
+            _commandCount--;
+        } else if (!countCommand && from.countCommand) {
+            // We need to start counting this command.
+            _commandCount++;
+        }
+        // Now set to match the existing command.
+        countCommand = from.countCommand;
 
         // Don't delete when the old object is destroyed.
         from.peekData = nullptr;
