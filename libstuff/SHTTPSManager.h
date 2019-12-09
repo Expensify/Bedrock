@@ -1,10 +1,13 @@
 #pragma once
+#include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLiteNode.h>
+class BedrockPlugin;
 
-class SHTTPSManager : public STCPManager {
+class SStandaloneHTTPSManager : public STCPManager {
   public:
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SHTTPSManager& owner_);
+        Transaction(SStandaloneHTTPSManager& manager_);
         ~Transaction();
 
         // Attributes
@@ -15,15 +18,15 @@ class SHTTPSManager : public STCPManager {
         SData fullResponse;
         int response;
         STable values;
-        SHTTPSManager& owner;
+        SStandaloneHTTPSManager& manager;
         bool isDelayedSend;
         uint64_t sentTime;
     };
 
     // Constructor/Destructor
-    SHTTPSManager();
-    SHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
-    virtual ~SHTTPSManager();
+    SStandaloneHTTPSManager();
+    SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
+    virtual ~SStandaloneHTTPSManager();
 
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
     void prePoll(fd_map& fdm);
@@ -41,6 +44,13 @@ class SHTTPSManager : public STCPManager {
 
     static int getHTTPResponseCode(const string& methodLine);
 
+    virtual void validate() {
+        // The constructor for a transaction needs to call this on it's manager. It can then throw in cases where this
+        // manager should not be allowed to create transactions. This lets us have different validation behavior for
+        // different managers without needing to subclass Transaction.
+        // The default implementation does nothing.
+    }
+
   protected: // Child API
 
     // Used to create the signing certificate.
@@ -56,7 +66,25 @@ class SHTTPSManager : public STCPManager {
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
 
-    // SHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
+    // SStandaloneHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
     // multiple threads can add/remove from them.
     recursive_mutex _listMutex;
+};
+
+class SHTTPSManager : public SStandaloneHTTPSManager {
+    public:
+    SHTTPSManager(BedrockPlugin& plugin_);
+    SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
+
+    class NotLeading : public exception {
+        const char* what() {
+            return "Can't create SHTTPSManager::Transaction when not leading";
+        }
+    };
+
+    void validate();
+
+    protected:
+    // Reference to the plugin that owns this object.
+    BedrockPlugin& plugin;
 };

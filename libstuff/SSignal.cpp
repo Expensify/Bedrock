@@ -67,7 +67,7 @@ void SInitializeSignals() {
     _SSignal_threadCaughtSignalNumber = 0;
 
     // Make a set of all signals except certain exceptions. These exceptions will cause an `abort()` and attempt to log
-    // a stack trace before esiting. All other signals will get passed to the signal handling thread.
+    // a stack trace before exiting. All other signals will get passed to the signal handling thread.
     sigset_t signals;
     sigfillset(&signals);
     sigdelset(&signals, SIGSEGV);
@@ -150,7 +150,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             void* callstack[100];
             int depth = backtrace(callstack, 100);
 
-            // Log it to a file.Everything in this block should be signal-safe, if we managed to generate the
+            // Log it to a file. Everything in this block should be signal-safe, if we managed to generate the
             // backtrace in the first place.
             int fd = creat("/tmp/bedrock_crash.log", 0666);
             if (fd != -1) {
@@ -163,8 +163,26 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
                   << ") caused crash, logging stack trace.");
             char** symbols = backtrace_symbols(callstack, depth);
+
+            vector<string> details(depth + 1);
+            int status = 0;
+            for (int i = 0; i < depth; i++) {
+                // Demangle them if possible.
+                string temp = symbols[i];
+                size_t start = temp.find_first_of('(');
+                size_t end = temp.find_first_of('+', start);
+                temp = temp.substr(start + 1, end - start - 1);
+                char* demangled = abi::__cxa_demangle(temp.c_str(), 0, 0, &status);
+                if (status == 0) {
+                    details[i + 1] = demangled;
+                } else {
+                    details[i + 1] = symbols[i];
+                }
+                free(demangled);
+            }
+
             for (int c = 0; c < depth; ++c) {
-                SWARN(symbols[c]);
+                SWARN(details[c]);
             }
 
             // Call our die function and then reset it.

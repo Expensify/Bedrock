@@ -190,9 +190,10 @@ struct SData {
         return nameValueMap.emplace(forward<Ts>(args)...);
     }
 
+
     // Operators
     string& operator[](const string& name);
-    string operator[](const string& name) const;
+    const string& operator[](const string& name) const;
 
     // Two templated versions of `set` are provided. One for arithmetic types, and one for other types (which must be
     // convertible to 'string'). These allow you to do the following:
@@ -233,6 +234,7 @@ struct SData {
 
     // Create an SData object; if no Content-Length then take everything as the content
     static SData create(const string& rhs);
+    static const string placeholder;
 };
 
 // --------------------------------------------------------------------------

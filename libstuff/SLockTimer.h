@@ -1,4 +1,5 @@
 #pragma once
+#include "SPerformanceTimer.h"
 
 // A class for monitoring the amount of time spent in a given lock.
 // To work properly, it requires that the lock is always accessed via this wrapper.

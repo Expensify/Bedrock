@@ -1,5 +1,6 @@
 #include "libstuff.h"
 
+const string SData::placeholder;
 // --------------------------------------------------------------------------
 SData::SData() {
     // Nothing to do here
@@ -18,11 +19,11 @@ string& SData::operator[](const string& name) {
 }
 
 // --------------------------------------------------------------------------
-string SData::operator[](const string& name) const {
+const string& SData::operator[](const string& name) const {
     // This version takes care not to create an entry if none is present
     STable::const_iterator it = nameValueMap.find(name);
     if (it == nameValueMap.end()) {
-        return "";
+        return placeholder;
     } else {
         return it->second;
     }

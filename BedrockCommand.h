@@ -76,6 +76,11 @@ class BedrockCommand : public SQLiteCommand {
     BedrockPlugin* peekedBy;
     BedrockPlugin* processedBy;
 
+    // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
+    // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
+    // all HTTPS requests are complete. It will be automatically cleared if the command throws an exception.
+    bool repeek;
+
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
@@ -111,6 +116,16 @@ class BedrockCommand : public SQLiteCommand {
         BedrockCommand& cmd;
     };
     CrashMap crashIdentifyingValues;
+
+    // To accommodate plugins that need to store extra data for a command besides the built-in data for a
+    // BedrockCommand, we provide a pointer that the command can use to refer to extra storage. However, because the
+    // lifespan of this storage should match that of the BedrockCommand, we also need to provide a deallocation
+    // function to free this memory when the command completes.
+    // A better solution for this would be to use polymorphism and allow plugins to derive command objects from the
+    // base class of BedrockCommand, but that's too significant of a change to the architecture for the current
+    // timeline, so that is left as a future enhancement.
+    void* peekData;
+    void (*deallocator) (void*);
 
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }

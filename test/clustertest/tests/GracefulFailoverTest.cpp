@@ -11,7 +11,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
 
     void setup() {
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
@@ -77,8 +77,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                     }
 
                     // Ok, send them all!
-                    BedrockTester* node = localTester->getBedrockTester(currentNodeIndex);
-                    auto results = node->executeWaitMultipleData(requests, 1, false, true);
+                    BedrockTester& node = localTester->getTester(currentNodeIndex);
+                    auto results = node.executeWaitMultipleData(requests, 1, false, true);
                     size_t completed = 0;
                     for (auto& r : results) {
                         lock_guard<mutex> lock(mu);
@@ -102,7 +102,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
         list<thread>* threads = new list<thread>();
@@ -122,14 +122,14 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         tester->stopNode(0);
 
         // Wait for node 1 to be leader.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
 
         // Let the spammers keep spamming on the new leader.
         sleep(3);
 
         // Bring leader back up.
-        tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
+        tester->getTester(0).startServer();
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         sleep(15);
 
         // Now let's  stop a follower and make sure everything keeps working.
@@ -139,13 +139,13 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         uint64_t start = STimeNow();
         bool success = false;
         while (STimeNow() < start + 90'000'000) {
-            string response = tester->getBedrockTester(0)->executeWaitVerifyContent(SData("Status"));
+            string response = tester->getTester(0).executeWaitVerifyContent(SData("Status"));
             STable json = SParseJSONObject(response);
             string peerList = json["peerList"];
             list<string> peers = SParseJSONArray(peerList);
             for (auto& peer : peers) {
                 STable peerInfo = SParseJSONObject(peer);
-                if (peerInfo["name"] == "brcluster_node_2" && (peerInfo["State"] == "" || peerInfo["State"] == "SEARCHING")) {
+                if (peerInfo["name"] == "cluster_node_2" && (peerInfo["State"] == "" || peerInfo["State"] == "SEARCHING")) {
                     success = true;
                     break;
                 }
@@ -158,8 +158,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
 
         // And bring it back up.
-        tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("FOLLOWING"));
+        tester->getTester(2).startServer();
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
         // We're done, let spammers finish.
         done.store(true);
@@ -185,24 +185,24 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up leader.
-        tester->getBedrockTester(0)->stopServer(SIGKILL);
+        tester->getTester(0).stopServer(SIGKILL);
 
         // Wait for node 1 to be leader.
-        ASSERT_TRUE(tester->getBedrockTester(1)->waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
 
         // Now bring leader back up.
         sleep(2);
-        tester->getBedrockTester(0)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(0)->waitForState("LEADING"));
+        tester->getTester(0).startServer();
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
 
         // Blow up a follower.
         sleep(2);
-        tester->getBedrockTester(2)->stopServer(SIGKILL);
+        tester->getTester(2).stopServer(SIGKILL);
 
         // And bring it back up.
         sleep(2);
-        tester->getBedrockTester(2)->startServer();
-        ASSERT_TRUE(tester->getBedrockTester(2)->waitForState("FOLLOWING"));
+        tester->getTester(2).startServer();
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
         // We're really done, let everything finish a last time.
         done.store(true);

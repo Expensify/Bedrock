@@ -22,13 +22,13 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         // Turn the settings for checkpointing way down so we can observe that both passive and full checkpoints
         // happen as expected.
-        tester = new BedrockClusterTester(_threadID);
+        tester = new BedrockClusterTester();
         for (int i = 0; i < 3; i++) {
-            BedrockTester* node = tester->getBedrockTester(i);
+            BedrockTester& node = tester->getTester(i);
             SData controlCommand("SetCheckpointIntervals");
             controlCommand["passiveCheckpointPageMin"] = to_string(3);
             controlCommand["fullCheckpointPageMin"] = to_string(10);
-            vector<SData> results = node->executeWaitMultipleData({controlCommand}, 1, true);
+            vector<SData> results = node.executeWaitMultipleData({controlCommand}, 1, true);
 
             // Verify we got a reasonable result.
             ASSERT_EQUAL(results.size(), 1);
@@ -47,7 +47,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // Send some write commands to each node in the cluster.
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
                 SData query("idcollision b");
                 // What if we throw in a few sync commands?
                 query["writeConsistency"] = "ASYNC";
@@ -55,7 +55,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 query["value"] = "sent-" + to_string(cmdNum);
 
                 // Ok, send.
-                string result = brtester->executeWaitVerifyContent(query);
+                string result = brtester.executeWaitVerifyContent(query);
             }
         }
 
@@ -65,11 +65,11 @@ struct ConflictSpamTest : tpunit::TestFixture {
         while (tries < 10) {
             vector<string> results(3);
             for (int i : {0, 1, 2}) {
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
                 SData query("Query");
                 query["writeConsistency"] = "ASYNC";
                 query["query"] = "SELECT id, value FROM test ORDER BY id;";
-                string result = brtester->executeWaitVerifyContent(query);
+                string result = brtester.executeWaitVerifyContent(query);
                 results[i] = result;
             }
 
@@ -92,7 +92,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         list<thread> threads;
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &totalRequestFailures, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
@@ -106,7 +106,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 }
 
                 // Ok, send them all!
-                auto results = brtester->executeWaitMultipleData(requests);
+                auto results = brtester.executeWaitMultipleData(requests);
 
                 int failures = 0;
                 for (auto row : results) {
@@ -130,13 +130,13 @@ struct ConflictSpamTest : tpunit::TestFixture {
         vector <string> allResults(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &allResults, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData query("Query");
                 query["query"] = "SELECT name FROM sqlite_master WHERE type='table';";
 
                 // Ok, send them all!
-                auto result = brtester->executeWaitVerifyContent(query);
+                auto result = brtester.executeWaitVerifyContent(query);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;
@@ -175,7 +175,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             allResults.resize(3);
             for (int i : {0, 1, 2}) {
                 threads.emplace_back([this, i, &allResults, &tables, &m](){
-                    BedrockTester* brtester = tester->getBedrockTester(i);
+                    BedrockTester& brtester = tester->getTester(i);
 
                     auto journals = tables[i];
                     list <string> queries;
@@ -189,7 +189,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                     SData cmd("Query");
                     cmd["query"] = query;
                     // Ok, send them all!
-                    auto result = brtester->executeWaitVerifyContent(cmd);
+                    auto result = brtester.executeWaitVerifyContent(cmd);
 
                     SAUTOLOCK(m);
                     allResults[i] = result;
@@ -216,7 +216,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         // Let's query the leader DB's journals, and see how many rows each had.
         {
-            BedrockTester* brtester = tester->getBedrockTester(0);
+            BedrockTester& brtester = tester->getTester(0);
 
             auto journals = tables[0];
             vector <SData> commands;
@@ -230,7 +230,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
 
             // Ok, send them all!
-            auto results = brtester->executeWaitMultipleData(commands);
+            auto results = brtester.executeWaitMultipleData(commands);
 
             for (size_t i = 0; i < results.size(); i++) {
                 // Make sure they all succeeded.
@@ -248,13 +248,13 @@ struct ConflictSpamTest : tpunit::TestFixture {
         allResults.resize(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &allResults, &tables, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData cmd("Query");
                 cmd["query"] = "SELECT * FROM test;";
 
                 // Ok, send them all!
-                auto result = brtester->executeWaitVerifyContent(cmd);
+                auto result = brtester.executeWaitVerifyContent(cmd);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;
@@ -272,13 +272,13 @@ struct ConflictSpamTest : tpunit::TestFixture {
         allResults.resize(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &allResults, &tables, &m](){
-                BedrockTester* brtester = tester->getBedrockTester(i);
+                BedrockTester& brtester = tester->getTester(i);
 
                 SData cmd("Query");
                 cmd["query"] = "SELECT COUNT(id) FROM test;";
 
                 // Ok, send them all!
-                auto result = brtester->executeWaitVerifyContent(cmd);
+                auto result = brtester.executeWaitVerifyContent(cmd);
 
                 SAUTOLOCK(m);
                 allResults[i] = result;

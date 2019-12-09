@@ -3,20 +3,18 @@
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
-extern "C" void BEDROCK_PLUGIN_REGISTER_TESTPLUGIN() {
-    // Register the global instance
-    new BedrockPlugin_TestPlugin();
+extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
+    return new BedrockPlugin_TestPlugin(s);
 }
 
-BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin() :
-  _server(nullptr)
-{ }
+BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
+BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
+{
+}
 
-void BedrockPlugin_TestPlugin::initialize(const SData& args, BedrockServer& server) {
-    if (httpsManagers.empty()) {
-        httpsManagers.push_back(&httpsManager);
-    }
-    _server = &server;
+BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
+{
+    delete httpsManager;
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
@@ -37,8 +35,6 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         usleep(command.request.calc("PeekSleep") * 1000);
     }
 
-    // This should never exist when calling peek.
-    SASSERT(!command.httpsRequests.size());
     if (SStartsWith(command.request.methodLine,"testcommand")) {
         if (!command.request["response"].empty()) {
             command.response.methodLine = command.request["response"];
@@ -53,9 +49,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         subCommand["processTimeout"] = to_string(5001);
         subCommand["timeout"] = to_string(5002);
         subCommand["not_special"] = "whatever";
-        if (_server) {
-            _server->broadcastCommand(subCommand);
-        }
+        server.broadcastCommand(subCommand);
         return true;
     } else if (SStartsWith(command.request.methodLine, "storeboradcasttimeouts")) {
         // This is the command that will be broadcast to peers, it will store some data.
@@ -74,7 +68,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         command.response["stored_not_special"] = arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (_server->getState() != SQLiteNode::LEADING && _server->getState() != SQLiteNode::STANDINGDOWN) {
+        if (server.getState() != SQLiteNode::LEADING && server.getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }
@@ -84,8 +78,12 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         }
         for (int i = 0; i < requestCount; i++) {
             SData request("GET / HTTP/1.1");
-            request["Host"] = "www.google.com";
-            command.httpsRequests.push_back(httpsManager.send("https://www.google.com/", request));
+            string host = command.request["Host"];
+            if (host.empty()) {
+                host = "www.google.com";
+            }
+            request["Host"] = host;
+            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
         }
         return false; // Not complete.
     } else if (SStartsWith(command.request.methodLine, "slowquery")) {
@@ -110,7 +108,7 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
         // up correctly on the former leader.
         SData request("GET / HTTP/1.1");
         request["Host"] = "www.google.com";
-        auto transaction = httpsManager.httpsDontSend("https://www.google.com/", request);
+        auto transaction = httpsManager->httpsDontSend("https://www.google.com/", request);
         command.httpsRequests.push_back(transaction);
         if (command.request["neversend"].empty()) {
             thread([transaction, request](){
@@ -144,6 +142,37 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             shouldPreventAttach = false;
         }).detach();
         return true;
+    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+        // Let's see what the user wanted to request.
+        if (command.request.test("pendingResult")) {
+            if (command.httpsRequests.empty()) {
+                STHROW("Pending Result flag set but no requests!");
+            }
+            // There was a previous request, let's record it's result.
+            command.response.content += command.httpsRequests.back()->fullRequest["Host"] + ":" + to_string(command.httpsRequests.back()->response) + "\n";
+        }
+        list<string> remainingURLs = SParseList(command.request["urls"]);
+        if (remainingURLs.size()) {
+            SData request("GET / HTTP/1.1");
+            string host = remainingURLs.front();
+            request["Host"] = host;
+            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
+
+            // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
+            command.request["pendingResult"] = "true";
+            command.repeek = true;
+
+            // re-write the URL list for the next iteration.
+            remainingURLs.pop_front();
+            command.request["urls"] = SComposeList(remainingURLs);
+        } else {
+            // There are no URLs left.
+            command.repeek = false;
+
+            // But we still want to call `process`. We make this explicit for clarity, even though its the fall-through
+            // case
+            return false;
+        }
     }
 
     return false;
@@ -154,39 +183,51 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
         usleep(command.request.calc("ProcessSleep") * 1000);
     }
     if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        // Assert if we got here with no requests.
-        if (command.httpsRequests.empty()) {
-            SINFO ("Calling process with no https request: " << command.request.methodLine);
-            SASSERT(false);
-        }
-        // If any of our responses were bad, we want to know that.
-        bool allGoodResponses = true;
-        for (auto& request : command.httpsRequests) {
-            // If we're calling `process` on a command with a https request, it had better be finished.
-            SASSERT(request->response);
-
-            // Concatenate all of our responses into the body.
-            command.response.content += to_string(request->response) + "\n";
-
-            // If our response is an error, store that.
-            if (request->response >= 400) {
-                allGoodResponses = false;
+        // This flag makes us pass through the response we got from the server, rather than returning 200 if every
+        // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
+        // 400, we return 200 except when this flag is set.
+        if (command.request.test("passthrough")) {
+            command.response.methodLine = command.httpsRequests.front()->fullResponse.methodLine;
+            if (command.httpsRequests.front()->response >= 500 && command.httpsRequests.front()->response <= 503) {
+                // Error transaction, couldn't send.
+                command.response.methodLine = "NO_RESPONSE";
             }
-        }
-        
-        // Update the response method line.
-        if (!command.request["response"].empty() && allGoodResponses) {
-            command.response.methodLine = command.request["response"];
+            command.response["Host"] = command.httpsRequests.front()->fullRequest["Host"];
         } else {
-            command.response.methodLine = "200 OK";
-        }
+            // Assert if we got here with no requests.
+            if (command.httpsRequests.empty()) {
+                SINFO ("Calling process with no https request: " << command.request.methodLine);
+                SASSERT(false);
+            }
+            // If any of our responses were bad, we want to know that.
+            bool allGoodResponses = true;
+            for (auto& request : command.httpsRequests) {
+                // If we're calling `process` on a command with a https request, it had better be finished.
+                SASSERT(request->response);
 
-        // Update the DB so we can test conflicts.
-        SQResult result;
-        db.read("SELECT MAX(id) FROM test", result);
-        SASSERT(result.size());
-        int nextID = SToInt(result[0][0]) + 1;
-        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+                // Concatenate all of our responses into the body.
+                command.response.content += to_string(request->response) + "\n";
+
+                // If our response is an error, store that.
+                if (request->response >= 400) {
+                    allGoodResponses = false;
+                }
+            }
+
+            // Update the response method line.
+            if (!command.request["response"].empty() && allGoodResponses) {
+                command.response.methodLine = command.request["response"];
+            } else {
+                command.response.methodLine = "200 OK";
+            }
+
+            // Update the DB so we can test conflicts.
+            SQResult result;
+            db.read("SELECT MAX(id) FROM test", result);
+            SASSERT(result.size());
+            int nextID = SToInt(result[0][0]) + 1;
+            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+        }
 
         // Done.
         return true;
@@ -241,6 +282,9 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
     } else if (SStartsWith(command.request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return true;
+    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+        // Note that we eventually got to process, though we write nothing to the DB.
+        command.response.content += "PROCESSED\n";
     }
     return false;
 }
@@ -250,10 +294,11 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyTable("dbupgrade", "CREATE TABLE dbupgrade ( "
                                         "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                         "value )", ignore));
+    SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
 }
 
 
-bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
+bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
     size_t offset = methodLine.find_first_of(' ', 0);
@@ -272,14 +317,14 @@ bool TestHTTPSMananager::_onRecv(Transaction* transaction) {
     return false;
 }
 
-TestHTTPSMananager::~TestHTTPSMananager() {
+TestHTTPSManager::~TestHTTPSManager() {
 }
 
-TestHTTPSMananager::Transaction* TestHTTPSMananager::send(const string& url, const SData& request) {
+TestHTTPSManager::Transaction* TestHTTPSManager::send(const string& url, const SData& request) {
     return _httpsSend(url, request);
 }
 
-SHTTPSManager::Transaction* TestHTTPSMananager::httpsDontSend(const string& url, const SData& request) {
+SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, const SData& request) {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;
