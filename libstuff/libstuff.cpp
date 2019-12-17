@@ -2451,7 +2451,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / 1000 << "ms) " << sql.length() << ": " << sql.substr(0, 150));
+        SWARN("Slow query (" << elapsed / 1000 << "ms) :" << sql);
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
