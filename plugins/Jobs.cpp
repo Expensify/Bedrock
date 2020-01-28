@@ -842,6 +842,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - jobID - ID of the job to delete
         //     - data  - A JSON object describing work to be done
         //     - repeat - A description of how to repeat (optional)
+        //     - priority - The priority of the job (optional)
         //
         verifyAttributeInt64(request, "jobID", 1);
         verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
@@ -854,6 +855,14 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                 request.erase("repeat");
             } else if (!_validateRepeat(request["repeat"])) {
                 STHROW("402 Malformed repeat");
+            }
+        }
+
+        // If a priority is provided, validate it
+        if (request.isSet("priority")) {
+            int64_t priority = request.calc64("priority");
+            if (priority != 0 && priority != 500 && priority != 1000) {
+                STHROW("402 Invalid priority value");
             }
         }
 
@@ -881,6 +890,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                 SQ(request["data"]) + " " +
                                 (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
+                                (request.isSet("priority") ? ", priority=" + request.calc64("priority") : "") +
                                 "WHERE jobID=" +
                                 SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Update failed");
