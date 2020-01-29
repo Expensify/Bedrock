@@ -890,8 +890,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                 SQ(request["data"]) + " " +
                                 (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
-                                (request.isSet("jobPriority") ? ", priority=" + request.calc64("jobPriority") : "") +
-                                "WHERE jobID=" +
+                                (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) : "") +
+                                " WHERE jobID=" +
                                 SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Update failed");
         }
