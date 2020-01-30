@@ -41,7 +41,7 @@ void BedrockPlugin::verifyAttributeBool(const SData& request, const string& name
     }
 }
 
-bool BedrockPlugin::shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**rewriteHandler)(int, const char*, string&)) {
+bool BedrockPlugin::shouldEnableQueryRewriting(const SQLite& db, const unique_ptr<BedrockCommand>& command, bool (**rewriteHandler)(int, const char*, string&)) {
     return false;
 }
 
@@ -53,11 +53,11 @@ string BedrockPlugin::getName() {
     SERROR("No name defined by this plugin, aborting.");
 }
 
-bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+bool BedrockPlugin::peekCommand(SQLite& db, unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
+bool BedrockPlugin::processCommand(SQLite& db, unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
@@ -73,6 +73,6 @@ void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
 
-void BedrockPlugin::handleFailedReply(const BedrockCommand& command) {
+void BedrockPlugin::handleFailedReply(const unique_ptr<BedrockCommand>& command) {
     // Default implementation does nothing.
 }
