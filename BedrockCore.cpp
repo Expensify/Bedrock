@@ -100,7 +100,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
                 shouldSuppressTimeoutWarnings = plugin.second->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                if (plugin.second->peekCommand(_db, command)) {
+                if (plugin.second->peekCommand(_db, *command)) {
                     SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
                     command->peekedBy = plugin.second;
                     pluginPeeked = true;
@@ -209,10 +209,10 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             bool (*handler)(int, const char*, string&) = nullptr;
-            bool enable = plugin.second->shouldEnableQueryRewriting(_db, command, &handler);
+            bool enable = plugin.second->shouldEnableQueryRewriting(_db, *command, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
-                if (plugin.second->processCommand(_db, command)) {
+                if (plugin.second->processCommand(_db, *command)) {
                     SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
                     command->processedBy = plugin.second;

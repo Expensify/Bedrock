@@ -413,8 +413,10 @@ void BedrockServer::sync(const SData& args,
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
         if (committingCommand && !server._syncNode->commitInProgress()) {
-            // Record the time spent.
-            command->stopTiming(BedrockCommand::COMMIT_SYNC);
+            // Record the time spent, unless we were upgrading, in which case, there's no command to write to.
+            if (command) {
+                command->stopTiming(BedrockCommand::COMMIT_SYNC);
+            }
 
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
@@ -593,7 +595,9 @@ void BedrockServer::sync(const SData& args,
             }
         } catch (const out_of_range& e) {
             // Prevent the requestID from a finished command from being used.
-            command->request.clear();
+            if (command) {
+                command->request.clear();
+            }
 
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
@@ -811,7 +815,7 @@ void BedrockServer::worker(const SData& args,
 
                 // If the command was processed, tell the plugin we couldn't send the response.
                 if (command->processedBy) {
-                    command->processedBy->handleFailedReply(command);
+                    command->processedBy->handleFailedReply(*command);
                 }
 
                 continue;
@@ -1646,7 +1650,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
                   << "' to request '" << command->request.methodLine << "'");
             auto it = plugins.find(pluginName);
             if (it != plugins.end()) {
-                it->second->onPortRequestComplete(command, socketIt->second);
+                it->second->onPortRequestComplete(*command, socketIt->second);
             } else {
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
@@ -1669,7 +1673,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 
         // If the command was processed, tell the plugin we couldn't send the response.
         if (command->processedBy) {
-            command->processedBy->handleFailedReply(command);
+            command->processedBy->handleFailedReply(*command);
         }
     }
 }

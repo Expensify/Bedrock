@@ -31,16 +31,16 @@ class BedrockPlugin {
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
     // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
     // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
-    virtual bool peekCommand(SQLite& db, unique_ptr<BedrockCommand>& command);
+    virtual bool peekCommand(SQLite& db, BedrockCommand& command);
 
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
-    virtual bool processCommand(SQLite& db, unique_ptr<BedrockCommand>& command);
+    virtual bool processCommand(SQLite& db, BedrockCommand& command);
 
     // Bedrock will call this before each or `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
     // set the rewriteHandler it would like to use.
-    virtual bool shouldEnableQueryRewriting(const SQLite& db, const unique_ptr<BedrockCommand>& command, bool (**rewriteHandler)(int, const char*, string&));
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**rewriteHandler)(int, const char*, string&));
 
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);
@@ -68,7 +68,7 @@ class BedrockPlugin {
     // After processing the request from this plugin, this is called to send the response
     // response The response from the processed request
     // s        Optional socket from which this request was received
-    virtual void onPortRequestComplete(const unique_ptr<BedrockCommand>& command, STCPManager::Socket* s) { }
+    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) { }
 
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings();
@@ -77,7 +77,7 @@ class BedrockPlugin {
 
     // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.
-    virtual void handleFailedReply(const unique_ptr<BedrockCommand>& command);
+    virtual void handleFailedReply(const BedrockCommand& command);
 
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
