@@ -530,12 +530,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If no priority set, set it
             int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
-            // We'd initially intended for any value to be allowable here, but for
-            // performance reasons, we currently will only allow specific values to
-            // try and keep queries fast. If you pass an invalid value, we'll throw
-            // here so that the caller can know that he did something wrong rather
-            // than having his job sit unprocessed in the queue forever. Hopefully
-            // we can remove this restriction in the future.
+            // Validate the priority passed in
             _validatePriority(priority);
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
@@ -1344,6 +1339,12 @@ bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
 }
 
 void BedrockPlugin_Jobs::_validatePriority(const int64_t priority) {
+    // We'd initially intended for any value to be allowable here, but for
+    // performance reasons, we currently will only allow specific values to
+    // try and keep queries fast. If you pass an invalid value, we'll throw
+    // here so that the caller can know that he did something wrong rather
+    // than having his job sit unprocessed in the queue forever. Hopefully
+    // we can remove this restriction in the future.
     if (priority != 0 && priority != 500 && priority != 1000) {
         STHROW("402 Invalid priority value");
     }
