@@ -6,28 +6,25 @@ struct UpdateJobTest : tpunit::TestFixture {
             : tpunit::TestFixture("UpdateJob",
                                   BEFORE_CLASS(UpdateJobTest::setupClass),
                                   TEST(UpdateJobTest::updateJob),
-                                  AFTER(UpdateJobTest::tearDown),
                                   AFTER_CLASS(UpdateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});}
-
-    // Reset the jobs table
-    void tearDown() {
-        SData command("Query");
-        command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+    void setupClass() {
+        tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass() {
+        delete tester;
+    }
 
     // Simple UpdateJob with all parameters
     void updateJob() {
         // Create the job
         SData command("CreateJob");
-        string jobName = "job";
-        command["name"] = jobName;
+        command["name"] = "job";
+        string oldPriority = "500";
+        command["jobPriority"] = oldPriority;
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
         ASSERT_GREATER_THAN(stol(jobID), 0);
@@ -47,6 +44,7 @@ struct UpdateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(currentJob[0][0], "HOURLY");
         ASSERT_EQUAL(currentJob[0][1], "{key:\"value\"}");
         ASSERT_EQUAL(currentJob[0][2], "1000");
+        ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
     }
 
 } __UpdateJobTest;
