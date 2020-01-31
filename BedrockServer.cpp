@@ -691,7 +691,7 @@ void BedrockServer::worker(const SData& args,
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
         try {
-            // Set a signal handler function that we can call even if we die early with no command->
+            // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
                 SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
@@ -726,7 +726,7 @@ void BedrockServer::worker(const SData& args,
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command)) {
                 if (command->initiatingPeerID) {
-                    // Escalated command-> Give it back to the sync thread to respond.
+                    // Escalated command. Give it back to the sync thread to respond.
                     syncNodeCompletedCommands.push(move(command));
                 } else {
                     server._reply(command);
@@ -741,7 +741,7 @@ void BedrockServer::worker(const SData& args,
                 command->response.methodLine = "500 Refused";
                 command->complete = true;
                 if (command->initiatingPeerID) {
-                    // Escalated command-> Give it back to the sync thread to respond.
+                    // Escalated command. Give it back to the sync thread to respond.
                     syncNodeCompletedCommands.push(move(command));
                 } else {
                     server._reply(command);
@@ -752,7 +752,7 @@ void BedrockServer::worker(const SData& args,
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
             if (SQLiteNode::peekPeerCommand(server._syncNode.get(), db, *command)) {
-                // Move on to the next command->
+                // Move on to the next command.
                 continue;
             }
 
@@ -907,7 +907,7 @@ void BedrockServer::worker(const SData& args,
                 if (!calledPeek || !peekResult) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
-                    // until we're finished with this command->
+                    // until we're finished with this command.
                     if (command->httpsRequests.size()) {
                         // This *should* be impossible, but previous bugs have existed where it's feasible that we call
                         // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
@@ -943,7 +943,7 @@ void BedrockServer::worker(const SData& args,
                         }
                     }
 
-                    // Peek wasn't enough to handle this command-> See if we think it should be writable in parallel.
+                    // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
                     // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
                     // called to check it.
@@ -1024,7 +1024,7 @@ void BedrockServer::worker(const SData& args,
                 // a conflict, and we'll retry.
                 if (command->complete) {
                     if (command->initiatingPeerID) {
-                        // Escalated command-> Send it back to the peer.
+                        // Escalated command. Send it back to the peer.
                         server._finishPeerCommand(command);
                     } else {
                         server._reply(command);
@@ -1092,7 +1092,7 @@ bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
     // Look at each crash-inducing command that has the same methodLine.
     for (const STable& values : commandIt->second) {
 
-        // These are all of the keys that need to match to kill this command->
+        // These are all of the keys that need to match to kill this command.
         bool isMatch = true;
         for (auto& pair : values) {
             // We skip Content-Length, as it's added automatically when serializing commands.
@@ -1516,7 +1516,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // Create a command.
                     unique_ptr<BedrockCommand> command = make_unique<BedrockCommand>(request);
 
-                    // Get the source ip of the command->
+                    // Get the source ip of the command.
                     char *ip = inet_ntoa(s->addr.sin_addr);
                     if (ip != "127.0.0.1"s) {
                         // We only add this if it's not localhost because existing code expects commands that come from
