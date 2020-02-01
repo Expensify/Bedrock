@@ -13,14 +13,14 @@ BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
-BedrockDBCommand::BedrockDBCommand(SData&& _request) :
-  BedrockCommand(move(_request))
+BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand) :
+  BedrockCommand(move(baseCommand))
 {
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SData&& request) {
-    if (SStartsWith(request.methodLine, "query:") || SIEquals(request.getVerb(), "Query")) {
-        return make_unique<BedrockDBCommand>(move(request));
+unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
+    if (SStartsWith(baseCommand.request.methodLine, "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
+        return make_unique<BedrockDBCommand>(move(baseCommand));
     }
     return unique_ptr<BedrockCommand>(nullptr);
 }

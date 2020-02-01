@@ -4,13 +4,13 @@
 // Declare the class we're going to implement below
 class BedrockPlugin_Jobs : public BedrockPlugin {
 
-    class BedrockJobsCommand : public BedrockCommand {
+    class Command : public BedrockCommand {
       public:
-        BedrockJobsCommand(BedrockPlugin_Jobs& _plugin, SData&& _request);
+        Command(BedrockPlugin_Jobs& _plugin, SQLiteCommand&& baseCommand);
         virtual bool peek(SQLite& db);
         virtual void process(SQLite& db);
         virtual void handleFailedReply();
-        virtual const string& getName() { return BedrockPlugin_Jobs::pluginName; }
+        virtual const string& getName() { return pluginName; }
 
       private:
         // Helper functions
@@ -25,7 +25,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     BedrockPlugin_Jobs(BedrockServer& s);
 
     // Return a new command.
-    virtual unique_ptr<BedrockCommand> getCommand(SData&& request);
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
 
     // We were using MAX_SIZE_SMALL in GetJob to check the job name, but now GetJobs accepts more than one job name,
     // because of that, we need to increase the size of the param to be able to accept around 50 job names.
@@ -35,7 +35,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static const set<string,STableComp>supportedRequestVerbs;
 
     // Implement base class interface
-    virtual string getName() { return "Jobs"; }
+    virtual string getName() { return pluginName; }
     virtual void upgradeDatabase(SQLite& db);
 
   private:

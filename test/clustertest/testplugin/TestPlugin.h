@@ -22,7 +22,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     virtual string getName() { return "TestPlugin"; }
     virtual bool preventAttach();
 
-    virtual unique_ptr<BedrockCommand> getCommand(SData&& request);
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
 
     TestHTTPSManager* httpsManager;
     bool shouldPreventAttach = false;
@@ -35,7 +35,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
 
 class TestPluginCommand : public BedrockCommand {
   public:
-    TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SData&& _request);
+    TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SQLiteCommand&& baseCommand);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual const string& getName();

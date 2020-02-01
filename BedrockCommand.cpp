@@ -3,7 +3,7 @@
 
 const string UnhandledBedrockCommand::name("UnhandledBedrockCommand");
 
-UnhandledBedrockCommand::UnhandledBedrockCommand(SData&& _request) : BedrockCommand(move(_request))
+UnhandledBedrockCommand::UnhandledBedrockCommand(SQLiteCommand&& baseCommand) : BedrockCommand(move(baseCommand))
 {
 }
 
@@ -18,18 +18,39 @@ const string& UnhandledBedrockCommand::getName() {
 
 atomic<size_t> BedrockCommand::_commandCount(0);
 
-void BedrockCommand::cloneFromSQLiteCommand(SQLiteCommand&& from) {
-    initiatingPeerID = from.initiatingPeerID;
-    initiatingClientID = from.initiatingClientID;
-    id = move(from.id);
-    transaction = move(from.transaction);
-    //SData request;
-    jsonContent = move(from.jsonContent);
-    response = move(from.response);
-    writeConsistency = from.writeConsistency;
-    complete = from.complete;
-    escalationTimeUS = from.escalationTimeUS;
-    creationTime = from.creationTime;
+BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand) :
+    SQLiteCommand(move(baseCommand)),
+    priority(PRIORITY_NORMAL),
+    peekCount(0),
+    processCount(0),
+    repeek(false),
+    onlyProcessOnSyncThread(false),
+    crashIdentifyingValues(*this),
+    peekData(nullptr),
+    deallocator(nullptr),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
+{
+    // Initialize the priority, if supplied.
+    if (request.isSet("priority")) {
+        int tempPriority = request.calc("priority");
+        switch (tempPriority) {
+            // For any valid case, we just set the value directly.
+            case BedrockCommand::PRIORITY_MIN:
+            case BedrockCommand::PRIORITY_LOW:
+            case BedrockCommand::PRIORITY_NORMAL:
+            case BedrockCommand::PRIORITY_HIGH:
+            case BedrockCommand::PRIORITY_MAX:
+                priority = static_cast<Priority>(tempPriority);
+                break;
+            default:
+                // But an invalid case gets set to NORMAL, and a warning is logged.
+                SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
+                priority = PRIORITY_NORMAL;
+                break;
+        }
+    }
+    _commandCount++;
 }
 
 int64_t BedrockCommand::_getTimeout(const SData& request) {
@@ -61,45 +82,6 @@ BedrockCommand::~BedrockCommand() {
     _commandCount--;
     if (deallocator && peekData) {
         deallocator(peekData);
-    }
-}
-
-BedrockCommand::BedrockCommand(SData&& _request) :
-    SQLiteCommand(move(_request)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
-void BedrockCommand::_init() {
-    // Initialize the priority, if supplied.
-    if (request.isSet("priority")) {
-        int tempPriority = request.calc("priority");
-        switch (tempPriority) {
-            // For any valid case, we just set the value directly.
-            case BedrockCommand::PRIORITY_MIN:
-            case BedrockCommand::PRIORITY_LOW:
-            case BedrockCommand::PRIORITY_NORMAL:
-            case BedrockCommand::PRIORITY_HIGH:
-            case BedrockCommand::PRIORITY_MAX:
-                priority = static_cast<Priority>(tempPriority);
-                break;
-            default:
-                // But an invalid case gets set to NORMAL, and a warning is logged.
-                SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
-                priority = PRIORITY_NORMAL;
-                break;
-        }
     }
 }
 

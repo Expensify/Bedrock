@@ -29,7 +29,7 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
     // Constructor to initialize via a request object (by move).
-    BedrockCommand(SData&& _request);
+    BedrockCommand(SQLiteCommand&& baseCommand);
 
     // Destructor.
     virtual ~BedrockCommand();
@@ -140,13 +140,8 @@ class BedrockCommand : public SQLiteCommand {
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 
-    // Return the number of commands in existence that weren't created with DONT_COUNT.
+    // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
-
-    // This acts sort of like a copy constructor after the fact. I may want to improve this, but hopefully avoiding
-    // making command handler implementors add two constructors.
-    // Maybe I should give them a valid base-class command to derive from.
-    void cloneFromSQLiteCommand(SQLiteCommand&& from);
 
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
@@ -167,7 +162,7 @@ class BedrockCommand : public SQLiteCommand {
 // Simple command handler for unrecognized commands.
 class UnhandledBedrockCommand : public BedrockCommand {
   public:
-    UnhandledBedrockCommand(SData&& _request);
+    UnhandledBedrockCommand(SQLiteCommand&& baseCommand);
     virtual bool peek(SQLite& db);
     virtual const string& getName();
   private:

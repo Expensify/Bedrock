@@ -5,7 +5,7 @@
 
 class BedrockDBCommand : public BedrockCommand {
   public:
-    BedrockDBCommand(SData&& _request);
+    BedrockDBCommand(SQLiteCommand&& baseCommand);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual const string& getName();
@@ -17,5 +17,5 @@ class BedrockPlugin_DB : public BedrockPlugin {
   public:
     BedrockPlugin_DB(BedrockServer& s);
     virtual string getName() { return "DB"; }
-    virtual unique_ptr<BedrockCommand> getCommand(SData&& request);
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
 };

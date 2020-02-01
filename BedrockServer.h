@@ -355,6 +355,7 @@ class BedrockServer : public SQLiteServer {
     // See if there's a plugin that can turn this request into a command.
     // If not, we'll create a command that returns `430 Unrecognized command`.
     unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
+    unique_ptr<BedrockCommand> getCommandFromPlugins(SQLiteCommand&& baseCommand);
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a follower that's behind leader, and a client makes two requests, one to a node

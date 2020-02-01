@@ -6,8 +6,8 @@ const string& BedrockCacheCommand::getName() {
     return name;
 }
 
-BedrockCacheCommand::BedrockCacheCommand(BedrockPlugin_Cache& _plugin, SData&& _request) :
-  BedrockCommand(move(_request)),
+BedrockCacheCommand::BedrockCacheCommand(BedrockPlugin_Cache& _plugin, SQLiteCommand&& baseCommand) :
+  BedrockCommand(move(baseCommand)),
   plugin(_plugin)
 {
 }
@@ -17,9 +17,9 @@ const set<string, STableComp> BedrockPlugin_Cache::supportedRequestVerbs = {
     "WriteCache",
 };
 
-unique_ptr<BedrockCommand> BedrockPlugin_Cache::getCommand(SData&& request) {
-    if (supportedRequestVerbs.count(request.getVerb())) {
-        return make_unique<BedrockCacheCommand>(*this, move(request));
+unique_ptr<BedrockCommand> BedrockPlugin_Cache::getCommand(SQLiteCommand&& baseCommand) {
+    if (supportedRequestVerbs.count(baseCommand.request.getVerb())) {
+        return make_unique<BedrockCacheCommand>(*this, move(baseCommand));
     }
     return unique_ptr<BedrockCommand>(nullptr);
 }

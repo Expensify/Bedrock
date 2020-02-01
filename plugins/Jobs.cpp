@@ -42,8 +42,8 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
-BedrockPlugin_Jobs::BedrockJobsCommand::BedrockJobsCommand(BedrockPlugin_Jobs& _plugin, SData&& _request) :
-  BedrockCommand(move(_request)),
+BedrockPlugin_Jobs::Command::Command(BedrockPlugin_Jobs& _plugin, SQLiteCommand&& baseCommand) :
+  BedrockCommand(move(baseCommand)),
   plugin(_plugin)
 {
 }
@@ -52,9 +52,9 @@ BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_Jobs::getCommand(SData&& request) {
-    if (supportedRequestVerbs.count(request.getVerb())) {
-        return make_unique<BedrockJobsCommand>(*this, move(request));
+unique_ptr<BedrockCommand> BedrockPlugin_Jobs::getCommand(SQLiteCommand&& baseCommand) {
+    if (supportedRequestVerbs.count(baseCommand.request.getVerb())) {
+        return make_unique<Command>(*this, move(baseCommand));
     }
     return unique_ptr<BedrockCommand>(nullptr);
 }
@@ -105,7 +105,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::BedrockJobsCommand::peek(SQLite& db) {
+bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
     const string& requestVerb = request.getVerb();
 
     // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
@@ -381,7 +381,7 @@ bool BedrockPlugin_Jobs::BedrockJobsCommand::peek(SQLite& db) {
 }
 
 // ==========================================================================
-void BedrockPlugin_Jobs::BedrockJobsCommand::process(SQLite& db) {
+void BedrockPlugin_Jobs::Command::process(SQLite& db) {
     // Disable noop update mode for jobs.
     scopedDisableNoopMode disable(db);
 
@@ -1246,12 +1246,7 @@ void BedrockPlugin_Jobs::BedrockJobsCommand::process(SQLite& db) {
     }
 }
 
-// Under this line we don't know the "node", so remove from the log prefix
-#undef SLOGPREFIX
-#define SLOGPREFIX "{" << getName() << "} "
-
-// ==========================================================================
-string BedrockPlugin_Jobs::BedrockJobsCommand::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat) {
+string BedrockPlugin_Jobs::Command::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat) {
     if (repeat.empty()) {
         return "";
     }
@@ -1302,7 +1297,7 @@ string BedrockPlugin_Jobs::BedrockJobsCommand::_constructNextRunDATETIME(const s
 
 // ==========================================================================
 
-bool BedrockPlugin_Jobs::BedrockJobsCommand::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
+bool BedrockPlugin_Jobs::Command::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     // Returns true if there are any children of this jobID in a "pending" (eg,
     // running or yet to run) state
     SQResult result;
@@ -1317,7 +1312,7 @@ bool BedrockPlugin_Jobs::BedrockJobsCommand::_hasPendingChildJobs(SQLite& db, in
     return !result.empty();
 }
 
-bool BedrockPlugin_Jobs::BedrockJobsCommand::_isValidSQLiteDateModifier(const string& modifier) {
+bool BedrockPlugin_Jobs::Command::_isValidSQLiteDateModifier(const string& modifier) {
     // See: https://www.sqlite.org/lang_datefunc.html
     list<string> parts = SParseList(SToUpper(modifier));
     for (const string& part : parts) {
@@ -1341,7 +1336,7 @@ bool BedrockPlugin_Jobs::BedrockJobsCommand::_isValidSQLiteDateModifier(const st
     return true;
 }
 
-void BedrockPlugin_Jobs::BedrockJobsCommand::handleFailedReply() {
+void BedrockPlugin_Jobs::Command::handleFailedReply() {
     if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
 
         list<string> jobIDs;

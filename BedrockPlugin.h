@@ -27,7 +27,7 @@ class BedrockPlugin {
     virtual string getName();
 
     // Return a command, or a null pointer if this plugin can't handle this request.
-    virtual unique_ptr<BedrockCommand> getCommand(SData&& request) = 0;
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand) = 0;
 
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);

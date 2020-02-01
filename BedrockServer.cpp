@@ -34,11 +34,8 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
         } else {
-            newCommand = getCommandFromPlugins(move(command.request));
+            newCommand = getCommandFromPlugins(move(command));
             SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
-
-            // Hacky. See comment on cloneFromSQLiteCommand
-            newCommand->cloneFromSQLiteCommand(move(command));
         }
 
         // Add a request ID if one was missing.
@@ -1626,14 +1623,18 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 }
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
+    return getCommandFromPlugins(SQLiteCommand(move(request)));
+}
+
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& baseCommand) {
     for (auto pair : plugins) {
-        auto command = pair.second->getCommand(move(request));
+        auto command = pair.second->getCommand(move(baseCommand));
         if (command) {
             SINFO("Plugin " << pair.first << " handling command " << command->request.methodLine);
             return command;
         }
     }
-    return make_unique<UnhandledBedrockCommand>(move(request));
+    return make_unique<UnhandledBedrockCommand>(move(baseCommand));
 }
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {

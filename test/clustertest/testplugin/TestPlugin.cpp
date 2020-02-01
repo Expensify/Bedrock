@@ -17,7 +17,7 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
     delete httpsManager;
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SData&& request) {
+unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
     static set<string> supportedCommands = {
         "testcommand",
         "broadcastwithtimeouts",
@@ -38,8 +38,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SData&& request)
         "slowprocessquery",
     };
     for (auto& cmdName : supportedCommands) {
-        if (SStartsWith(request.methodLine, cmdName)) {
-            return make_unique<TestPluginCommand>(*this, move(request));
+        if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
+            return make_unique<TestPluginCommand>(*this, move(baseCommand));
         }
     }
     return unique_ptr<BedrockCommand>(nullptr);
@@ -51,8 +51,8 @@ const string& TestPluginCommand::getName() {
     return name;
 }
 
-TestPluginCommand::TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SData&& _request) :
-  BedrockCommand(move(_request)),
+TestPluginCommand::TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SQLiteCommand&& baseCommand) :
+  BedrockCommand(move(baseCommand)),
   plugin(_plugin)
 {
 }
