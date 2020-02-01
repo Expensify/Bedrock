@@ -28,17 +28,31 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
-    // Constructor to convert from an existing SQLiteCommand (by move).
-    BedrockCommand(SQLiteCommand&& from, int dontCount = 0);
-
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SData&& _request);
 
-    // Constructor to initialize via a request object (by copy).
-    BedrockCommand(SData _request);
-
     // Destructor.
-    ~BedrockCommand();
+    virtual ~BedrockCommand();
+
+    // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
+    // completely handled and a response has been written into `command.response`, which can be returned to the client.
+    // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
+    // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
+    virtual bool peek(SQLite& db) = 0;
+
+    // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
+    // with any changes to the DB made by this plugin.
+    virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
+
+    // Return the name of the plugin for this command.
+    virtual const string& getName() = 0;
+
+    // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
+    // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
+    // set the rewriteHandler it would like to use.
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int, const char*, string&)) {
+        return false;
+    }
 
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
@@ -63,9 +77,14 @@ class BedrockCommand : public SQLiteCommand {
     int peekCount;
     int processCount;
 
-    // Keep track of who peeked and processed this command.
-    BedrockPlugin* peekedBy;
-    BedrockPlugin* processedBy;
+    // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
+    // Note that it gets no reference to the DB, this happens after the transaction is already complete.
+    virtual void handleFailedReply() {
+        // Default implementation does nothing.
+    }
+
+    // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
+    virtual bool shouldSuppressTimeoutWarnings() { return false; }
 
     // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
     // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
@@ -124,6 +143,11 @@ class BedrockCommand : public SQLiteCommand {
     // Return the number of commands in existence that weren't created with DONT_COUNT.
     static size_t getCommandCount() { return _commandCount.load(); }
 
+    // This acts sort of like a copy constructor after the fact. I may want to improve this, but hopefully avoiding
+    // making command handler implementors add two constructors.
+    // Maybe I should give them a valid base-class command to derive from.
+    void cloneFromSQLiteCommand(SQLiteCommand&& from);
+
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
@@ -138,4 +162,14 @@ class BedrockCommand : public SQLiteCommand {
     uint64_t _timeout;
 
     static atomic<size_t> _commandCount;
+};
+
+// Simple command handler for unrecognized commands.
+class UnhandledBedrockCommand : public BedrockCommand {
+  public:
+    UnhandledBedrockCommand(SData&& _request);
+    virtual bool peek(SQLite& db);
+    virtual const string& getName();
+  private:
+    static const string name;
 };

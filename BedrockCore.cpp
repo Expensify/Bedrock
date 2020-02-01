@@ -79,13 +79,6 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
         command->peekCount++;
 
         _db.startTiming(timeout);
-        // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
-        // through process. This allows for consistency through this two-phase process. I.e., anything checked in
-        // peek is guaranteed to still be valid in process, because they're done together as one transaction.
-        bool pluginPeeked = false;
-
-        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-        bool shouldSuppressTimeoutWarnings = false;
 
         try {
             if (!_db.beginConcurrentTransaction(true, command->request.methodLine)) {
@@ -95,35 +88,25 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
             // Make sure no writes happen while in peek command
             _db.read("PRAGMA query_only = true;");
 
-            // Try each plugin, and go with the first one that says it succeeded.
-            for (auto plugin : _server.plugins) {
-                shouldSuppressTimeoutWarnings = plugin.second->shouldSuppressTimeoutWarnings();
-
-                // Try to peek the command.
-                if (plugin.second->peekCommand(_db, *command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
-                    command->peekedBy = plugin.second;
-                    pluginPeeked = true;
-                    break;
-                }
-            }
+            // Peek.
+            bool completed = command->peek(_db);
+            SINFO("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             // Peeking is over now, allow writes
             _db.read("PRAGMA query_only = false;");
+
+            if (!completed) {
+                SINFO("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
+                _db.resetTiming();
+                return false;
+            }
+
         } catch (const SQLite::timeout_error& e) {
-            if (!shouldSuppressTimeoutWarnings) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
             STHROW("555 Timeout peeking command");
-        }
-
-        // If nobody succeeded in peeking it, then we'll need to process it.
-        // TODO: Would be nice to be able to check if a plugin *can* handle a command, so that we can differentiate
-        // between "didn't peek" and "peeked but didn't complete".
-        if (!pluginPeeked) {
-            SINFO("Command '" << request.methodLine << "' is not peekable, queuing for processing.");
-            _db.resetTiming();
-            return false;
         }
 
         // If no response was set, assume 200 OK
@@ -201,33 +184,23 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
             STHROW("501 Failed to begin concurrent transaction");
         }
 
-        // Loop across the plugins to see which wants to take this.
-        bool pluginProcessed = false;
-
         // If the command is mocked, turn on UpdateNoopMode.
         _db.setUpdateNoopMode(command->request.isSet("mockRequest"));
-        for (auto plugin : _server.plugins) {
-            // Try to process the command.
+
+        // Process the command.
+        {
             bool (*handler)(int, const char*, string&) = nullptr;
-            bool enable = plugin.second->shouldEnableQueryRewriting(_db, *command, &handler);
+            bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
-                if (plugin.second->processCommand(_db, *command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
-                    pluginProcessed = true;
-                    command->processedBy = plugin.second;
-                    break;
-                }
+                command->process(_db);
+                SINFO("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
-                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+                if (!command->shouldSuppressTimeoutWarnings()) {
+                    SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+                }
                 STHROW("555 Timeout processing command");
             }
-        }
-
-        // If no plugin processed it, respond accordingly.
-        if (!pluginProcessed) {
-            SWARN("Command '" << request.methodLine << "' does not exist.");
-            STHROW("430 Unrecognized command");
         }
 
         // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.

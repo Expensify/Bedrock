@@ -21,10 +21,9 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     void upgradeDatabase(SQLite& db);
     virtual string getName() { return "TestPlugin"; }
     virtual bool preventAttach();
-    bool peekCommand(SQLite& db, BedrockCommand& command);
-    bool processCommand(SQLite& db, BedrockCommand& command);
 
-  private:
+    virtual unique_ptr<BedrockCommand> getCommand(SData&& request);
+
     TestHTTPSManager* httpsManager;
     bool shouldPreventAttach = false;
 
@@ -32,4 +31,16 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     // of one command from another, even if the first command never sends a response.
     static mutex dataLock;
     static map<string, string> arbitraryData;
+};
+
+class TestPluginCommand : public BedrockCommand {
+  public:
+    TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SData&& _request);
+    virtual bool peek(SQLite& db);
+    virtual void process(SQLite& db);
+    virtual const string& getName();
+
+  private:
+    BedrockPlugin_TestPlugin& plugin;
+    static const string name;
 };

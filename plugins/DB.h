@@ -2,10 +2,20 @@
 #include "../BedrockPlugin.h"
 
 // Declare the class we're going to implement below
+
+class BedrockDBCommand : public BedrockCommand {
+  public:
+    BedrockDBCommand(SData&& _request);
+    virtual bool peek(SQLite& db);
+    virtual void process(SQLite& db);
+    virtual const string& getName();
+  private:
+    static const string name;
+};
+
 class BedrockPlugin_DB : public BedrockPlugin {
   public:
     BedrockPlugin_DB(BedrockServer& s);
     virtual string getName() { return "DB"; }
-    virtual bool peekCommand(SQLite& db, BedrockCommand& command);
-    virtual bool processCommand(SQLite& db, BedrockCommand& command);
+    virtual unique_ptr<BedrockCommand> getCommand(SData&& request);
 };

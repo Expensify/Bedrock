@@ -26,14 +26,21 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
-        unique_ptr<BedrockCommand> newCommand = make_unique<BedrockCommand>(move(command));
-        if (SIEquals(newCommand->request.methodLine, "BROADCAST_COMMAND")) {
+        unique_ptr<BedrockCommand> newCommand(nullptr);
+        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
-            newRequest.deserialize(newCommand->request.content);
-            newCommand = make_unique<BedrockCommand>(newRequest);
+            newRequest.deserialize(command.request.content);
+            newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
+        } else {
+            newCommand = getCommandFromPlugins(move(command.request));
+            SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
+
+            // Hacky. See comment on cloneFromSQLiteCommand
+            newCommand->cloneFromSQLiteCommand(move(command));
         }
+
         // Add a request ID if one was missing.
         _addRequestID(newCommand->request);
         SAUTOPREFIX(newCommand->request);
@@ -814,9 +821,7 @@ void BedrockServer::worker(const SData& args,
                       << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
 
                 // If the command was processed, tell the plugin we couldn't send the response.
-                if (command->processedBy) {
-                    command->processedBy->handleFailedReply(*command);
-                }
+                command->handleFailedReply();
 
                 continue;
             }
@@ -1514,7 +1519,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     }
 
                     // Create a command.
-                    unique_ptr<BedrockCommand> command = make_unique<BedrockCommand>(request);
+                    unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
                     // Get the source ip of the command.
                     char *ip = inet_ntoa(s->addr.sin_addr);
@@ -1538,7 +1543,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // And we and keep track of the client that initiated this command, so we can respond later, except
                     // if we received connection:forget in which case we don't respond later
-                    command->initiatingClientID = SIEquals(request["Connection"], "forget") ? -1 : s->id;
+                    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : s->id;
 
                     // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                     // later processing.
@@ -1620,6 +1625,17 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
+    for (auto pair : plugins) {
+        auto command = pair.second->getCommand(move(request));
+        if (command) {
+            SINFO("Plugin " << pair.first << " handling command " << command->request.methodLine);
+            return command;
+        }
+    }
+    return make_unique<UnhandledBedrockCommand>(move(request));
+}
+
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     SAUTOLOCK(_socketIDMutex);
 
@@ -1672,9 +1688,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // If the command was processed, tell the plugin we couldn't send the response.
-        if (command->processedBy) {
-            command->processedBy->handleFailedReply(*command);
-        }
+        command->handleFailedReply();
     }
 }
 
@@ -2104,8 +2118,8 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
             SData command(p.first);
             command.nameValueMap = table;
-            unique_ptr<BedrockCommand> cmd = make_unique<BedrockCommand>(command);
-            for (const auto& fields : command.nameValueMap) {
+            unique_ptr<BedrockCommand> cmd = getCommandFromPlugins(move(command));
+            for (const auto& fields : table) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
             auto _syncNodeCopy = _syncNode;

@@ -1,7 +1,36 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
 
+const string UnhandledBedrockCommand::name("UnhandledBedrockCommand");
+
+UnhandledBedrockCommand::UnhandledBedrockCommand(SData&& _request) : BedrockCommand(move(_request))
+{
+}
+
+bool UnhandledBedrockCommand::peek(SQLite& db) {
+    STHROW("430 Unrecognized command");
+    return true;
+}
+
+const string& UnhandledBedrockCommand::getName() {
+    return name;
+}
+
 atomic<size_t> BedrockCommand::_commandCount(0);
+
+void BedrockCommand::cloneFromSQLiteCommand(SQLiteCommand&& from) {
+    initiatingPeerID = from.initiatingPeerID;
+    initiatingClientID = from.initiatingClientID;
+    id = move(from.id);
+    transaction = move(from.transaction);
+    //SData request;
+    jsonContent = move(from.jsonContent);
+    response = move(from.response);
+    writeConsistency = from.writeConsistency;
+    complete = from.complete;
+    escalationTimeUS = from.escalationTimeUS;
+    creationTime = from.creationTime;
+}
 
 int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
@@ -35,51 +64,11 @@ BedrockCommand::~BedrockCommand() {
     }
 }
 
-BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
-    SQLiteCommand(move(from)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
 BedrockCommand::BedrockCommand(SData&& _request) :
     SQLiteCommand(move(_request)),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
-BedrockCommand::BedrockCommand(SData _request) :
-    SQLiteCommand(move(_request)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
     repeek(false),
     onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),

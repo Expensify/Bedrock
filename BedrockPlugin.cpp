@@ -41,28 +41,12 @@ void BedrockPlugin::verifyAttributeBool(const SData& request, const string& name
     }
 }
 
-bool BedrockPlugin::shouldEnableQueryRewriting(const SQLite& db, const BedrockCommand& command, bool (**rewriteHandler)(int, const char*, string&)) {
-    return false;
-}
-
 STable BedrockPlugin::getInfo() {
     return STable();
 }
 
 string BedrockPlugin::getName() {
     SERROR("No name defined by this plugin, aborting.");
-}
-
-bool BedrockPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
-    return false;
-}
-
-bool BedrockPlugin::processCommand(SQLite& db, BedrockCommand& command) {
-    return false;
-}
-
-bool BedrockPlugin::shouldSuppressTimeoutWarnings() {
-    return false;
 }
 
 bool BedrockPlugin::preventAttach() {
@@ -72,7 +56,3 @@ bool BedrockPlugin::preventAttach() {
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
-
-void BedrockPlugin::handleFailedReply(const BedrockCommand& command) {
-    // Default implementation does nothing.
-}
