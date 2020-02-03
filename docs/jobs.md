@@ -25,6 +25,8 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
    * *data* - New data object to associate with the job
+   * *repeat* - A description of how often to repeat this job (optional)
+   * *jobPriority* - New priority of the job (optional)
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
