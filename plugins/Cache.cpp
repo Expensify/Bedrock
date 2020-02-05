@@ -162,6 +162,7 @@ bool BedrockCacheCommand::peek(SQLite& db) {
         //
         BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin::MAX_SIZE_SMALL);
         const string& name = request["name"];
+        crashIdentifyingValues.insert("name");
 
         // Get the list
         SQResult result;
@@ -213,6 +214,10 @@ void BedrockCacheCommand::process(SQLite& db) {
         //
         BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin::MAX_SIZE_SMALL);
         const string& valueHeader = request["value"];
+        const string& name = request["name"];
+        crashIdentifyingValues.insert("name");
+        crashIdentifyingValues.insert("value");
+
         if (!valueHeader.empty()) {
             // Value is provided via the header -- make sure it's not too long
             if (valueHeader.size() > BedrockPlugin::MAX_SIZE_BLOB) {
@@ -256,7 +261,6 @@ void BedrockCacheCommand::process(SQLite& db) {
         }
 
         // Insert the new entry
-        const string& name = request["name"];
         const string& safeValue = SQ(valueHeader.empty() ? request.content : valueHeader);
         if (!db.write("INSERT OR REPLACE INTO cache ( name, value ) "
                       "VALUES( " +
