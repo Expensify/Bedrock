@@ -41,11 +41,9 @@ travis_fold() {
   echo -en "travis_fold:${action}:${name}\r${ANSI_CLEAR}"
 }
 
-CORES=4
-
 travis_fold start build_bedrock
 travis_time_start
-make
+make -j8
 travis_time_finish
 travis_fold end build_bedrock
 
