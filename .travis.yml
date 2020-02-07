@@ -1,13 +1,13 @@
 sudo: false
 env:
-    - GXX=g++-9 CC=gcc-9
+    - GXX=g++-6 CC=gcc-6
 addons:
     apt:
         sources:
             - ubuntu-toolchain-r-test
         packages:
-            - gcc-9
-            - g++-9
+            - gcc-6
+            - g++-6
 notifications:
     email:
         on_success: never

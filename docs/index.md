@@ -36,25 +36,25 @@ You can build from scratch as follows:
 
     # Clone out this repo:
     git clone https://github.com/Expensify/Bedrock.git
-
+    
     # Install some dependencies
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install gcc-9 g++-9 libpcre++-dev zlib1g-dev
-
+    sudo apt-get install gcc-6 g++-6 libpcre++-dev zlib1g-dev
+    
     # Build it
     cd Bedrock
     make
-
+    
     # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
     touch bedrock.db
-
+    
     # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
     ./bedrock
-
+    
     # Connect to it in a different terminal using netcat
     nc localhost 8888
-
+    
     # Type "Status" and then enter twice to verify it's working
     # See here to use the default DB plugin: http://bedrockdb.com/db.html
 
@@ -82,34 +82,34 @@ You can build from scratch as follows:
 
     # Clone out this repo:
     git clone https://github.com/Expensify/Bedrock.git
-
+    
     # Install some dependencies with Brew (see: https://brew.sh/)
     brew update
     brew install gcc@6
-
+    
     # Configure PCRE to use C++17 and compile from source
     brew uninstall --ignore-dependencies pcre
     brew edit pcre
     # Add these to the end of the `system "./configure"` command:
     #     "--enable-cpp",
     #     "--enable-pcre64",
-    #     "CXX=/usr/local/bin/g++-9",
+    #     "CXX=/usr/local/bin/g++-6",
     #     "CXXFLAGS=--std=gnu++14"
     brew install --build-from-source pcre
-
+    
     # Build it
     cd Bedrock
     make
-
+    
     # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
     touch bedrock.db
-
+    
     # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
     ./bedrock
-
+    
     # Connect to it in a different terminal using netcat
     nc localhost 8888
-
+    
     # Type "Status" and then enter twice to verify it's working
     # See here to use the default DB plugin: http://bedrockdb.com/db.html
 
@@ -124,7 +124,7 @@ That query can be any [SQLite-compatible query](http://sqlite.org/lang.html) -- 
 
     200 OK
     Content-Length: 16
-
+    
     foo | bar
     1 | 2
 
@@ -134,10 +134,10 @@ By default, Bedrock optimizes the output for human consumption.  If you are a ro
     Query
     query: SELECT 1 AS foo, 2 AS bar;
     format: json
-
+    
     200 OK
     Content-Length: 40
-
+    
     {"headers":["foo","bar"],"rows":[[1,2]]}
 
 Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock supports the MySQL protocol, meaning you can continue using whatever MySQL client you prefer:
@@ -146,15 +146,15 @@ Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock s
     Welcome to the MySQL monitor.  Commands end with ; or \g.
     Your MySQL connection id is 1
     Server version: bedrock 09b08f82e6eefe69f79bb8414882dd64182e3e8c
-
+    
     Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
-
+    
     Oracle is a registered trademark of Oracle Corporation and/or its
     affiliates. Other names may be trademarks of their respective
     owners.
-
+    
     Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
-
+    
     mysql> SELECT 1 AS foo, 2 AS bar;
     +------+------+
     | foo  | bar  |
@@ -162,8 +162,8 @@ Some people are creeped out by sockets, and prefer tools.  No problem: Bedrock s
     |    1 |    2 |
     +------+------+
     1 row in set (0.01 sec)
-
-    mysql>
+    
+    mysql> 
 
 That also means you can continue using whatever MySQL language binding you already know and love.  Alternatively, if you don't know or love any of them, Bedrock also provides a [PHP binding](https://github.com/Expensify/Bedrock-PHP) that looks something like this:
 
@@ -191,3 +191,5 @@ So many ways!
 * Submit a PR to [Bedrock's GitHub repo](https://github.com/Expensify/Bedrock)
 * Email David, the CEO of Expensify (and biggest Bedrock fanboy ever) directly: [dbarrett@expensify.com](mailto:dbarrett@expensify.com)
 * [Join Expensify](http://we.are.expensify.com) and you can work on Bedrock (and other, even cooler things) full time!
+
+

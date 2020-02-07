@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-export GXX=g++-9
-export CC=gcc-9
+export GXX=g++-6
+export CC=gcc-6
 
 ${CC} --version
 ${GXX} --version

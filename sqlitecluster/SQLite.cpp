@@ -354,7 +354,7 @@ string SQLite::_getJournalTableName(int journalTableID) {
     if (journalTableID < 0) {
         return "journal";
     }
-    char buff[27] = {0};
+    char buff[12] = {0};
     sprintf(buff, "journal%04d", journalTableID);
     return buff;
 }
