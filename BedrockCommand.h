@@ -94,9 +94,9 @@ class BedrockCommand : public SQLiteCommand {
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
-    // This defaults to false, but a specific plugin can set it to 'true' in peek() to force this command to be passed
+    // This defaults to false, but a specific plugin can set it to 'true' to force this command to be passed
     // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
-    bool onlyProcessOnSyncThread;
+    virtual bool onlyProcessOnSyncThread() { return false; }
 
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
     // for the sake of determining whether they're likely to cause a crash.
@@ -126,16 +126,6 @@ class BedrockCommand : public SQLiteCommand {
         BedrockCommand& cmd;
     };
     CrashMap crashIdentifyingValues;
-
-    // To accommodate plugins that need to store extra data for a command besides the built-in data for a
-    // BedrockCommand, we provide a pointer that the command can use to refer to extra storage. However, because the
-    // lifespan of this storage should match that of the BedrockCommand, we also need to provide a deallocation
-    // function to free this memory when the command completes.
-    // A better solution for this would be to use polymorphism and allow plugins to derive command objects from the
-    // base class of BedrockCommand, but that's too significant of a change to the architecture for the current
-    // timeline, so that is left as a future enhancement.
-    void* peekData;
-    void (*deallocator) (void*);
 
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }

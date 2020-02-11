@@ -24,10 +24,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand) :
     peekCount(0),
     processCount(0),
     repeek(false),
-    onlyProcessOnSyncThread(false),
     crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
@@ -80,9 +77,6 @@ BedrockCommand::~BedrockCommand() {
         request->manager.closeTransaction(request);
     }
     _commandCount--;
-    if (deallocator && peekData) {
-        deallocator(peekData);
-    }
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {
