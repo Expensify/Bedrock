@@ -1,10 +1,10 @@
 # # Set the compiler, if it's not set by the environment.
 ifndef GXX
-	GXX = g++-6
+	GXX = g++-9
 endif
 
 ifndef CC
-	CC = gcc-6
+	CC = gcc-9
 endif
 
 # We use our project directory as a search path so we don't need "../../../.." all over the place.
@@ -74,4 +74,3 @@ $(INTERMEDIATEDIR)/%.d: %.cpp
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
 	$(GXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -o $@ -c $<
-
