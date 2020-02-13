@@ -252,9 +252,7 @@ bool BedrockPlugin_Cache::processCommand(SQLite& db, BedrockCommand& command) {
         while (SToInt64(db.read("SELECT size FROM cacheSize;")) + contentSize > _maxCacheSize) {
             // Find the least recently used (LRU) item if there is one.  (If the server was recently restarted,
             // its LRU might not be fully populated.)
-
             auto popResult = _lruMap.popLRU();
-
             const string& name = (popResult.second ? popResult.first : db.read("SELECT name FROM cache LIMIT 1"));
             SASSERT(!name.empty());
 
