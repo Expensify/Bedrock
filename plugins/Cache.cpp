@@ -44,6 +44,9 @@ void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
 }
 
 // ==========================================================================
+// This returns a pair which is made of up of the LRU item in the cache and
+// a bool of whether or not the cache was empty when we tried to pop. If the
+// cache is empty, the LRU item will be an empty string and the bool will be false.
 pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU() {
     // Make sure we're not empty
     lock_guard<decltype(_mutex)> lock(_mutex);
