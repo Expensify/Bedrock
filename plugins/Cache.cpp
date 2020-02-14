@@ -38,13 +38,13 @@ BedrockPlugin_Cache::LRUMap::~LRUMap() {
 
 bool BedrockPlugin_Cache::LRUMap::empty() {
     // Both the map and list are the same size, so check either
-    SAUTOLOCK(_mutex);
+    lock_guard<decltype(_mutex)> lock(_mutex);
     return _lruList.empty();
 }
 
 void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
     // See if if it's already there
-    SAUTOLOCK(_mutex);
+    lock_guard<decltype(_mutex)> lock(_mutex);
     map<string, Entry*>::iterator mapIt = _lruMap.find(name);
     if (mapIt == _lruMap.end()) {
         // Not in the map -- add a new entry
@@ -62,18 +62,23 @@ void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
     }
 }
 
-string BedrockPlugin_Cache::LRUMap::popLRU() {
+// ==========================================================================
+// This returns a pair which is made of up of the LRU item in the cache and
+// a bool of whether or not the cache was empty when we tried to pop. If the
+// cache is empty, the LRU item will be an empty string and the bool will be false.
+pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU() {
     // Make sure we're not empty
-    SAUTOLOCK(_mutex);
-    SASSERT(!empty());
-
+    lock_guard<decltype(_mutex)> lock(_mutex);
+    if (empty()) {
+        return make_pair("", false);
+    }
     // Take the first item off the list
     Entry* entry = _lruList.front();
     _lruList.erase(entry->listIt);
     _lruMap.erase(entry->mapIt);
     string nameCopy = entry->name;
     delete entry;
-    return nameCopy;
+    return make_pair(nameCopy, true);
 }
 
 int64_t BedrockPlugin_Cache::initCacheSize(string cacheString) {
@@ -208,7 +213,7 @@ void BedrockCacheCommand::process(SQLite& db) {
         //
         //     Parameters:
         //     - name           - An arbitrary string identifier (case insensitive)
-        //     - value          - Raw data to associate with this value, as a request header (1MB max) or content body
+        //     - value          - Raw data to associate with this name, as a request header (1MB max) or content body
         //     (64MB max)
         //     - invalidateName - A name pattern to erase from the cache (optional)
         //
@@ -252,20 +257,23 @@ void BedrockCacheCommand::process(SQLite& db) {
         while (SToInt64(db.read("SELECT size FROM cacheSize;")) + contentSize > plugin._maxCacheSize) {
             // Find the least recently used (LRU) item if there is one.  (If the server was recently restarted,
             // its LRU might not be fully populated.)
-            const string& name = (plugin._lruMap.empty() ? db.read("SELECT name FROM cache LIMIT 1") : plugin._lruMap.popLRU());
+            auto popResult = plugin._lruMap.popLRU();
+            const string& name = (popResult.second ? popResult.first : db.read("SELECT name FROM cache LIMIT 1"));
             SASSERT(!name.empty());
 
             // Delete it
-            if (!db.write("DELETE FROM cache WHERE name=" + SQ(name) + ";"))
+            if (!db.write("DELETE FROM cache WHERE name=" + SQ(name) + ";")) {
                 STHROW("502 Query failed (deleting)");
+            }
         }
 
         // Insert the new entry
         const string& safeValue = SQ(valueHeader.empty() ? request.content : valueHeader);
         if (!db.write("INSERT OR REPLACE INTO cache ( name, value ) "
                       "VALUES( " +
-                      SQ(name) + ", " + safeValue + " );"))
-            STHROW("502 Query failed (inserting)");
+                      SQ(name) + ", " + safeValue + " );")) {
+                          STHROW("502 Query failed (inserting)");
+                      }
 
         // Writing is a form of "use", so this is the new MRU.  Note that we're
         // adding it to the MRU, even before we commit.  So if this transaction

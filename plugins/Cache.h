@@ -28,7 +28,7 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         void pushMRU(const string& name);
 
         // Remove the name that is the least recently used (LRU)
-        string popLRU();
+        pair<string, bool> popLRU();
 
       private:
         // A single entry being tracked
