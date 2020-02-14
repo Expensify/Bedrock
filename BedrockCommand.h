@@ -23,6 +23,9 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
     };
 
+    // used to create commands that don't count towards the total number of commands.
+    static constexpr int DONT_COUNT = 1;
+
     // Times in *milliseconds*.
     static const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
@@ -30,6 +33,9 @@ class BedrockCommand : public SQLiteCommand {
 
     // Constructor to convert from an existing SQLiteCommand (by move).
     BedrockCommand(SQLiteCommand&& from, int dontCount = 0);
+
+    // Move constructor.
+    BedrockCommand(BedrockCommand&& from);
 
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SData&& _request);
@@ -39,6 +45,9 @@ class BedrockCommand : public SQLiteCommand {
 
     // Destructor.
     ~BedrockCommand();
+
+    // Move assignment operator.
+    BedrockCommand& operator=(BedrockCommand&& from);
 
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
@@ -138,4 +147,6 @@ class BedrockCommand : public SQLiteCommand {
     uint64_t _timeout;
 
     static atomic<size_t> _commandCount;
+
+    bool countCommand;
 };

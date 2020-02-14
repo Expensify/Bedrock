@@ -29,7 +29,9 @@ BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->manager.closeTransaction(request);
     }
-    _commandCount--;
+    if (countCommand) {
+        _commandCount--;
+    }
     if (deallocator && peekData) {
         deallocator(peekData);
     }
@@ -48,9 +50,39 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
     peekData(nullptr),
     deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(dontCount != DONT_COUNT)
 {
     _init();
+    if (countCommand) {
+        _commandCount++;
+    }
+}
+
+BedrockCommand::BedrockCommand(BedrockCommand&& from) :
+    SQLiteCommand(move(from)),
+    httpsRequests(move(from.httpsRequests)),
+    priority(from.priority),
+    peekCount(from.peekCount),
+    processCount(from.processCount),
+    peekedBy(from.peekedBy),
+    processedBy(from.processedBy),
+    repeek(from.repeek),
+    timingInfo(from.timingInfo),
+    onlyProcessOnSyncThread(from.onlyProcessOnSyncThread),
+    crashIdentifyingValues(*this, move(from.crashIdentifyingValues)),
+    peekData(from.peekData),
+    deallocator(from.deallocator),
+    _inProgressTiming(from._inProgressTiming),
+    _timeout(from._timeout),
+    countCommand(true)
+{
+    // The move constructor (and likewise, the move assignment operator), don't simply copy these pointer values, but
+    // they clear them from the old object, so that when its destructor is called, the HTTPS transactions aren't
+    // closed.
+    from.httpsRequests.clear();
+    from.peekData = nullptr;
+    from.deallocator = nullptr;
     _commandCount++;
 }
 
@@ -67,7 +99,8 @@ BedrockCommand::BedrockCommand(SData&& _request) :
     peekData(nullptr),
     deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(true)
 {
     _init();
     _commandCount++;
@@ -86,10 +119,66 @@ BedrockCommand::BedrockCommand(SData _request) :
     peekData(nullptr),
     deallocator(nullptr),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request)),
+    countCommand(true)
 {
     _init();
     _commandCount++;
+}
+
+BedrockCommand& BedrockCommand::operator=(BedrockCommand&& from) {
+    if (this != &from) {
+        // The current incarnation of this object is going away, if it had an httpsRequest, we'll need to destroy it,
+        // or it will leak and never get cleaned up.
+        for (auto request : httpsRequests) {
+            if (!request->response) {
+                SWARN("Closing unfinished httpRequest by assigning over it. This was probably a mistake.");
+            }
+            request->manager.closeTransaction(request);
+        }
+        httpsRequests = move(from.httpsRequests);
+        from.httpsRequests.clear();
+
+        // Same here, deallocate current data.
+        if (deallocator && peekData) {
+            deallocator(peekData);
+        }
+
+        // Update our other properties.
+        peekCount = from.peekCount;
+        processCount = from.processCount;
+        peekedBy = from.peekedBy;
+        processedBy = from.processedBy;
+        repeek = from.repeek;
+        priority = from.priority;
+        timingInfo = from.timingInfo;
+        onlyProcessOnSyncThread = from.onlyProcessOnSyncThread;
+        crashIdentifyingValues = move(from.crashIdentifyingValues);
+        peekData = move(from.peekData);
+        deallocator = move(from.deallocator);
+        _inProgressTiming = from._inProgressTiming;
+        _timeout = from._timeout;
+
+        // If countCommand is changing, update the count.
+        if (countCommand && !from.countCommand) {
+            // this command is no longer counted.
+            _commandCount--;
+        } else if (!countCommand && from.countCommand) {
+            // We need to start counting this command.
+            _commandCount++;
+        }
+        // Now set to match the existing command.
+        countCommand = from.countCommand;
+
+        // Don't delete when the old object is destroyed.
+        from.peekData = nullptr;
+        from.deallocator = nullptr;
+
+        // And call the base class's move constructor as well.
+        SQLiteCommand::operator=(move(from));
+    }
+
+    return *this;
 }
 
 void BedrockCommand::_init() {
@@ -249,24 +338,24 @@ void BedrockCommand::finalizeTimingInfo() {
 
 // pop and push specializations for SSynchronizedQueue that record timing info.
 template<>
-unique_ptr<BedrockCommand> SSynchronizedQueue<unique_ptr<BedrockCommand>>::pop() {
+BedrockCommand SSynchronizedQueue<BedrockCommand>::pop() {
     SAUTOLOCK(_queueMutex);
     if (!_queue.empty()) {
-        unique_ptr<BedrockCommand> item = move(_queue.front());
+        BedrockCommand item = move(_queue.front());
         _queue.pop_front();
-        item->stopTiming(BedrockCommand::QUEUE_SYNC);
+        item.stopTiming(BedrockCommand::QUEUE_SYNC);
         return item;
     }
     throw out_of_range("No commands");
 }
 
 template<>
-void SSynchronizedQueue<unique_ptr<BedrockCommand>>::push(unique_ptr<BedrockCommand>&& cmd) {
+void SSynchronizedQueue<BedrockCommand>::push(BedrockCommand&& cmd) {
     SAUTOLOCK(_queueMutex);
-    SINFO("Enqueuing command '" << cmd->request.methodLine << "', with " << _queue.size() << " commands already queued.");
+    SINFO("Enqueuing command '" << cmd.request.methodLine << "', with " << _queue.size() << " commands already queued.");
     // Just add to the queue
     _queue.push_back(move(cmd));
-    _queue.back()->startTiming(BedrockCommand::QUEUE_SYNC);
+    _queue.back().startTiming(BedrockCommand::QUEUE_SYNC);
 
     // Write arbitrary buffer to the pipe so any subscribers will be awoken.
     // **NOTE: 1 byte so write is atomic.

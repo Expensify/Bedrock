@@ -1,15 +1,15 @@
 #include <BedrockCommandQueue.h>
 
-void BedrockCommandQueue::startTiming(unique_ptr<BedrockCommand>& command) {
-    command->startTiming(BedrockCommand::QUEUE_WORKER);
+void BedrockCommandQueue::startTiming(BedrockCommand& command) {
+    command.startTiming(BedrockCommand::QUEUE_WORKER);
 }
 
-void BedrockCommandQueue::stopTiming(unique_ptr<BedrockCommand>& command) {
-    command->stopTiming(BedrockCommand::QUEUE_WORKER);
+void BedrockCommandQueue::stopTiming(BedrockCommand& command) {
+    command.stopTiming(BedrockCommand::QUEUE_WORKER);
 }
 
 BedrockCommandQueue::BedrockCommandQueue() :
-  SScheduledPriorityQueue<unique_ptr<BedrockCommand>>(function<void(unique_ptr<BedrockCommand>&)>(startTiming), function<void(unique_ptr<BedrockCommand>&)>(stopTiming))
+  SScheduledPriorityQueue<BedrockCommand>(function<void(BedrockCommand&)>(startTiming), function<void(BedrockCommand&)>(stopTiming))
 { }
 
 list<string> BedrockCommandQueue::getRequestMethodLines() {
@@ -17,7 +17,7 @@ list<string> BedrockCommandQueue::getRequestMethodLines() {
     SAUTOLOCK(_queueMutex);
     for (auto& queue : _queue) {
         for (auto& entry : queue.second) {
-            returnVal.push_back(entry.second.item->request.methodLine);
+            returnVal.push_back(entry.second.item.request.methodLine);
         }
     }
     return returnVal;
@@ -64,9 +64,9 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
     }
 }
 
-void BedrockCommandQueue::push(unique_ptr<BedrockCommand>&& command) {
-    BedrockCommand::Priority priority = command->priority;
-    uint64_t executionTime = command->request.calcU64("commandExecuteTime");
-    uint64_t timeout = command->timeout();
-    SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::push(move(command), priority, executionTime, timeout);
+void BedrockCommandQueue::push(BedrockCommand&& command) {
+    BedrockCommand::Priority priority = command.priority;
+    uint64_t executionTime = command.request.calcU64("commandExecuteTime");
+    uint64_t timeout = command.timeout();
+    SScheduledPriorityQueue<BedrockCommand>::push(move(command), priority, executionTime, timeout);
 }
