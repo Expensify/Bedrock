@@ -29,7 +29,7 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
     // Constructor to initialize via a request object (by move).
-    BedrockCommand(SQLiteCommand&& baseCommand);
+    BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
 
     // Destructor.
     virtual ~BedrockCommand();
@@ -38,14 +38,14 @@ class BedrockCommand : public SQLiteCommand {
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
     // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
     // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
-    virtual bool peek(SQLite& db) = 0;
+    virtual bool peek(SQLite& db) { STHROW("430 Unrecognized command"); }
 
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
     virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
 
     // Return the name of the plugin for this command.
-    virtual const string& getName() = 0;
+    const string& getName() const;
 
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
@@ -133,6 +133,10 @@ class BedrockCommand : public SQLiteCommand {
     // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
 
+  protected:
+    // The plugin that owns this command.
+    BedrockPlugin* _plugin;
+
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
@@ -147,14 +151,6 @@ class BedrockCommand : public SQLiteCommand {
     uint64_t _timeout;
 
     static atomic<size_t> _commandCount;
-};
 
-// Simple command handler for unrecognized commands.
-class UnhandledBedrockCommand : public BedrockCommand {
-  public:
-    UnhandledBedrockCommand(SQLiteCommand&& baseCommand);
-    virtual bool peek(SQLite& db);
-    virtual const string& getName();
-  private:
-    static const string name;
+    static const string defaultPluginName;
 };

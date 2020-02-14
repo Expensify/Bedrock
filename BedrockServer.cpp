@@ -1634,7 +1634,7 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& 
             return command;
         }
     }
-    return make_unique<UnhandledBedrockCommand>(move(baseCommand));
+    return make_unique<BedrockCommand>(move(baseCommand), nullptr);
 }
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {

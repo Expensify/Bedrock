@@ -6,7 +6,10 @@
 
 #define JOBS_DEFAULT_PRIORITY 500
 
-const string BedrockPlugin_Jobs::pluginName("Jobs");
+const string BedrockPlugin_Jobs::name("Jobs");
+const string& BedrockPlugin_Jobs::getName() const {
+    return name;
+}
 
 const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "GetJob",
@@ -42,9 +45,8 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
-BedrockPlugin_Jobs::Command::Command(BedrockPlugin_Jobs& _plugin, SQLiteCommand&& baseCommand) :
-  BedrockCommand(move(baseCommand)),
-  plugin(_plugin)
+BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin) :
+  BedrockCommand(move(baseCommand), plugin)
 {
 }
 
@@ -54,9 +56,9 @@ BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
 
 unique_ptr<BedrockCommand> BedrockPlugin_Jobs::getCommand(SQLiteCommand&& baseCommand) {
     if (supportedRequestVerbs.count(baseCommand.request.getVerb())) {
-        return make_unique<Command>(*this, move(baseCommand));
+        return make_unique<BedrockJobsCommand>(move(baseCommand), this);
     }
-    return unique_ptr<BedrockCommand>(nullptr);
+    return nullptr;
 }
 
 int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
@@ -105,7 +107,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 }
 
 // ==========================================================================
-bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
+bool BedrockJobsCommand::peek(SQLite& db) {
     const string& requestVerb = request.getVerb();
 
     // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
@@ -143,7 +145,7 @@ bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
         //     - 303 - Timeout
         //     - 404 - No jobs found
         //
-        verifyAttributeSize(request, "name", 1, MAX_SIZE_NAME);
+        BedrockPlugin_Jobs::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_NAME);
         if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
             if (SIEquals(requestVerb, "GetJobs")) {
                 STHROW("402 Missing numResults");
@@ -181,7 +183,7 @@ bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
         //         . data - JSON data associated with this job
         //     - 404 - No jobs found
         //
-        verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this
         SQResult result;
@@ -211,7 +213,7 @@ bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
     else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         list<STable> jsonJobs;
         if (SIEquals(requestVerb, "CreateJob")) {
-            verifyAttributeSize(request, "name", 1, MAX_SIZE_SMALL);
+            BedrockPlugin_Jobs::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
@@ -331,7 +333,7 @@ bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
         //     - 200 - OK
         //     - 402 - Cannot cancel jobs that are running
         //
-        verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
@@ -377,7 +379,7 @@ bool BedrockPlugin_Jobs::Command::peek(SQLite& db) {
 }
 
 // ==========================================================================
-void BedrockPlugin_Jobs::Command::process(SQLite& db) {
+void BedrockJobsCommand::process(SQLite& db) {
     // Disable noop update mode for jobs.
     scopedDisableNoopMode disable(db);
 
@@ -603,7 +605,7 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int64_t jobIDToUse = getNextID(db);
+                const int64_t jobIDToUse = BedrockPlugin_Jobs::getNextID(db);
                 SINFO("Next jobID to be used " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
@@ -837,8 +839,8 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
         //     - repeat - A description of how to repeat (optional)
         //     - jobPriority - The priority of the job (optional)
         //
-        verifyAttributeInt64(request, "jobID", 1);
-        verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
@@ -922,7 +924,7 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
         //     - jobID  - ID of the job to finish
         //     - data   - Data to associate with this finsihed job
         //
-        verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
@@ -1144,7 +1146,7 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
         //     - jobID - ID of the job to fail
         //     - data  - Data to associate with this failed job
         //
-        verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's running
         SQResult result;
@@ -1194,7 +1196,7 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
         //     Parameters:
         //     - jobID - ID of the job to delete
         //
-        verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's not running
         SQResult result;
@@ -1243,7 +1245,7 @@ void BedrockPlugin_Jobs::Command::process(SQLite& db) {
     }
 }
 
-string BedrockPlugin_Jobs::Command::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat) {
+string BedrockJobsCommand::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat) {
     if (repeat.empty()) {
         return "";
     }
@@ -1294,7 +1296,7 @@ string BedrockPlugin_Jobs::Command::_constructNextRunDATETIME(const string& last
 
 // ==========================================================================
 
-bool BedrockPlugin_Jobs::Command::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
+bool BedrockJobsCommand::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     // Returns true if there are any children of this jobID in a "pending" (eg,
     // running or yet to run) state
     SQResult result;
@@ -1309,7 +1311,7 @@ bool BedrockPlugin_Jobs::Command::_hasPendingChildJobs(SQLite& db, int64_t jobID
     return !result.empty();
 }
 
-bool BedrockPlugin_Jobs::Command::_isValidSQLiteDateModifier(const string& modifier) {
+bool BedrockJobsCommand::_isValidSQLiteDateModifier(const string& modifier) {
     // See: https://www.sqlite.org/lang_datefunc.html
     list<string> parts = SParseList(SToUpper(modifier));
     for (const string& part : parts) {
@@ -1333,7 +1335,7 @@ bool BedrockPlugin_Jobs::Command::_isValidSQLiteDateModifier(const string& modif
     return true;
 }
 
-void BedrockPlugin_Jobs::Command::_validatePriority(const int64_t priority) {
+void BedrockJobsCommand::_validatePriority(const int64_t priority) {
     // We'd initially intended for any value to be allowable here, but for
     // performance reasons, we currently will only allow specific values to
     // try and keep queries fast. If you pass an invalid value, we'll throw
@@ -1345,7 +1347,7 @@ void BedrockPlugin_Jobs::Command::_validatePriority(const int64_t priority) {
     }
 }
 
-void BedrockPlugin_Jobs::Command::handleFailedReply() {
+void BedrockJobsCommand::handleFailedReply() {
     if (SIEquals(request.methodLine, "GetJob") || SIEquals(request.methodLine, "GetJobs")) {
         list<string> jobIDs;
         if (SIEquals(request.methodLine, "GetJob")) {
@@ -1371,6 +1373,6 @@ void BedrockPlugin_Jobs::Command::handleFailedReply() {
         requeue["requestID"] = request["requestID"];
         SQLiteCommand cmd(move(requeue));
         cmd.initiatingClientID = -1;
-        plugin.server.acceptCommand(move(cmd));
+        _plugin->server.acceptCommand(move(cmd));
     }
 }

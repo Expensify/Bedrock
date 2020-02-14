@@ -3,6 +3,11 @@
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
+const string BedrockPlugin_TestPlugin::name("TestPlugin");
+const string& BedrockPlugin_TestPlugin::getName() const {
+    return name;
+}
+
 extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
     return new BedrockPlugin_TestPlugin(s);
 }
@@ -39,21 +44,14 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
-            return make_unique<TestPluginCommand>(*this, move(baseCommand));
+            return make_unique<TestPluginCommand>(move(baseCommand), this);
         }
     }
     return unique_ptr<BedrockCommand>(nullptr);
 }
 
-const string TestPluginCommand::name("TestPlugin");
-
-const string& TestPluginCommand::getName() {
-    return name;
-}
-
-TestPluginCommand::TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SQLiteCommand&& baseCommand) :
-  BedrockCommand(move(baseCommand)),
-  plugin(_plugin)
+TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin) :
+  BedrockCommand(move(baseCommand), plugin)
 {
 }
 
@@ -89,26 +87,26 @@ bool TestPluginCommand::peek(SQLite& db) {
         subCommand["processTimeout"] = to_string(5001);
         subCommand["timeout"] = to_string(5002);
         subCommand["not_special"] = "whatever";
-        plugin.server.broadcastCommand(subCommand);
+        plugin().server.broadcastCommand(subCommand);
         return true;
     } else if (SStartsWith(request.methodLine, "storeboradcasttimeouts")) {
         // This is the command that will be broadcast to peers, it will store some data.
-        lock_guard<mutex> lock(plugin.dataLock);
-        plugin.arbitraryData["timeout"] = request["timeout"];
-        plugin.arbitraryData["processTimeout"] = request["processTimeout"];
-        plugin.arbitraryData["commandExecuteTime"] = request["commandExecuteTime"];
-        plugin.arbitraryData["not_special"] = request["not_special"];
+        lock_guard<mutex> lock(plugin().dataLock);
+        plugin().arbitraryData["timeout"] = request["timeout"];
+        plugin().arbitraryData["processTimeout"] = request["processTimeout"];
+        plugin().arbitraryData["commandExecuteTime"] = request["commandExecuteTime"];
+        plugin().arbitraryData["not_special"] = request["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "getbroadcasttimeouts")) {
         // Finally, the caller can send this command to the peers to make sure they received the correct timeout data.
-        lock_guard<mutex> lock(plugin.dataLock);
-        response["stored_timeout"] = plugin.arbitraryData["timeout"];
-        response["stored_processTimeout"] = plugin.arbitraryData["processTimeout"];
-        response["stored_commandExecuteTime"] = plugin.arbitraryData["commandExecuteTime"];
-        response["stored_not_special"] = plugin.arbitraryData["not_special"];
+        lock_guard<mutex> lock(plugin().dataLock);
+        response["stored_timeout"] = plugin().arbitraryData["timeout"];
+        response["stored_processTimeout"] = plugin().arbitraryData["processTimeout"];
+        response["stored_commandExecuteTime"] = plugin().arbitraryData["commandExecuteTime"];
+        response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
-        if (plugin.server.getState() != SQLiteNode::LEADING && plugin.server.getState() != SQLiteNode::STANDINGDOWN) {
+        if (plugin().server.getState() != SQLiteNode::LEADING && plugin().server.getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }
@@ -123,7 +121,7 @@ bool TestPluginCommand::peek(SQLite& db) {
                 host = "www.google.com";
             }
             newRequest["Host"] = host;
-            httpsRequests.push_back(plugin.httpsManager->send("https://" + host + "/", newRequest));
+            httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
         }
         return false; // Not complete.
     } else if (SStartsWith(request.methodLine, "slowquery")) {
@@ -148,7 +146,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         // up correctly on the former leader.
         SData newRequest("GET / HTTP/1.1");
         newRequest["Host"] = "www.google.com";
-        auto transaction = plugin.httpsManager->httpsDontSend("https://www.google.com/", newRequest);
+        auto transaction = plugin().httpsManager->httpsDontSend("https://www.google.com/", newRequest);
         httpsRequests.push_back(transaction);
         if (request["neversend"].empty()) {
             thread([transaction, newRequest](){
@@ -172,7 +170,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         // mode, so the tester will send this command to the plugin, then detach BedrockServer,
         // then the tester will try to attach, sleep, then try again.
         // The command will be gone by the time the sleep finishes, so pass a pointer to the plugin.
-        BedrockPlugin_TestPlugin* pluginPtr = &plugin;
+        BedrockPlugin_TestPlugin* pluginPtr = &plugin();
         thread([pluginPtr](){
             // Have this plugin block attaching
             pluginPtr->shouldPreventAttach = true;
@@ -198,7 +196,7 @@ bool TestPluginCommand::peek(SQLite& db) {
             SData newRequest("GET / HTTP/1.1");
             string host = remainingURLs.front();
             newRequest["Host"] = host;
-            httpsRequests.push_back(plugin.httpsManager->send("https://" + host + "/", newRequest));
+            httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
 
             // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
             request["pendingResult"] = "true";

@@ -4,8 +4,8 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
-const string BedrockDBCommand::name = "DB";
-const string& BedrockDBCommand::getName() {
+const string BedrockPlugin_DB::name("DB");
+const string& BedrockPlugin_DB::getName() const {
     return name;
 }
 
@@ -13,16 +13,16 @@ BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
-BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand) :
-  BedrockCommand(move(baseCommand))
+BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin) :
+  BedrockCommand(move(baseCommand), plugin)
 {
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
     if (SStartsWith(baseCommand.request.methodLine, "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
-        return make_unique<BedrockDBCommand>(move(baseCommand));
+        return make_unique<BedrockDBCommand>(move(baseCommand), this);
     }
-    return unique_ptr<BedrockCommand>(nullptr);
+    return nullptr;
 }
 
 bool BedrockDBCommand::peek(SQLite& db) {

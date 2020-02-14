@@ -1,30 +1,19 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
-
-const string UnhandledBedrockCommand::name("UnhandledBedrockCommand");
-
-UnhandledBedrockCommand::UnhandledBedrockCommand(SQLiteCommand&& baseCommand) : BedrockCommand(move(baseCommand))
-{
-}
-
-bool UnhandledBedrockCommand::peek(SQLite& db) {
-    STHROW("430 Unrecognized command");
-    return true;
-}
-
-const string& UnhandledBedrockCommand::getName() {
-    return name;
-}
+#include "BedrockPlugin.h"
 
 atomic<size_t> BedrockCommand::_commandCount(0);
 
-BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand) :
+const string BedrockCommand::defaultPluginName("NO_PLUGIN");
+
+BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin) :
     SQLiteCommand(move(baseCommand)),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
     repeek(false),
     crashIdentifyingValues(*this),
+    _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
 {
@@ -48,6 +37,13 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand) :
         }
     }
     _commandCount++;
+}
+
+const string& BedrockCommand::getName() const {
+    if (_plugin) {
+        return _plugin->getName();
+    }
+    return defaultPluginName;
 }
 
 int64_t BedrockCommand::_getTimeout(const SData& request) {

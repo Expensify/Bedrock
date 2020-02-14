@@ -19,7 +19,8 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     BedrockPlugin_TestPlugin(BedrockServer& s);
     ~BedrockPlugin_TestPlugin();
     void upgradeDatabase(SQLite& db);
-    virtual string getName() { return "TestPlugin"; }
+    virtual const string& getName() const;
+    static const string name;
     virtual bool preventAttach();
 
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
@@ -35,12 +36,10 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
 
 class TestPluginCommand : public BedrockCommand {
   public:
-    TestPluginCommand(BedrockPlugin_TestPlugin& _plugin, SQLiteCommand&& baseCommand);
+    TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
-    virtual const string& getName();
 
   private:
-    BedrockPlugin_TestPlugin& plugin;
-    static const string name;
+    BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }
 };

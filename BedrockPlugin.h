@@ -24,7 +24,7 @@ class BedrockPlugin {
     virtual STable getInfo();
 
     // Returns a short, descriptive name of this plugin
-    virtual string getName();
+    virtual const string& getName() const;
 
     // Return a command, or a null pointer if this plugin can't handle this request.
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand) = 0;

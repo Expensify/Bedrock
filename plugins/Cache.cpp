@@ -1,14 +1,13 @@
 #include "Cache.h"
 #include "BedrockServer.h"
 
-const string BedrockCacheCommand::name("Cache");
-const string& BedrockCacheCommand::getName() {
+const string BedrockPlugin_Cache::name("Cache");
+const string& BedrockPlugin_Cache::getName() const {
     return name;
 }
 
-BedrockCacheCommand::BedrockCacheCommand(BedrockPlugin_Cache& _plugin, SQLiteCommand&& baseCommand) :
-  BedrockCommand(move(baseCommand)),
-  plugin(_plugin)
+BedrockCacheCommand::BedrockCacheCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Cache* plugin) :
+  BedrockCommand(move(baseCommand), plugin)
 {
 }
 
@@ -19,9 +18,9 @@ const set<string, STableComp> BedrockPlugin_Cache::supportedRequestVerbs = {
 
 unique_ptr<BedrockCommand> BedrockPlugin_Cache::getCommand(SQLiteCommand&& baseCommand) {
     if (supportedRequestVerbs.count(baseCommand.request.getVerb())) {
-        return make_unique<BedrockCacheCommand>(*this, move(baseCommand));
+        return make_unique<BedrockCacheCommand>(move(baseCommand), this);
     }
-    return unique_ptr<BedrockCommand>(nullptr);
+    return nullptr;
 }
 
 BedrockPlugin_Cache::LRUMap::LRUMap() {
@@ -102,7 +101,7 @@ int64_t BedrockPlugin_Cache::initCacheSize(string cacheString) {
 }
 
 BedrockPlugin_Cache::BedrockPlugin_Cache(BedrockServer& s)
-    : BedrockPlugin(s), _maxCacheSize(initCacheSize(server.args["-cache.max"])) // Will be set inside initialize()
+    : BedrockPlugin(s), _maxCacheSize(initCacheSize(server.args["-cache.max"]))
 {
 }
 
@@ -191,7 +190,7 @@ bool BedrockCacheCommand::peek(SQLite& db) {
             response.content = result[0][1];
 
             // Update the LRU Map
-            plugin._lruMap.pushMRU(response["name"]);
+            plugin()._lruMap.pushMRU(response["name"]);
             return true;
         }
     }
@@ -240,7 +239,7 @@ void BedrockCacheCommand::process(SQLite& db) {
 
         // Make sure we're not trying to cache something larger than the cache itself
         int64_t contentSize = valueHeader.empty() ? request.content.size() : valueHeader.size();
-        if (contentSize > plugin._maxCacheSize) {
+        if (contentSize > plugin()._maxCacheSize) {
             // Just refuse
             STHROW("402 Content larger than the cache itself");
         }
@@ -254,10 +253,10 @@ void BedrockCacheCommand::process(SQLite& db) {
         }
 
         // Clear out room for the new object
-        while (SToInt64(db.read("SELECT size FROM cacheSize;")) + contentSize > plugin._maxCacheSize) {
+        while (SToInt64(db.read("SELECT size FROM cacheSize;")) + contentSize > plugin()._maxCacheSize) {
             // Find the least recently used (LRU) item if there is one.  (If the server was recently restarted,
             // its LRU might not be fully populated.)
-            auto popResult = plugin._lruMap.popLRU();
+            auto popResult = plugin()._lruMap.popLRU();
             const string& name = (popResult.second ? popResult.first : db.read("SELECT name FROM cache LIMIT 1"));
             SASSERT(!name.empty());
 
@@ -279,7 +278,7 @@ void BedrockCacheCommand::process(SQLite& db) {
         // adding it to the MRU, even before we commit.  So if this transaction
         // gets rolled back for any reason, the MRU will have a record for a
         // name that isn't in the database.  But that is fine.
-        plugin._lruMap.pushMRU(name);
+        plugin()._lruMap.pushMRU(name);
         return;
     }
 }

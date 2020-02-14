@@ -45,7 +45,7 @@ STable BedrockPlugin::getInfo() {
     return STable();
 }
 
-string BedrockPlugin::getName() {
+const string& BedrockPlugin::getName() const {
     SERROR("No name defined by this plugin, aborting.");
 }
 
