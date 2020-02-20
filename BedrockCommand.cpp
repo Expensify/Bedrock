@@ -249,10 +249,10 @@ void BedrockCommand::finalizeTimingInfo() {
 
 // pop and push specializations for SSynchronizedQueue that record timing info.
 template<>
-unique_ptr<BedrockCommand> SSynchronizedQueue<unique_ptr<BedrockCommand>>::pop() {
+BedrockCommandPtr SSynchronizedQueue<BedrockCommandPtr>::pop() {
     SAUTOLOCK(_queueMutex);
     if (!_queue.empty()) {
-        unique_ptr<BedrockCommand> item = move(_queue.front());
+        BedrockCommandPtr item = move(_queue.front());
         _queue.pop_front();
         item->stopTiming(BedrockCommand::QUEUE_SYNC);
         return item;
@@ -261,7 +261,7 @@ unique_ptr<BedrockCommand> SSynchronizedQueue<unique_ptr<BedrockCommand>>::pop()
 }
 
 template<>
-void SSynchronizedQueue<unique_ptr<BedrockCommand>>::push(unique_ptr<BedrockCommand>&& cmd) {
+void SSynchronizedQueue<BedrockCommandPtr>::push(BedrockCommandPtr&& cmd) {
     SAUTOLOCK(_queueMutex);
     SINFO("Enqueuing command '" << cmd->request.methodLine << "', with " << _queue.size() << " commands already queued.");
     // Just add to the queue

@@ -26,7 +26,7 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
-        unique_ptr<BedrockCommand> newCommand = make_unique<BedrockCommand>(move(command));
+        BedrockCommandPtr newCommand = make_unique<BedrockCommand>(move(command));
         if (SIEquals(newCommand->request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
             newRequest.deserialize(newCommand->request.content);
@@ -193,7 +193,7 @@ void BedrockServer::sync(const SData& args,
 
     // Now we jump into our main command processing loop.
     uint64_t nextActivity = STimeNow();
-    unique_ptr<BedrockCommand> command(nullptr);
+    BedrockCommandPtr command(nullptr);
     bool committingCommand = false;
 
     // We hold a lock here around all operations on `syncNode`, because `SQLiteNode` isn't thread-safe, but we need
@@ -398,7 +398,7 @@ void BedrockServer::sync(const SData& args,
             try {
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = nullptr;
+                    command = BedrockCommandPtr(nullptr);
                     command = syncNodeQueuedCommands.pop();
                     if (command->initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
@@ -464,7 +464,7 @@ void BedrockServer::sync(const SData& args,
             // If there are any completed commands to respond to, we'll do that first.
             try {
                 while (true) {
-                    unique_ptr<BedrockCommand> completedCommand = server._completedCommands.pop();
+                    BedrockCommandPtr completedCommand = server._completedCommands.pop();
                     SAUTOPREFIX(completedCommand->request);
                     SASSERT(completedCommand->complete);
                     SASSERT(completedCommand->initiatingPeerID);
@@ -481,7 +481,7 @@ void BedrockServer::sync(const SData& args,
             }
 
             // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = nullptr;
+            command = BedrockCommandPtr(nullptr);
 
             // Get the next sync node command to work on.
             command = syncNodeQueuedCommands.pop();
@@ -682,7 +682,7 @@ void BedrockServer::worker(const SData& args,
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
-    unique_ptr<BedrockCommand> command(nullptr);
+    BedrockCommandPtr command(nullptr);
 
     // Which command queue do we use? The blockingCommit thread special and does blocking commits from the blocking queue.
     BedrockCommandQueue& commandQueue = threadId ? server._commandQueue : server._blockingCommandQueue;
@@ -697,7 +697,7 @@ void BedrockServer::worker(const SData& args,
             });
 
             // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = nullptr;
+            command = BedrockCommandPtr(nullptr);
 
             // And get another one.
             command = commandQueue.get(1000000);
@@ -1059,7 +1059,7 @@ void BedrockServer::worker(const SData& args,
     }
 }
 
-bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command) {
+bool BedrockServer::_handleIfStatusOrControlCommand(BedrockCommandPtr& command) {
     if (_isStatusCommand(command)) {
         _status(command);
         _reply(command);
@@ -1079,7 +1079,7 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
     return false;
 }
 
-bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
+bool BedrockServer::_wouldCrash(const BedrockCommandPtr& command) {
     // Get a shared lock so that all the workers can look at this map simultaneously.
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
@@ -1514,7 +1514,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     }
 
                     // Create a command.
-                    unique_ptr<BedrockCommand> command = make_unique<BedrockCommand>(request);
+                    BedrockCommandPtr command = make_unique<BedrockCommand>(request);
 
                     // Get the source ip of the command.
                     char *ip = inet_ntoa(s->addr.sin_addr);
@@ -1620,7 +1620,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
-void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
+void BedrockServer::_reply(BedrockCommandPtr& command) {
     SAUTOLOCK(_socketIDMutex);
 
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
@@ -1705,7 +1705,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
     }
 }
 
-bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) {
+bool BedrockServer::_isStatusCommand(const BedrockCommandPtr& command) {
     if (SIEquals(command->request.methodLine, STATUS_IS_SLAVE)          ||
         SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER)       ||
         SIEquals(command->request.methodLine, STATUS_HANDLING_COMMANDS) ||
@@ -1757,7 +1757,7 @@ bool BedrockServer::isDetached() {
     return _detach && _syncThreadComplete;
 }
 
-void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
+void BedrockServer::_status(BedrockCommandPtr& command) {
     SData& request  = command->request;
     SData& response = command->response;
 
@@ -1915,7 +1915,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
     }
 }
 
-bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command) {
+bool BedrockServer::_isControlCommand(const BedrockCommandPtr& command) {
     if (SIEquals(command->request.methodLine, "BeginBackup")            ||
         SIEquals(command->request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command->request.methodLine, "ClearCommandPort")       ||
@@ -1931,7 +1931,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
     return false;
 }
 
-void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
+void BedrockServer::_control(BedrockCommandPtr& command) {
     SData& response = command->response;
     response.methodLine = "200 OK";
     if (SIEquals(command->request.methodLine, "BeginBackup")) {
@@ -2076,7 +2076,7 @@ bool BedrockServer::shouldBackup() {
     return _shouldBackup;
 }
 
-SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command) {
+SData BedrockServer::_generateCrashMessage(const BedrockCommandPtr& command) {
     SData message("CRASH_COMMAND");
     SData subMessage(command->request.methodLine);
     for (auto& pair : command->crashIdentifyingValues) {
@@ -2104,7 +2104,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
             SData command(p.first);
             command.nameValueMap = table;
-            unique_ptr<BedrockCommand> cmd = make_unique<BedrockCommand>(command);
+            BedrockCommandPtr cmd = make_unique<BedrockCommand>(command);
             for (const auto& fields : command.nameValueMap) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
@@ -2116,7 +2116,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
     }
 }
 
-void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
+void BedrockServer::_finishPeerCommand(BedrockCommandPtr& command) {
     // See if we're supposed to forget this command (because the follower is not listening for a response).
     auto it = command->request.nameValueMap.find("Connection");
     bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
@@ -2148,7 +2148,7 @@ void BedrockServer::_acceptSockets() {
     }
 }
 
-void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
+void BedrockServer::waitForHTTPS(BedrockCommandPtr&& command) {
     lock_guard<mutex> lock(_httpsCommandMutex);
 
     // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
@@ -2185,7 +2185,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
             // I guess it's still here! Is it done?
             if (commandPtr->areHttpsRequestsComplete()) {
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
-                _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
+                _commandQueue.push(BedrockCommandPtr(commandPtr));
                 _outstandingHTTPSCommands.erase(commandPtrIt);
                 commandsCompleted++;
             }

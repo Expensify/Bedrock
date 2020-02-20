@@ -29,7 +29,7 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command) {
+uint64_t BedrockCore::_getRemainingTime(const BedrockCommandPtr& command) {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
 
@@ -53,7 +53,7 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     return min(processTimeout, adjustedTimeout);
 }
 
-bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
+bool BedrockCore::isTimedOut(BedrockCommandPtr& command) {
     try {
         _getRemainingTime(command);
     } catch (const SException& e) {
@@ -65,7 +65,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
+bool BedrockCore::peekCommand(BedrockCommandPtr& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     SData& request = command->request;
@@ -177,7 +177,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
     return true;
 }
 
-bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
+bool BedrockCore::processCommand(BedrockCommandPtr& command) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
@@ -278,7 +278,7 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
     return needsCommit;
 }
 
-void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
+void BedrockCore::_handleCommandException(BedrockCommandPtr& command, const SException& e) {
     const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);

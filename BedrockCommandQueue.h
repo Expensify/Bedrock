@@ -3,13 +3,13 @@
 #include <libstuff/SScheduledPriorityQueue.h>
 #include "BedrockCommand.h"
 
-class BedrockCommandQueue : public SScheduledPriorityQueue<unique_ptr<BedrockCommand>> {
+class BedrockCommandQueue : public SScheduledPriorityQueue<BedrockCommandPtr> {
   public:
     BedrockCommandQueue();
 
     // Functions to start and stop timing on the commands when they're inserted/removed from the queue.
-    static void startTiming(unique_ptr<BedrockCommand>& command);
-    static void stopTiming(unique_ptr<BedrockCommand>& command);
+    static void startTiming(BedrockCommandPtr& command);
+    static void stopTiming(BedrockCommandPtr& command);
     
     // Returns a list of all the method lines for all the requests currently queued. This function exists for state
     // reporting, and is called by BedrockServer when we receive a `Status` command.
@@ -19,5 +19,5 @@ class BedrockCommandQueue : public SScheduledPriorityQueue<unique_ptr<BedrockCom
     void abandonFutureCommands(int msInFuture);
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
-    void push(unique_ptr<BedrockCommand>&& command);
+    void push(BedrockCommandPtr&& command);
 };

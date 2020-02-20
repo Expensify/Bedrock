@@ -318,7 +318,7 @@ class BedrockServer : public SQLiteServer {
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
-    void _reply(unique_ptr<BedrockCommand>& command);
+    void _reply(BedrockCommandPtr& command);
 
     // The following are constants used as methodlines by status command requests.
     static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
@@ -340,10 +340,10 @@ class BedrockServer : public SQLiteServer {
     recursive_timed_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
-    bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
-    void _status(unique_ptr<BedrockCommand>& command);
-    bool _isControlCommand(const unique_ptr<BedrockCommand>& command);
-    void _control(unique_ptr<BedrockCommand>& command);
+    bool _isStatusCommand(const BedrockCommandPtr& command);
+    void _status(BedrockCommandPtr& command);
+    bool _isControlCommand(const BedrockCommandPtr& command);
+    void _control(BedrockCommandPtr& command);
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
     // those ports.
@@ -356,7 +356,7 @@ class BedrockServer : public SQLiteServer {
     // depends on a future commit if we're a follower that's behind leader, and a client makes two requests, one to a node
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
     // we catch up, and then move them back to the regular command queue.
-    multimap<uint64_t, unique_ptr<BedrockCommand>> _futureCommitCommands;
+    multimap<uint64_t, BedrockCommandPtr> _futureCommitCommands;
 
     // Map of command timeouts to the indexes into _futureCommitCommands where those commands live.
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
@@ -418,14 +418,14 @@ class BedrockServer : public SQLiteServer {
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.
-    void waitForHTTPS(unique_ptr<BedrockCommand>&& command);
+    void waitForHTTPS(BedrockCommandPtr&& command);
 
     // Takes a list of completed HTTPS requests, and move those commands back to the main queue (as long as they don't
     // have any other incomplete requests).
     int finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests);
 
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
-    void _finishPeerCommand(unique_ptr<BedrockCommand>& command);
+    void _finishPeerCommand(BedrockCommandPtr& command);
 
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
     // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
@@ -447,13 +447,13 @@ class BedrockServer : public SQLiteServer {
 
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
     // and responded to upon return
-    bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
+    bool _handleIfStatusOrControlCommand(BedrockCommandPtr& command);
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
-    bool _wouldCrash(const unique_ptr<BedrockCommand>& command);
+    bool _wouldCrash(const BedrockCommandPtr& command);
 
     // Generate a CRASH_COMMAND command for a given bad command.
-    static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
+    static SData _generateCrashMessage(const BedrockCommandPtr& command);
 
     static void _addRequestID(SData& request);
 
