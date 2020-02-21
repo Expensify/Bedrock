@@ -173,8 +173,19 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 size_t end = temp.find_first_of('+', start);
                 temp = temp.substr(start + 1, end - start - 1);
                 char* demangled = abi::__cxa_demangle(temp.c_str(), 0, 0, &status);
+
+                // If the status is OK, we'll see if we can pull the address from the original string.
+                // If so, we concatenate that on the end of the demangled line. If we can't pull it out, we'll fall back to the
+                // original line, as we'd rather have mangled names with potential offsets than demangled names but lost
+                // offsets.
                 if (status == 0) {
-                    details[i + 1] = demangled;
+                    string symbolsStr = string(symbols[i]);
+                    size_t addressOffset = symbolsStr.find_last_of('[');
+                    if (addressOffset != string::npos) {
+                        details[i + 1] = string(demangled) + " " + symbolsStr.substr(addressOffset);
+                    } else {
+                        details[i + 1] = symbols[i];
+                    }
                 } else {
                     details[i + 1] = symbols[i];
                 }

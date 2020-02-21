@@ -407,6 +407,9 @@ void BedrockServer::sync(const SData& args,
                 }
             } catch (const out_of_range& e) {
                 SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+
+                // command will be null here, we should be able to restart the loop.
+                continue;
             }
         }
 
@@ -421,13 +424,18 @@ void BedrockServer::sync(const SData& args,
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
             committingCommand = false;
-            if (server._syncNode->commitSucceeded()) {
-                // If we were upgrading, there's no response to send, we're just done.
-                if (upgradeInProgress.load()) {
-                    upgradeInProgress.store(false);
-                    server._suppressMultiWrite.store(false);
-                    continue;
+
+            // If we were upgrading, there's no response to send, we're just done.
+            if (upgradeInProgress.load()) {
+                upgradeInProgress.store(false);
+                server._suppressMultiWrite.store(false);
+                if (!server._syncNode->commitSucceeded()) {
+                    SWARN("Failed to commit DB Upgrade. Trying again from the top.");
                 }
+                continue;
+            }
+
+            if (server._syncNode->commitSucceeded()) {
                 SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
                 // Otherwise, save the commit count, mark this command as complete, and reply.
@@ -452,9 +460,6 @@ void BedrockServer::sync(const SData& args,
                       << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
-
-            // Prevent the requestID from a finished command from being used.
-            command->request.clear();
         }
 
         // We're either leading, standing down, or following. There could be a commit in progress on `command`, but
@@ -594,11 +599,6 @@ void BedrockServer::sync(const SData& args,
                 }
             }
         } catch (const out_of_range& e) {
-            // Prevent the requestID from a finished command from being used.
-            if (command) {
-                command->request.clear();
-            }
-
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
