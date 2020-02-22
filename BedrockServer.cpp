@@ -256,12 +256,14 @@ void BedrockServer::sync(const SData& args,
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
                 while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState.load() != RUNNING)) {
+                    // Save the timeout since we'll be moving the command, thus making this inaccessible.
+                    uint64_t commandTimeout = it->second->timeout();
                     SINFO("Returning command (" << it->second->request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
 
                     // Remove it from the timed out list as well.
-                    auto itPair = server._futureCommitCommandTimeouts.equal_range(it->second->timeout());
+                    auto itPair = server._futureCommitCommandTimeouts.equal_range(commandTimeout);
                     for (auto timeoutIt = itPair.first; timeoutIt != itPair.second; timeoutIt++) {
                         if (timeoutIt->second == it->first) {
                              server._futureCommitCommandTimeouts.erase(timeoutIt);
