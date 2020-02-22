@@ -10,8 +10,8 @@ void SLogStackTrace() {
     // Output the symbols to the log
     void* callstack[100];
     int depth = backtrace(callstack, 100);
-    char** symbols = backtrace_symbols(callstack, depth);
-    for (int c = 0; c < depth; ++c) {
-        SWARN(symbols[c]);
+    vector<string> stack = SGetCallstack(depth, callstack);
+    for (const auto& frame : stack) {
+        SWARN(frame);
     }
 }
