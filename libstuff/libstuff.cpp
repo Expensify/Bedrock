@@ -101,30 +101,45 @@ const char* SException::what() const noexcept {
     return method.c_str();
 }
 
-vector<string> SException::details() const noexcept {
+vector<string> SGetCallstack(int depth, void* const* callstack) noexcept {
     // Symbols for each stack frame.
     char** symbols = nullptr;
-    if (_depth) {
-        symbols = backtrace_symbols(_callstack, _depth);
-    }
-    vector<string> details(_depth + 1);
-    details[0] = string("Initially thrown from: ") + basename((char*)_file.c_str()) + ":" + to_string(_line);
+    symbols = backtrace_symbols(callstack, depth);
+
+    vector<string> details(depth + 1);
     int status = 0;
-    for (int i = 0; i < _depth; i++) {
+    for (int i = 0; i < depth; i++) {
         // Demangle them if possible.
         string temp = symbols[i];
         size_t start = temp.find_first_of('(');
         size_t end = temp.find_first_of('+', start);
         temp = temp.substr(start + 1, end - start - 1);
         char* demangled = abi::__cxa_demangle(temp.c_str(), 0, 0, &status);
+
+        // If the status is OK, we'll see if we can pull the address from the original string.
+        // If so, we concatenate that on the end of the demangled line. If we can't pull it out, we'll fall back to the
+        // original line, as we'd rather have mangled names with potential offsets than demangled names but lost
+        // offsets.
         if (status == 0) {
-            details[i + 1] = demangled;
+            string symbolsStr = string(symbols[i]);
+            size_t addressOffset = symbolsStr.find_last_of('[');
+            if (addressOffset != string::npos) {
+                details[i + 1] = string(demangled) + " " + symbolsStr.substr(addressOffset);
+            } else {
+                details[i + 1] = symbols[i];
+            }
         } else {
             details[i + 1] = symbols[i];
         }
         free(demangled);
     }
     return details;
+}
+
+vector<string> SException::details() const noexcept {
+    vector<string> stack = SGetCallstack(_depth, _callstack);
+    stack.push_back(string("Initially thrown from: ") + basename((char*)_file.c_str()) + ":" + to_string(_line));
+    return stack;
 }
 
 /////////////////////////////////////////////////////////////////////////////
