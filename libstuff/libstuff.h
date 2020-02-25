@@ -170,6 +170,9 @@ class SException : public exception {
     const string body;
 };
 
+// Utility function for generating pretty callstacks.
+vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
+
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
 // and a content body.

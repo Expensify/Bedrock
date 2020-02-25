@@ -260,12 +260,14 @@ void BedrockServer::sync(const SData& args,
                 uint64_t commitCount = db.getCommitCount();
                 auto it = server._futureCommitCommands.begin();
                 while (it != server._futureCommitCommands.end() && (it->first <= commitCount || server._shutdownState.load() != RUNNING)) {
+                    // Save the timeout since we'll be moving the command, thus making this inaccessible.
+                    uint64_t commandTimeout = it->second->timeout();
                     SINFO("Returning command (" << it->second->request.methodLine << ") waiting on commit " << it->first
                           << " to queue, now have commit " << commitCount);
                     server._commandQueue.push(move(it->second));
 
                     // Remove it from the timed out list as well.
-                    auto itPair = server._futureCommitCommandTimeouts.equal_range(it->second->timeout());
+                    auto itPair = server._futureCommitCommandTimeouts.equal_range(commandTimeout);
                     for (auto timeoutIt = itPair.first; timeoutIt != itPair.second; timeoutIt++) {
                         if (timeoutIt->second == it->first) {
                              server._futureCommitCommandTimeouts.erase(timeoutIt);
@@ -402,7 +404,7 @@ void BedrockServer::sync(const SData& args,
             try {
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = nullptr;
+                    command = unique_ptr<BedrockCommand>(nullptr);
                     command = syncNodeQueuedCommands.pop();
                     if (command->initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
@@ -411,6 +413,9 @@ void BedrockServer::sync(const SData& args,
                 }
             } catch (const out_of_range& e) {
                 SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+
+                // command will be null here, we should be able to restart the loop.
+                continue;
             }
         }
 
@@ -425,13 +430,18 @@ void BedrockServer::sync(const SData& args,
             // We're done with the commit, we unlock our mutex and decrement our counter.
             server._syncThreadCommitMutex.unlock();
             committingCommand = false;
-            if (server._syncNode->commitSucceeded()) {
-                // If we were upgrading, there's no response to send, we're just done.
-                if (upgradeInProgress.load()) {
-                    upgradeInProgress.store(false);
-                    server._suppressMultiWrite.store(false);
-                    continue;
+
+            // If we were upgrading, there's no response to send, we're just done.
+            if (upgradeInProgress.load()) {
+                upgradeInProgress.store(false);
+                server._suppressMultiWrite.store(false);
+                if (!server._syncNode->commitSucceeded()) {
+                    SWARN("Failed to commit DB Upgrade. Trying again from the top.");
                 }
+                continue;
+            }
+
+            if (server._syncNode->commitSucceeded()) {
                 SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
                 // Otherwise, save the commit count, mark this command as complete, and reply.
@@ -456,9 +466,6 @@ void BedrockServer::sync(const SData& args,
                       << " queued commands.");
                 syncNodeQueuedCommands.push(move(command));
             }
-
-            // Prevent the requestID from a finished command from being used.
-            command->request.clear();
         }
 
         // We're either leading, standing down, or following. There could be a commit in progress on `command`, but
@@ -485,7 +492,7 @@ void BedrockServer::sync(const SData& args,
             }
 
             // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = nullptr;
+            command = unique_ptr<BedrockCommand>(nullptr);
 
             // Get the next sync node command to work on.
             command = syncNodeQueuedCommands.pop();
@@ -598,11 +605,6 @@ void BedrockServer::sync(const SData& args,
                 }
             }
         } catch (const out_of_range& e) {
-            // Prevent the requestID from a finished command from being used.
-            if (command) {
-                command->request.clear();
-            }
-
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
@@ -701,7 +703,7 @@ void BedrockServer::worker(const SData& args,
             });
 
             // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = nullptr;
+            command = unique_ptr<BedrockCommand>(nullptr);
 
             // And get another one.
             command = commandQueue.get(1000000);
