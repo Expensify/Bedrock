@@ -139,32 +139,3 @@ class BedrockCommand : public SQLiteCommand {
 
     static atomic<size_t> _commandCount;
 };
-
-#include <BedrockCommand.h>
-
-class checkedUniquePtr_BedrockCommand : public unique_ptr<BedrockCommand> {
-  public:
-
-    // Constructors.
-    checkedUniquePtr_BedrockCommand(unique_ptr<BedrockCommand>&& other) {
-        unique_ptr<BedrockCommand>::operator=(move(other));
-    }
-    checkedUniquePtr_BedrockCommand(BedrockCommand* other) : unique_ptr<BedrockCommand>(other) { }
-    checkedUniquePtr_BedrockCommand(nullptr_t np) : unique_ptr<BedrockCommand>(np) {}
-
-    // Copy by calling parent copy assignment operator.
-    checkedUniquePtr_BedrockCommand& operator=(unique_ptr<BedrockCommand>&& other) {
-        unique_ptr<BedrockCommand>::operator=(move(other));
-        return *this;
-    }
-
-    BedrockCommand* operator->() const {
-        if (get() == nullptr) {
-            STHROW_STACK("Dereferencing null pointer");
-        }
-        return get();
-    }
-};
-
-typedef checkedUniquePtr_BedrockCommand BedrockCommandPtr;
-
