@@ -19,15 +19,12 @@ void BedrockTimeoutCommandQueue::push(BedrockCommandPtr&& rhs) {
 
     // Add to the queue and timeout map.
     _queue.push_back(move(rhs));
+    _queue.back()->startTiming(BedrockCommand::QUEUE_SYNC);
 
     // This is past-the-end, so we decrement it to point to the last element.
     auto lastIt = _queue.end();
     lastIt--;
     _timeoutMap.insert(make_pair((*lastIt)->timeout(), lastIt));
-
-    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
-    // **NOTE: 1 byte so write is atomic.
-    SASSERT(write(_pipeFD[1], "A", 1));
 }
 
 BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
@@ -39,6 +36,7 @@ BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
         BedrockCommandPtr item = move(*(_timeoutMap.begin()->second));
         _queue.erase(_timeoutMap.begin()->second);
         _timeoutMap.erase(_timeoutMap.begin());
+        item->stopTiming(BedrockCommand::QUEUE_SYNC);
         return item;
     }
 
@@ -53,6 +51,7 @@ BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
         }
     }
     BedrockCommandPtr item = move(*firstCommandIt);
+    item->stopTiming(BedrockCommand::QUEUE_SYNC);
     _queue.pop_front();
     return item;
 }

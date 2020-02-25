@@ -301,10 +301,6 @@ void BedrockServer::sync(const SData& args,
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         server._syncNode->prePoll(fdm);
 
-        // Add our command queues to our fd_map.
-        syncNodeQueuedCommands.prePoll(fdm);
-        server._completedCommands.prePoll(fdm);
-
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
 
@@ -326,8 +322,6 @@ void BedrockServer::sync(const SData& args,
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
             server._syncNode->postPoll(fdm, nextActivity);
-            syncNodeQueuedCommands.postPoll(fdm);
-            server._completedCommands.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
