@@ -112,7 +112,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
     // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
     // command criteria. This is because otherwise we would blanket blacklist every command with the same name.
-    request["crashID"] = to_string(SRandom::rand64());
+    const_cast<SData&>(request)["crashID"] = to_string(SRandom::rand64());
     crashIdentifyingValues.insert("crashID");
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
@@ -285,10 +285,10 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 bool childIsMocked = request.isSet("mockRequest");
 
                 if (parentIsMocked && !childIsMocked) {
-                    request["mockRequest"] = "true";
+                    const_cast<SData&>(request)["mockRequest"] = "true";
                     SINFO("Setting child job to mocked to match parent.");
                 } else if (!parentIsMocked && childIsMocked) {
-                    request.erase("mockRequest");
+                    const_cast<SData&>(request).erase("mockRequest");
                     SINFO("Setting child job to non-mocked to match parent.");
                 }
             }
@@ -847,7 +847,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             if (request["repeat"].empty()) {
                 SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
                       << request["jobID"] << ", removing attribute.");
-                request.erase("repeat");
+                const_cast<SData&>(request).erase("repeat");
             } else if (!_validateRepeat(request["repeat"])) {
                 STHROW("402 Malformed repeat");
             }

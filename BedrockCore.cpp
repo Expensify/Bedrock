@@ -68,7 +68,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
 bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
-    SData& request = command->request;
+    const SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
 
@@ -164,7 +164,7 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
-    SData& request = command->request;
+    const SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
 

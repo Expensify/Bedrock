@@ -41,8 +41,8 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (SStartsWith(SToLower(request.methodLine), "query:")) {
         //  Just take everything after that and put into the query param
         SINFO("Rewriting command: " << request.methodLine);
-        request["query"] = request.methodLine.substr(strlen("query:"));
-        request.methodLine = "Query";
+        const_cast<SData&>(request)["query"] = request.methodLine.substr(strlen("query:"));
+        const_cast<SData&>(request).methodLine = "Query";
     }
 
     // ----------------------------------------------------------------------

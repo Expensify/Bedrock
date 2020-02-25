@@ -65,7 +65,7 @@ bool TestPluginCommand::peek(SQLite& db) {
 
     // Now that we've blacklisted, mutate the command and see if things break!
     if (request.isSet("userID")) {
-        request["userID"] = to_string(stoll(request["userID"]) + 1000);
+        const_cast<SData&>(request)["userID"] = to_string(stoll(request["userID"]) + 1000);
     }
 
     // Sleep if requested.
@@ -199,12 +199,12 @@ bool TestPluginCommand::peek(SQLite& db) {
             httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
 
             // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
-            request["pendingResult"] = "true";
+            const_cast<SData&>(request)["pendingResult"] = "true";
             repeek = true;
 
             // re-write the URL list for the next iteration.
             remainingURLs.pop_front();
-            request["urls"] = SComposeList(remainingURLs);
+            const_cast<SData&>(request)["urls"] = SComposeList(remainingURLs);
         } else {
             // There are no URLs left.
             repeek = false;

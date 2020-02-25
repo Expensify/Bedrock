@@ -236,7 +236,7 @@ void BedrockServer::sync(const SData& args,
                                   << " to queue, timed out at: " << now << ", timeout was: " << it->first << ".");
 
                             // Remove the commit count requirement so this can get timed out.
-                            cmdIt->second->request.erase("commitCount");
+                            const_cast<SData&>(cmdIt->second->request).erase("commitCount");
                             server._commandQueue.push(move(cmdIt->second));
 
                             // And delete it, it's gone.
@@ -1525,7 +1525,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     if (ip != "127.0.0.1"s) {
                         // We only add this if it's not localhost because existing code expects commands that come from
                         // localhost to have it blank.
-                        command->request["_source"] = ip;
+                        const_cast<SData&>(command->request)["_source"] = ip;
                     }
 
                     if (command->writeConsistency != SQLiteNode::QUORUM
@@ -1655,15 +1655,20 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     if (socketIt != _socketIDMap.end()) {
         command->response["nodeName"] = args["-nodeName"];
 
-        // Is a plugin handling this command? If so, it gets to send the response.
-        string& pluginName = command->request["plugin"];
-
         // If we're shutting down, tell the caller to close the connection.
         if (_shutdownState.load() != RUNNING) {
             command->response["Connection"] = "close";
         }
 
-        if (!pluginName.empty()) {
+        // Is a plugin handling this command? If so, it gets to send the response.
+        try {
+            // If there's no plugin name, we'll jump right to the catch block. We throw explicitly if there's an empty
+            // value here.
+            const string& pluginName = command->request.nameValueMap.at("plugin");
+            if (pluginName.empty()) {
+                throw (out_of_range("plugin name empty."));
+            }
+
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
                   << "' to request '" << command->request.methodLine << "'");
@@ -1673,7 +1678,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             } else {
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
-        } else {
+        } catch (const out_of_range& e) {
             // Otherwise we send the standard response.
             socketIt->second->send(command->response.serialize());
         }
@@ -1775,7 +1780,7 @@ bool BedrockServer::isDetached() {
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
-    SData& request  = command->request;
+    const SData& request  = command->request;
     SData& response = command->response;
 
     // We'll return whether or not this server is following.
@@ -2214,13 +2219,13 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     return commandsCompleted;
 }
 
-void BedrockServer::_addRequestID(SData& request) {
+void BedrockServer::_addRequestID(const SData& request) {
     if (!request.isSet("requestID")) {
         string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         string requestID;
         for (int i = 0; i < 6; i++) {
             requestID += chars[SRandom::rand64() % chars.size()];
         }
-        request["requestID"] = requestID;
+        const_cast<SData&>(request)["requestID"] = requestID;
     }
 }
