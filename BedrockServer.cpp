@@ -1661,14 +1661,9 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // Is a plugin handling this command? If so, it gets to send the response.
-        try {
-            // If there's no plugin name, we'll jump right to the catch block. We throw explicitly if there's an empty
-            // value here.
-            const string& pluginName = command->request.nameValueMap.at("plugin");
-            if (pluginName.empty()) {
-                throw (out_of_range("plugin name empty."));
-            }
+        const string& pluginName = command->request["plugin"];
 
+        if (!pluginName.empty()) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
                   << "' to request '" << command->request.methodLine << "'");
@@ -1678,7 +1673,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             } else {
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
-        } catch (const out_of_range& e) {
+        } else {
             // Otherwise we send the standard response.
             socketIt->second->send(command->response.serialize());
         }
