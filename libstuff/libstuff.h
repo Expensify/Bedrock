@@ -483,6 +483,7 @@ inline bool SContains(const string& haystack, char needle) { return haystack.fin
 inline bool SContains(const STable& nameValueMap, const string& name) {
     return (nameValueMap.find(name) != nameValueMap.end());
 }
+bool SIsValidSQLiteDateModifier(const string& modifier);
 
 // General testing functions
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }

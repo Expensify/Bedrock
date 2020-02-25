@@ -246,7 +246,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Validate retryAfter
-            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
+            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])){
                 STHROW("402 Malformed retryAfter");
             }
 
@@ -1285,7 +1285,7 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 
     for (const string& part : parts) {
         // Validate the sqlite date modifiers
-        if (!_isValidSQLiteDateModifier(part)){
+        if (!SIsValidSQLiteDateModifier(part)){
             SWARN("Syntax error, failed parsing repeat "+part);
             return "";
         }
@@ -1312,30 +1312,6 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
         STHROW("502 Select failed");
     }
     return !result.empty();
-}
-
-bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
-    // See: https://www.sqlite.org/lang_datefunc.html
-    list<string> parts = SParseList(SToUpper(modifier));
-    for (const string& part : parts) {
-        // Simple regexp validation
-        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
-            continue;
-        }
-        if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
-            continue;
-        }
-        if (SREMatch("^WEEKDAY [0-6]$", part)) {
-            continue;
-        }
-
-        // Couldn't match this part to any valid syntax
-        SINFO("Syntax error, failed parsing date modifier '" << modifier << "' on part '" << part << "'");
-        return false;
-    }
-
-    // Matched all parts, valid syntax
-    return true;
 }
 
 void BedrockPlugin_Jobs::_validatePriority(const int64_t priority) {
