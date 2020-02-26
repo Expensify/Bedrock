@@ -90,7 +90,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
 
             // Peek.
             bool completed = command->peek(_db);
-            SINFO("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
+            SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             // Peeking is over now, allow writes
             _db.read("PRAGMA query_only = false;");
@@ -194,7 +194,7 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
                 command->process(_db);
-                SINFO("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
+                SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
                 if (!command->shouldSuppressTimeoutWarnings()) {
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
