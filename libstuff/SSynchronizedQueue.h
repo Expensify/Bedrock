@@ -78,8 +78,7 @@ void SSynchronizedQueue<T>::prePoll(fd_map& fdm) {
 
 template<typename T>
 void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
-    // Pipe should every actually have 1 item in it, since we are just using the pipe as a mechanism
-    // to communicate that work is available.
+    // Check if there is anything to read off of the pipe, if there is, empty it.
     if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
         // Read until there is nothing left to read.
         while (true) {
