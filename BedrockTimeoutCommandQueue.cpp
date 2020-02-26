@@ -25,6 +25,10 @@ void BedrockTimeoutCommandQueue::push(BedrockCommandPtr&& rhs) {
     auto lastIt = _queue.end();
     lastIt--;
     _timeoutMap.insert(make_pair((*lastIt)->timeout(), lastIt));
+
+    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
+    // **NOTE: 1 byte so write is atomic.
+    SASSERT(write(_pipeFD[1], "A", 1));
 }
 
 BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
