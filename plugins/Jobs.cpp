@@ -144,7 +144,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
         //     - 303 - Timeout
         //     - 404 - No jobs found
         //
-        BedrockPlugin_Jobs::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_NAME);
+        BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_NAME);
         if (SIEquals(requestVerb, "GetJobs") != request.isSet("numResults")) {
             if (SIEquals(requestVerb, "GetJobs")) {
                 STHROW("402 Missing numResults");
@@ -182,7 +182,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
         //         . data - JSON data associated with this job
         //     - 404 - No jobs found
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this
         SQResult result;
@@ -212,7 +212,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
     else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         list<STable> jsonJobs;
         if (SIEquals(requestVerb, "CreateJob")) {
-            BedrockPlugin_Jobs::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
+            BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
             jsonJobs.push_back(request.nameValueMap);
         } else {
             list<string> multipleJobs;
@@ -332,7 +332,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
         //     - 200 - OK
         //     - 402 - Cannot cancel jobs that are running
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
         SQResult result;
@@ -838,8 +838,8 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - repeat - A description of how to repeat (optional)
         //     - jobPriority - The priority of the job (optional)
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
-        BedrockPlugin_Jobs::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
@@ -923,7 +923,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - jobID  - ID of the job to finish
         //     - data   - Data to associate with this finsihed job
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
@@ -1145,7 +1145,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - jobID - ID of the job to fail
         //     - data  - Data to associate with this failed job
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's running
         SQResult result;
@@ -1195,7 +1195,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     Parameters:
         //     - jobID - ID of the job to delete
         //
-        BedrockPlugin_Jobs::verifyAttributeInt64(request, "jobID", 1);
+        BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this and it's not running
         SQResult result;
