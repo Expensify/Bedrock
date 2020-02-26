@@ -101,7 +101,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
 
                 // Try to peek the command.
                 if (plugin.second->peekCommand(_db, *command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
+                    SDEBUG("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
                     command->peekedBy = plugin.second;
                     pluginPeeked = true;
                     break;
@@ -213,7 +213,7 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
                 if (plugin.second->processCommand(_db, *command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
+                    SDEBUG("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
                     command->processedBy = plugin.second;
                     break;
