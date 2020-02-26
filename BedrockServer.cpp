@@ -1632,7 +1632,7 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& 
     for (auto pair : plugins) {
         auto command = pair.second->getCommand(move(baseCommand));
         if (command) {
-            SINFO("Plugin " << pair.first << " handling command " << command->request.methodLine);
+            SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
             return command;
         }
     }

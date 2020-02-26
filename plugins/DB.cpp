@@ -26,7 +26,6 @@ unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseComm
 }
 
 bool BedrockDBCommand::peek(SQLite& db) {
-    // ----------------------------------------------------------------------
     // The "full" syntax of a query request is:
     //
     //      Query
@@ -45,7 +44,6 @@ bool BedrockDBCommand::peek(SQLite& db) {
         const_cast<SData&>(request).methodLine = "Query";
     }
 
-    // ----------------------------------------------------------------------
     if (SIEquals(request.getVerb(), "Query")) {
         // - Query( query )
         //
