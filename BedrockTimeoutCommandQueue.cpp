@@ -1,6 +1,6 @@
 #include <BedrockTimeoutCommandQueue.h>
 
-const BedrockCommandPtr& BedrockTimeoutCommandQueue::front() const {
+const unique_ptr<BedrockCommand>& BedrockTimeoutCommandQueue::front() const {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (_queue.empty()) {
         throw out_of_range("No commands");
@@ -14,7 +14,7 @@ const BedrockCommandPtr& BedrockTimeoutCommandQueue::front() const {
     return _queue.front();
 }
 
-void BedrockTimeoutCommandQueue::push(BedrockCommandPtr&& rhs) {
+void BedrockTimeoutCommandQueue::push(unique_ptr<BedrockCommand>&& rhs) {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
     // Add to the queue and timeout map.
@@ -31,13 +31,13 @@ void BedrockTimeoutCommandQueue::push(BedrockCommandPtr&& rhs) {
     SASSERT(write(_pipeFD[1], "A", 1));
 }
 
-BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
+unique_ptr<BedrockCommand> BedrockTimeoutCommandQueue::pop() {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (_queue.empty()) {
         throw out_of_range("No commands");
     }
     if (_timeoutMap.begin()->first < STimeNow()) {
-        BedrockCommandPtr item = move(*(_timeoutMap.begin()->second));
+        unique_ptr<BedrockCommand> item = move(*(_timeoutMap.begin()->second));
         _queue.erase(_timeoutMap.begin()->second);
         _timeoutMap.erase(_timeoutMap.begin());
         item->stopTiming(BedrockCommand::QUEUE_SYNC);
@@ -54,7 +54,7 @@ BedrockCommandPtr BedrockTimeoutCommandQueue::pop() {
             break;
         }
     }
-    BedrockCommandPtr item = move(*firstCommandIt);
+    unique_ptr<BedrockCommand> item = move(*firstCommandIt);
     item->stopTiming(BedrockCommand::QUEUE_SYNC);
     _queue.pop_front();
     return item;

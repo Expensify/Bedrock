@@ -84,13 +84,15 @@ void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
         while (true) {
             char readbuffer[1];
             int ret = read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+            SINFO("COLE read " << ret << " bytes from pipe.");
 
             // Since the pipe is set to non-blocking reads, read() will return -1
             // when there is no data to read or 0 when we have read it all
             if (ret == 0) {
+                SINFO("COLE breaking");
                 break;
             } else if (ret == -1) {
-                STHROW("Failed to read from pipe");
+                STHROW("COLE Failed to read from pipe");
             }
         }
     }
