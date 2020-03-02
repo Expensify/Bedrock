@@ -1,5 +1,6 @@
 #include "tpunit++.hpp"
 #include <string.h>
+#include <iostream>
 #include <regex>
 using namespace tpunit;
 
