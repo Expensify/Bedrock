@@ -27,8 +27,8 @@ class SQLiteCommand {
     // Used inside SQLiteNode
     SData transaction;
 
-    // Original request
-    SData request;
+    // Original request, immutable.
+    const SData request;
 
     // Accumulated response content
     STable jsonContent;

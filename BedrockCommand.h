@@ -28,17 +28,31 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
-    // Constructor to convert from an existing SQLiteCommand (by move).
-    BedrockCommand(SQLiteCommand&& from, int dontCount = 0);
-
     // Constructor to initialize via a request object (by move).
-    BedrockCommand(SData&& _request);
-
-    // Constructor to initialize via a request object (by copy).
-    BedrockCommand(SData _request);
+    BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
 
     // Destructor.
-    ~BedrockCommand();
+    virtual ~BedrockCommand();
+
+    // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
+    // completely handled and a response has been written into `command.response`, which can be returned to the client.
+    // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
+    // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
+    virtual bool peek(SQLite& db) { STHROW("430 Unrecognized command"); }
+
+    // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
+    // with any changes to the DB made by this plugin.
+    virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
+
+    // Return the name of the plugin for this command.
+    const string& getName() const;
+
+    // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
+    // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
+    // set the rewriteHandler it would like to use.
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int, const char*, string&)) {
+        return false;
+    }
 
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
@@ -63,9 +77,14 @@ class BedrockCommand : public SQLiteCommand {
     int peekCount;
     int processCount;
 
-    // Keep track of who peeked and processed this command.
-    BedrockPlugin* peekedBy;
-    BedrockPlugin* processedBy;
+    // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
+    // Note that it gets no reference to the DB, this happens after the transaction is already complete.
+    virtual void handleFailedReply() {
+        // Default implementation does nothing.
+    }
+
+    // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
+    virtual bool shouldSuppressTimeoutWarnings() { return false; }
 
     // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
     // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
@@ -75,9 +94,9 @@ class BedrockCommand : public SQLiteCommand {
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
-    // This defaults to false, but a specific plugin can set it to 'true' in peek() to force this command to be passed
+    // This defaults to false, but a specific plugin can set it to 'true' to force this command to be passed
     // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
-    bool onlyProcessOnSyncThread;
+    virtual bool onlyProcessOnSyncThread() { return false; }
 
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
     // for the sake of determining whether they're likely to cause a crash.
@@ -108,21 +127,15 @@ class BedrockCommand : public SQLiteCommand {
     };
     CrashMap crashIdentifyingValues;
 
-    // To accommodate plugins that need to store extra data for a command besides the built-in data for a
-    // BedrockCommand, we provide a pointer that the command can use to refer to extra storage. However, because the
-    // lifespan of this storage should match that of the BedrockCommand, we also need to provide a deallocation
-    // function to free this memory when the command completes.
-    // A better solution for this would be to use polymorphism and allow plugins to derive command objects from the
-    // base class of BedrockCommand, but that's too significant of a change to the architecture for the current
-    // timeline, so that is left as a future enhancement.
-    void* peekData;
-    void (*deallocator) (void*);
-
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 
-    // Return the number of commands in existence that weren't created with DONT_COUNT.
+    // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
+
+  protected:
+    // The plugin that owns this command.
+    BedrockPlugin* _plugin;
 
   private:
     // Set certain initial state on construction. Common functionality to several constructors.
@@ -138,4 +151,6 @@ class BedrockCommand : public SQLiteCommand {
     uint64_t _timeout;
 
     static atomic<size_t> _commandCount;
+
+    static const string defaultPluginName;
 };

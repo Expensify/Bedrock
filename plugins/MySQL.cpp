@@ -4,6 +4,11 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
+const string BedrockPlugin_MySQL::name("MySQL");
+const string& BedrockPlugin_MySQL::getName() const {
+    return name;
+}
+
 MySQLPacket::MySQLPacket() {
     // Initialize
     sequenceID = 0;
@@ -222,7 +227,7 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     return err.serialize();
 }
 
-BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin_DB(s)
 {
 }
 
@@ -316,10 +321,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
-                request.methodLine = "Query";
-                request["format"] = "json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] = query;
+                const_cast<SData&>(request).methodLine = "Query";
+                const_cast<SData&>(request)["format"] = "json";
+                const_cast<SData&>(request)["sequenceID"] = SToStr(packet.sequenceID);
+                const_cast<SData&>(request)["query"] = query;
             }
             break;
         }
