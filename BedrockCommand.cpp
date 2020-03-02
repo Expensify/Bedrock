@@ -1,7 +1,50 @@
 #include <libstuff/libstuff.h>
 #include "BedrockCommand.h"
+#include "BedrockPlugin.h"
 
 atomic<size_t> BedrockCommand::_commandCount(0);
+
+const string BedrockCommand::defaultPluginName("NO_PLUGIN");
+
+BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin) :
+    SQLiteCommand(move(baseCommand)),
+    priority(PRIORITY_NORMAL),
+    peekCount(0),
+    processCount(0),
+    repeek(false),
+    crashIdentifyingValues(*this),
+    _plugin(plugin),
+    _inProgressTiming(INVALID, 0, 0),
+    _timeout(_getTimeout(request))
+{
+    // Initialize the priority, if supplied.
+    if (request.isSet("priority")) {
+        int tempPriority = request.calc("priority");
+        switch (tempPriority) {
+            // For any valid case, we just set the value directly.
+            case BedrockCommand::PRIORITY_MIN:
+            case BedrockCommand::PRIORITY_LOW:
+            case BedrockCommand::PRIORITY_NORMAL:
+            case BedrockCommand::PRIORITY_HIGH:
+            case BedrockCommand::PRIORITY_MAX:
+                priority = static_cast<Priority>(tempPriority);
+                break;
+            default:
+                // But an invalid case gets set to NORMAL, and a warning is logged.
+                SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
+                priority = PRIORITY_NORMAL;
+                break;
+        }
+    }
+    _commandCount++;
+}
+
+const string& BedrockCommand::getName() const {
+    if (_plugin) {
+        return _plugin->getName();
+    }
+    return defaultPluginName;
+}
 
 int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
@@ -30,88 +73,6 @@ BedrockCommand::~BedrockCommand() {
         request->manager.closeTransaction(request);
     }
     _commandCount--;
-    if (deallocator && peekData) {
-        deallocator(peekData);
-    }
-}
-
-BedrockCommand::BedrockCommand(SQLiteCommand&& from, int dontCount) :
-    SQLiteCommand(move(from)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
-BedrockCommand::BedrockCommand(SData&& _request) :
-    SQLiteCommand(move(_request)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
-BedrockCommand::BedrockCommand(SData _request) :
-    SQLiteCommand(move(_request)),
-    priority(PRIORITY_NORMAL),
-    peekCount(0),
-    processCount(0),
-    peekedBy(nullptr),
-    processedBy(nullptr),
-    repeek(false),
-    onlyProcessOnSyncThread(false),
-    crashIdentifyingValues(*this),
-    peekData(nullptr),
-    deallocator(nullptr),
-    _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
-{
-    _init();
-    _commandCount++;
-}
-
-void BedrockCommand::_init() {
-    // Initialize the priority, if supplied.
-    if (request.isSet("priority")) {
-        int tempPriority = request.calc("priority");
-        switch (tempPriority) {
-            // For any valid case, we just set the value directly.
-            case BedrockCommand::PRIORITY_MIN:
-            case BedrockCommand::PRIORITY_LOW:
-            case BedrockCommand::PRIORITY_NORMAL:
-            case BedrockCommand::PRIORITY_HIGH:
-            case BedrockCommand::PRIORITY_MAX:
-                priority = static_cast<Priority>(tempPriority);
-                break;
-            default:
-                // But an invalid case gets set to NORMAL, and a warning is logged.
-                SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
-                priority = PRIORITY_NORMAL;
-                break;
-        }
-    }
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {

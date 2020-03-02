@@ -30,7 +30,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
 
     // If the request doesn't specify an execution time, default to right now.
     if (!request.isSet("commandExecuteTime")) {
-        request["commandExecuteTime"] = to_string(STimeNow());
+        const_cast<SData&>(request)["commandExecuteTime"] = to_string(STimeNow());
     }
 }
 

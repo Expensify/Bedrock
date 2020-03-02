@@ -2,18 +2,30 @@
 #include "BedrockServer.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << server.args["-nodeName"] << ":" << getName() << "} "
+#define SLOGPREFIX "{" << getName() << "} "
+
+const string BedrockPlugin_DB::name("DB");
+const string& BedrockPlugin_DB::getName() const {
+    return name;
+}
 
 BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
-bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
-    // Pull out some helpful variables
-    SData& request = command.request;
-    SData& response = command.response;
+BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin) :
+  BedrockCommand(move(baseCommand), plugin)
+{
+}
 
-    // ----------------------------------------------------------------------
+unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
+    if (SStartsWith(baseCommand.request.methodLine, "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
+        return make_unique<BedrockDBCommand>(move(baseCommand), this);
+    }
+    return nullptr;
+}
+
+bool BedrockDBCommand::peek(SQLite& db) {
     // The "full" syntax of a query request is:
     //
     //      Query
@@ -28,18 +40,17 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     if (SStartsWith(SToLower(request.methodLine), "query:")) {
         //  Just take everything after that and put into the query param
         SINFO("Rewriting command: " << request.methodLine);
-        request["query"] = request.methodLine.substr(strlen("query:"));
-        request.methodLine = "Query";
+        const_cast<SData&>(request)["query"] = request.methodLine.substr(strlen("query:"));
+        const_cast<SData&>(request).methodLine = "Query";
     }
 
-    // ----------------------------------------------------------------------
     if (SIEquals(request.getVerb(), "Query")) {
         // - Query( query )
         //
         //     Executes a simple query
         //
-        verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
-        verifyAttributeBool(request, "nowhere",  false);
+        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
+        BedrockPlugin::verifyAttributeBool(request, "nowhere",  false);
 
         // See if it's read-only (and thus safely peekable) or read-write
         // (and thus requires processing).
@@ -107,22 +118,17 @@ bool BedrockPlugin_DB::peekCommand(SQLite& db, BedrockCommand& command) {
     return false;
 }
 
-bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
-    // Pull out some helpful variables
-    SData& request = command.request;
-    SData& response = command.response;
-
-    // ----------------------------------------------------------------------
+void BedrockDBCommand::process(SQLite& db) {
     if (SIEquals(request.getVerb(), "Query")) {
         if (db.getUpdateNoopMode()) {
             SINFO("Query run in mocked request, just ignoring.");
-            return true;
+            return;
         }
         // - Query( query )
         //
         //     Executes a simple read/write query
         //
-        verifyAttributeSize(request, "query", 1, MAX_SIZE_QUERY);
+        BedrockPlugin::verifyAttributeSize(request, "query", 1, BedrockPlugin::MAX_SIZE_QUERY);
 
         // Attempt the query
         const string& query = request["query"] + ";";
@@ -140,9 +146,6 @@ bool BedrockPlugin_DB::processCommand(SQLite& db, BedrockCommand& command) {
         }
 
         // Successfully processed
-        return true;
+        return;
     }
-
-    // Didn't recognize this command
-    return false;
 }
