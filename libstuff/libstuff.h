@@ -170,6 +170,9 @@ class SException : public exception {
     const string body;
 };
 
+// Utility function for generating pretty callstacks.
+vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
+
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
 // and a content body.
@@ -483,6 +486,7 @@ inline bool SContains(const string& haystack, char needle) { return haystack.fin
 inline bool SContains(const STable& nameValueMap, const string& name) {
     return (nameValueMap.find(name) != nameValueMap.end());
 }
+bool SIsValidSQLiteDateModifier(const string& modifier);
 
 // General testing functions
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }

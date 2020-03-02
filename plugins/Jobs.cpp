@@ -147,9 +147,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
 
         if (request.isSet("jobPriority")) {
             int64_t priority = request.calc64("jobPriority");
-            if (priority != 0 && priority != 500 && priority != 1000) {
-                STHROW("402 Invalid priority value");
-            }
+            _validatePriority(priority);
         }
 
         return false;
@@ -240,9 +238,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             // here so that the caller can know that he did something wrong rather
             // than having his job sit unprocessed in the queue forever. Hopefully
             // we can remove this restriction in the future.
-            if (priority != 0 && priority != 500 && priority != 1000) {
-                STHROW("402 Invalid priority value");
-            }
+            _validatePriority(priority);
 
             // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
             if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
@@ -250,7 +246,7 @@ bool BedrockPlugin_Jobs::peekCommand(SQLite& db, BedrockCommand& command) {
             }
 
             // Validate retryAfter
-            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !_isValidSQLiteDateModifier(job["retryAfter"])){
+            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])){
                 STHROW("402 Malformed retryAfter");
             }
 
@@ -534,15 +530,8 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             // If no priority set, set it
             int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : JOBS_DEFAULT_PRIORITY);
 
-            // We'd initially intended for any value to be allowable here, but for
-            // performance reasons, we currently will only allow specific values to
-            // try and keep queries fast. If you pass an invalid value, we'll throw
-            // here so that the caller can know that he did something wrong rather
-            // than having his job sit unprocessed in the queue forever. Hopefully
-            // we can remove this restriction in the future.
-            if (priority != 0 && priority != 500 && priority != 1000) {
-                STHROW("402 Invalid priority value");
-            }
+            // Validate the priority passed in
+            _validatePriority(priority);
 
             // Validate that the parentJobID exists and is in the right state if one was passed.
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
@@ -842,6 +831,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
         //     - jobID - ID of the job to delete
         //     - data  - A JSON object describing work to be done
         //     - repeat - A description of how to repeat (optional)
+        //     - jobPriority - The priority of the job (optional)
         //
         verifyAttributeInt64(request, "jobID", 1);
         verifyAttributeSize(request, "data", 1, MAX_SIZE_BLOB);
@@ -855,6 +845,12 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
             } else if (!_validateRepeat(request["repeat"])) {
                 STHROW("402 Malformed repeat");
             }
+        }
+
+        // If a priority is provided, validate it
+        if (request.isSet("jobPriority")) {
+            int64_t priority = request.calc64("jobPriority");
+            _validatePriority(priority);
         }
 
         // Verify there is a job like this
@@ -881,6 +877,7 @@ bool BedrockPlugin_Jobs::processCommand(SQLite& db, BedrockCommand& command) {
                                 SQ(request["data"]) + " " +
                                 (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
+                                (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
                                 "WHERE jobID=" +
                                 SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Update failed");
@@ -1288,7 +1285,7 @@ string BedrockPlugin_Jobs::_constructNextRunDATETIME(const string& lastScheduled
 
     for (const string& part : parts) {
         // Validate the sqlite date modifiers
-        if (!_isValidSQLiteDateModifier(part)){
+        if (!SIsValidSQLiteDateModifier(part)){
             SWARN("Syntax error, failed parsing repeat "+part);
             return "";
         }
@@ -1317,29 +1314,18 @@ bool BedrockPlugin_Jobs::_hasPendingChildJobs(SQLite& db, int64_t jobID) {
     return !result.empty();
 }
 
-bool BedrockPlugin_Jobs::_isValidSQLiteDateModifier(const string& modifier) {
-    // See: https://www.sqlite.org/lang_datefunc.html
-    list<string> parts = SParseList(SToUpper(modifier));
-    for (const string& part : parts) {
-        // Simple regexp validation
-        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
-            continue;
-        }
-        if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
-            continue;
-        }
-        if (SREMatch("^WEEKDAY [0-6]$", part)) {
-            continue;
-        }
-
-        // Couldn't match this part to any valid syntax
-        SINFO("Syntax error, failed parsing date modifier '" << modifier << "' on part '" << part << "'");
-        return false;
+void BedrockPlugin_Jobs::_validatePriority(const int64_t priority) {
+    // We'd initially intended for any value to be allowable here, but for
+    // performance reasons, we currently will only allow specific values to
+    // try and keep queries fast. If you pass an invalid value, we'll throw
+    // here so that the caller can know that he did something wrong rather
+    // than having his job sit unprocessed in the queue forever. Hopefully
+    // we can remove this restriction in the future.
+    if (priority != 0 && priority != 500 && priority != 1000) {
+        STHROW("402 Invalid priority value");
     }
-
-    // Matched all parts, valid syntax
-    return true;
 }
+
 
 void BedrockPlugin_Jobs::handleFailedReply(const BedrockCommand& command) {
     if (SIEquals(command.request.methodLine, "GetJob") || SIEquals(command.request.methodLine, "GetJobs")) {

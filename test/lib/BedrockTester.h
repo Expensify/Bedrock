@@ -3,38 +3,7 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
-
-// Find an available TCP port to use.
-// This assumes that all ports aren't in use by other processes, it does no external validation on them.
-class PortMap {
-  public:
-    uint16_t getPort()
-    {
-        lock_guard<mutex> lock(_m);
-        if (_returned.size()) {
-            uint16_t port = *_returned.begin();
-            _returned.erase(_returned.begin());
-            return port;
-        }
-        uint16_t port = _from;
-        _from++;
-        return port;
-    }
-
-    void returnPort(uint16_t port)
-    {
-        lock_guard<mutex> lock(_m);
-        _returned.insert(port);
-    }
-
-    PortMap(uint16_t from = 8989) : _from(from)
-    {}
-
-  private:
-    uint16_t _from;
-    set<uint16_t> _returned;
-    mutex _m;
-};
+#include <test/lib/PortMap.h>
 
 class BedrockTester {
   public:
@@ -118,14 +87,22 @@ class BedrockTester {
 
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
-    bool waitForState(string state, uint64_t timeoutUS = 60'000'000);
+    bool waitForState(string state, uint64_t timeoutUS = 60'000'000, bool control = false);
 
     // Like `waitForState` but wait for any of a set of states.
-    bool waitForStates(set<string> states, uint64_t timeoutUS = 60'000'000);
+    bool waitForStates(set<string> states, uint64_t timeoutUS = 60'000'000, bool control = false);
 
-    // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
-    // it takes the OS a few seconds to make the port available again.
-    static int waitForPort(int port);
+    // get the output of a "Status" command from the command port
+    STable getStatus(bool control = false);
+
+    // get the value of a particular term from the output of a "Status" command
+    string getStatusTerm(string term, bool control = false);
+
+    // wait for the value of a particular term to match the testValue
+    bool waitForStatusTerm(string term, string testValue, uint64_t timeoutUS = 30'000'000, bool control = false);
+
+    // wait for the specified commit, up to "retries" times
+    bool waitForCommit(int minCommitCount, int retries = 30, bool control = false);
 
   protected:
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
@@ -157,5 +134,7 @@ class BedrockTester {
     uint16_t _serverPort;
     uint16_t _nodePort;
     uint16_t _controlPort;
+
+    // If the ports were specified in advance.
     const bool _ownPorts;
 };

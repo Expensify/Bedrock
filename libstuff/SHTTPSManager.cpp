@@ -211,15 +211,17 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
         host += ":443";
     }
 
+    // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
+    Transaction* transaction = new Transaction(*this);
+
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = openSocket(host, x509);
     if (!s) {
+        delete transaction;
         return _createErrorTransaction();
     }
 
-    // Wrap in a transaction
-    Transaction* transaction = new Transaction(*this);
     transaction->s = s;
     transaction->fullRequest = request;
 

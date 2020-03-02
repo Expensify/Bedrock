@@ -29,23 +29,23 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
-    int64_t timeout = command.timeout();
+uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command) {
+    int64_t timeout = command->timeout();
     int64_t now = STimeNow();
 
     // This is what's left for the "absolute" time. If it's negative, we've already timed out.
     int64_t adjustedTimeout = timeout - now;
 
     // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
-    int64_t processTimeout = command.request.isSet("processTimeout") ? command.request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+    int64_t processTimeout = command->request.isSet("processTimeout") ? command->request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 
     // Since timeouts are specified in ms, we convert to us.
     processTimeout *= 1000;
 
     // Already expired.
     if (adjustedTimeout <= 0 || processTimeout <= 0) {
-        SALERT("Command " << command.request.methodLine << " timed out after "
-               << ((now - command.request.calc64("commandExecuteTime")) / 1000) << "ms.");
+        SALERT("Command " << command->request.methodLine << " timed out after "
+               << ((now - command->request.calc64("commandExecuteTime")) / 1000) << "ms.");
         STHROW("555 Timeout");
     }
 
@@ -53,30 +53,30 @@ uint64_t BedrockCore::_getRemainingTime(const BedrockCommand& command) {
     return min(processTimeout, adjustedTimeout);
 }
 
-bool BedrockCore::isTimedOut(BedrockCommand& command) {
+bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     try {
         _getRemainingTime(command);
     } catch (const SException& e) {
         // Yep, timed out.
         _handleCommandException(command, e);
-        command.complete = true;
+        command->complete = true;
         return true;
     }
     return false;
 }
 
-bool BedrockCore::peekCommand(BedrockCommand& command) {
+bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
-    SData& request = command.request;
-    SData& response = command.response;
-    STable& content = command.jsonContent;
+    SData& request = command->request;
+    SData& response = command->response;
+    STable& content = command->jsonContent;
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
+        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
         uint64_t timeout = _getRemainingTime(command);
-        command.peekCount++;
+        command->peekCount++;
 
         _db.startTiming(timeout);
         // We start a transaction in `peekCommand` because we want to support having atomic transactions from peek
@@ -88,7 +88,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
         bool shouldSuppressTimeoutWarnings = false;
 
         try {
-            if (!_db.beginConcurrentTransaction(true, command.request.methodLine)) {
+            if (!_db.beginConcurrentTransaction(true, command->request.methodLine)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
 
@@ -100,9 +100,9 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
                 shouldSuppressTimeoutWarnings = plugin.second->shouldSuppressTimeoutWarnings();
 
                 // Try to peek the command.
-                if (plugin.second->peekCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
-                    command.peekedBy = plugin.second;
+                if (plugin.second->peekCommand(_db, *command)) {
+                    SDEBUG("Plugin '" << plugin.second->getName() << "' peeked command '" << request.methodLine << "'");
+                    command->peekedBy = plugin.second;
                     pluginPeeked = true;
                     break;
                 }
@@ -112,7 +112,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             _db.read("PRAGMA query_only = false;");
         } catch (const SQLite::timeout_error& e) {
             if (!shouldSuppressTimeoutWarnings) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
             STHROW("555 Timeout peeking command");
         }
@@ -147,27 +147,27 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
             }
         }
     } catch (const SException& e) {
-        command.repeek = false;
+        command->repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         _handleCommandException(command, e);
     } catch (const SHTTPSManager::NotLeading& e) {
-        command.repeek = false;
+        command->repeek = false;
         _db.rollback();
         _db.read("PRAGMA query_only = false;");
         _db.resetTiming();
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
         return false;
     } catch (...) {
-        command.repeek = false;
+        command->repeek = false;
         _db.resetTiming();
         _db.read("PRAGMA query_only = false;");
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
-        command.response.methodLine = "500 Unhandled Exception";
+        command->response.methodLine = "500 Unhandled Exception";
     }
 
     // If we get here, it means the command is fully completed.
-    command.complete = true;
+    command->complete = true;
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
@@ -177,27 +177,27 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     return true;
 }
 
-bool BedrockCore::processCommand(BedrockCommand& command) {
+bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
-    SData& request = command.request;
-    SData& response = command.response;
-    STable& content = command.jsonContent;
+    SData& request = command->request;
+    SData& response = command->response;
+    STable& content = command->jsonContent;
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
         uint64_t timeout = _getRemainingTime(command);
-        command.processCount++;
+        command->processCount++;
 
         // Time in US.
         _db.startTiming(timeout);
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
-        if (!_db.insideTransaction() && !_db.beginConcurrentTransaction(true, command.request.methodLine)) {
+        if (!_db.insideTransaction() && !_db.beginConcurrentTransaction(true, command->request.methodLine)) {
             STHROW("501 Failed to begin concurrent transaction");
         }
 
@@ -205,21 +205,21 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         bool pluginProcessed = false;
 
         // If the command is mocked, turn on UpdateNoopMode.
-        _db.setUpdateNoopMode(command.request.isSet("mockRequest"));
+        _db.setUpdateNoopMode(command->request.isSet("mockRequest"));
         for (auto plugin : _server.plugins) {
             // Try to process the command.
             bool (*handler)(int, const char*, string&) = nullptr;
-            bool enable = plugin.second->shouldEnableQueryRewriting(_db, command, &handler);
+            bool enable = plugin.second->shouldEnableQueryRewriting(_db, *command, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
-                if (plugin.second->processCommand(_db, command)) {
-                    SINFO("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
+                if (plugin.second->processCommand(_db, *command)) {
+                    SDEBUG("Plugin '" << plugin.second->getName() << "' processed command '" << request.methodLine << "'");
                     pluginProcessed = true;
-                    command.processedBy = plugin.second;
+                    command->processedBy = plugin.second;
                     break;
                 }
             } catch (const SQLite::timeout_error& e) {
-                SALERT("Command " << command.request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 STHROW("555 Timeout processing command");
             }
         }
@@ -262,7 +262,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
         needsCommit = false;
     } catch(...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
-        command.response.methodLine = "500 Unhandled Exception";
+        command->response.methodLine = "500 Unhandled Exception";
         _db.rollback();
         needsCommit = false;
     }
@@ -274,12 +274,12 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     _db.resetTiming();
 
     // Done, return whether or not we need the parent to commit our transaction.
-    command.complete = !needsCommit;
+    command->complete = !needsCommit;
     return needsCommit;
 }
 
-void BedrockCore::_handleCommandException(BedrockCommand& command, const SException& e) {
-    const string& msg = "Error processing command '" + command.request.methodLine + "' (" + e.what() + "), ignoring.";
+void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
+    const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);
     } else if (SContains(e.what(), "_WARN_")) {
@@ -294,15 +294,15 @@ void BedrockCore::_handleCommandException(BedrockCommand& command, const SExcept
 
     // Set the response to the values from the exception, if set.
     if (!e.method.empty()) {
-        command.response.methodLine = e.method;
+        command->response.methodLine = e.method;
     }
     if (!e.headers.empty()) {
-        command.response.nameValueMap = e.headers;
+        command->response.nameValueMap = e.headers;
     }
     if (!e.body.empty()) {
-        command.response.content = e.body;
+        command->response.content = e.body;
     }
 
     // Add the commitCount header to the response.
-    command.response["commitCount"] = to_string(_db.getCommitCount());
+    command->response["commitCount"] = to_string(_db.getCommitCount());
 }

@@ -111,8 +111,8 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 int failures = 0;
                 for (auto row : results) {
                     if (SToInt(row.methodLine) != 200) {
-                        cout << "Node " << i << " Expected 200, got: " << SToInt(row.methodLine) << endl;
-                        cout << row.content << endl;
+                        cout << "[ConflictSpamTest] Node " << i << " Expected 200, got: " << SToInt(row.methodLine) << endl;
+                        cout << "[ConflictSpamTest] " << row.content << endl;
                         failures++;
                     }
                 }
@@ -205,7 +205,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             if (allResults[0] == allResults[1] && allResults[1] == allResults[2]) {
                 break;
             }
-            cout << "Results didn't match, waiting for journals to equalize." << endl;
+            cout << "[ConflictSpamTest] Results didn't match, waiting for journals to equalize." << endl;
             sleep(1);
         }
 
@@ -303,7 +303,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         int fail = totalRequestFailures.load();
         if (fail > 0) {
-            cout << "Total failures: " << fail << endl;
+            cout << "[ConflictSpamTest] Total failures: " << fail << endl;
         }
         ASSERT_EQUAL(fail, 0);
     }
