@@ -19,7 +19,7 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
-    if (SStartsWith(baseCommand.request.methodLine, "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
+    if (SStartsWith(SToLower(baseCommand.request.methodLine), "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
         return make_unique<BedrockDBCommand>(move(baseCommand), this);
     }
     return nullptr;
