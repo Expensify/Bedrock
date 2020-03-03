@@ -16,6 +16,7 @@ struct WriteTest : tpunit::TestFixture {
                               TEST(WriteTest::failedUpdateNoWhereTrue),
                               TEST(WriteTest::failedUpdateNoWhereFalse),
                               TEST(WriteTest::updateAndInsertWithHttp),
+                              TEST(WriteTest::shortHandSyntax),
                               AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -33,15 +34,15 @@ struct WriteTest : tpunit::TestFixture {
 
     void insert() {
         for (int i = 0; i < 50; i++) {
-            SData status("Query");
-            status["writeConsistency"] = "ASYNC";
-            status["query"] = "INSERT INTO foo VALUES ( RANDOM() );";
-            tester->executeWaitVerifyContent(status);
+            SData query("Query");
+            query["writeConsistency"] = "ASYNC";
+            query["query"] = "INSERT INTO foo VALUES ( RANDOM() );";
+            tester->executeWaitVerifyContent(query);
         }
 
-        SData status("Query");
-        status["query"] = "SELECT COUNT(*) FROM foo;";
-        string response = tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["query"] = "SELECT COUNT(*) FROM foo;";
+        string response = tester->executeWaitVerifyContent(query);
         // Skip the header line.
         string secondLine = response.substr(response.find('\n') + 1);
         int val = SToInt(secondLine);
@@ -74,9 +75,9 @@ struct WriteTest : tpunit::TestFixture {
         ASSERT_EQUAL(success, numCommands);
 
         // Verify there's actually data there.
-        SData status("Query");
-        status["query"] = "SELECT COUNT(*) FROM stuff;";
-        string response = tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["query"] = "SELECT COUNT(*) FROM stuff;";
+        string response = tester->executeWaitVerifyContent(query);
         // Skip the header line.
         string secondLine = response.substr(response.find('\n') + 1);
         int val = SToInt(secondLine);
@@ -84,86 +85,94 @@ struct WriteTest : tpunit::TestFixture {
     }
 
     void failedInsertNoSemiColon() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "INSERT INTO foo VALUES ( RANDOM() )";
-        tester->executeWaitVerifyContent(status, "502 Query aborted");
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "INSERT INTO foo VALUES ( RANDOM() )";
+        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void failedDeleteNoWhere() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "DELETE FROM foo;";
-        tester->executeWaitVerifyContent(status, "502 Query aborted");
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "DELETE FROM foo;";
+        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void deleteNoWhereFalse() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "DELETE FROM foo;";
-        status["nowhere"] = "false";
-        tester->executeWaitVerifyContent(status, "502 Query aborted");
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "DELETE FROM foo;";
+        query["nowhere"] = "false";
+        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void deleteNoWhereTrue() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "DELETE FROM foo;";
-        status["nowhere"] = "true";
-        tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "DELETE FROM foo;";
+        query["nowhere"] = "true";
+        tester->executeWaitVerifyContent(query);
     }
 
     void deleteWithWhere() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "INSERT INTO foo VALUES ( 666 );";
-        tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWaitVerifyContent(query);
 
-        status["query"] = "DELETE FROM foo WHERE bar = 666;";
-        tester->executeWaitVerifyContent(status);
+        query["query"] = "DELETE FROM foo WHERE bar = 666;";
+        tester->executeWaitVerifyContent(query);
     }
 
     void update() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "INSERT INTO foo VALUES ( 666 );";
-        tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWaitVerifyContent(query);
 
-        status["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
-        tester->executeWaitVerifyContent(status);
+        query["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
+        tester->executeWaitVerifyContent(query);
     }
 
     void failedUpdateNoWhere() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "UPDATE foo SET bar = 0;";
-        tester->executeWaitVerifyContent(status, "502 Query aborted");
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "UPDATE foo SET bar = 0;";
+        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void failedUpdateNoWhereFalse() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "UPDATE foo SET bar = 0;";
-        status["nowhere"] = "false";
-        tester->executeWaitVerifyContent(status, "502 Query aborted");
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "UPDATE foo SET bar = 0;";
+        query["nowhere"] = "false";
+        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void failedUpdateNoWhereTrue() {
-        SData status("Query");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "UPDATE foo SET bar = 0;";
-        status["nowhere"] = "true";
-        tester->executeWaitVerifyContent(status);
+        SData query("Query");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "UPDATE foo SET bar = 0;";
+        query["nowhere"] = "true";
+        tester->executeWaitVerifyContent(query);
     }
 
     void updateAndInsertWithHttp() {
-        SData status("Query / HTTP/1.1");
-        status["writeConsistency"] = "ASYNC";
-        status["query"] = "INSERT INTO foo VALUES ( 666 );";
-        tester->executeWaitVerifyContent(status);
+        SData query("Query / HTTP/1.1");
+        query["writeConsistency"] = "ASYNC";
+        query["query"] = "INSERT INTO foo VALUES ( 666 );";
+        tester->executeWaitVerifyContent(query);
 
-        status["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
-        tester->executeWaitVerifyContent(status);
+        query["query"] = "UPDATE foo SET bar = 777 WHERE bar = 666;";
+        tester->executeWaitVerifyContent(query);
+    }
+
+    void shortHandSyntax() {
+        SData query("query: UPDATE stuff SET value = 2 WHERE id = 1;");
+        tester->executeWaitVerifyContent(query);
+
+        SData query2("Query: UPDATE stuff SET value = 3 WHERE id = 2;");
+        tester->executeWaitVerifyContent(query2);
     }
 
 } __WriteTest;
