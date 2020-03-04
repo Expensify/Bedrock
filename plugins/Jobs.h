@@ -35,4 +35,6 @@ class BedrockJobsCommand : public BedrockCommand {
     bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
     bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
     void _validatePriority(const int64_t priority);
+
+    bool mockRequest;
 };

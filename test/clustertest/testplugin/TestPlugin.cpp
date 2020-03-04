@@ -51,7 +51,9 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
 }
 
 TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin) :
-  BedrockCommand(move(baseCommand), plugin)
+  BedrockCommand(move(baseCommand), plugin),
+  pendingResult(false),
+  urls(request["urls"])
 {
 }
 
@@ -62,11 +64,6 @@ bool BedrockPlugin_TestPlugin::preventAttach() {
 bool TestPluginCommand::peek(SQLite& db) {
     // Always blacklist on userID.
     crashIdentifyingValues.insert("userID");
-
-    // Now that we've blacklisted, mutate the command and see if things break!
-    if (request.isSet("userID")) {
-        const_cast<SData&>(request)["userID"] = to_string(stoll(request["userID"]) + 1000);
-    }
 
     // Sleep if requested.
     if (request.calc("PeekSleep")) {
@@ -184,14 +181,14 @@ bool TestPluginCommand::peek(SQLite& db) {
         return true;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.
-        if (request.test("pendingResult")) {
+        if (pendingResult) {
             if (httpsRequests.empty()) {
                 STHROW("Pending Result flag set but no requests!");
             }
             // There was a previous request, let's record it's result.
             response.content += httpsRequests.back()->fullRequest["Host"] + ":" + to_string(httpsRequests.back()->response) + "\n";
         }
-        list<string> remainingURLs = SParseList(request["urls"]);
+        list<string> remainingURLs = SParseList(urls);
         if (remainingURLs.size()) {
             SData newRequest("GET / HTTP/1.1");
             string host = remainingURLs.front();
@@ -199,12 +196,12 @@ bool TestPluginCommand::peek(SQLite& db) {
             httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
 
             // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
-            const_cast<SData&>(request)["pendingResult"] = "true";
+            pendingResult = true;
             repeek = true;
 
             // re-write the URL list for the next iteration.
             remainingURLs.pop_front();
-            const_cast<SData&>(request)["urls"] = SComposeList(remainingURLs);
+            urls = SComposeList(remainingURLs);
         } else {
             // There are no URLs left.
             repeek = false;
