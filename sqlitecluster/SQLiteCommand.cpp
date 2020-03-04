@@ -1,12 +1,12 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteCommand.h"
 
-SData&& SQLiteCommand::preprocessRequest(SData&& request) {
+SData SQLiteCommand::preprocessRequest(SData&& request) {
     // If the request doesn't specify an execution time, default to right now.
     if (!request.isSet("commandExecuteTime")) {
         request["commandExecuteTime"] = to_string(STimeNow());
     }
-    return move(request);
+    return request;
 }
 
 SQLiteCommand::SQLiteCommand(SData&& _request) : 

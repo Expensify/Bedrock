@@ -5,7 +5,7 @@ class SQLiteCommand {
   public:
 
     // This allows for modifying a request passed into the constructor such that we can store it as `const`.
-    static SData&& preprocessRequest(SData&& request);
+    static SData preprocessRequest(SData&& request);
 
     // If this command was created via an escalation from a peer, this value will point to that peer object. As such,
     // this should only ever be set on leader nodes, though it does not *need* to be set on leader nodes, as they can
