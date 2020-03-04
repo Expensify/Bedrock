@@ -49,7 +49,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     //         only).  A not-so-clever client could easily bypass this.  But
     //         that same person could also easily wreck havoc in a bunch of
     //         other ways, too.  That said, the worst-case scenario is that a
-    //         read-write command is mis-classified as read-only an executed in
+    //         read-write command is mis-classified as read-only and executed in
     //         the peek, but even then we'll detect it after the fact and shut
     //         the node down.
     const string& upperQuery = SToUpper(STrim(query));
