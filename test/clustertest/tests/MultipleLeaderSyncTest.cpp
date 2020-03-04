@@ -52,20 +52,20 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node1.waitForStates({"LEADING", "MASTERING"}));
 
         // move secondary leader enough commits ahead that primary leader can't catch up before our status tests
-        runTrivialWrites(3000, node4);
-        ASSERT_TRUE(node2.waitForCommit(3000, 100));
-        ASSERT_TRUE(node3.waitForCommit(3000, 100));
-        ASSERT_TRUE(node4.waitForCommit(3000, 100));
+        runTrivialWrites(4000, node4);
+        ASSERT_TRUE(node2.waitForCommit(4000, 100));
+        ASSERT_TRUE(node3.waitForCommit(4000, 100));
+        ASSERT_TRUE(node4.waitForCommit(4000, 100));
 
         // shut down secondary leader, make sure tertiary takes over
         tester.stopNode(1);
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}));
 
         // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING before our status tests
-        runTrivialWrites(3000, node4);
-        ASSERT_TRUE(node2.waitForCommit(6000, 100));
-        ASSERT_TRUE(node3.waitForCommit(6000, 100));
-        ASSERT_TRUE(node4.waitForCommit(6000, 100));
+        runTrivialWrites(4000, node4);
+        ASSERT_TRUE(node2.waitForCommit(8000, 100));
+        ASSERT_TRUE(node3.waitForCommit(8000, 100));
+        ASSERT_TRUE(node4.waitForCommit(8000, 100));
 
         // just a check for the ready state
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}));
