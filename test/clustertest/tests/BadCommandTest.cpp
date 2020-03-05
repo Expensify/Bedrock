@@ -30,7 +30,7 @@ struct BadCommandTest : tpunit::TestFixture {
         try {
             leader.executeWaitVerifyContent(cmd, "500 Unhandled Exception");
         } catch (...) {
-            cout << "[BadCommandTest] failing in first block." << endl;
+            cout << "failing in first block." << endl;
             throw;
         }
 
@@ -40,7 +40,7 @@ struct BadCommandTest : tpunit::TestFixture {
         try {
             leader.executeWaitVerifyContent(cmd, "500 Unhandled Exception");
         } catch (...) {
-            cout << "[BadCommandTest] failing in second block." << endl;
+            cout << "failing in second block." << endl;
             throw;
         }
 
@@ -65,7 +65,7 @@ struct BadCommandTest : tpunit::TestFixture {
             error = 0;
             vector<SData> results = follower.executeWaitMultipleData({command}, 1, false, false, &error);
             if (results[0].methodLine != "500 Refused") {
-                cout << "[BadCommandTest] Didn't get '500 refused', got '" << results[0].methodLine << "' testing '" << commandName << "', error code was set to: " << error << endl;
+                cout << "Didn't get '500 refused', got '" << results[0].methodLine << "' testing '" << commandName << "', error code was set to: " << error << endl;
                 ASSERT_TRUE(false);
             }
 

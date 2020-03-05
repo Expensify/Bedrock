@@ -43,9 +43,9 @@ struct TimingTest : tpunit::TestFixture {
             }
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {
-                cout << "[TimingTest] " << row.first << ":" << row.second << endl;
+                cout << row.first << ":" << row.second << endl;
             }
-            cout << "[TimingTest] " << endl;
+            cout << endl;
             */
 
             uint64_t peekTime = SToUInt64(result["peekTime"]);
@@ -55,10 +55,10 @@ struct TimingTest : tpunit::TestFixture {
             // Only leader is expected to have these set.
             if (i == 0) {
                 if (peekTime <= 0 || processTime <= 0) {
-                    cout << "[TimingTest] peekTime: " << peekTime << endl;
-                    cout << "[TimingTest] processTime: " << processTime << endl;
-                    cout << "[TimingTest] totalTime: " << totalTime << endl;
-                    cout << "[TimingTest] " << result.serialize() << endl;
+                    cout << "peekTime: " << peekTime << endl;
+                    cout << "processTime: " << processTime << endl;
+                    cout << "totalTime: " << totalTime << endl;
+                    cout << result.serialize() << endl;
                 }
                 ASSERT_GREATER_THAN(peekTime, 0);
                 ASSERT_GREATER_THAN(processTime, 0);
@@ -69,10 +69,10 @@ struct TimingTest : tpunit::TestFixture {
 
             if (peekTime + processTime >= totalTime) {
                 // These are just blank in the failure case.
-                cout << "[TimingTest] peekTime: " << peekTime << endl;
-                cout << "[TimingTest] processTime: " << processTime << endl;
-                cout << "[TimingTest] totalTime: " << totalTime << endl;
-                cout << "[TimingTest] " << result.serialize() << endl;
+                cout << "peekTime: " << peekTime << endl;
+                cout << "processTime: " << processTime << endl;
+                cout << "totalTime: " << totalTime << endl;
+                cout << result.serialize() << endl;
             }
 
             ASSERT_LESS_THAN(peekTime + processTime, totalTime);
@@ -106,9 +106,9 @@ struct TimingTest : tpunit::TestFixture {
             auto result = results[0];
             /* Uncomment for inspection.
             for (const auto& row : result.nameValueMap) {
-                cout << "[TimingTest] " << row.first << ":" << row.second << endl;
+                cout << row.first << ":" << row.second << endl;
             }
-            cout << "[TimingTest.cpp]" << endl;
+            cout << endl;
             */
 
             uint64_t peekTime = SToUInt64(result["peekTime"]);
