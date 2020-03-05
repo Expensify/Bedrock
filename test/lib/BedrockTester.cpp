@@ -155,8 +155,7 @@ BedrockTester::~BedrockTester() {
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
 
-    // Release programmatically allocated ports
-    if (!_ownPorts) {
+    if (_ownPorts) {
         ports.returnPort(_serverPort);
         ports.returnPort(_nodePort);
         ports.returnPort(_controlPort);
@@ -195,9 +194,9 @@ string BedrockTester::startServer(bool dontWait) {
 
         // Make sure the ports we need are free.
         int portsFree = 0;
-        portsFree |= ports.waitForPort(getServerPort());
-        portsFree |= ports.waitForPort(getNodePort());
-        portsFree |= ports.waitForPort(getControlPort());
+        portsFree |= waitForPort(getServerPort());
+        portsFree |= waitForPort(getNodePort());
+        portsFree |= waitForPort(getControlPort());
 
         if (portsFree) {
             cout << "At least one port wasn't free (of: " << getServerPort() << ", " << getNodePort() << ", "
@@ -533,17 +532,16 @@ int BedrockTester::getControlPort() {
     return _controlPort;
 }
 
-bool BedrockTester::waitForState(string state, uint64_t timeoutUS, bool control) {
-    return waitForStates({state}, timeoutUS, control);
+bool BedrockTester::waitForState(string state, uint64_t timeoutUS) {
+    return waitForStates({state}, timeoutUS);
 }
 
-bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool control)
+bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS)
 {
-    STable json;
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            json = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
+            STable json = SParseJSONObject(executeWaitVerifyContent(SData("Status")));
             auto it = states.find(json["state"]);
             if (it != states.end()) {
                 return true;
@@ -554,66 +552,35 @@ bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool c
         }
         usleep(100'000);
     }
-
-    // we timed out, let's get some debugging info
-    string stateString;
-    auto it = states.begin();
-    while (it != states.end()) {
-        stateString += *it;
-        stateString += ",";
-        it++;
-    }
-    string statusString;
-    for (auto& item : json) {
-        statusString += item.first;
-        statusString += " ";
-        statusString += item.second;
-        statusString += " ";
-    }
-    cout << "waitForStates() timed out waiting for states " << stateString << ". Most recent status: " << statusString << endl;
-
     return false;
 }
 
-STable BedrockTester::getStatus(bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    return SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
-}
+int BedrockTester::waitForPort(int port) {
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int i = 1;
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
+    sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-string BedrockTester::getStatusTerm(string term, bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    // Use with caution
-    return getStatus(control)[term];
-}
-
-bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t timeoutUS, bool control){
+    int result = 0;
+    int count = 0;
     uint64_t start = STimeNow();
-    while (STimeNow() < start + timeoutUS) {
-        try {
-            string result = getStatusTerm(term, control);
-
-            // if the value matches, return, otherwise wait
-            if (result != "" && result == testValue) {
-                return true;
-            }
-        } catch (...) {
-            // Doesn't do anything, we'll fall through to the sleep and try again.
+    do {
+        result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
+        if (result) {
+            count++;
+            usleep(100'000);
+        } else {
+            shutdown(sock, 2);
+            close(sock);
+            return 0;
         }
-        usleep(100'000);
-    }
-    return false;
+    // Wait up to 30 seconds.
+    } while (result && STimeNow() < start + 30'000'000);
+
+    return 1;
 }
 
-bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control){
-    int commitCount = SToInt64(getStatusTerm("commitCount", control));
-    int i = 0;
-
-    // check commitCount up to "retries" times with a 1s sleep between calls
-    while (commitCount < minCommitCount && i < retries) {
-        sleep(1);
-        commitCount = SToInt64(getStatusTerm("commitCount", control));
-        i++;
-    }
-    return commitCount >= minCommitCount;
-}
 
