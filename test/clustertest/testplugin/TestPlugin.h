@@ -42,4 +42,7 @@ class TestPluginCommand : public BedrockCommand {
 
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }
+
+    bool pendingResult;
+    string urls;
 };

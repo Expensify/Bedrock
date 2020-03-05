@@ -321,10 +321,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
-                const_cast<SData&>(request).methodLine = "Query";
-                const_cast<SData&>(request)["format"] = "json";
-                const_cast<SData&>(request)["sequenceID"] = SToStr(packet.sequenceID);
-                const_cast<SData&>(request)["query"] = query;
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] = query;
             }
             break;
         }
