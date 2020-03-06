@@ -1,10 +1,18 @@
 #include <libstuff/libstuff.h>
 #include "SQLiteCommand.h"
 
+SData SQLiteCommand::preprocessRequest(SData&& request) {
+    // If the request doesn't specify an execution time, default to right now.
+    if (!request.isSet("commandExecuteTime")) {
+        request["commandExecuteTime"] = to_string(STimeNow());
+    }
+    return request;
+}
+
 SQLiteCommand::SQLiteCommand(SData&& _request) : 
     initiatingPeerID(0),
     initiatingClientID(0),
-    request(move(_request)),
+    request(preprocessRequest(move(_request))),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
@@ -26,11 +34,6 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
                 writeConsistency = SQLiteNode::ASYNC;
                 break;
         }
-    }
-
-    // If the request doesn't specify an execution time, default to right now.
-    if (!request.isSet("commandExecuteTime")) {
-        const_cast<SData&>(request)["commandExecuteTime"] = to_string(STimeNow());
     }
 }
 

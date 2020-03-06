@@ -109,10 +109,13 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 bool BedrockJobsCommand::peek(SQLite& db) {
     const string& requestVerb = request.getVerb();
 
-    // If this command is a Jobs command, we disable the crash prevention by using a random number as part of the crash
-    // command criteria. This is because otherwise we would blanket blacklist every command with the same name.
-    const_cast<SData&>(request)["crashID"] = to_string(SRandom::rand64());
-    crashIdentifyingValues.insert("crashID");
+    // Jobs commands can only crash if they look identical.
+    for (const auto& name : request.nameValueMap) {
+        crashIdentifyingValues.insert(name.first);
+    }
+
+    // We can potentially change this, so we set it here.
+    mockRequest = request.isSet("mockRequest");
 
     // Reset the content object. It could have been written by a previous call to this function that conflicted in
     // multi-write.
@@ -284,10 +287,10 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 bool childIsMocked = request.isSet("mockRequest");
 
                 if (parentIsMocked && !childIsMocked) {
-                    const_cast<SData&>(request)["mockRequest"] = "true";
+                    mockRequest = true;
                     SINFO("Setting child job to mocked to match parent.");
                 } else if (!parentIsMocked && childIsMocked) {
-                    const_cast<SData&>(request).erase("mockRequest");
+                    mockRequest = false;
                     SINFO("Setting child job to non-mocked to match parent.");
                 }
             }
@@ -296,8 +299,8 @@ bool BedrockJobsCommand::peek(SQLite& db) {
             if (SIEquals(requestVerb, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
-                      << (request.isSet("mockRequest") ? "true" : "false"));
-                string operation = request.isSet("mockRequest") ? "IS NOT" : "IS";
+                      << (mockRequest ? "true" : "false"));
+                string operation = mockRequest ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, data "
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) +
@@ -310,7 +313,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     // Return early, no need to pass to leader, there are no more jobs to create.
                     SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
-                      << (request.isSet("mockRequest") ? "true" : "false"));
+                      << (mockRequest ? "true" : "false"));
                     jsonContent["jobID"] = result[0][0];
                     return true;
                 }
@@ -457,7 +460,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
             // If this is a mock request, we insert that into the data.
             string originalData = job["data"];
-            if (request.isSet("mockRequest")) {
+            if (mockRequest) {
                 // Mocked jobs should never repeat.
                 job.erase("repeat");
 
@@ -474,8 +477,8 @@ void BedrockJobsCommand::process(SQLite& db) {
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
-                      << (request.isSet("mockRequest") ? "true" : "false"));
-                string operation = request.isSet("mockRequest") ? "IS NOT" : "IS";
+                      << (mockRequest ? "true" : "false"));
+                string operation = mockRequest ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, data "
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) +
@@ -487,7 +490,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 // If we got a result, and it's data is the same as passed, we won't change anything.
                 if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                     SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                          << result[0][0] << ", mocked? " << (request.isSet("mockRequest") ? "true" : "false"));
+                          << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
 
                     // If we are calling CreateJob, return early, there are no more jobs to create.
                     if (SIEquals(requestVerb, "CreateJob")) {
@@ -555,7 +558,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
                 // Verify that the parent and child job have the same `mockRequest` setting.
                 STable parentData = SParseJSONObject(result[0][2]);
-                if (request.isSet("mockRequest") != (parentData.find("mockRequest") != parentData.end())) {
+                if (mockRequest != (parentData.find("mockRequest") != parentData.end())) {
                     STHROW("405 Parent and child jobs must have matching mockRequest setting");
                 }
 
@@ -654,7 +657,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         SQResult result;
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"),1));
-        bool mockRequest = request.isSet("mockRequest") || request.isSet("getMockedJobs");
+        mockRequest = mockRequest || request.isSet("getMockedJobs");
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
@@ -845,8 +848,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         if (request.isSet("repeat")) {
             if (request["repeat"].empty()) {
                 SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
-                      << request["jobID"] << ", removing attribute.");
-                const_cast<SData&>(request).erase("repeat");
+                      << request["jobID"] << ".");
             } else if (!_validateRepeat(request["repeat"])) {
                 STHROW("402 Malformed repeat");
             }
@@ -874,13 +876,13 @@ void BedrockJobsCommand::process(SQLite& db) {
         const string& lastRun = result[0][2];
 
         // Are we rescheduling?
-        const string& newNextRun = request.isSet("repeat") ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
+        const string& newNextRun = request["repeat"].size() ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
 
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
                                 "SET data=" +
                                 SQ(request["data"]) + " " +
-                                (request.isSet("repeat") ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
+                                (request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                                 (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
                                 "WHERE jobID=" +
@@ -943,7 +945,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         const string& lastRun = result[0][2];
         string repeat = result[0][3];
         int64_t parentJobID = SToInt64(result[0][4]);
-        bool mockRequest = result[0][5] == "1";
+        mockRequest = result[0][5] == "1";
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {

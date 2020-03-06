@@ -15,4 +15,7 @@ class BedrockDBCommand : public BedrockCommand {
     BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
+
+  private:
+    const string query;
 };

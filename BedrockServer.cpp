@@ -30,6 +30,9 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
             newRequest.deserialize(command.request.content);
+
+            // Add a request ID if one was missing.
+            _addRequestID(newRequest);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
@@ -38,8 +41,6 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
             SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
         }
 
-        // Add a request ID if one was missing.
-        _addRequestID(newCommand->request);
         SAUTOPREFIX(newCommand->request);
         if (newCommand->writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(newCommand->request.methodLine) != _syncCommands.end()) {
@@ -235,8 +236,7 @@ void BedrockServer::sync(const SData& args,
                             SINFO("Returning command (" << cmdIt->second->request.methodLine << ") waiting on commit " << cmdIt->first
                                   << " to queue, timed out at: " << now << ", timeout was: " << it->first << ".");
 
-                            // Remove the commit count requirement so this can get timed out.
-                            const_cast<SData&>(cmdIt->second->request).erase("commitCount");
+                            // Goes back to the main queue, where it will hit it's timeout in a worker thread.
                             server._commandQueue.push(move(cmdIt->second));
 
                             // And delete it, it's gone.
@@ -1517,16 +1517,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _socketIDMap[s->id] = s;
                     }
 
-                    // Create a command.
-                    unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
-
                     // Get the source ip of the command.
                     char *ip = inet_ntoa(s->addr.sin_addr);
                     if (ip != "127.0.0.1"s) {
                         // We only add this if it's not localhost because existing code expects commands that come from
                         // localhost to have it blank.
-                        const_cast<SData&>(command->request)["_source"] = ip;
+                        request["_source"] = ip;
                     }
+
+                    // Create a command.
+                    unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
                     if (command->writeConsistency != SQLiteNode::QUORUM
                         && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
@@ -2214,13 +2214,13 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     return commandsCompleted;
 }
 
-void BedrockServer::_addRequestID(const SData& request) {
+void BedrockServer::_addRequestID(SData& request) {
     if (!request.isSet("requestID")) {
         string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         string requestID;
         for (int i = 0; i < 6; i++) {
             requestID += chars[SRandom::rand64() % chars.size()];
         }
-        const_cast<SData&>(request)["requestID"] = requestID;
+        request["requestID"] = requestID;
     }
 }
