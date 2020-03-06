@@ -382,6 +382,7 @@ void BedrockServer::sync(const SData& args,
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
+                SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -461,10 +462,20 @@ void BedrockServer::sync(const SData& args,
                 // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
                 // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
                 // probably indicates a bug (or a follower disk failure).
-                SINFO("requeueing command " << command->request.methodLine
-                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
-                      << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+
+                // While _upgradeDB isn't a normal command, it is still run as a QUORUM transaction, and so it can
+                // still fail if peers reject it (for example if run on low priority follower node that becomes
+                // leader during cluster instability) In that case, we will fail an upgradeDB distributed transaction, and we need to reset that state.
+                if (upgradeInProgress.load()) {
+                    SINFO("clearing stale _upgradeDB() state variables");
+                    upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
+                } else {
+                    SINFO("requeueing command " << command->request.methodLine
+                          << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                          << " queued commands.");
+                    syncNodeQueuedCommands.push(move(command));
+                }
             }
         }
 
@@ -2012,6 +2023,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
     }
+    SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
 }
 

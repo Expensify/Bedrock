@@ -31,7 +31,7 @@ struct BroadcastCommandTest : tpunit::TestFixture {
         try {
             leader.executeWaitVerifyContent(cmd);
         } catch (...) {
-            cout << "Couldn't send broadcastwithtimeouts" << endl;
+            cout << "[BroadcastTest] Couldn't send broadcastwithtimeouts" << endl;
             throw;
         }
 
@@ -43,7 +43,7 @@ struct BroadcastCommandTest : tpunit::TestFixture {
         try {
             results = follower.executeWaitMultipleData({cmd2});
         } catch (...) {
-            cout << "Couldn't send getbroadcasttimeouts" << endl;
+            cout << "[BroadcastTest] Couldn't send getbroadcasttimeouts" << endl;
             throw;
         }
 

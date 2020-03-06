@@ -41,7 +41,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
       _lastNetStatTime(chrono::steady_clock::now())
     {
     SASSERT(priority >= 0);
-    _priority = priority;
+    _originalPriority = priority;
+    _priority = -1;
     _state = SEARCHING;
     _syncPeer = nullptr;
     _leadPeer = nullptr;
@@ -546,6 +547,8 @@ bool SQLiteNode::update() {
         }
         SASSERT(highestPriorityPeer);
         SASSERT(freshestPeer);
+
+        SDEBUG("Dumping evaluated cluster state: numLoggedInFullPeers=" << numLoggedInFullPeers << " freshestPeer=" << freshestPeer->name << " highestPriorityPeer=" << highestPriorityPeer->name << " currentLeader=" << (currentLeader ? currentLeader->name : "none"));
 
         // If there is already a leader that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
@@ -1082,8 +1085,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (peer->params["Permafollower"] != "true" && !message.calc("Priority")) {
             STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
-        // It's an error to have to peers configured with the same priority, except 0.
-        SASSERT(!_priority || message.calc("Priority") != _priority);
+
+        // It's an error to have to peers configured with the same priority, except 0 and -1
+        SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
         peer->set("Priority", message["Priority"]);
@@ -2011,6 +2015,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                     "Switching from '" << stateName(_state) << "' to '" << stateName(newState)
                                        << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
+        } else if (newState == WAITING) {
+            // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
+            _priority = _originalPriority;
         }
 
         // Send to everyone we're connected to, whether or not
