@@ -43,7 +43,7 @@ struct JobIDTest : tpunit::TestFixture {
             SData cmd("Status");
             string response = follower.executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["isLeading"] == "true") {
+            if (json["isLeader"] == "true") {
                 success = true;
                 break;
             }
@@ -67,7 +67,7 @@ struct JobIDTest : tpunit::TestFixture {
             SData cmd("Status");
             string response = leader.executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["isLeading"] == "true") {
+            if (json["isLeader"] == "true") {
                 success = true;
                 break;
             }
