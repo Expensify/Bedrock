@@ -22,8 +22,6 @@ STCPNode::~STCPNode() {
 }
 
 const string& STCPNode::stateName(STCPNode::State state) {
-    // This returns the legacy names MASTERING/SLAVING until all nodes have been updated to be able to
-    // understand the new LEADING/FOLLOWING names.
     static string placeholder = "";
     static map<State, string> lookup = {
         {UNKNOWN, "UNKNOWN"},
@@ -31,10 +29,10 @@ const string& STCPNode::stateName(STCPNode::State state) {
         {SYNCHRONIZING, "SYNCHRONIZING"},
         {WAITING, "WAITING"},
         {STANDINGUP, "STANDINGUP"},
-        {LEADING, "MASTERING"},
+        {LEADING, "LEADING"},
         {STANDINGDOWN, "STANDINGDOWN"},
         {SUBSCRIBING, "SUBSCRIBING"},
-        {FOLLOWING, "SLAVING"},
+        {FOLLOWING, "FOLLOWING"},
     };
     auto it = lookup.find(state);
     if (it == lookup.end()) {
@@ -54,11 +52,9 @@ STCPNode::State STCPNode::stateFromName(const string& name) {
         {"WAITING", WAITING},
         {"STANDINGUP", STANDINGUP},
         {"LEADING", LEADING},
-        {"MASTERING", LEADING},
         {"STANDINGDOWN", STANDINGDOWN},
         {"SUBSCRIBING", SUBSCRIBING},
         {"FOLLOWING", FOLLOWING},
-        {"SLAVING", FOLLOWING},
     };
     auto it = lookup.find(normalizedName);
     if (it == lookup.end()) {

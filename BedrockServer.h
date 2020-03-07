@@ -321,7 +321,6 @@ class BedrockServer : public SQLiteServer {
     void _reply(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
-    static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
     static constexpr auto STATUS_IS_FOLLOWER       = "GET /status/isFollower HTTP/1.1";
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
