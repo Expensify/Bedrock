@@ -46,15 +46,18 @@ STCPNode::State STCPNode::stateFromName(const string& name) {
     string normalizedName = SToUpper(name);
 
     // Accept both old and new state names, but map them all to the new states.
+    // We can delete the old names once the entire cluster is using the new names.
     static map<string, State> lookup = {
         {"SEARCHING", SEARCHING},
         {"SYNCHRONIZING", SYNCHRONIZING},
         {"WAITING", WAITING},
         {"STANDINGUP", STANDINGUP},
         {"LEADING", LEADING},
+        {"MASTERING", LEADING},
         {"STANDINGDOWN", STANDINGDOWN},
         {"SUBSCRIBING", SUBSCRIBING},
         {"FOLLOWING", FOLLOWING},
+        {"SLAVING", FOLLOWING},
     };
     auto it = lookup.find(normalizedName);
     if (it == lookup.end()) {
