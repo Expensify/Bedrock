@@ -58,14 +58,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
         string host;
         STable params;
         SASSERT(SParseURIPath(peer, host, params));
-
-        // Support legacy 'Permaslave' name.
-        auto it = params.find("Permaslave");
-        if (it != params.end()) {
-            auto value = it->second;
-            params.erase(it);
-            params.emplace("Permafollower", value);
-        }
         string name = SGetDomain(host);
         if (params.find("nodeName") != params.end()) {
             name = params["nodeName"];
@@ -218,9 +210,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
-
-        // TODO: Remove this line when everything uses 'leader'.
-        transaction["masterSendTime"] = transaction["leaderSendTime"];
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
@@ -882,9 +871,6 @@ bool SQLiteNode::update() {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
-
-            // TODO: Remove when we've switched to 'leader'
-            transaction.set("masterSendTime", transaction["leaderSendTime"]);
             if (_commitConsistency == ASYNC) {
                 transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
@@ -1402,9 +1388,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
-
-            // TODO: Remove when we've switched to 'leader'
-            transaction.set("masterSendTime", transaction["leaderSendTime"]);
             transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);
@@ -1440,11 +1423,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
         bool success = true;
         uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
-
-        // TODO: Remove when everything uses 'leader'.
-        if (!leaderSentTimestamp) {
-            leaderSentTimestamp = message.calcU64("masterSendTime");
-        }
         uint64_t followerDequeueTimestamp = STimeNow();
         if (!message.isSet("ID")) {
             STHROW("missing ID");

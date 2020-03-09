@@ -75,7 +75,7 @@ struct BadCommandTest : tpunit::TestFixture {
 
             // Bring leader back up.
             leader.startServer();
-            ASSERT_TRUE(leader.waitForStates({"LEADING", "MASTERING"}));
+            ASSERT_TRUE(leader.waitForState("LEADING"));
         }
     }
 
