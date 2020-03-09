@@ -40,9 +40,9 @@ struct MasteringTest : tpunit::TestFixture {
                 results[i] = json["state"];
             }
 
-            if ((results[0] == "LEADING" || results[0] == "MASTERING") &&
-                (results[1] == "FOLLOWING" || results[1] == "SLAVING") &&
-                (results[2] == "FOLLOWING" || results[2] == "SLAVING"))
+            if (results[0] == "LEADING" &&
+                results[1] == "FOLLOWING" &&
+                results[2] == "FOLLOWING")
             {
                 success = true;
                 break;
