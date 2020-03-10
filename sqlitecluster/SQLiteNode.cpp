@@ -38,7 +38,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
                        const string& peerList, int priority, uint64_t firstTimeout, const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
-      _lastNetStatTime(chrono::steady_clock::now())
+      _lastNetStatTime(chrono::steady_clock::now()),
+      _replicationPool(_db, "repl", true, 8)
     {
     SASSERT(priority >= 0);
     _priority = priority;
