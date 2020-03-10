@@ -39,7 +39,9 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
-      _replicationPool(_db, "repl", true, 8)
+      _replicationPool(_db, "repl", true, 8),
+      _receivedCommitCount(_db.getCommitCount()),
+      _completedCommitCount(_db.getCommitCount())
     {
     SASSERT(priority >= 0);
     _priority = priority;
@@ -2274,4 +2276,97 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
         return true;
     }
     return false;
+}
+
+// Temporary
+class TransactionInfo {
+  public:
+    SQLiteNode& node;
+    const SData& message;
+};
+
+#undef SLOGPREFIX
+#define SLOGPREFIX "{replication} "
+
+// This is the function that will be called by the replication pool.
+void SQLiteNode::handleTransactionMessage(sqlite3* db, void* data) {
+    // TODO: I don't know where these are allocated or deleted.
+    SQLiteNode& node = static_cast<TransactionInfo*>(data)->node;
+    const SData& message = static_cast<TransactionInfo*>(data)->message;
+
+    // These apply to all three types of messages we handle here:
+    // BEGIN_TRANSACTION, COMMIT_TRANSACTION, ROLLBACK_TRANSACTION
+    // So we only check them once.
+    bool isAsync = SStartsWith(message["ID"], "ASYNC_");
+    uint64_t transactionID = stoull(isAsync ? message["ID"].substr(6) : message["ID"]);
+
+    // If we're supposed to start a transaction, let's do so.
+    if (message.methodLine == "BEGIN_TRANSACTION") {
+
+         // We'll loop here, we may need to run this transaction more than once in the case of a conflict.
+         while (true) {
+            // db.write(); // This is a placeholder for actually running the transaction.
+            
+            // Now we need to see if we can run the commit.
+            unique_lock<mutex> lock(node._replicationMutex);
+
+            // We can commit as soon as LEADER sends a message saying that we can, and as soon as everyone else before
+            // us has committed.
+            bool canCommit = (node._receivedCommitCount >= transactionID) && (node._completedCommitCount == transactionID - 1);
+            while (!canCommit) {
+                // Wait for the next iteration, and then check again.
+                node._replicationCV.wait(lock);
+                canCommit = (node._receivedCommitCount >= transactionID) && (node._completedCommitCount == transactionID - 1);
+            }
+
+            // Now we know we're ready to commit.
+            // bool result = db.commit(); // placeholder for actually committing.
+            if (1/*result == conflict*/) {
+                // Rollback and we'll retry on the next loop.
+                // db.rollback();
+            } else {
+                // We've finished! Increment node._completedCommitCount while we're still holding the lock from when we
+                // finished the commit to avoid race conditions.
+                node._completedCommitCount = transactionID;
+
+                // And now we can release the lock and drop out of the loop.
+                break;
+            }
+        }
+
+        // Now we've committed, so we can notify anyone else that might have been waiting.
+        node._replicationCV.notify_all();
+    } else if (message.methodLine == "COMMIT_TRANSACTION") {
+        //We lock here, because even though these messages always arrive in order, there's no guarantee that they're
+        //handled in order.
+        bool shouldNotify = false;
+        {
+            unique_lock<mutex> lock(node._replicationMutex);
+            if (node._receivedCommitCount < transactionID) {
+                node._receivedCommitCount = transactionID;
+                shouldNotify = true;
+            }
+        }
+        // Now that we've unlocked, if we changed the value, we want to notify anyone who's waiting.
+        if (shouldNotify) {
+            node._replicationCV.notify_all();
+        }
+
+        // Discussion: Assuming we have at least 2 threads, do we always complete transactions here?
+        // If we had only one thread, it could start a `BEGIN_TRANSACTION` message, and it would wait.
+        // The corresponding `COMMIT_TRANSACTION` would be in queue for the next available thread, but there never
+        // would be one, so it would never finish.
+        // On the other hand, messages from LEADER are always delivered in order, with a COMMIT (or potentially
+        // ROLLBACK) following each BEGIN.
+        // So, if thread 0 was waiting on a `COMMIT_TRANSACTION`, thread 1 would have to dequeue the following
+        // `COMMIT_TRANSACTION`, and this handling does not wait, so must succeed, thus unblocking thread 0. Because
+        // `BEGIN` and `END` messages alternate in the queue, then as long as you have two threads, and `END` is never
+        // blocked, you should never get stuck. Once thread 1 handles the END message that thread 0 is waiting for,
+        // thread 0 unsticks, even if thread 1 has since dequeued the next BEGIN, and thus thread 0 can handle the next
+        // END.
+    } else if (message.methodLine == "COMMIT_TRANSACTION") {
+        // Hell if I know.
+    } else {
+        SERROR("Unhandled replication message " << message.methodLine);
+    }
 }
