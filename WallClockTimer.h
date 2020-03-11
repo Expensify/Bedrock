@@ -27,6 +27,10 @@ class WallClockTimer {
     chrono::milliseconds _elapsedRecorded;
 };
 
+// You can use an AutoScopedWallClockTimer to start timing with a WallClockTimer and have timing stop automatically
+// when the AutoScopedWallClockTimer goes out of scope. This allows you not not worry about doing `timer.stop()` in
+// multiple return statement locations in a function or to worry about what happens if an exception is thrown while
+// your timer is running.
 class AutoScopedWallClockTimer {
   public:
     AutoScopedWallClockTimer(WallClockTimer& timer) :

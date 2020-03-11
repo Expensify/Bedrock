@@ -2125,13 +2125,6 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
     return false;
 }
 
-// Temporary
-class TransactionInfo {
-  public:
-    SQLiteNode& node;
-    const SData& message;
-};
-
 void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
