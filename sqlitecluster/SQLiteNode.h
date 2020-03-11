@@ -1,6 +1,5 @@
 #pragma once
 #include "SQLite.h"
-#include "SQLiteThreadPool.h"
 #include "WallClockTimer.h"
 class SQLiteCommand;
 class SQLiteServer;
@@ -198,19 +197,10 @@ class SQLiteNode : public STCPNode {
     // Last time we recorded network stats.
     chrono::steady_clock::time_point _lastNetStatTime;
 
-    // Requirements for replication in separate threads. We also need enough DB handles to use.
-    SQLiteThreadPool _replicationPool;
-
     // Handler for transaction messages.
     void handleBeginTransaction(Peer* peer, const SData& message);
     void handleCommitTransaction(Peer* peer, const SData& message);
     void handleRollbackTransaction(Peer* peer, const SData& message);
-
-    static void handleTransactionMessage(sqlite3* db, void* data);
-    mutex _replicationMutex;
-    condition_variable _replicationCV;
-    atomic<uint64_t> _receivedCommitCount;
-    atomic<uint64_t> _completedCommitCount;
 
     WallClockTimer _syncTimer;
     uint64_t _handledCommitCount;
