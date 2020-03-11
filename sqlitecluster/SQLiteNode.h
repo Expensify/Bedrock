@@ -201,12 +201,23 @@ class SQLiteNode : public STCPNode {
     // Requirements for replication in separate threads. We also need enough DB handles to use.
     SQLiteThreadPool _replicationPool;
 
-    // Handler for transaction messages.
+    // Old and new version of handling BEGIN_TRANSACTION
     void handleBeginTransaction(Peer* peer, const SData& message);
-    void handleCommitTransaction(Peer* peer, const SData& message);
-    void handleRollbackTransaction(Peer* peer, const SData& message);
+    void handleBeginTransaction(sqlite3* db, const SData& message);
 
+    // Old and new version of handling COMMIT_TRANSACTION
+    // Returns true on success, false on conflict.
+    bool handleCommitTransaction(Peer* peer, const SData& message);
+    bool handleCommitTransaction(sqlite3* db, const SData& message);
+
+    // Old and new version of handling ROLLBACK_TRANSACTION
+    void handleRollbackTransaction(Peer* peer, const SData& message);
+    void handleRollbackTransaction(sqlite3* db, const SData& message);
+
+    // Handler for transaction messages.
     static void handleTransactionMessage(sqlite3* db, void* data);
+
+    // Transaction state variables.
     mutex _replicationMutex;
     condition_variable _replicationCV;
     atomic<uint64_t> _receivedCommitCount;
