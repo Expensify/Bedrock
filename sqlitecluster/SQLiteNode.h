@@ -206,4 +206,8 @@ class SQLiteNode : public STCPNode {
     condition_variable _replicationCV;
     atomic<uint64_t> _receivedCommitCount;
     atomic<uint64_t> _completedCommitCount;
+
+    void handleBeginTransaction(Peer* peer, const SData& message);
+    void handleCommitTransaction(Peer* peer, const SData& message);
+    void handleRollbackTransaction(Peer* peer, const SData& message);
 };
