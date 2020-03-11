@@ -1,6 +1,7 @@
 #pragma once
 #include "SQLite.h"
 #include "SQLiteThreadPool.h"
+#include "WallClockTimer.h"
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -201,13 +202,16 @@ class SQLiteNode : public STCPNode {
     SQLiteThreadPool _replicationPool;
 
     // Handler for transaction messages.
+    void handleBeginTransaction(Peer* peer, const SData& message);
+    void handleCommitTransaction(Peer* peer, const SData& message);
+    void handleRollbackTransaction(Peer* peer, const SData& message);
+
     static void handleTransactionMessage(sqlite3* db, void* data);
     mutex _replicationMutex;
     condition_variable _replicationCV;
     atomic<uint64_t> _receivedCommitCount;
     atomic<uint64_t> _completedCommitCount;
 
-    void handleBeginTransaction(Peer* peer, const SData& message);
-    void handleCommitTransaction(Peer* peer, const SData& message);
-    void handleRollbackTransaction(Peer* peer, const SData& message);
+    WallClockTimer _syncTimer;
+    uint64_t _handledCommitCount;
 };

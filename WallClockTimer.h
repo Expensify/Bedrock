@@ -26,3 +26,19 @@ class WallClockTimer {
     chrono::steady_clock::time_point _absoluteStart;
     chrono::milliseconds _elapsedRecorded;
 };
+
+class AutoScopedWallClockTimer {
+  public:
+    AutoScopedWallClockTimer(WallClockTimer& timer) :
+        _timer(timer)
+    {
+        _timer.start();
+    }
+
+    ~AutoScopedWallClockTimer() {
+        _timer.stop();
+    }
+
+  private:
+    WallClockTimer& _timer;
+};
