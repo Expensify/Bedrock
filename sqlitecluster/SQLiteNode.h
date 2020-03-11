@@ -1,5 +1,6 @@
 #pragma once
 #include "SQLite.h"
+#include "WallClockTimer.h"
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -190,9 +191,17 @@ class SQLiteNode : public STCPNode {
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
-    // and not stale reponses to old changes.
+    // and not stale responses to old changes.
     int _stateChangeCount;
 
     // Last time we recorded network stats.
     chrono::steady_clock::time_point _lastNetStatTime;
+
+    // Handler for transaction messages.
+    void handleBeginTransaction(Peer* peer, const SData& message);
+    void handleCommitTransaction(Peer* peer, const SData& message);
+    void handleRollbackTransaction(Peer* peer, const SData& message);
+
+    WallClockTimer _syncTimer;
+    uint64_t _handledCommitCount;
 };
