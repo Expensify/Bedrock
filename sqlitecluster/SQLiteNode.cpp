@@ -2291,6 +2291,8 @@ class TransactionInfo {
 // This is the function that will be called by the replication pool.
 void SQLiteNode::handleTransactionMessage(sqlite3* db, void* data) {
     // TODO: I don't know where these are allocated or deleted.
+    // We can probably just allocate them where we pass them to this function and delete them at the end of this
+    // function, as we don't depend on their results.
     SQLiteNode& node = static_cast<TransactionInfo*>(data)->node;
     const SData& message = static_cast<TransactionInfo*>(data)->message;
 
@@ -2364,8 +2366,14 @@ void SQLiteNode::handleTransactionMessage(sqlite3* db, void* data) {
         // blocked, you should never get stuck. Once thread 1 handles the END message that thread 0 is waiting for,
         // thread 0 unsticks, even if thread 1 has since dequeued the next BEGIN, and thus thread 0 can handle the next
         // END.
-    } else if (message.methodLine == "COMMIT_TRANSACTION") {
-        // Hell if I know.
+    } else if (message.methodLine == "ROLLBACK_TRANSACTION") {
+        // This probably needs to set another variable that the BEGIN_TRANSACTION block above checks. These aren't
+        // expected to be common, and definitely aren't sequential (in fact, in practice they never happen, but we have
+        // handling for them *just in case*, such that in the event one ever does happen, it doesn't have the entire
+        // cluster crashing. I'm not actually that sure that this works correctly, though, as it never happens. We
+        // should add a test for it). We could have a list<uint64_t> rollbackTransactionIDs, and similar to checking if
+        // the commit count is up-to-date, we can check if rollbackTransactionIDs contains the current transaction.
+        SERROR("Add handling for replication ROLLBACK_TRANSACTION");
     } else {
         SERROR("Unhandled replication message " << message.methodLine);
     }
