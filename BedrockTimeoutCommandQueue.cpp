@@ -19,6 +19,7 @@ void BedrockTimeoutCommandQueue::push(unique_ptr<BedrockCommand>&& rhs) {
 
     // Add to the queue and timeout map.
     _queue.push_back(move(rhs));
+    _queue.back()->startTiming(BedrockCommand::QUEUE_SYNC);
 
     // This is past-the-end, so we decrement it to point to the last element.
     auto lastIt = _queue.end();
@@ -39,6 +40,7 @@ unique_ptr<BedrockCommand> BedrockTimeoutCommandQueue::pop() {
         unique_ptr<BedrockCommand> item = move(*(_timeoutMap.begin()->second));
         _queue.erase(_timeoutMap.begin()->second);
         _timeoutMap.erase(_timeoutMap.begin());
+        item->stopTiming(BedrockCommand::QUEUE_SYNC);
         return item;
     }
 
@@ -53,6 +55,7 @@ unique_ptr<BedrockCommand> BedrockTimeoutCommandQueue::pop() {
         }
     }
     unique_ptr<BedrockCommand> item = move(*firstCommandIt);
+    item->stopTiming(BedrockCommand::QUEUE_SYNC);
     _queue.pop_front();
     return item;
 }
