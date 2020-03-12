@@ -207,29 +207,3 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 }
-
-// pop and push specializations for SSynchronizedQueue that record timing info.
-template<>
-unique_ptr<BedrockCommand> SSynchronizedQueue<unique_ptr<BedrockCommand>>::pop() {
-    SAUTOLOCK(_queueMutex);
-    if (!_queue.empty()) {
-        unique_ptr<BedrockCommand> item = move(_queue.front());
-        _queue.pop_front();
-        item->stopTiming(BedrockCommand::QUEUE_SYNC);
-        return item;
-    }
-    throw out_of_range("No commands");
-}
-
-template<>
-void SSynchronizedQueue<unique_ptr<BedrockCommand>>::push(unique_ptr<BedrockCommand>&& cmd) {
-    SAUTOLOCK(_queueMutex);
-    SINFO("Enqueuing command '" << cmd->request.methodLine << "', with " << _queue.size() << " commands already queued.");
-    // Just add to the queue
-    _queue.push_back(move(cmd));
-    _queue.back()->startTiming(BedrockCommand::QUEUE_SYNC);
-
-    // Write arbitrary buffer to the pipe so any subscribers will be awoken.
-    // **NOTE: 1 byte so write is atomic.
-    SASSERT(write(_pipeFD[1], "A", 1));
-}
