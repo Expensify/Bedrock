@@ -53,7 +53,7 @@ bool SData::isSet(const string& name) const {
     return SContains(nameValueMap, name);
 }
 
-int32_t SData::calc(const string& name) const {
+int SData::calc(const string& name) const {
     return min((long)calc64(name), (long)0x7fffffffL);
 }
 

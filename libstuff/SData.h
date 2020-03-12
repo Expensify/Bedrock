@@ -68,8 +68,8 @@ struct SData {
     // Returns whether or not a particular value has been set
     bool isSet(const string& name) const;
 
-    // Return as a 32-bit value.
-    int32_t calc(const string& name) const;
+    // Return as an int value.
+    int calc(const string& name) const;
 
     // Return as a 64-bit value
     int64_t calc64(const string& name) const;
