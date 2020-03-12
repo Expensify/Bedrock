@@ -15,7 +15,7 @@ struct SData {
     // Constructors
     SData();
 
-    // Initializes a new SData from a string.  If the string provided is not
+    // Initializes a new SData from a string. If the string provided is not
     // an entire HTTPs like message, the string is used as the methodLine.
     SData(const string& fromString);
 
@@ -24,7 +24,6 @@ struct SData {
     pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args) {
         return nameValueMap.emplace(forward<Ts>(args)...);
     }
-
 
     // Operators
     // This version creates an entry, if necessary, and returns a reference
@@ -70,7 +69,7 @@ struct SData {
     bool isSet(const string& name) const;
 
     // Return as a 32-bit value.
-    int calc(const string& name) const;
+    int32_t calc(const string& name) const;
 
     // Return as a 64-bit value
     int64_t calc64(const string& name) const;
@@ -87,8 +86,8 @@ struct SData {
     // Serialization
     // Serializes this to an ostringstream
     void serialize(ostringstream& out) const;
-    // Serializes this to a string
 
+    // Serializes this to a string
     string serialize() const;
 
     // Deserializes from a string
@@ -97,7 +96,7 @@ struct SData {
     // Deserializes from a buffer
     int deserialize(const char* buffer, int length);
 
-    // Initializes a new SData from a string.  If there is no content provided,
+    // Initializes a new SData from a string. If there is no content provided,
     // then use whatever data remains in the string as the content
     // **DEPRECATED** Use the constructor that handles this instead.
     static SData create(const string& rhs);
