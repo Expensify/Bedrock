@@ -6,7 +6,8 @@ struct FutureExecutionTest : tpunit::TestFixture {
         : tpunit::TestFixture("FutureExecution",
                               BEFORE_CLASS(FutureExecutionTest::setup),
                               AFTER_CLASS(FutureExecutionTest::teardown),
-                              TEST(FutureExecutionTest::FutureExecution)) { }
+                              TEST(FutureExecutionTest::FutureExecution),
+                              TEST(FutureExecutionTest::FutureExecutionTimeout)) { }
 
     BedrockClusterTester* tester;
 
@@ -57,6 +58,22 @@ struct FutureExecutionTest : tpunit::TestFixture {
             }
         }
         ASSERT_TRUE(success);
+    }
+
+    void FutureExecutionTimeout() {
+        // We only care about leader because future execution only works on leader.
+        BedrockTester& brtester = tester->getTester(0);
+
+        // Let's make a query that depends on a commit that will never happen.
+        SData query("Query");
+        query["commitCount"] = to_string(UINT64_MAX);
+
+        // But only allow it 0.1s to complete.
+        query["timeout"] = "100"; // 100ms.
+
+        // And, there's a query to run, too, I guess.
+        query["Query"] = "SELECT 1;";
+        string result = brtester.executeWaitVerifyContent(query, "555 Timeout");
     }
 
 } __FutureExecutionTest;

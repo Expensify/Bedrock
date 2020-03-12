@@ -1,5 +1,7 @@
 #include "tpunit++.hpp"
 #include <string.h>
+#include <iostream>
+#include <regex>
 using namespace tpunit;
 
 bool tpunit::TestFixture::exitFlag = false;
@@ -162,28 +164,43 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                     f->_multiThreaded = threads > 1;
 
                     // Determine if this test even should run.
-                    bool should_run = true;
-                    if (_include.size()) {
-                        should_run = false;
+                    bool included = true;
+                    bool excluded = false;
 
+                    // If there's an include list, run the tests to see if we should include it.
+                    if (_include.size()) {
+                        included = false;
+
+                        // If there's no name, we can skip the tests.
                         if (f->_name) {
-                            // Include by matching substrings.
-                            for (string includedName : _include) {
-                                if (string(f->_name).find(includedName) != string::npos) {
-                                    // If it matches, we should run it, unless it's explicitly excluded.
-                                    if (_exclude.find(std::string(f->_name)) == _exclude.end()) {
-                                        should_run = true;
+                            for (const string& includedName : _include) {
+                                try {
+                                    if (regex_match(f->_name, regex("^" + includedName + "$"))) {
+                                        included = true;
+                                        break;
                                     }
+                                } catch (const regex_error& e) {
+                                    cout << "Invalid pattern: " << includedName << ", skipping." << endl;
                                 }
                             }
                         }
                     }
-                    else if (f->_name && (_exclude.find(std::string(f->_name)) != _exclude.end())) {
-                       should_run = false;
+                    
+                    // Similar for excluding. If it has no name, or there's no exclude list, it's not excluded.
+                    else if (f->_name && _exclude.size()) {
+                        for (string excludedName : _exclude) {
+                            try {
+                                if (regex_match(f->_name, regex("^" + excludedName + "$"))) {
+                                    excluded = true;
+                                    break;
+                                }
+                            } catch (const regex_error& e) {
+                                cout << "Invalid pattern: " << excludedName << ", skipping." << endl;
+                            }
+                        }
                     }
 
-                    // Try the next test.
-                    if (!should_run) {
+                    if (!included || excluded) {
                         // Put in the after list, in case we want to run it there.
                         lock_guard<recursive_mutex> lock(m);
                         afterTests.push_back(f);

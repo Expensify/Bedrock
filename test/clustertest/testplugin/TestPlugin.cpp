@@ -3,6 +3,11 @@
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
+const string BedrockPlugin_TestPlugin::name("TestPlugin");
+const string& BedrockPlugin_TestPlugin::getName() const {
+    return name;
+}
+
 extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
     return new BedrockPlugin_TestPlugin(s);
 }
@@ -17,83 +22,113 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
     delete httpsManager;
 }
 
+unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
+    static set<string> supportedCommands = {
+        "testcommand",
+        "broadcastwithtimeouts",
+        "storeboradcasttimeouts",
+        "getbroadcasttimeouts",
+        "sendrequest",
+        "slowquery",
+        "httpstimeout",
+        "exceptioninpeek",
+        "generatesegfaultpeek",
+        "generateassertpeek",
+        "preventattach",
+        "chainedrequest",
+        "ineffectiveUpdate",
+        "exceptioninprocess",
+        "generatesegfaultprocess",
+        "idcollision",
+        "slowprocessquery",
+    };
+    for (auto& cmdName : supportedCommands) {
+        if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
+            return make_unique<TestPluginCommand>(move(baseCommand), this);
+        }
+    }
+    return unique_ptr<BedrockCommand>(nullptr);
+}
+
+TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin) :
+  BedrockCommand(move(baseCommand), plugin),
+  pendingResult(false),
+  urls(request["urls"])
+{
+}
+
 bool BedrockPlugin_TestPlugin::preventAttach() {
     return shouldPreventAttach;
 }
 
-bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) {
+bool TestPluginCommand::peek(SQLite& db) {
     // Always blacklist on userID.
-    command.crashIdentifyingValues.insert("userID");
-
-    // Now that we've blacklisted, mutate the command and see if things break!
-    if (command.request.isSet("userID")) {
-        command.request["userID"] = to_string(stoll(command.request["userID"]) + 1000);
-    }
+    crashIdentifyingValues.insert("userID");
 
     // Sleep if requested.
-    if (command.request.calc("PeekSleep")) {
-        usleep(command.request.calc("PeekSleep") * 1000);
+    if (request.calc("PeekSleep")) {
+        usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(command.request.methodLine,"testcommand")) {
-        if (!command.request["response"].empty()) {
-            command.response.methodLine = command.request["response"];
+    if (SStartsWith(request.methodLine,"testcommand")) {
+        if (!request["response"].empty()) {
+            response.methodLine = request["response"];
         } else {
-            command.response.methodLine = "200 OK";
+            response.methodLine = "200 OK";
         }
-        command.response.content = "this is a test response";
+        response.content = "this is a test response";
         return true;
-    } else if (SStartsWith(command.request.methodLine, "broadcastwithtimeouts")) {
+    } else if (SStartsWith(request.methodLine, "broadcastwithtimeouts")) {
         // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
         SData subCommand("storeboradcasttimeouts");
         subCommand["processTimeout"] = to_string(5001);
         subCommand["timeout"] = to_string(5002);
         subCommand["not_special"] = "whatever";
-        server.broadcastCommand(subCommand);
+        plugin().server.broadcastCommand(subCommand);
         return true;
-    } else if (SStartsWith(command.request.methodLine, "storeboradcasttimeouts")) {
+    } else if (SStartsWith(request.methodLine, "storeboradcasttimeouts")) {
         // This is the command that will be broadcast to peers, it will store some data.
-        lock_guard<mutex> lock(dataLock);
-        arbitraryData["timeout"] = command.request["timeout"];
-        arbitraryData["processTimeout"] = command.request["processTimeout"];
-        arbitraryData["commandExecuteTime"] = command.request["commandExecuteTime"];
-        arbitraryData["not_special"] = command.request["not_special"];
+        lock_guard<mutex> lock(plugin().dataLock);
+        plugin().arbitraryData["timeout"] = request["timeout"];
+        plugin().arbitraryData["processTimeout"] = request["processTimeout"];
+        plugin().arbitraryData["commandExecuteTime"] = request["commandExecuteTime"];
+        plugin().arbitraryData["not_special"] = request["not_special"];
         return true;
-    } else if (SStartsWith(command.request.methodLine, "getbroadcasttimeouts")) {
+    } else if (SStartsWith(request.methodLine, "getbroadcasttimeouts")) {
         // Finally, the caller can send this command to the peers to make sure they received the correct timeout data.
-        lock_guard<mutex> lock(dataLock);
-        command.response["stored_timeout"] = arbitraryData["timeout"];
-        command.response["stored_processTimeout"] = arbitraryData["processTimeout"];
-        command.response["stored_commandExecuteTime"] = arbitraryData["commandExecuteTime"];
-        command.response["stored_not_special"] = arbitraryData["not_special"];
+        lock_guard<mutex> lock(plugin().dataLock);
+        response["stored_timeout"] = plugin().arbitraryData["timeout"];
+        response["stored_processTimeout"] = plugin().arbitraryData["processTimeout"];
+        response["stored_commandExecuteTime"] = plugin().arbitraryData["commandExecuteTime"];
+        response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
-    } else if (SStartsWith(command.request.methodLine, "sendrequest")) {
-        if (server.getState() != SQLiteNode::LEADING && server.getState() != SQLiteNode::STANDINGDOWN) {
+    } else if (SStartsWith(request.methodLine, "sendrequest")) {
+        if (plugin().server.getState() != SQLiteNode::LEADING && plugin().server.getState() != SQLiteNode::STANDINGDOWN) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }
         int requestCount = 1;
-        if (command.request.isSet("httpsRequestCount")) {
-            requestCount = max(command.request.calc("httpsRequestCount"), 1);
+        if (request.isSet("httpsRequestCount")) {
+            requestCount = max(request.calc("httpsRequestCount"), 1);
         }
         for (int i = 0; i < requestCount; i++) {
-            SData request("GET / HTTP/1.1");
-            string host = command.request["Host"];
+            SData newRequest("GET / HTTP/1.1");
+            string host = request["Host"];
             if (host.empty()) {
                 host = "www.google.com";
             }
-            request["Host"] = host;
-            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
+            newRequest["Host"] = host;
+            httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
         }
         return false; // Not complete.
-    } else if (SStartsWith(command.request.methodLine, "slowquery")) {
+    } else if (SStartsWith(request.methodLine, "slowquery")) {
         int size = 100000000;
         int count = 1;
-        if (command.request.isSet("size")) {
-            size = SToInt(command.request["size"]);
+        if (request.isSet("size")) {
+            size = SToInt(request["size"]);
         }
-        if (command.request.isSet("count")) {
-            count = SToInt(command.request["count"]);
+        if (request.isSet("count")) {
+            count = SToInt(request["count"]);
         }
         for (int i = 0; i < count; i++) {
             string query = "WITH RECURSIVE cnt(x) AS ( SELECT random() UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
@@ -101,73 +136,75 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
             db.read(query, result);
         }
         return true;
-    } else if (SStartsWith(command.request.methodLine, "httpstimeout")) {
+    } else if (SStartsWith(request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
         // when there's a blocking command and leader needs to stand down, to verify the timeout for that works.
         // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned
         // up correctly on the former leader.
-        SData request("GET / HTTP/1.1");
-        request["Host"] = "www.google.com";
-        auto transaction = httpsManager->httpsDontSend("https://www.google.com/", request);
-        command.httpsRequests.push_back(transaction);
-        if (command.request["neversend"].empty()) {
-            thread([transaction, request](){
+        SData newRequest("GET / HTTP/1.1");
+        newRequest["Host"] = "www.google.com";
+        auto transaction = plugin().httpsManager->httpsDontSend("https://www.google.com/", newRequest);
+        httpsRequests.push_back(transaction);
+        if (request["neversend"].empty()) {
+            thread([transaction, newRequest](){
                 SINFO("Sleeping 35 seconds for httpstimeout");
                 sleep(35);
                 SINFO("Done Sleeping 35 seconds for httpstimeout");
-                transaction->s->send(request.serialize());
+                transaction->s->send(newRequest.serialize());
             }).detach();
         }
-    } else if (SStartsWith(command.request.methodLine, "exceptioninpeek")) {
+    } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
-    } else if (SStartsWith(command.request.methodLine, "generatesegfaultpeek")) {
+    } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
         int x = *i;
-        command.response["invalid"] = to_string(x);
-    } else if (SStartsWith(command.request.methodLine, "generateassertpeek")) {
+        response["invalid"] = to_string(x);
+    } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
-        command.response["invalid"] = "nope";
-    } else if (SStartsWith(command.request.methodLine, "preventattach")) {
+        response["invalid"] = "nope";
+    } else if (SStartsWith(request.methodLine, "preventattach")) {
         // We do all of this work in a thread because plugins don't poll in detached
         // mode, so the tester will send this command to the plugin, then detach BedrockServer,
         // then the tester will try to attach, sleep, then try again.
-        thread([this](){
+        // The command will be gone by the time the sleep finishes, so pass a pointer to the plugin.
+        BedrockPlugin_TestPlugin* pluginPtr = &plugin();
+        thread([pluginPtr](){
             // Have this plugin block attaching
-            shouldPreventAttach = true;
+            pluginPtr->shouldPreventAttach = true;
 
             // Wait for the tester to try to attach
             sleep(5);
 
             // Reset so the tester can attach this time.
-            shouldPreventAttach = false;
+            pluginPtr->shouldPreventAttach = false;
         }).detach();
         return true;
-    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+    } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.
-        if (command.request.test("pendingResult")) {
-            if (command.httpsRequests.empty()) {
+        if (pendingResult) {
+            if (httpsRequests.empty()) {
                 STHROW("Pending Result flag set but no requests!");
             }
             // There was a previous request, let's record it's result.
-            command.response.content += command.httpsRequests.back()->fullRequest["Host"] + ":" + to_string(command.httpsRequests.back()->response) + "\n";
+            response.content += httpsRequests.back()->fullRequest["Host"] + ":" + to_string(httpsRequests.back()->response) + "\n";
         }
-        list<string> remainingURLs = SParseList(command.request["urls"]);
+        list<string> remainingURLs = SParseList(urls);
         if (remainingURLs.size()) {
-            SData request("GET / HTTP/1.1");
+            SData newRequest("GET / HTTP/1.1");
             string host = remainingURLs.front();
-            request["Host"] = host;
-            command.httpsRequests.push_back(httpsManager->send("https://" + host + "/", request));
+            newRequest["Host"] = host;
+            httpsRequests.push_back(plugin().httpsManager->send("https://" + host + "/", newRequest));
 
             // Indicate there will be a result waiting next time `peek` is called, and that we need to peek again.
-            command.request["pendingResult"] = "true";
-            command.repeek = true;
+            pendingResult = true;
+            repeek = true;
 
             // re-write the URL list for the next iteration.
             remainingURLs.pop_front();
-            command.request["urls"] = SComposeList(remainingURLs);
+            urls = SComposeList(remainingURLs);
         } else {
             // There are no URLs left.
-            command.repeek = false;
+            repeek = false;
 
             // But we still want to call `process`. We make this explicit for clarity, even though its the fall-through
             // case
@@ -178,35 +215,35 @@ bool BedrockPlugin_TestPlugin::peekCommand(SQLite& db, BedrockCommand& command) 
     return false;
 }
 
-bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& command) {
-    if (command.request.calc("ProcessSleep")) {
-        usleep(command.request.calc("ProcessSleep") * 1000);
+void TestPluginCommand::process(SQLite& db) {
+    if (request.calc("ProcessSleep")) {
+        usleep(request.calc("ProcessSleep") * 1000);
     }
-    if (SStartsWith(command.request.methodLine, "sendrequest")) {
+    if (SStartsWith(request.methodLine, "sendrequest")) {
         // This flag makes us pass through the response we got from the server, rather than returning 200 if every
         // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
         // 400, we return 200 except when this flag is set.
-        if (command.request.test("passthrough")) {
-            command.response.methodLine = command.httpsRequests.front()->fullResponse.methodLine;
-            if (command.httpsRequests.front()->response >= 500 && command.httpsRequests.front()->response <= 503) {
+        if (request.test("passthrough")) {
+            response.methodLine = httpsRequests.front()->fullResponse.methodLine;
+            if (httpsRequests.front()->response >= 500 && httpsRequests.front()->response <= 503) {
                 // Error transaction, couldn't send.
-                command.response.methodLine = "NO_RESPONSE";
+                response.methodLine = "NO_RESPONSE";
             }
-            command.response["Host"] = command.httpsRequests.front()->fullRequest["Host"];
+            response["Host"] = httpsRequests.front()->fullRequest["Host"];
         } else {
             // Assert if we got here with no requests.
-            if (command.httpsRequests.empty()) {
-                SINFO ("Calling process with no https request: " << command.request.methodLine);
+            if (httpsRequests.empty()) {
+                SINFO ("Calling process with no https request: " << request.methodLine);
                 SASSERT(false);
             }
             // If any of our responses were bad, we want to know that.
             bool allGoodResponses = true;
-            for (auto& request : command.httpsRequests) {
+            for (auto& request : httpsRequests) {
                 // If we're calling `process` on a command with a https request, it had better be finished.
                 SASSERT(request->response);
 
                 // Concatenate all of our responses into the body.
-                command.response.content += to_string(request->response) + "\n";
+                response.content += to_string(request->response) + "\n";
 
                 // If our response is an error, store that.
                 if (request->response >= 400) {
@@ -215,10 +252,10 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             }
 
             // Update the response method line.
-            if (!command.request["response"].empty() && allGoodResponses) {
-                command.response.methodLine = command.request["response"];
+            if (!request["response"].empty() && allGoodResponses) {
+                response.methodLine = request["response"];
             } else {
-                command.response.methodLine = "200 OK";
+                response.methodLine = "200 OK";
             }
 
             // Update the DB so we can test conflicts.
@@ -226,27 +263,27 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             db.read("SELECT MAX(id) FROM test", result);
             SASSERT(result.size());
             int nextID = SToInt(result[0][0]) + 1;
-            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+            SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
         }
 
         // Done.
-        return true;
+        return;
     }
-    else if (SStartsWith(command.request.methodLine, "idcollision")) {
+    else if (SStartsWith(request.methodLine, "idcollision")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
         int nextID = SToInt(result[0][0]) + 1;
-        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(command.request["value"]) + ");"));
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
 
-        if (!command.request["response"].empty()) {
-            command.response.methodLine = command.request["response"];
+        if (!request["response"].empty()) {
+            response.methodLine = request["response"];
         } else {
-            command.response.methodLine = "200 OK";
+            response.methodLine = "200 OK";
         }
 
-        return true;
-    } else if (SStartsWith(command.request.methodLine, "slowprocessquery")) {
+        return;
+    } else if (SStartsWith(request.methodLine, "slowprocessquery")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
@@ -254,11 +291,11 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
 
         int size = 1;
         int count = 1;
-        if (command.request.isSet("size")) {
-            size = SToInt(command.request["size"]);
+        if (request.isSet("size")) {
+            size = SToInt(request["size"]);
         }
-        if (command.request.isSet("count")) {
-            count = SToInt(command.request["count"]);
+        if (request.isSet("count")) {
+            count = SToInt(request["count"]);
         }
 
         for (int i = 0; i < count; i++) {
@@ -273,20 +310,19 @@ bool BedrockPlugin_TestPlugin::processCommand(SQLite& db, BedrockCommand& comman
             query += ";";
             db.read(query, result);
         }
-    } else if (SStartsWith(command.request.methodLine, "exceptioninprocess")) {
+    } else if (SStartsWith(request.methodLine, "exceptioninprocess")) {
         throw 2;
-    } else if (SStartsWith(command.request.methodLine, "generatesegfaultprocess")) {
+    } else if (SStartsWith(request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;
         int x = *i;
-        command.response["invalid"] = to_string(x);
-    } else if (SStartsWith(command.request.methodLine, "ineffectiveUpdate")) {
+        response["invalid"] = to_string(x);
+    } else if (SStartsWith(request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
-        return true;
-    } else if (SStartsWith(command.request.methodLine, "chainedrequest")) {
+        return;
+    } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Note that we eventually got to process, though we write nothing to the DB.
-        command.response.content += "PROCESSED\n";
+        response.content += "PROCESSED\n";
     }
-    return false;
 }
 
 void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {

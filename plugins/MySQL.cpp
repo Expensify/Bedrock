@@ -4,6 +4,11 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
+const string BedrockPlugin_MySQL::name("MySQL");
+const string& BedrockPlugin_MySQL::getName() const {
+    return name;
+}
+
 MySQLPacket::MySQLPacket() {
     // Initialize
     sequenceID = 0;
@@ -222,7 +227,7 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     return err.serialize();
 }
 
-BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin_DB(s)
 {
 }
 

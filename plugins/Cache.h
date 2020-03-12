@@ -9,12 +9,11 @@ class BedrockPlugin_Cache : public BedrockPlugin {
     ~BedrockPlugin_Cache();
 
     // Implement base class interface
-    virtual string getName() { return "Cache"; }
+    virtual const string& getName() const;
     virtual void upgradeDatabase(SQLite& db);
-    virtual bool peekCommand(SQLite& db, BedrockCommand& command);
-    virtual bool processCommand(SQLite& db, BedrockCommand& command);
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+    static const string name;
 
-  private:
     // Bedrock Cache LRU map
     class LRUMap {
       public:
@@ -46,7 +45,20 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         map<string, Entry*> _lruMap;
     };
 
+    static int64_t initCacheSize(string cacheString);
+
     // Constants
     const int64_t _maxCacheSize;
     LRUMap _lruMap;
+    static const set<string, STableComp> supportedRequestVerbs;
+};
+
+class BedrockCacheCommand : public BedrockCommand {
+  public:
+    BedrockCacheCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Cache* plugin);
+    virtual bool peek(SQLite& db);
+    virtual void process(SQLite& db);
+
+  private:
+    BedrockPlugin_Cache& plugin() { return static_cast<BedrockPlugin_Cache&>(*_plugin); }
 };

@@ -26,16 +26,21 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
-        unique_ptr<BedrockCommand> newCommand = make_unique<BedrockCommand>(move(command));
-        if (SIEquals(newCommand->request.methodLine, "BROADCAST_COMMAND")) {
+        unique_ptr<BedrockCommand> newCommand(nullptr);
+        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
-            newRequest.deserialize(newCommand->request.content);
-            newCommand = make_unique<BedrockCommand>(newRequest);
+            newRequest.deserialize(command.request.content);
+
+            // Add a request ID if one was missing.
+            _addRequestID(newRequest);
+            newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
+        } else {
+            newCommand = getCommandFromPlugins(move(command));
+            SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
         }
-        // Add a request ID if one was missing.
-        _addRequestID(newCommand->request);
+
         SAUTOPREFIX(newCommand->request);
         if (newCommand->writeConsistency != SQLiteNode::QUORUM
             && _syncCommands.find(newCommand->request.methodLine) != _syncCommands.end()) {
@@ -231,8 +236,7 @@ void BedrockServer::sync(const SData& args,
                             SINFO("Returning command (" << cmdIt->second->request.methodLine << ") waiting on commit " << cmdIt->first
                                   << " to queue, timed out at: " << now << ", timeout was: " << it->first << ".");
 
-                            // Remove the commit count requirement so this can get timed out.
-                            cmdIt->second->request.erase("commitCount");
+                            // Goes back to the main queue, where it will hit it's timeout in a worker thread.
                             server._commandQueue.push(move(cmdIt->second));
 
                             // And delete it, it's gone.
@@ -816,9 +820,7 @@ void BedrockServer::worker(const SData& args,
                       << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
 
                 // If the command was processed, tell the plugin we couldn't send the response.
-                if (command->processedBy) {
-                    command->processedBy->handleFailedReply(*command);
-                }
+                command->handleFailedReply();
 
                 continue;
             }
@@ -949,7 +951,7 @@ void BedrockServer::worker(const SData& args,
                     // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
                     // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
                     // called to check it.
-                    if (command->onlyProcessOnSyncThread || !canWriteParallel) {
+                    if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
 
@@ -1515,16 +1517,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _socketIDMap[s->id] = s;
                     }
 
-                    // Create a command.
-                    unique_ptr<BedrockCommand> command = make_unique<BedrockCommand>(request);
-
                     // Get the source ip of the command.
                     char *ip = inet_ntoa(s->addr.sin_addr);
                     if (ip != "127.0.0.1"s) {
                         // We only add this if it's not localhost because existing code expects commands that come from
                         // localhost to have it blank.
-                        command->request["_source"] = ip;
+                        request["_source"] = ip;
                     }
+
+                    // Create a command.
+                    unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
                     if (command->writeConsistency != SQLiteNode::QUORUM
                         && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
@@ -1540,7 +1542,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // And we and keep track of the client that initiated this command, so we can respond later, except
                     // if we received connection:forget in which case we don't respond later
-                    command->initiatingClientID = SIEquals(request["Connection"], "forget") ? -1 : s->id;
+                    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : s->id;
 
                     // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                     // later processing.
@@ -1622,6 +1624,21 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 }
 
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
+    return getCommandFromPlugins(SQLiteCommand(move(request)));
+}
+
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& baseCommand) {
+    for (auto pair : plugins) {
+        auto command = pair.second->getCommand(move(baseCommand));
+        if (command) {
+            SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
+            return command;
+        }
+    }
+    return make_unique<BedrockCommand>(move(baseCommand), nullptr);
+}
+
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     SAUTOLOCK(_socketIDMutex);
 
@@ -1638,13 +1655,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     if (socketIt != _socketIDMap.end()) {
         command->response["nodeName"] = args["-nodeName"];
 
-        // Is a plugin handling this command? If so, it gets to send the response.
-        string& pluginName = command->request["plugin"];
-
         // If we're shutting down, tell the caller to close the connection.
         if (_shutdownState.load() != RUNNING) {
             command->response["Connection"] = "close";
         }
+
+        // Is a plugin handling this command? If so, it gets to send the response.
+        const string& pluginName = command->request["plugin"];
 
         if (!pluginName.empty()) {
             // Let the plugin handle it
@@ -1674,9 +1691,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // If the command was processed, tell the plugin we couldn't send the response.
-        if (command->processedBy) {
-            command->processedBy->handleFailedReply(*command);
-        }
+        command->handleFailedReply();
     }
 }
 
@@ -1708,8 +1723,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
 }
 
 bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) {
-    if (SIEquals(command->request.methodLine, STATUS_IS_SLAVE)          ||
-        SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER)       ||
+    if (SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER)       ||
         SIEquals(command->request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command->request.methodLine, STATUS_PING)              ||
         SIEquals(command->request.methodLine, STATUS_STATUS)            ||
@@ -1760,25 +1774,22 @@ bool BedrockServer::isDetached() {
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
-    SData& request  = command->request;
+    const SData& request  = command->request;
     SData& response = command->response;
 
     // We'll return whether or not this server is following.
-    if (SIEquals(request.methodLine, STATUS_IS_SLAVE) || SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
+    if (SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
         // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
         // HAProxy interprets 2xx/3xx level responses as alive, 4xx/5xx level responses as dead.
         SQLiteNode::State state = _replicationState.load();
-        string verbing = SIEquals(request.methodLine, STATUS_IS_FOLLOWER) ? "Following" : "Slaving";
         if (state == SQLiteNode::FOLLOWING) {
-            response.methodLine = "HTTP/1.1 200 "+ verbing;
+            response.methodLine = "HTTP/1.1 200 Following";
         } else {
-            response.methodLine = "HTTP/1.1 500 Not " + verbing + ". State=" + SQLiteNode::stateName(state);
+            response.methodLine = "HTTP/1.1 500 Not Following. State=" + SQLiteNode::stateName(state);
         }
-    }
-
-    else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
+    } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
         SQLiteNode::State state = _replicationState.load();
         if (state != SQLiteNode::FOLLOWING) {
@@ -1786,7 +1797,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            response.methodLine = "HTTP/1.1 200 Slaving";
+            response.methodLine = "HTTP/1.1 200 Following";
         }
     }
 
@@ -1806,9 +1817,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isLeader"] = state == SQLiteNode::LEADING ? "true" : "false";
-
-        // TODO: Remove this line when everything has been updated to use 'leader'.
-        content["isMaster"] = content["isLeader"];
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
@@ -2106,8 +2114,8 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
             SData command(p.first);
             command.nameValueMap = table;
-            unique_ptr<BedrockCommand> cmd = make_unique<BedrockCommand>(command);
-            for (const auto& fields : command.nameValueMap) {
+            unique_ptr<BedrockCommand> cmd = getCommandFromPlugins(move(command));
+            for (const auto& fields : table) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
             auto _syncNodeCopy = _syncNode;

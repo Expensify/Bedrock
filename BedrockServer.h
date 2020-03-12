@@ -321,7 +321,6 @@ class BedrockServer : public SQLiteServer {
     void _reply(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
-    static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
     static constexpr auto STATUS_IS_FOLLOWER       = "GET /status/isFollower HTTP/1.1";
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
@@ -351,6 +350,11 @@ class BedrockServer : public SQLiteServer {
 
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
+
+    // See if there's a plugin that can turn this request into a command.
+    // If not, we'll create a command that returns `430 Unrecognized command`.
+    unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
+    unique_ptr<BedrockCommand> getCommandFromPlugins(SQLiteCommand&& baseCommand);
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a follower that's behind leader, and a client makes two requests, one to a node
