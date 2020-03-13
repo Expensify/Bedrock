@@ -44,7 +44,7 @@ class PortMap {
 
     // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
     // it takes the OS a few seconds to make the port available again.
-    int waitForPort(int port) {
+    int waitForPort(uint16_t port) {
         int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         int i = 1;
         setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));

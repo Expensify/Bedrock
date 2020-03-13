@@ -31,7 +31,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
 
     void test() {
         // create a 5 node cluster
-        BedrockClusterTester tester = BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
+        BedrockClusterTester tester = BedrockClusterTester(ClusterSize::SIX_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
 
         // get convenience handles for the cluster members
         BedrockTester& node0 = tester.getTester(0);
@@ -39,6 +39,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         BedrockTester& node2 = tester.getTester(2);
         BedrockTester& node3 = tester.getTester(3);
         BedrockTester& node4 = tester.getTester(4);
+        BedrockTester& node5 = tester.getTester(5);
 
         // make sure the whole cluster is up
         ASSERT_TRUE(node0.waitForStates({"LEADING", "MASTERING"}));
@@ -46,6 +47,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node2.waitForStates({"FOLLOWING", "SLAVING"}));
         ASSERT_TRUE(node3.waitForStates({"FOLLOWING", "SLAVING"}));
         ASSERT_TRUE(node4.waitForStates({"FOLLOWING", "SLAVING"}));
+        ASSERT_TRUE(node5.waitForStates({"FOLLOWING", "SLAVING"}));
 
         // shut down primary leader, make sure secondary takes over
         tester.stopNode(0);
