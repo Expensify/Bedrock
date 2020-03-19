@@ -141,6 +141,10 @@ class SString : public string {
 
 typedef map<string, SString, STableComp> STable;
 
+// Libstuff items that must be included here so they are available in the rest of the file
+// However it must be included AFTER the STable definition because SData uses this type.
+#include "SData.h"
+
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
 // body. The STHROW and STHROW_STACK macros will create an SException that logs it's file and line of creation, and
 // optionally, a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response
@@ -172,73 +176,6 @@ class SException : public exception {
 
 // Utility function for generating pretty callstacks.
 vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
-
-// --------------------------------------------------------------------------
-// A very simple HTTP-like structure consisting of a method line, a table,
-// and a content body.
-// --------------------------------------------------------------------------
-struct SData {
-    // Public attributes
-    string methodLine;
-    STable nameValueMap;
-    string content;
-
-    // Constructors
-    SData();
-    SData(const string& method);
-
-    // Allow forwarding emplacements directly so SData can act like `std::map`.
-    template <typename... Ts>
-    pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args) {
-        return nameValueMap.emplace(forward<Ts>(args)...);
-    }
-
-
-    // Operators
-    string& operator[](const string& name);
-    const string& operator[](const string& name) const;
-
-    // Two templated versions of `set` are provided. One for arithmetic types, and one for other types (which must be
-    // convertible to 'string'). These allow you to do the following:
-    // SData.set("count", 7);
-    // SData.set("name", "Tyler");
-    // for all string and integer types.
-    template <typename T>
-    typename enable_if<is_arithmetic<T>::value, void>::type set(const string& key, const T item)
-    {
-        nameValueMap[key] = to_string(item);
-    }
-    template <typename T>
-    typename enable_if<!is_arithmetic<T>::value, void>::type set(const string& key, const T item)
-    {
-        nameValueMap[key] = item;
-    }
-
-    // Mutators
-    void clear();
-    void erase(const string& name);
-    void merge(const STable& rhs);
-    void merge(const SData& rhs);
-
-    // Accessors
-    bool empty() const;
-    bool isSet(const string& name) const;
-    int calc(const string& name) const;
-    int64_t calc64(const string& name) const;
-    uint64_t calcU64(const string& name) const;
-    bool test(const string& name) const;
-    string getVerb() const;
-
-    // Serialization
-    void serialize(ostringstream& out) const;
-    string serialize() const;
-    int deserialize(const string& rhs);
-    int deserialize(const char* buffer, int length);
-
-    // Create an SData object; if no Content-Length then take everything as the content
-    static SData create(const string& rhs);
-    static const string placeholder;
-};
 
 // --------------------------------------------------------------------------
 // Time stuff TODO: Replace with std::chrono

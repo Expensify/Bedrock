@@ -2512,4 +2512,3 @@ void SQLiteNode::handleTransactionMessage(sqlite3* db, void* data) {
         SERROR("Unhandled replication message " << message.methodLine);
     }
 }
-

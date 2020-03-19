@@ -13,7 +13,7 @@ class SSynchronizedQueue {
     // This queue can be watched by a `poll` loop. These functions are called with an fd_map to prepare for/handle
     // activity from polling.
     void prePoll(fd_map& fdm);
-    void postPoll(fd_map& fdm, int bytesToRead = 1);
+    void postPoll(fd_map& fdm);
 
     // Returns true if the queue is empty.
     bool empty() const;
@@ -37,6 +37,16 @@ class SSynchronizedQueue {
   protected:
     list<T> _queue;
     mutable recursive_mutex _queueMutex;
+
+    // You may be wondering why we use a pipe instead of a condition variable
+    // for alerting threads that work is available. That's because we are treating
+    // queue activity like network activity in BedrockServer. This means that we
+    // treat the queue as if it was a network socket and we use the pipe to know
+    // if there are "unread bytes on the socket" that is to say -- work available --
+    // in the queue.
+    // This is kind of weird but prevents threads from waiting for a the poll()
+    // timeout on network activity. Since queue activity also causes poll() to return
+    // if there is work in the queue.
     int _pipeFD[2] = {-1, -1};
 };
 
@@ -67,26 +77,35 @@ void SSynchronizedQueue<T>::prePoll(fd_map& fdm) {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::postPoll(fd_map& fdm, int bytesToRead) {
-    // Caller determines the bytes to read.  If a consumer can only process one item then it will only read 1 byte. If
-    // the pipe has more data to read it will continue to "fire" so other threads also subscribing will pick up work.
+void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
+    // Check if there is anything to read off of the pipe, if there is, empty it.
     if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
-        char readbuffer[bytesToRead];
-        if (read(_pipeFD[0], readbuffer, sizeof(readbuffer)) == -1) {
-            STHROW("Read from pipe failed.");
+        // Read until there is nothing left to read.
+        while (true) {
+            char readbuffer[1];
+            int ret = read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+
+            // Since the pipe is set to non-blocking reads, read() will return -1
+            // when there is no data to read  and will set errno to EAGAIN/EWOULDBLOCK
+            // otherwise it will 0 when we have read it all
+            if (ret <= 0 && errno == EWOULDBLOCK) {
+                break;
+            } else if (ret == -1) {
+                STHROW("Failed to read from pipe");
+            }
         }
     }
 }
 
 template<typename T>
 bool SSynchronizedQueue<T>::empty() const {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.empty();
 }
 
 template<typename T>
 const T& SSynchronizedQueue<T>::front() const {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (!_queue.empty()) {
         return _queue.front();
     }
@@ -95,7 +114,7 @@ const T& SSynchronizedQueue<T>::front() const {
 
 template<typename T>
 T SSynchronizedQueue<T>::pop() {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (!_queue.empty()) {
         T item = move(_queue.front());
         _queue.pop_front();
@@ -106,7 +125,7 @@ T SSynchronizedQueue<T>::pop() {
 
 template<typename T>
 void SSynchronizedQueue<T>::push(T&& rhs) {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     // Just add to the queue
     _queue.push_back(move(rhs));
 
@@ -117,12 +136,12 @@ void SSynchronizedQueue<T>::push(T&& rhs) {
 
 template<typename T>
 size_t SSynchronizedQueue<T>::size() const {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.size();
 }
 
 template<typename T>
 void SSynchronizedQueue<T>::each(const function<void (T&)> f) {
-    SAUTOLOCK(_queueMutex);
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     for_each(_queue.begin(), _queue.end(), f);
 }
