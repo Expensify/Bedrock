@@ -161,12 +161,12 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     }
 
     // Ok, now we should be able to wait for the cluster to come up. Let's wait until each server responds to 'status'.
-    int count = 0;
     for (auto& node : _cluster) {
+        uint64_t startTime = STimeNow();
         while (1) {
-            count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (count > 60 * 10) {
+            if (startTime + 60'000'000 < STimeNow()) {
+                cout << "ClusterTester constructor timed out starting cluster" << endl;
                 break;
             }
             try {

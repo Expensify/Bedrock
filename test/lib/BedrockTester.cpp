@@ -228,6 +228,7 @@ string BedrockTester::startServer(bool dontWait) {
             count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
             if (count > 60 * 10) {
+                cout << "startServer(): ran out of time waiting for server to start" << endl;
                 break;
             }
             if (needSocket) {
@@ -331,6 +332,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             } else if (errorCode) {
                                 *errorCode = 2;
                             }
+                            cout << "executeWaitMultiple(): ran out of time waiting for socket" << endl;
                             return;
                         }
 
@@ -570,7 +572,7 @@ bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool c
         statusString += item.second;
         statusString += " ";
     }
-    cout << "waitForStates() timed out waiting for states " << stateString << ". Most recent status: " << statusString << endl;
+    cout << "waitForStates() timed out at " << STimeNow() << " waiting for states " << stateString << ". Started waiting at " << start << " Most recent status: " << statusString << endl;
 
     return false;
 }

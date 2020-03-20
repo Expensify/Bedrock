@@ -574,14 +574,13 @@ bool SQLiteNode::update() {
         }
 
         // No leader and we're in sync, perhaps everybody is waiting for us
-        // to stand up?  If we're higher than the highest priority, and are
-        // connected to enough full peers to achieve quorum we should be
-        // leader.
+        // to stand up?  If we're higher than the highest priority, are using 
+        // a real priority and are not a permafollower, and are connected to 
+        // enough full peers to achieve quorum, we should be leader.
         if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > highestPriorityPeer->calc("Priority")) {
+            _priority > 0 && _priority > highestPriorityPeer->calc("Priority")) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
-            SASSERT(_priority > 0); // Permafollower should never stand up
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
             for (auto peer : peerList) {
                 peer->erase("StandupResponse");
@@ -590,7 +589,7 @@ bool SQLiteNode::update() {
             return true; // Re-update
         }
 
-        // Keep waiting
+        // Otherwise, Keep waiting
         SDEBUG("Connected to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
                                << " with permafollowers), priority=" << _priority);
         break;
