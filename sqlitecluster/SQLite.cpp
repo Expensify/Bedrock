@@ -754,7 +754,7 @@ int SQLite::commit() {
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
-        SINFO("Successful commit logging here.");
+        SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " committed. report: " << sqlite3_begin_concurrent_report(_db));
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
         _sharedData->_commitCount++;
@@ -828,7 +828,8 @@ void SQLite::rollback() {
         }
 
         if (_currentTransactionAttemptCount != -1) {
-            SINFO("Page logging goes here.");
+            SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " rolled back. report: " << sqlite3_begin_concurrent_report(_db));
+        
         }
 
         // Finally done with this.
