@@ -684,7 +684,7 @@ void BedrockServer::worker(const SData& args,
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], mmapSizeGB);
+    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
