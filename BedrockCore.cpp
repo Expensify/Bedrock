@@ -65,7 +65,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -98,7 +98,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
             if (!completed) {
                 SINFO("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
                 _db.resetTiming();
-                return false;
+                return RESULT::SHOULD_PROCESS;
             }
 
         } catch (const SQLite::timeout_error& e) {
@@ -107,6 +107,8 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
             STHROW("555 Timeout peeking command");
+        } catch (const SQLite::checkpoint_required_error& e) {
+            STHROW("556 Command abandoned for checkpoint.");
         }
 
         // If no response was set, assume 200 OK
@@ -140,7 +142,7 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
         _db.read("PRAGMA query_only = false;");
         _db.resetTiming();
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
-        return false;
+        return RESULT::SHOULD_PROCESS;
     } catch (...) {
         command->repeek = false;
         _db.resetTiming();
@@ -157,10 +159,10 @@ bool BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
     _db.resetTiming();
 
     // Done.
-    return true;
+    return RESULT::COMPLETE;
 }
 
-bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
@@ -200,6 +202,8 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
+            } catch (const SQLite::checkpoint_required_error& e) {
+                STHROW("556 Command abandoned for checkpoint.");
             }
         }
 
@@ -248,7 +252,8 @@ bool BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
 
     // Done, return whether or not we need the parent to commit our transaction.
     command->complete = !needsCommit;
-    return needsCommit;
+    
+    return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {

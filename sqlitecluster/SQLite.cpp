@@ -32,6 +32,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _enableRewrite(false),
     _currentlyRunningRewritten(false),
     _timeoutLimit(0),
+    _abandonForCheckpoint(false),
     _autoRolledBack(false),
     _noopUpdateMode(false),
     _enableFullCheckpoints(enableFullCheckpoints),
@@ -222,6 +223,10 @@ int SQLite::_progressHandlerCallback(void* arg) {
 
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
+    } else if (sqlite->_sharedData->_checkpointThreadBusy.load()) {
+        SINFO("Abandoning transaction to unblock checkpoint");
+        sqlite->_abandonForCheckpoint = true;
+        return 2;
     }
     return 0;
 }
@@ -545,6 +550,24 @@ bool SQLite::read(const string& query, SQResult& result) {
     _checkTiming("timeout in SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
+}
+
+void SQLite::_checkAbandon() {
+    if (_abandonForCheckpoint) {
+        // Timing out inside a write operation will automatically roll back the current transaction. We need to be
+        // aware as to whether or not this has happened.
+        // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
+        // transaction has been rolled back.
+        // see: http://www.sqlite.org/c3ref/get_autocommit.html
+        if (sqlite3_get_autocommit(_db)) {
+            SHMMM("It appears a write transaction timed out and automatically rolled back. Setting _autoRolledBack = true");
+            _autoRolledBack = true;
+        }
+
+        // Reset this and throw the appropriate exception.
+        _abandonForCheckpoint = false;
+        throw checkpoint_required_error();
+    }
 }
 
 void SQLite::_checkTiming(const string& error) {
