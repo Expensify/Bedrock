@@ -224,7 +224,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
     } else if (sqlite->_sharedData->_checkpointThreadBusy.load()) {
-        SINFO("Abandoning transaction to unblock checkpoint");
+        SINFO("TYLER Abandoning transaction to unblock checkpoint");
         sqlite->_abandonForCheckpoint = true;
         return 2;
     }
@@ -273,7 +273,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
-        SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
+        SDEBUG("TYLER [checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
         thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
@@ -321,12 +321,12 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
-                    SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
+                    SINFO("TYLER [checkpoint] Waited " << ((checkpointStart - start) / 1000)
                           << "ms for pending transactions. Starting complete checkpoint.");
                     int walSizeFrames = 0;
                     int framesCheckpointed = 0;
                     int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
-                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
+                    SINFO("TYLER [checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
@@ -548,6 +548,7 @@ bool SQLite::read(const string& query, SQResult& result) {
         _queryCache.emplace(make_pair(query, result));
     }
     _checkTiming("timeout in SQLite::read"s);
+    _checkAbandon();
     _readElapsed += STimeNow() - before;
     return queryResult;
 }
@@ -560,7 +561,7 @@ void SQLite::_checkAbandon() {
         // transaction has been rolled back.
         // see: http://www.sqlite.org/c3ref/get_autocommit.html
         if (sqlite3_get_autocommit(_db)) {
-            SHMMM("It appears a write transaction timed out and automatically rolled back. Setting _autoRolledBack = true");
+            SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
             _autoRolledBack = true;
         }
 
@@ -647,6 +648,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
         result = !SQuery(_db, "read/write transaction", query);
     }
     _checkTiming("timeout in SQLite::write"s);
+    _checkAbandon();
     _writeElapsed += STimeNow() - before;
     if (!result) {
         return false;

@@ -108,6 +108,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             }
             STHROW("555 Timeout peeking command");
         } catch (const SQLite::checkpoint_required_error& e) {
+            SINFO("TYLER Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
             STHROW("556 Command abandoned for checkpoint.");
         }
 
@@ -203,6 +204,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 }
                 STHROW("555 Timeout processing command");
             } catch (const SQLite::checkpoint_required_error& e) {
+                SINFO("TYLER Command " << command->request.methodLine << " abandoned (process) for checkpoint");
                 STHROW("556 Command abandoned for checkpoint.");
             }
         }
