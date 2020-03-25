@@ -107,9 +107,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
             STHROW("555 Timeout peeking command");
-        } catch (const SQLite::checkpoint_required_error& e) {
-            SINFO("TYLER Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
-            STHROW("556 Command abandoned for checkpoint.");
         }
 
         // If no response was set, assume 200 OK
@@ -144,6 +141,13 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.resetTiming();
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
         return RESULT::SHOULD_PROCESS;
+    } catch (const SQLite::checkpoint_required_error& e) {
+        command->repeek = false;
+        _db.rollback();
+        _db.read("PRAGMA query_only = false;");
+        _db.resetTiming();
+        SINFO("TYLER Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
+        return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch (...) {
         command->repeek = false;
         _db.resetTiming();
@@ -205,7 +209,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 STHROW("555 Timeout processing command");
             } catch (const SQLite::checkpoint_required_error& e) {
                 SINFO("TYLER Command " << command->request.methodLine << " abandoned (process) for checkpoint");
-                STHROW("556 Command abandoned for checkpoint.");
             }
         }
 
@@ -239,6 +242,13 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         _handleCommandException(command, e);
         _db.rollback();
         needsCommit = false;
+    } catch (const SQLite::checkpoint_required_error& e) {
+        _db.rollback();
+        _db.setUpdateNoopMode(false);
+        _db.resetTiming();
+        command->complete = false;
+        SINFO("TYLER Command " << command->request.methodLine << " abandoned (process) for checkpoint");
+        return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch(...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
