@@ -557,7 +557,7 @@ void BedrockServer::sync(const SData& args,
                         // This is sort of the "default" case after checking if this command was complete above. If so,
                         // we'll fall through to calling processCommand below.
                     } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("TYLER Re-queuing abandoned command (from peek) in sync thread");
+                        SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
                         server._commandQueue.push(move(command));
                         continue;
                     } else {
@@ -604,7 +604,7 @@ void BedrockServer::sync(const SData& args,
                         server._reply(command);
                     }
                 } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                    SINFO("TYLER Re-queuing abandoned command (from process) in sync thread");
+                    SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
                     server._commandQueue.push(move(command));
                     continue;
                 } else {
@@ -927,7 +927,7 @@ void BedrockServer::worker(const SData& args,
 
                 // This drops us back to the top of the loop.
                 if (peekResult == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                    SINFO("TYLER Re-trying abandoned command (from peek) in worker thread");
+                    SINFO("[checkpoint] Re-trying abandoned command (from peek) in worker thread");
                     continue;
                 }
 
@@ -1046,7 +1046,7 @@ void BedrockServer::worker(const SData& args,
                                   << " on worker thread with " << retry << " retries remaining.");
                         }
                     } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("TYLER Re-trying abandoned command (from process) in worker thread");
+                        SINFO("[checkpoint] Re-trying abandoned command (from process) in worker thread");
                         // Add a retry so that we don't hit out conflict limit for checkpoints.
                         ++retry;
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {

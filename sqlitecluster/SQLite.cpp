@@ -224,7 +224,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
     } else if (sqlite->_sharedData->_checkpointThreadBusy.load()) {
-        SINFO("TYLER Abandoning transaction to unblock checkpoint");
+        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
         sqlite->_abandonForCheckpoint = true;
         return 2;
     }
@@ -273,7 +273,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
             return SQLITE_OK;
         }
-        SDEBUG("TYLER [checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
+        SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
         thread([object, filename, dbNameCopy]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
@@ -321,12 +321,12 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
-                    SINFO("TYLER [checkpoint] Waited " << ((checkpointStart - start) / 1000)
+                    SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
                           << "ms for pending transactions. Starting complete checkpoint.");
                     int walSizeFrames = 0;
                     int framesCheckpointed = 0;
                     int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
-                    SINFO("TYLER [checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
+                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
                           << framesCheckpointed << " of " << walSizeFrames
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 

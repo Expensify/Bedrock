@@ -146,7 +146,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.rollback();
         _db.read("PRAGMA query_only = false;");
         _db.resetTiming();
-        SINFO("TYLER Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
+        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
         return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch (...) {
         command->repeek = false;
@@ -208,7 +208,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 }
                 STHROW("555 Timeout processing command");
             } catch (const SQLite::checkpoint_required_error& e) {
-                SINFO("TYLER Command " << command->request.methodLine << " abandoned (process) for checkpoint");
+                SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
             }
         }
 
@@ -247,7 +247,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         _db.setUpdateNoopMode(false);
         _db.resetTiming();
         command->complete = false;
-        SINFO("TYLER Command " << command->request.methodLine << " abandoned (process) for checkpoint");
+        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
         return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch(...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
