@@ -780,7 +780,10 @@ int SQLite::commit() {
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         if (_currentTransactionAttemptCount != -1) {
-            SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " committed. report: " << sqlite3_begin_concurrent_report(_db));
+            string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
+                             to_string(_currentTransactionAttemptCount) + " committed. report: " +
+                             sqlite3_begin_concurrent_report(_db);
+            syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
@@ -806,8 +809,12 @@ int SQLite::commit() {
         _queryCount = 0;
         _cacheHits = 0;
     } else {
-        SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " conflict, will roll back.");
-        SINFO("Commit failed, waiting for rollback.");
+        if (_currentTransactionAttemptCount != -1) {
+            string logLine = SWHEREAMI  + "[row-level-locking] transaction attempt:" +
+                             to_string(_currentTransactionAttemptCount) + " conflict, will roll back.";
+            syslog(LOG_DEBUG, "%s", logLine.c_str());
+            SINFO("Commit failed, waiting for rollback.");
+        }
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
@@ -856,7 +863,10 @@ void SQLite::rollback() {
         }
 
         if (_currentTransactionAttemptCount != -1) {
-            SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " rolled back. report: " << sqlite3_begin_concurrent_report(_db));
+            string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
+                             to_string(_currentTransactionAttemptCount) + " rolled back. report: " +
+                             sqlite3_begin_concurrent_report(_db);
+            syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
 
         // Finally done with this.
