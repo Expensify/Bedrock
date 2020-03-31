@@ -857,7 +857,6 @@ void SQLite::rollback() {
 
         if (_currentTransactionAttemptCount != -1) {
             SINFO("[row-level-locking] transaction attempt: " << _currentTransactionAttemptCount << " rolled back. report: " << sqlite3_begin_concurrent_report(_db));
-        
         }
 
         // Finally done with this.
