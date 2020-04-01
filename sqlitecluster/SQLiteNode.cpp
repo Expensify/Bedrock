@@ -1051,6 +1051,7 @@ bool SQLiteNode::update() {
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     SASSERT(peer);
     SASSERTWARN(!message.empty());
+	SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
     // Every message broadcasts the current state of the node
     if (!message.isSet("CommitCount")) {
         STHROW("missing CommitCount");
@@ -1077,6 +1078,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         if (!message.isSet("Version")) {
             STHROW("missing Version");
+        }
+        if (peer->params["Permafollower"] == "true" && message["Permafollower"] != "true") {
+            STHROW("you're supposed to be a 0-priority permafollower");
+        }
+        if (peer->params["Permafollower"] != "true" && message["Permafollower"] == "true") {
+            STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
 
         // It's an error to have to peers configured with the same priority, except 0 and -1
@@ -1780,6 +1787,7 @@ void SQLiteNode::_onConnect(Peer* peer) {
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
+    login["Permafollower"] = _originalPriority ? "false" : "true";
     _sendToPeer(peer, login);
 }
 

@@ -222,12 +222,12 @@ string BedrockTester::startServer(bool dontWait) {
         // TODO: Make this not take so long, particularly in Travis. This probably really requires making the server
         // come up faster, not a change in how we wait for it, though it would be nice if we could do something
         // besides this 100ms polling.
-        int count = 0;
         bool needSocket = true;
+        uint64_t startTime = STimeNow();
+
         while (1) {
-            count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (count > 60 * 10) {
+            if (startTime + 60'000'000 < STimeNow()) {
                 cout << "startServer(): ran out of time waiting for server to start" << endl;
                 break;
             }
@@ -326,13 +326,16 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // If that failed, we'll continue our main loop and try again.
                     if (socket == -1) {
                         // Return if we've specified to return on failure, or if it's been 20 seconds.
-                        if (returnOnDisconnect || (sendStart + 20'000'000 < STimeNow())) {
+                        bool timeout = sendStart + 20'000'000 < STimeNow();
+                        if (returnOnDisconnect || timeout) {
                             if (returnOnDisconnect && errorCode) {
                                 *errorCode = 1;
                             } else if (errorCode) {
                                 *errorCode = 2;
                             }
-                            cout << "executeWaitMultiple(): ran out of time waiting for socket" << endl;
+                            if (timeout) {
+                                cout << "executeWaitMultiple(): ran out of time waiting for socket" << endl;
+                            }
                             return;
                         }
 
