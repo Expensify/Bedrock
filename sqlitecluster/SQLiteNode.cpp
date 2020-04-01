@@ -1051,7 +1051,7 @@ bool SQLiteNode::update() {
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     SASSERT(peer);
     SASSERTWARN(!message.empty());
-	SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
+    SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
     // Every message broadcasts the current state of the node
     if (!message.isSet("CommitCount")) {
         STHROW("missing CommitCount");
