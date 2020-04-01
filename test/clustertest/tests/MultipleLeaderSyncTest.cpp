@@ -30,7 +30,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
     }
 
     void test() {
-        // create a 5 node cluster
+        // create a 6 node cluster
         BedrockClusterTester tester = BedrockClusterTester(ClusterSize::SIX_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
 
         // get convenience handles for the cluster members
