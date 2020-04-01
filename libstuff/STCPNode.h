@@ -1,5 +1,11 @@
 #pragma once
 
+// Convenience class for maintaining connections with a mesh of peers
+#define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
+#define PINFO(_MSG_) SINFO("->{" << peer->name << "} " << _MSG_)
+#define PHMMM(_MSG_) SHMMM("->{" << peer->name << "} " << _MSG_)
+#define PWARN(_MSG_) SWARN("->{" << peer->name << "} " << _MSG_)
+
 struct STCPNode : public STCPServer {
     // Begins listening for connections on a given port
     STCPNode(const string& name, const string& host, const uint64_t recvTimeout_ = STIME_US_PER_M);
