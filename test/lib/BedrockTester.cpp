@@ -308,7 +308,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
-            int timeoutAutoRetries = 0;
+            int timeoutAutoRetries = 1;
             size_t myIndex = 0;
             SData myRequest;
             while (true) {
@@ -360,7 +360,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
 
                     // Reset this for the next request that might need it.
-                    timeoutAutoRetries = 0;
+                    timeoutAutoRetries = 3;
                 }
                 timedOut = false;
 
