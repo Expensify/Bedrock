@@ -320,9 +320,8 @@ void BedrockServer::sync(const SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SData request = SData();
-            request["requestID"] = "xxxxxx";
-            SAUTOPREFIX(request);
+            // Set the default log prefix.
+            SAUTOPREFIX(SData());
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
