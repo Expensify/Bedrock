@@ -117,7 +117,7 @@ void BedrockServer::syncWrapper(const SData& args,
             for (auto plugin : server.plugins) {
                 plugin.second->onDetach();
             }
-
+            server._pluginsDetached = true;
             while (server._detach) {
                 if (server.shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
@@ -1177,6 +1177,7 @@ void BedrockServer::_resetServer() {
     _shouldBackup = false;
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
+    _pluginsDetached = false;
 }
 
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
@@ -1187,7 +1188,8 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
+    _pluginsDetached(false)
 {
     _version = VERSION;
 
@@ -1803,13 +1805,7 @@ void BedrockServer::setDetach(bool detach) {
 }
 
 bool BedrockServer::isDetached() {
-    bool pluginsDetached = true;
-    for (auto plugin : plugins){
-        if (!plugin.second->isDetached()) {
-            pluginsDetached = false;
-        }
-    }
-    return _detach && _syncThreadComplete && pluginsDetached;
+    return _detach && _syncThreadComplete && _pluginsDetached;
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
