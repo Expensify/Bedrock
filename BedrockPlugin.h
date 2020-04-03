@@ -64,6 +64,9 @@ class BedrockPlugin {
     // close those connections.
     virtual void onDetach() {}
 
+    // Is this plugin detached? By default we assume yes
+    virtual bool isDetached() { return true; };
+
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 

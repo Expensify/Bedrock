@@ -113,6 +113,11 @@ void BedrockServer::syncWrapper(const SData& args,
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
             while (server._detach) {
+                for (auto plugin : server.plugins) {
+                    if (!plugin.second->isDetached()) {
+                        plugin.second->onDetach();
+                    }
+                }
                 if (server.shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
                     return;
@@ -1791,18 +1796,19 @@ list<STable> BedrockServer::getPeerInfo() {
 void BedrockServer::setDetach(bool detach) {
     if (detach) {
         _beginShutdown("Detach", true);
-
-        // Tell all of our plugins to detach as well
-        for (auto plugin : plugins) {
-            plugin.second->onDetach();
-        }
     } else {
         _detach = false;
     }
 }
 
 bool BedrockServer::isDetached() {
-    return _detach && _syncThreadComplete;
+    bool pluginsDetached = true;
+    for (auto plugin : plugins){
+        if (!plugin.second->isDetached()) {
+            pluginsDetached = false;
+        }
+    }
+    return _detach && _syncThreadComplete && pluginsDetached;
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
