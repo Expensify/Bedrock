@@ -1980,7 +1980,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
                 _db.rollback();
                 throw e;
             } catch (const SQLite::checkpoint_required_error& e) {
-                _db.rollback();
                 SINFO("[checkpoint] Retrying synchronize after checkpoint.");
             }
         }
@@ -2212,7 +2211,6 @@ void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
             // This is a fatal error case.
             break;
         } catch (const SQLite::checkpoint_required_error& e) {
-            _db.rollback();
             SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
