@@ -308,7 +308,7 @@ void TestPluginCommand::process(SQLite& db) {
                 nextID++;
             }
             query += ";";
-            db.write(query);
+            db.read(query, result);
         }
     } else if (SStartsWith(request.methodLine, "exceptioninprocess")) {
         throw 2;
