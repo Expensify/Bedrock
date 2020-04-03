@@ -26,6 +26,9 @@ class BedrockPlugin {
     // Returns a short, descriptive name of this plugin
     virtual const string& getName() const;
 
+    // Called when the server is detaching or attaching.
+    virtual void detach(bool detach) {};
+
     // Return a command, or a null pointer if this plugin can't handle this request.
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand) = 0;
 

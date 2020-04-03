@@ -128,6 +128,13 @@ void BedrockServer::syncWrapper(const SData& args,
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
         if (!server._detach) {
+
+            // Tell plugins we're detached.
+            for (auto plugin : server.plugins) {
+                plugin.second->detach(true);
+            }
+
+            // And done.
             break;
         }
     }
@@ -1760,6 +1767,11 @@ void BedrockServer::setDetach(bool detach) {
         _beginShutdown("Detach", true);
     } else {
         _detach = false;
+
+        // Tell plugins we're reattaching.
+        for (auto plugin : plugins) {
+            plugin.second->detach(false);
+        }
     }
 }
 
