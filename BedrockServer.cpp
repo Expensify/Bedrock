@@ -112,12 +112,13 @@ void BedrockServer::syncWrapper(const SData& args,
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
+
+            // Detach any plugins now
+            for (auto plugin : server.plugins) {
+                plugin.second->onDetach();
+            }
+
             while (server._detach) {
-                for (auto plugin : server.plugins) {
-                    if (!plugin.second->isDetached()) {
-                        plugin.second->onDetach();
-                    }
-                }
                 if (server.shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
                     return;
