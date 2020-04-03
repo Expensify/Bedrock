@@ -153,7 +153,14 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     _db.resetTiming();
 
     // Reset, we can write now.
-    _db.read("PRAGMA query_only = false;");
+    while (true) {
+        try {
+            _db.read("PRAGMA query_only = false;");
+            break;
+        } catch (const SQLite::checkpoint_required_error& e) {
+            // If this happens, just try again.
+        }
+    }
 
     // Done.
     return returnValue;
