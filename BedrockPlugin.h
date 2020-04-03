@@ -59,6 +59,11 @@ class BedrockPlugin {
 
     virtual bool preventAttach();
 
+    // Called when a client or plugin requests that the BedrockServer detaches from the database.
+    // If a plugin makes it's own connections to the database, it should use this function to
+    // close those connections.
+    virtual void onDetach() {}
+
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 

@@ -1791,6 +1791,11 @@ list<STable> BedrockServer::getPeerInfo() {
 void BedrockServer::setDetach(bool detach) {
     if (detach) {
         _beginShutdown("Detach", true);
+
+        // Tell all of our plugins to detach as well
+        for (auto plugin : plugins) {
+            plugin.second->onDetach();
+        }
     } else {
         _detach = false;
     }
