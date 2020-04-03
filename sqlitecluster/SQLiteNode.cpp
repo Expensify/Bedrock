@@ -1952,37 +1952,21 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
             SALERT("Synchronized blank query");
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
             STHROW("commit index mismatch");
-
-        // This block repeats until we successfully commit, or throw out of it.
-        // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-        // because the second try will be blocked on the checkpoint.
-        while (true) {
-            try {
-                _db.waitForCheckpoint();
-                if (!_db.beginTransaction()) {
-                    STHROW("failed to begin transaction");
-                }
-
-                // Inside a transaction; get ready to back out if an error
-                if (!_db.writeUnmodified(commit.content)) {
-                    STHROW("failed to write transaction");
-                }
-                if (!_db.prepare()) {
-                    STHROW("failed to prepare transaction");
-                }
-
-                // Done, break out of `while (true)`.
-                break;
-            } catch (const SException& e) {
-                // Transaction failed, clean up
-                SERROR("Can't synchronize (" << e.what() << "); shutting down.");
-                // **FIXME: Remove the above line once we can automatically handle?
-                _db.rollback();
-                throw e;
-            } catch (const SQLite::checkpoint_required_error& e) {
-                _db.rollback();
-                SINFO("[checkpoint] Retrying synchronize after checkpoint.");
-            }
+        _db.waitForCheckpoint();
+        if (!_db.beginTransaction())
+            STHROW("failed to begin transaction");
+        try {
+            // Inside a transaction; get ready to back out if an error
+            if (!_db.writeUnmodified(commit.content))
+                STHROW("failed to write transaction");
+            if (!_db.prepare())
+                STHROW("failed to prepare transaction");
+        } catch (const SException& e) {
+            // Transaction failed, clean up
+            SERROR("Can't synchronize (" << e.what() << "); shutting down.");
+            // **FIXME: Remove the above line once we can automatically handle?
+            _db.rollback();
+            throw e;
         }
 
         // Transaction succeeded, commit and go to the next
@@ -2173,48 +2157,31 @@ void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
     if (_db.getCommitCount() + 1 != message.calcU64("NewCount")) {
         STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(_db.getCommitCount() + 1));
     }
-
-    // This block repeats until we successfully commit, or error out of it.
-    // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-    // because the second try will be blocked on the checkpoint.
-    while (true) {
-        try {
-            _db.waitForCheckpoint();
-            if (!_db.beginTransaction()) {
-                STHROW("failed to begin transaction");
-            }
-
-            // Inside transaction; get ready to back out on error
-            if (!_db.writeUnmodified(message.content)) {
-                STHROW("failed to write transaction");
-            }
-            if (!_db.prepare()) {
-                STHROW("failed to prepare transaction");
-            }
-
-            // Successful commit; we in the right state?
-            if (_db.getUncommittedHash() != message["NewHash"]) {
-                // Something is screwed up
-                PWARN("New hash mismatch: command='" << message["Command"] << "', commitCount=#" << _db.getCommitCount()
-                      << "', committedHash='" << _db.getCommittedHash() << "', uncommittedHash='"
-                      << _db.getUncommittedHash() << "', messageHash='" << message["NewHash"] << "', uncommittedQuery='"
-                      << _db.getUncommittedQuery() << "'");
-                STHROW("new hash mismatch");
-            }
-
-            // Done, break out of `while (true)`.
-            break;
-        } catch (const SException& e) {
-            // Something caused a write failure.
-            success = false;
-            _db.rollback();
-
-            // This is a fatal error case.
-            break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            _db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
+    _db.waitForCheckpoint();
+    if (!_db.beginTransaction()) {
+        STHROW("failed to begin transaction");
+    }
+    try {
+        // Inside transaction; get ready to back out on error
+        if (!_db.writeUnmodified(message.content)) {
+            STHROW("failed to write transaction");
         }
+        if (!_db.prepare()) {
+            STHROW("failed to prepare transaction");
+        }
+        // Successful commit; we in the right state?
+        if (_db.getUncommittedHash() != message["NewHash"]) {
+            // Something is screwed up
+            PWARN("New hash mismatch: command='" << message["Command"] << "', commitCount=#" << _db.getCommitCount()
+                  << "', committedHash='" << _db.getCommittedHash() << "', uncommittedHash='"
+                  << _db.getUncommittedHash() << "', messageHash='" << message["NewHash"] << "', uncommittedQuery='"
+                  << _db.getUncommittedQuery() << "'");
+            STHROW("new hash mismatch");
+        }
+    } catch (const SException& e) {
+        // Something caused a commit failure.
+        success = false;
+        _db.rollback();
     }
 
     // Are we participating in quorum?

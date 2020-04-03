@@ -538,8 +538,7 @@ void BedrockServer::sync(const SData& args,
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
                 if (!command->httpsRequests.size()) {
-                    BedrockCore::RESULT result = core.peekCommand(command);
-                    if (result == BedrockCore::RESULT::COMPLETE) {
+                    if (core.peekCommand(command)) {
 
                         // Finished with this.
                         server._syncThreadCommitMutex.unlock();
@@ -553,15 +552,6 @@ void BedrockServer::sync(const SData& args,
                             server._reply(command);
                         }
                         continue;
-                    } else if (result == BedrockCore::RESULT::SHOULD_PROCESS) {
-                        // This is sort of the "default" case after checking if this command was complete above. If so,
-                        // we'll fall through to calling processCommand below.
-                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
-                        server._commandQueue.push(move(command));
-                        continue;
-                    } else {
-                        SERROR("peekCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
 
                     // If we just started a new HTTPS request, save it for later.
@@ -575,8 +565,7 @@ void BedrockServer::sync(const SData& args,
                     }
                 }
 
-                BedrockCore::RESULT result = core.processCommand(command);
-                if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
+                if (core.processCommand(command)) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
@@ -594,7 +583,7 @@ void BedrockServer::sync(const SData& args,
 
                     // Don't unlock _syncThreadCommitMutex here, we'll hold the lock till the commit completes.
                     continue;
-                } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
+                } else {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
                     server._syncThreadCommitMutex.unlock();
@@ -603,12 +592,6 @@ void BedrockServer::sync(const SData& args,
                     } else {
                         server._reply(command);
                     }
-                } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                    SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
-                    server._commandQueue.push(move(command));
-                    continue;
-                } else {
-                    SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                 }
             } else if (nodeState == SQLiteNode::FOLLOWING) {
                 // If we're following, we just escalate directly to leader without peeking. We can only get an incomplete
@@ -919,19 +902,13 @@ void BedrockServer::worker(const SData& args,
                 // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
-                BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
+                bool peekResult = false;
                 if (command->repeek || !command->httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
 
-                // This drops us back to the top of the loop.
-                if (peekResult == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                    SINFO("[checkpoint] Re-trying abandoned command (from peek) in worker thread");
-                    continue;
-                }
-
-                if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
+                if (!calledPeek || !peekResult) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
                     // until we're finished with this command.
@@ -989,8 +966,7 @@ void BedrockServer::worker(const SData& args,
                     }
 
                     // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    BedrockCore::RESULT result = core.processCommand(command);
-                    if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
+                    if (core.processCommand(command)) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                         // done, and we just need to respond. Before we commit, we need to grab the sync thread
                         // lock. Because the sync thread grabs an exclusive lock on this wrapping any transactions
@@ -1045,20 +1021,11 @@ void BedrockServer::worker(const SData& args,
                             SINFO("Conflict or state change committing " << command->request.methodLine
                                   << " on worker thread with " << retry << " retries remaining.");
                         }
-                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("[checkpoint] Re-trying abandoned command (from process) in worker thread");
-                        // Add a retry so that we don't hit out conflict limit for checkpoints.
-                        ++retry;
-                    } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
-                        // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
-                        // of this block.
-                    } else {
-                        SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
                 }
 
                 // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-                // a conflict or the command was abandoned for a checkpoint, and we'll retry.
+                // a conflict, and we'll retry.
                 if (command->complete) {
                     if (command->initiatingPeerID) {
                         // Escalated command. Send it back to the peer.
