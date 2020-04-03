@@ -8,7 +8,7 @@ SQLiteCore(db),
 _server(server)
 { }
 
-// RAII-style mechanism for automatically setting and unsetting query rewriting 
+// RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
   public:
     AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
@@ -153,7 +153,14 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     _db.resetTiming();
 
     // Reset, we can write now.
-    _db.read("PRAGMA query_only = false;");
+    while (true) {
+        try {
+            _db.read("PRAGMA query_only = false;");
+            break;
+        } catch (const SQlite::checkpoint_required_error& e) {
+            // just try again
+        }
+    }
 
     // Done.
     return returnValue;
@@ -256,7 +263,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
     // Done, return whether or not we need the parent to commit our transaction.
     command->complete = !needsCommit;
-    
+
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
