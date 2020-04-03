@@ -157,7 +157,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         try {
             _db.read("PRAGMA query_only = false;");
             break;
-        } catch (const SQlite::checkpoint_required_error& e) {
+        } catch (const SQLite::checkpoint_required_error& e) {
             // just try again
         }
     }
