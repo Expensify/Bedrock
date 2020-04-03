@@ -6,6 +6,16 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
     if (!request.isSet("commandExecuteTime")) {
         request["commandExecuteTime"] = to_string(STimeNow());
     }
+
+    // Add a request ID if one was missing.
+    if (!request.isSet("requestID")) {
+        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        string requestID;
+        for (int i = 0; i < 6; i++) {
+            requestID += chars[SRandom::rand64() % chars.size()];
+        }
+        request["requestID"] = requestID;
+    }
     return request;
 }
 

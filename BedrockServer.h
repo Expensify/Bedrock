@@ -459,8 +459,6 @@ class BedrockServer : public SQLiteServer {
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
 
-    static void _addRequestID(SData& request);
-
     // The number of seconds to wait between forcing a command to QUORUM.
     uint64_t _quorumCheckpointSeconds;
 

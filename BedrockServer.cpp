@@ -30,9 +30,6 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
             newRequest.deserialize(command.request.content);
-
-            // Add a request ID if one was missing.
-            _addRequestID(newRequest);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
@@ -1490,8 +1487,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
-                    // If there's no ID for this request, let's add one.
-                    _addRequestID(request);
                     SAUTOPREFIX(request);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
@@ -2205,15 +2200,4 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         _outstandingHTTPSRequests.erase(transactionIt);
     }
     return commandsCompleted;
-}
-
-void BedrockServer::_addRequestID(SData& request) {
-    if (!request.isSet("requestID")) {
-        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        string requestID;
-        for (int i = 0; i < 6; i++) {
-            requestID += chars[SRandom::rand64() % chars.size()];
-        }
-        request["requestID"] = requestID;
-    }
 }
