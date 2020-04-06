@@ -409,8 +409,9 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     }
     _sharedData->blockNewTransactionsCV.notify_one();
 
-    // Reset before the query, as it's possible the query sets this.
+    // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
+    _autoRolledBack = false;
 
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
@@ -439,8 +440,9 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& transaction
     }
     _sharedData->blockNewTransactionsCV.notify_one();
 
-    // Reset before the query, as it's possible the query sets this.
+    // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
+    _autoRolledBack = false;
 
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
@@ -566,7 +568,7 @@ void SQLite::_checkInterruptErrors(const string& error) {
     int errorCode = 0;
     uint64_t time = 0;
 
-    // First check timeout. we want this to overide the others, so we can't get stuck in an endless loop where we do
+    // First check timeout. we want this to override the others, so we can't get stuck in an endless loop where we do
     // something like throw `checkpoint_required_error` forever and never notice that the command has timed out.
     if (_timeoutLimit) {
         uint64_t now = STimeNow();
@@ -576,38 +578,23 @@ void SQLite::_checkInterruptErrors(const string& error) {
         if (_timeoutError) {
             time = _timeoutError;
             resetTiming();
-
-            // Timing out inside a write operation will automatically roll back the current transaction. We need to be
-            // aware as to whether or not this has happened.
-            // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
-            // transaction has been rolled back.
-            // see: http://www.sqlite.org/c3ref/get_autocommit.html
-            if (sqlite3_get_autocommit(_db)) {
-                SHMMM("It appears a write transaction timed out and automatically rolled back. Setting _autoRolledBack = true");
-                _autoRolledBack = true;
-            }
-
             errorCode = 1;
         }
     }
 
     if (_abandonForCheckpoint) {
-        // Timing out inside a write operation will automatically roll back the current transaction. We need to be
-        // aware as to whether or not this has happened.
-        // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
-        // transaction has been rolled back.
-        // see: http://www.sqlite.org/c3ref/get_autocommit.html
-        if (sqlite3_get_autocommit(_db)) {
-            SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
-            _autoRolledBack = true;
-        }
-
-        // Reset this and throw the appropriate exception.
-        throw checkpoint_required_error();
         errorCode = 2;
     }
 
-    // Reset this regardless of which error (or both) occurred. If we handled a timeout, this is still done.
+    // If we had an interrupt error, and were inside a transaction, and autocommit is now on, we have been auto-rolled
+    // back, we won't need to actually do a rollback for this transaction.
+    if (errorCode && _insideTransaction && sqlite3_get_autocommit(_db)) {
+        SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
+        _autoRolledBack = true;
+    }
+
+    // Reset this regardless of which error (or both) occurred. If we handled a timeout, this is still done, we don't
+    // need to abandon this later.
     _abandonForCheckpoint = false;
 
     if (errorCode == 1) {
