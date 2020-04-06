@@ -396,11 +396,9 @@ class SQLite {
     uint64_t _timeoutError;
     bool _abandonForCheckpoint;
 
-    // Check the timing of the current query and throw if the limit's exceeded.
-    void _checkTiming(const string& error);
-
-    // Check if we need to abandon a query for a checkpoint.
-    void _checkAbandon();
+    // Check out various error cases that can interrupt a query.
+    // We check them all together because we need to make sure we atomically pick a single one to handle.
+    void _checkInterruptErrors(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);

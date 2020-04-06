@@ -206,8 +206,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
-            } catch (const SQLite::checkpoint_required_error& e) {
-                SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
             }
         }
 
