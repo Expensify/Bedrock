@@ -563,7 +563,7 @@ bool SQLite::read(const string& query, SQResult& result) {
 void SQLite::_checkInterruptErrors(const string& error) {
 
     // Local error code.
-    int error = 0;
+    int errorCode = 0;
     uint64_t time = 0;
 
     // First check timeout. we want this to overide the others, so we can't get stuck in an endless loop where we do
@@ -587,7 +587,7 @@ void SQLite::_checkInterruptErrors(const string& error) {
                 _autoRolledBack = true;
             }
 
-            error = 1;
+            errorCode = 1;
         }
     }
 
@@ -604,15 +604,15 @@ void SQLite::_checkInterruptErrors(const string& error) {
 
         // Reset this and throw the appropriate exception.
         throw checkpoint_required_error();
-        error = 2;
+        errorCode = 2;
     }
 
     // Reset this regardless of which error (or both) occurred. If we handled a timeout, this is still done.
     _abandonForCheckpoint = false;
 
-    if (error == 1) {
+    if (errorCode == 1) {
         throw timeout_error("timeout in "s + error, time);
-    } else if (error = 2) {
+    } else if (errorCode == 2) {
         throw checkpoint_required_error();
     }
 
