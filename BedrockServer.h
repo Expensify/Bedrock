@@ -468,4 +468,7 @@ class BedrockServer : public SQLiteServer {
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
+
+    // Whether or not all plugins are detached
+    bool _pluginsDetached;
 };
