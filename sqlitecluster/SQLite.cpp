@@ -408,6 +408,10 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
+
+    // Reset before the query, as it's possible the query sets this.
+    _abandonForCheckpoint = false;
+
     SDEBUG("Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
@@ -434,6 +438,10 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& transaction
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
+
+    // Reset before the query, as it's possible the query sets this.
+    _abandonForCheckpoint = false;
+
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
@@ -547,38 +555,26 @@ bool SQLite::read(const string& query, SQResult& result) {
     if (_useCache && _isDeterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
-    _checkTiming("timeout in SQLite::read"s);
-    _checkAbandon();
+    _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
 }
 
-void SQLite::_checkAbandon() {
-    if (_abandonForCheckpoint) {
-        // Timing out inside a write operation will automatically roll back the current transaction. We need to be
-        // aware as to whether or not this has happened.
-        // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
-        // transaction has been rolled back.
-        // see: http://www.sqlite.org/c3ref/get_autocommit.html
-        if (sqlite3_get_autocommit(_db)) {
-            SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
-            _autoRolledBack = true;
-        }
+void SQLite::_checkInterruptErrors(const string& error) {
 
-        // Reset this and throw the appropriate exception.
-        _abandonForCheckpoint = false;
-        throw checkpoint_required_error();
-    }
-}
+    // Local error code.
+    int error = 0;
+    uint64_t time = 0;
 
-void SQLite::_checkTiming(const string& error) {
+    // First check timeout. we want this to overide the others, so we can't get stuck in an endless loop where we do
+    // something like throw `checkpoint_required_error` forever and never notice that the command has timed out.
     if (_timeoutLimit) {
         uint64_t now = STimeNow();
         if (now > _timeoutLimit) {
             _timeoutError = now - _timeoutStart;
         }
         if (_timeoutError) {
-            uint64_t time = _timeoutError;
+            time = _timeoutError;
             resetTiming();
 
             // Timing out inside a write operation will automatically roll back the current transaction. We need to be
@@ -591,9 +587,36 @@ void SQLite::_checkTiming(const string& error) {
                 _autoRolledBack = true;
             }
 
-            throw timeout_error(error, time);
+            error = 1;
         }
     }
+
+    if (_abandonForCheckpoint) {
+        // Timing out inside a write operation will automatically roll back the current transaction. We need to be
+        // aware as to whether or not this has happened.
+        // If autocommit is turned on, it means we're not inside an explicit `BEGIN` block, indicating that the
+        // transaction has been rolled back.
+        // see: http://www.sqlite.org/c3ref/get_autocommit.html
+        if (sqlite3_get_autocommit(_db)) {
+            SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
+            _autoRolledBack = true;
+        }
+
+        // Reset this and throw the appropriate exception.
+        throw checkpoint_required_error();
+        error = 2;
+    }
+
+    // Reset this regardless of which error (or both) occurred. If we handled a timeout, this is still done.
+    _abandonForCheckpoint = false;
+
+    if (error == 1) {
+        throw timeout_error("timeout in "s + error, time);
+    } else if (error = 2) {
+        throw checkpoint_required_error();
+    }
+
+    // Otherwise, no error.
 }
 
 bool SQLite::write(const string& query) {
@@ -647,8 +670,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     } else {
         result = !SQuery(_db, "read/write transaction", query);
     }
-    _checkTiming("timeout in SQLite::write"s);
-    _checkAbandon();
+    _checkInterruptErrors("SQLite::write"s);
     _writeElapsed += STimeNow() - before;
     if (!result) {
         return false;
