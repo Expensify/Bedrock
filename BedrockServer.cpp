@@ -362,11 +362,49 @@ void BedrockServer::sync(const SData& args,
             server._suppressMultiWrite.store(true);
         }
 
-        // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
-        // main loop over. This can let us wait for logins from peers (for example).
+        // If the node's not in a ready state at this point, we'll probably need to read from the network. Test
+        // conditions from transitional states and then start the main loop over. This can let us wait for logins
+        // from peers (for example).
         if (nodeState != SQLiteNode::LEADING &&
             nodeState != SQLiteNode::FOLLOWING   &&
             nodeState != SQLiteNode::STANDINGDOWN) {
+
+            // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
+            // from the cluster).
+            if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN)
+                     && nodeState != SQLiteNode::LEADING && nodeState != SQLiteNode::STANDINGDOWN) {
+
+                // If we bailed out while doing a upgradeDB, clear state
+                if (upgradeInProgress.load()) {
+                    upgradeInProgress.store(false);
+                    SDEBUG("Unlocking the _syncThreadCommitMutex after interrupted _upgradeDB()");
+                    server._syncThreadCommitMutex.unlock();
+                    committingCommand = false;
+                }
+
+                // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
+                // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
+                // processed here, or escalated to the new leader. Commands initiated on followers just get dropped,
+                // they will need to be re-escalated, potentially to a different leader.
+                int requeued = 0;
+                int dropped = 0;
+                try {
+                    while (true) {
+                        // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                        command = unique_ptr<BedrockCommand>(nullptr);
+                        command = syncNodeQueuedCommands.pop();
+                        if (command->initiatingClientID) {
+                            // This one came from a local client, so we can save it for later.
+                            server._commandQueue.push(move(command));
+                        }
+                    }
+                } catch (const out_of_range& e) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+
+                    // command will be null here, we should be able to restart the loop.
+                    continue;
+                }
+            }
             continue;
         }
 
@@ -378,7 +416,14 @@ void BedrockServer::sync(const SData& args,
             // (for instance, adding an index).
             upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
-                server._syncThreadCommitMutex.lock();
+                try {
+                    SDEBUG("Locking the _syncThreadCommitMutex for _upgradeDB");
+                    server._syncThreadCommitMutex.lock();
+                } catch(const std::system_error& e){
+                    SWARN("Caught system_error locking _syncThreadCommitMutex for _upgradeDB(), with code "
+                              << e.code() << " meaning " << e.what());
+                    throw(e);
+                }
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
@@ -392,32 +437,6 @@ void BedrockServer::sync(const SData& args,
                 upgradeInProgress.store(false);
                 server._suppressMultiWrite.store(false);
             }
-        } else if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN)
-                   && nodeState == SQLiteNode::SEARCHING) {
-            // If we were LEADING, but now we're searching, then something's gone wrong (perhaps we got disconnected
-            // from the cluster). We should give up an any commands, and let them be re-escalated. If commands were
-            // initiated locally, we can just re-queue them, they will get re-checked once things clear up, and then
-            // they'll get processed here, or escalated to the new leader.
-            // Commands initiated on followers just get dropped, they will need to be re-escalated, potentially to a
-            // different leader.
-            int requeued = 0;
-            int dropped = 0;
-            try {
-                while (true) {
-                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = unique_ptr<BedrockCommand>(nullptr);
-                    command = syncNodeQueuedCommands.pop();
-                    if (command->initiatingClientID) {
-                        // This one came from a local client, so we can save it for later.
-                        server._commandQueue.push(move(command));
-                    }
-                }
-            } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
-
-                // command will be null here, we should be able to restart the loop.
-                continue;
-            }
         }
 
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
@@ -429,31 +448,43 @@ void BedrockServer::sync(const SData& args,
             }
 
             // We're done with the commit, we unlock our mutex and decrement our counter.
+            SDEBUG("Unlocking the _syncThreadCommitMutex since no commit in progress");
             server._syncThreadCommitMutex.unlock();
             committingCommand = false;
 
             // If we were upgrading, there's no response to send, we're just done.
-            if (upgradeInProgress.load()) {
-                upgradeInProgress.store(false);
-                server._suppressMultiWrite.store(false);
-                if (!server._syncNode->commitSucceeded()) {
-                    SWARN("Failed to commit DB Upgrade. Trying again from the top.");
+            try {
+                if (upgradeInProgress.load()) {
+                    upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
+                    if (!server._syncNode->commitSucceeded()) {
+                        SWARN("Failed to commit DB Upgrade. Trying again from the top.");
+                    }
+                    continue;
                 }
-                continue;
+            } catch(const std::system_error& e){
+                SWARN("Caught system_error testing upgradeInProgress, with code "
+                          << e.code() << " meaning " << e.what());
+                throw(e);
             }
 
-            if (server._syncNode->commitSucceeded()) {
-                SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
-                // Otherwise, save the commit count, mark this command as complete, and reply.
-                command->response["commitCount"] = to_string(db.getCommitCount());
-                command->complete = true;
-                if (command->initiatingPeerID) {
-                    // This is a command that came from a peer. Have the sync node send the response back to the peer.
-                    server._finishPeerCommand(command);
+            if (server._syncNode->commitSucceeded()) {
+                if (command) {
+                    SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
+
+                    // Otherwise, save the commit count, mark this command as complete, and reply.
+                    command->response["commitCount"] = to_string(db.getCommitCount());
+                    command->complete = true;
+                    if (command->initiatingPeerID) {
+                        // This is a command that came from a peer. Have the sync node send the response back to the peer.
+                        server._finishPeerCommand(command);
+                    } else {
+                        // The only other option is this came from a client, so respond via the server.
+                        server._reply(command);
+                    }
                 } else {
-                    // The only other option is this came from a client, so respond via the server.
-                    server._reply(command);
+                    SINFO("Sync thread finished committing non-command");
                 }
             } else {
                 // This should only happen if the cluster becomes largely disconnected while we were in the process of
@@ -470,11 +501,13 @@ void BedrockServer::sync(const SData& args,
                     SINFO("clearing stale _upgradeDB() state variables");
                     upgradeInProgress.store(false);
                     server._suppressMultiWrite.store(false);
-                } else {
+                } else if (command) {
                     SINFO("requeueing command " << command->request.methodLine
                           << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
                           << " queued commands.");
                     syncNodeQueuedCommands.push(move(command));
+                } else {
+                    SERROR("Unexpected sync thread commit state.");
                 }
             }
         }
@@ -536,6 +569,7 @@ void BedrockServer::sync(const SData& args,
 
                 // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
                 db.waitForCheckpoint();
+                SDEBUG("Locking the _syncThreadCommitMutex to handle new command");
                 server._syncThreadCommitMutex.lock();
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
@@ -552,6 +586,7 @@ void BedrockServer::sync(const SData& args,
                     if (core.peekCommand(command)) {
 
                         // Finished with this.
+                        SDEBUG("Unlocking the _syncThreadCommitMutex after successful peekCommand");
                         server._syncThreadCommitMutex.unlock();
 
                         // This command completed in peek, respond to it appropriately, either directly or by sending it
@@ -566,11 +601,13 @@ void BedrockServer::sync(const SData& args,
                     }
 
                     // If we just started a new HTTPS request, save it for later.
+                    // WTF can this ever be reached? maybe peekCommand creates an httpsRequest?
                     if (command->httpsRequests.size()) {
                         server.waitForHTTPS(move(command));
 
                         // Move on to the next command until this one finishes.
                         core.rollback();
+                        SDEBUG("Unlocking the _syncThreadCommitMutex after new https request");
                         server._syncThreadCommitMutex.unlock();
                         continue;
                     }
@@ -597,6 +634,7 @@ void BedrockServer::sync(const SData& args,
                 } else {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
+                    SDEBUG("Unlocking the _syncThreadCommitMutex after failed processCommand");
                     server._syncThreadCommitMutex.unlock();
                     if (command->initiatingPeerID) {
                         server._finishPeerCommand(command);
@@ -629,6 +667,7 @@ void BedrockServer::sync(const SData& args,
     if (server._syncNode->commitInProgress()) {
         SWARN("Shutting down mid-commit. Rolling back.");
         db.rollback();
+        SDEBUG("Unlocking the _syncThreadCommitMutex after interrupted transaction");
         server._syncThreadCommitMutex.unlock();
     }
 
@@ -901,6 +940,7 @@ void BedrockServer::worker(const SData& args,
                 db.waitForCheckpoint();
 
                 // If we're going to force a blocking commit, we lock now.
+                SDEBUG("Getting a unique lock for the _syncThreadCommitMutex");
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
                 if (threadId == 0) {
                     uint64_t preLockTime = STimeNow();
@@ -990,6 +1030,7 @@ void BedrockServer::worker(const SData& args,
                         // to the minimum time required.
                         bool commitSuccess = false;
                         {
+                            SDEBUG("Getting a shared lock for the _syncThreadCommitMutex");
                             shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
                             if (threadId) {
                                 uint64_t preLockTime = STimeNow();
