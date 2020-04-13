@@ -30,9 +30,6 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
             newRequest.deserialize(command.request.content);
-
-            // Add a request ID if one was missing.
-            _addRequestID(newRequest);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
@@ -115,6 +112,12 @@ void BedrockServer::syncWrapper(const SData& args,
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
+
+            // Detach any plugins now
+            for (auto plugin : server.plugins) {
+                plugin.second->onDetach();
+            }
+            server._pluginsDetached = true;
             while (server._detach) {
                 if (server.shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
@@ -323,9 +326,8 @@ void BedrockServer::sync(const SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SData request = SData();
-            request["requestID"] = "xxxxxx";
-            SAUTOPREFIX(request);
+            // Set the default log prefix.
+            SAUTOPREFIX(SData());
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
@@ -583,7 +585,8 @@ void BedrockServer::sync(const SData& args,
                 // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                 // re-verify that any checks made in peek are still valid in process.
                 if (!command->httpsRequests.size()) {
-                    if (core.peekCommand(command)) {
+                    BedrockCore::RESULT result = core.peekCommand(command);
+                    if (result == BedrockCore::RESULT::COMPLETE) {
 
                         // Finished with this.
                         SDEBUG("Unlocking the _syncThreadCommitMutex after successful peekCommand");
@@ -598,6 +601,15 @@ void BedrockServer::sync(const SData& args,
                             server._reply(command);
                         }
                         continue;
+                    } else if (result == BedrockCore::RESULT::SHOULD_PROCESS) {
+                        // This is sort of the "default" case after checking if this command was complete above. If so,
+                        // we'll fall through to calling processCommand below.
+                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
+                        server._commandQueue.push(move(command));
+                        continue;
+                    } else {
+                        SERROR("peekCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
 
                     // If we just started a new HTTPS request, save it for later.
@@ -613,7 +625,8 @@ void BedrockServer::sync(const SData& args,
                     }
                 }
 
-                if (core.processCommand(command)) {
+                BedrockCore::RESULT result = core.processCommand(command);
+                if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                     // The processor says we need to commit this, so let's start that process.
                     committingCommand = true;
                     SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
@@ -631,7 +644,7 @@ void BedrockServer::sync(const SData& args,
 
                     // Don't unlock _syncThreadCommitMutex here, we'll hold the lock till the commit completes.
                     continue;
-                } else {
+                } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
                     SDEBUG("Unlocking the _syncThreadCommitMutex after failed processCommand");
@@ -641,6 +654,12 @@ void BedrockServer::sync(const SData& args,
                     } else {
                         server._reply(command);
                     }
+                } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                    SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
+                    server._commandQueue.push(move(command));
+                    continue;
+                } else {
+                    SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                 }
             } else if (nodeState == SQLiteNode::FOLLOWING) {
                 // If we're following, we just escalate directly to leader without peeking. We can only get an incomplete
@@ -953,13 +972,19 @@ void BedrockServer::worker(const SData& args,
                 // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
                 bool calledPeek = false;
-                bool peekResult = false;
+                BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
                 if (command->repeek || !command->httpsRequests.size()) {
                     peekResult = core.peekCommand(command);
                     calledPeek = true;
                 }
 
-                if (!calledPeek || !peekResult) {
+                // This drops us back to the top of the loop.
+                if (peekResult == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                    SINFO("[checkpoint] Re-trying abandoned command (from peek) in worker thread");
+                    continue;
+                }
+
+                if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
                     // until we're finished with this command.
@@ -1017,7 +1042,8 @@ void BedrockServer::worker(const SData& args,
                     }
 
                     // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    if (core.processCommand(command)) {
+                    BedrockCore::RESULT result = core.processCommand(command);
+                    if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                         // done, and we just need to respond. Before we commit, we need to grab the sync thread
                         // lock. Because the sync thread grabs an exclusive lock on this wrapping any transactions
@@ -1073,11 +1099,20 @@ void BedrockServer::worker(const SData& args,
                             SINFO("Conflict or state change committing " << command->request.methodLine
                                   << " on worker thread with " << retry << " retries remaining.");
                         }
+                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        SINFO("[checkpoint] Re-trying abandoned command (from process) in worker thread");
+                        // Add a retry so that we don't hit out conflict limit for checkpoints.
+                        ++retry;
+                    } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
+                        // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
+                        // of this block.
+                    } else {
+                        SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
                 }
 
                 // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-                // a conflict, and we'll retry.
+                // a conflict or the command was abandoned for a checkpoint, and we'll retry.
                 if (command->complete) {
                     if (command->initiatingPeerID) {
                         // Escalated command. Send it back to the peer.
@@ -1194,6 +1229,7 @@ void BedrockServer::_resetServer() {
     _shouldBackup = false;
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
+    _pluginsDetached = false;
 }
 
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
@@ -1204,7 +1240,8 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
+    _pluginsDetached(false)
 {
     _version = VERSION;
 
@@ -1542,8 +1579,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
-                    // If there's no ID for this request, let's add one.
-                    _addRequestID(request);
                     SAUTOPREFIX(request);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
@@ -1775,8 +1810,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
 }
 
 bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) {
-    if (SIEquals(command->request.methodLine, STATUS_IS_SLAVE)          ||
-        SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER)       ||
+    if (SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER)       ||
         SIEquals(command->request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command->request.methodLine, STATUS_PING)              ||
         SIEquals(command->request.methodLine, STATUS_STATUS)            ||
@@ -1823,7 +1857,7 @@ void BedrockServer::setDetach(bool detach) {
 }
 
 bool BedrockServer::isDetached() {
-    return _detach && _syncThreadComplete;
+    return _detach && _syncThreadComplete && _pluginsDetached;
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
@@ -1831,21 +1865,18 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
     SData& response = command->response;
 
     // We'll return whether or not this server is following.
-    if (SIEquals(request.methodLine, STATUS_IS_SLAVE) || SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
+    if (SIEquals(request.methodLine, STATUS_IS_FOLLOWER)) {
         // Used for liveness check for HAProxy. It's limited to HTTP style requests for it's liveness checks, so let's
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
         // HAProxy interprets 2xx/3xx level responses as alive, 4xx/5xx level responses as dead.
         SQLiteNode::State state = _replicationState.load();
-        string verbing = SIEquals(request.methodLine, STATUS_IS_FOLLOWER) ? "Following" : "Slaving";
         if (state == SQLiteNode::FOLLOWING) {
-            response.methodLine = "HTTP/1.1 200 "+ verbing;
+            response.methodLine = "HTTP/1.1 200 Following";
         } else {
-            response.methodLine = "HTTP/1.1 500 Not " + verbing + ". State=" + SQLiteNode::stateName(state);
+            response.methodLine = "HTTP/1.1 500 Not Following. State=" + SQLiteNode::stateName(state);
         }
-    }
-
-    else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
+    } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
         SQLiteNode::State state = _replicationState.load();
         if (state != SQLiteNode::FOLLOWING) {
@@ -1853,7 +1884,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            response.methodLine = "HTTP/1.1 200 Slaving";
+            response.methodLine = "HTTP/1.1 200 Following";
         }
     }
 
@@ -1873,9 +1904,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isLeader"] = state == SQLiteNode::LEADING ? "true" : "false";
-
-        // TODO: Remove this line when everything has been updated to use 'leader'.
-        content["isMaster"] = content["isLeader"];
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
@@ -2265,15 +2293,4 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         _outstandingHTTPSRequests.erase(transactionIt);
     }
     return commandsCompleted;
-}
-
-void BedrockServer::_addRequestID(SData& request) {
-    if (!request.isSet("requestID")) {
-        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        string requestID;
-        for (int i = 0; i < 6; i++) {
-            requestID += chars[SRandom::rand64() % chars.size()];
-        }
-        request["requestID"] = requestID;
-    }
 }

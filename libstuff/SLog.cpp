@@ -1,11 +1,9 @@
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace*
 
-// --------------------------------------------------------------------------
-// Global logging state; unsynchronized but shared between all threads
-int _g_SLogMask = LOG_WARNING;
+// Global logging state shared between all threads
+atomic<int> _g_SLogMask(LOG_INFO);
 
-// --------------------------------------------------------------------------
 void SLogStackTrace() {
     // Output the symbols to the log
     void* callstack[100];

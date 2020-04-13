@@ -321,7 +321,6 @@ class BedrockServer : public SQLiteServer {
     void _reply(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
-    static constexpr auto STATUS_IS_SLAVE          = "GET /status/isSlave HTTP/1.1";
     static constexpr auto STATUS_IS_FOLLOWER       = "GET /status/isFollower HTTP/1.1";
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING              = "Ping";
@@ -460,8 +459,6 @@ class BedrockServer : public SQLiteServer {
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
 
-    static void _addRequestID(SData& request);
-
     // The number of seconds to wait between forcing a command to QUORUM.
     uint64_t _quorumCheckpointSeconds;
 
@@ -471,4 +468,7 @@ class BedrockServer : public SQLiteServer {
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
+
+    // Whether or not all plugins are detached
+    bool _pluginsDetached;
 };

@@ -20,6 +20,13 @@ class SQLite {
         uint64_t _time;
     };
 
+    class checkpoint_required_error : public exception {
+      public :
+        checkpoint_required_error() {};
+        virtual ~checkpoint_required_error() {};
+        const char* what() const noexcept { return "checkpoint_required"; }
+    };
+
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
@@ -387,9 +394,11 @@ class SQLite {
     uint64_t _timeoutLimit;
     uint64_t _timeoutStart;
     uint64_t _timeoutError;
+    bool _abandonForCheckpoint;
 
-    // Check the timing of the current query and throw if the limit's exceeded.
-    void _checkTiming(const string& error);
+    // Check out various error cases that can interrupt a query.
+    // We check them all together because we need to make sure we atomically pick a single one to handle.
+    void _checkInterruptErrors(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
