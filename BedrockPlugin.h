@@ -65,6 +65,11 @@ class BedrockPlugin {
     // multiple times. The subsequent calls should be a no-op.
     virtual void onDetach() {}
 
+    // Called when a client or plugin requests that the BedrockServer re-attache to the database.
+    // If a plugin makes it's own connections to the database, it should use this function to
+    // re-open those connections if not handled elsewhere in the plugin.
+    virtual void onAttach() {}
+
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 

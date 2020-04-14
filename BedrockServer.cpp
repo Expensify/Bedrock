@@ -128,8 +128,8 @@ void BedrockServer::syncWrapper(const SData& args,
                 sleep(1);
             }
             SINFO("Bedrock server entering attached state.");
+            server._resetServer();
         }
-        server._resetServer();
         sync(args, replicationState, upgradeInProgress, leaderVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -1230,6 +1230,11 @@ void BedrockServer::_resetServer() {
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
+
+    // Tell any plugins that they can attach now
+    for (auto plugin : plugins) {
+        plugin.second->onAttach();
+    }
 }
 
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
