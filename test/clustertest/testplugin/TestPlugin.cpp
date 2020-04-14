@@ -19,7 +19,6 @@ BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
-    delete httpsManager;
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
