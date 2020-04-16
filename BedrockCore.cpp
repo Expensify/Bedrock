@@ -90,6 +90,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             _db.read("PRAGMA query_only = true;");
 
             // Peek.
+            command->reset(BedrockCommand::STAGE::PEEK);
             bool completed = command->peek(_db);
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
@@ -199,6 +200,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
+                command->reset(BedrockCommand::STAGE::PROCESS);
                 command->process(_db);
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
