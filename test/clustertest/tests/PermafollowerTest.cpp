@@ -3,13 +3,8 @@
 struct PermafollowerTest : tpunit::TestFixture {
     PermafollowerTest()
         : tpunit::TestFixture("PermafollowerTest",
-                              BEFORE_CLASS(PermafollowerTest::setup),
-                              AFTER_CLASS(PermafollowerTest::teardown),
                               TEST(PermafollowerTest::test)
                              ) { }
-
-    void setup() {}
-    void teardown() {}
 
     void test() {
         // create a 6 node cluster
