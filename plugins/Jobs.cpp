@@ -117,12 +117,6 @@ bool BedrockJobsCommand::peek(SQLite& db) {
     // We can potentially change this, so we set it here.
     mockRequest = request.isSet("mockRequest");
 
-    // Reset the content object. It could have been written by a previous call to this function that conflicted in
-    // multi-write.
-    jsonContent.clear();
-    response.clear();
-
-    // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // - GetJob( name )
         // - GetJobs( name, numResults )
@@ -388,12 +382,6 @@ void BedrockJobsCommand::process(SQLite& db) {
     // Pull out some helpful variables
     const string& requestVerb = request.getVerb();
 
-    // Reset the content object. It could have been written by a previous call to this function that conflicted in
-    // multi-write.
-    jsonContent.clear();
-    response.clear();
-
-    // ----------------------------------------------------------------------
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
         // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
         //
