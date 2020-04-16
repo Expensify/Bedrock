@@ -561,21 +561,7 @@ bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool c
     }
 
     // we timed out, let's get some debugging info
-    string stateString;
-    auto it = states.begin();
-    while (it != states.end()) {
-        stateString += *it;
-        stateString += ",";
-        it++;
-    }
-    string statusString;
-    for (auto& item : json) {
-        statusString += item.first;
-        statusString += " ";
-        statusString += item.second;
-        statusString += " ";
-    }
-    cout << "waitForStates() timed out at " << STimeNow() << " waiting for states " << stateString << ". Started waiting at " << start << " Most recent status: " << statusString << endl;
+    cout << "waitForStates() timed out at " << STimeNow() << " waiting for states " << SComposeList(states) << ". Started waiting at " << start << " Most recent status: " << SComposeJSONObject(json) << endl;
 
     return false;
 }
@@ -598,7 +584,7 @@ bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t ti
             string result = getStatusTerm(term, control);
 
             // if the value matches, return, otherwise wait
-            if (result != "" && result == testValue) {
+            if (result == testValue) {
                 return true;
             }
         } catch (...) {
