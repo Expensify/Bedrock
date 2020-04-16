@@ -364,9 +364,9 @@ void BedrockServer::sync(const SData& args,
             server._suppressMultiWrite.store(true);
         }
 
-        // If the node's not in a ready state at this point, we'll probably need to read from the network. Test
-        // conditions from transitional states and then start the main loop over. This can let us wait for logins
-        // from peers (for example).
+        // If the node's not in a ready state at this point, we'll probably need to read from the network.
+        // First, test conditions from transitional edge cases (e.g. interrupted db upgrades and queued commands)
+        // and then start the main loop over. This can let us wait for new logins from peers (for example).
         if (nodeState != SQLiteNode::LEADING &&
             nodeState != SQLiteNode::FOLLOWING   &&
             nodeState != SQLiteNode::STANDINGDOWN) {
