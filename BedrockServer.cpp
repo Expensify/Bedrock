@@ -373,13 +373,11 @@ void BedrockServer::sync(const SData& args,
 
             // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
             // from the cluster).
-            if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN)
-                     && nodeState != SQLiteNode::LEADING && nodeState != SQLiteNode::STANDINGDOWN) {
+            if (preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN) {
 
                 // If we bailed out while doing a upgradeDB, clear state
                 if (upgradeInProgress.load()) {
                     upgradeInProgress.store(false);
-                    SDEBUG("Unlocking the _syncThreadCommitMutex after interrupted _upgradeDB()");
                     server._syncThreadCommitMutex.unlock();
                     committingCommand = false;
                 }
@@ -419,7 +417,6 @@ void BedrockServer::sync(const SData& args,
             upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
                 try {
-                    SDEBUG("Locking the _syncThreadCommitMutex for _upgradeDB");
                     server._syncThreadCommitMutex.lock();
                 } catch(const std::system_error& e){
                     SWARN("Caught system_error locking _syncThreadCommitMutex for _upgradeDB(), with code "
@@ -450,7 +447,6 @@ void BedrockServer::sync(const SData& args,
             }
 
             // We're done with the commit, we unlock our mutex and decrement our counter.
-            SDEBUG("Unlocking the _syncThreadCommitMutex since no commit in progress");
             server._syncThreadCommitMutex.unlock();
             committingCommand = false;
 
@@ -469,7 +465,6 @@ void BedrockServer::sync(const SData& args,
                           << e.code() << " meaning " << e.what());
                 throw(e);
             }
-
 
             if (server._syncNode->commitSucceeded()) {
                 if (command) {
@@ -571,7 +566,6 @@ void BedrockServer::sync(const SData& args,
 
                 // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
                 db.waitForCheckpoint();
-                SDEBUG("Locking the _syncThreadCommitMutex to handle new command");
                 server._syncThreadCommitMutex.lock();
 
                 // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
@@ -589,7 +583,6 @@ void BedrockServer::sync(const SData& args,
                     if (result == BedrockCore::RESULT::COMPLETE) {
 
                         // Finished with this.
-                        SDEBUG("Unlocking the _syncThreadCommitMutex after successful peekCommand");
                         server._syncThreadCommitMutex.unlock();
 
                         // This command completed in peek, respond to it appropriately, either directly or by sending it
@@ -613,13 +606,11 @@ void BedrockServer::sync(const SData& args,
                     }
 
                     // If we just started a new HTTPS request, save it for later.
-                    // WTF can this ever be reached? maybe peekCommand creates an httpsRequest?
                     if (command->httpsRequests.size()) {
                         server.waitForHTTPS(move(command));
 
                         // Move on to the next command until this one finishes.
                         core.rollback();
-                        SDEBUG("Unlocking the _syncThreadCommitMutex after new https request");
                         server._syncThreadCommitMutex.unlock();
                         continue;
                     }
@@ -647,7 +638,6 @@ void BedrockServer::sync(const SData& args,
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                     // to do). We'll just respond.
-                    SDEBUG("Unlocking the _syncThreadCommitMutex after failed processCommand");
                     server._syncThreadCommitMutex.unlock();
                     if (command->initiatingPeerID) {
                         server._finishPeerCommand(command);
@@ -686,7 +676,6 @@ void BedrockServer::sync(const SData& args,
     if (server._syncNode->commitInProgress()) {
         SWARN("Shutting down mid-commit. Rolling back.");
         db.rollback();
-        SDEBUG("Unlocking the _syncThreadCommitMutex after interrupted transaction");
         server._syncThreadCommitMutex.unlock();
     }
 
@@ -959,7 +948,6 @@ void BedrockServer::worker(const SData& args,
                 db.waitForCheckpoint();
 
                 // If we're going to force a blocking commit, we lock now.
-                SDEBUG("Getting a unique lock for the _syncThreadCommitMutex");
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
                 if (threadId == 0) {
                     uint64_t preLockTime = STimeNow();
@@ -1056,7 +1044,6 @@ void BedrockServer::worker(const SData& args,
                         // to the minimum time required.
                         bool commitSuccess = false;
                         {
-                            SDEBUG("Getting a shared lock for the _syncThreadCommitMutex");
                             shared_lock<decltype(server._syncThreadCommitMutex)> lock1(server._syncThreadCommitMutex, defer_lock);
                             if (threadId) {
                                 uint64_t preLockTime = STimeNow();
