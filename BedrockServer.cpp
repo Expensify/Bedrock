@@ -416,13 +416,7 @@ void BedrockServer::sync(const SData& args,
             // (for instance, adding an index).
             upgradeInProgress.store(true);
             if (server._upgradeDB(db)) {
-                try {
-                    server._syncThreadCommitMutex.lock();
-                } catch(const std::system_error& e){
-                    SWARN("Caught system_error locking _syncThreadCommitMutex for _upgradeDB(), with code "
-                              << e.code() << " meaning " << e.what());
-                    throw(e);
-                }
+                server._syncThreadCommitMutex.lock();
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
@@ -451,19 +445,13 @@ void BedrockServer::sync(const SData& args,
             committingCommand = false;
 
             // If we were upgrading, there's no response to send, we're just done.
-            try {
-                if (upgradeInProgress.load()) {
-                    upgradeInProgress.store(false);
-                    server._suppressMultiWrite.store(false);
-                    if (!server._syncNode->commitSucceeded()) {
-                        SWARN("Failed to commit DB Upgrade. Trying again from the top.");
-                    }
-                    continue;
+            if (upgradeInProgress.load()) {
+                upgradeInProgress.store(false);
+                server._suppressMultiWrite.store(false);
+                if (!server._syncNode->commitSucceeded()) {
+                    SWARN("Failed to commit DB Upgrade. Trying again from the top.");
                 }
-            } catch(const std::system_error& e){
-                SWARN("Caught system_error testing upgradeInProgress, with code "
-                          << e.code() << " meaning " << e.what());
-                throw(e);
+                continue;
             }
 
             if (server._syncNode->commitSucceeded()) {
