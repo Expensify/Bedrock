@@ -3,13 +3,8 @@
 struct MultipleLeaderSyncTest : tpunit::TestFixture {
     MultipleLeaderSyncTest()
         : tpunit::TestFixture("MultipleLeaderSyncTest",
-                              BEFORE_CLASS(MultipleLeaderSyncTest::setup),
-                              AFTER_CLASS(MultipleLeaderSyncTest::teardown),
                               TEST(MultipleLeaderSyncTest::test)
                              ) { }
-
-    void setup() {}
-    void teardown() {}
 
     // Create a bunch of trivial write commands.
     void runTrivialWrites(int writeCount, BedrockTester& node) {
