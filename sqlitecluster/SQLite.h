@@ -45,7 +45,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID, const string& synchronous = "", int64_t mmapSizeGB = 0);
+           int maxRequiredJournalTableID, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
     ~SQLite();
 
     // Returns the canonicalized filename for this database
@@ -435,4 +435,9 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery;
+
+    bool _pageLoggingEnabled;
+    static atomic<int64_t> _transactionAttemptCount;
+    static mutex _pageLogMutex;
+    int64_t _currentTransactionAttemptCount;
 };
