@@ -112,6 +112,13 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return true;
 }
 
+void BedrockCommand::reset(BedrockCommand::STAGE stage) {
+    if (stage == STAGE::PEEK) {
+        jsonContent.clear();
+        response.clear();
+    }
+}
+
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t peekTotal = 0;
     uint64_t processTotal = 0;

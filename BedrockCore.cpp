@@ -8,7 +8,7 @@ SQLiteCore(db),
 _server(server)
 { }
 
-// RAII-style mechanism for automatically setting and unsetting query rewriting 
+// RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
   public:
     AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
@@ -90,6 +90,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             _db.read("PRAGMA query_only = true;");
 
             // Peek.
+            command->reset(BedrockCommand::STAGE::PEEK);
             bool completed = command->peek(_db);
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
@@ -153,7 +154,14 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     _db.resetTiming();
 
     // Reset, we can write now.
-    _db.read("PRAGMA query_only = false;");
+    while (true) {
+        try {
+            _db.read("PRAGMA query_only = false;");
+            break;
+        } catch (const SQLite::checkpoint_required_error& e) {
+            // just try again
+        }
+    }
 
     // Done.
     return returnValue;
@@ -192,6 +200,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
+                command->reset(BedrockCommand::STAGE::PROCESS);
                 command->process(_db);
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
@@ -199,8 +208,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
-            } catch (const SQLite::checkpoint_required_error& e) {
-                SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
             }
         }
 
@@ -256,7 +263,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
     // Done, return whether or not we need the parent to commit our transaction.
     command->complete = !needsCommit;
-    
+
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 

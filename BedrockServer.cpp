@@ -30,9 +30,6 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
             newRequest.deserialize(command.request.content);
-
-            // Add a request ID if one was missing.
-            _addRequestID(newRequest);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
@@ -115,6 +112,12 @@ void BedrockServer::syncWrapper(const SData& args,
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
             SINFO("Bedrock server entering detached state.");
             server._shutdownState.store(RUNNING);
+
+            // Detach any plugins now
+            for (auto plugin : server.plugins) {
+                plugin.second->onDetach();
+            }
+            server._pluginsDetached = true;
             while (server._detach) {
                 if (server.shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
@@ -125,8 +128,8 @@ void BedrockServer::syncWrapper(const SData& args,
                 sleep(1);
             }
             SINFO("Bedrock server entering attached state.");
+            server._resetServer();
         }
-        server._resetServer();
         sync(args, replicationState, upgradeInProgress, leaderVersion, syncNodeQueuedCommands, server);
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
@@ -323,9 +326,8 @@ void BedrockServer::sync(const SData& args,
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
-            SData request = SData();
-            request["requestID"] = "xxxxxx";
-            SAUTOPREFIX(request);
+            // Set the default log prefix.
+            SAUTOPREFIX(SData());
 
             // Process any activity in our plugins.
             server._postPollPlugins(fdm, nextActivity);
@@ -1175,6 +1177,12 @@ void BedrockServer::_resetServer() {
     _shouldBackup = false;
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
+    _pluginsDetached = false;
+
+    // Tell any plugins that they can attach now
+    for (auto plugin : plugins) {
+        plugin.second->onAttach();
+    }
 }
 
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
@@ -1185,7 +1193,8 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _suppressMultiWrite(true), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow())
+    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
+    _pluginsDetached(false)
 {
     _version = VERSION;
 
@@ -1523,8 +1532,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
-                    // If there's no ID for this request, let's add one.
-                    _addRequestID(request);
                     SAUTOPREFIX(request);
                     deserializedRequests++;
                     // Either shut down the socket or store it so we can eventually sync out the response.
@@ -1803,7 +1810,7 @@ void BedrockServer::setDetach(bool detach) {
 }
 
 bool BedrockServer::isDetached() {
-    return _detach && _syncThreadComplete;
+    return _detach && _syncThreadComplete && _pluginsDetached;
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
@@ -2238,15 +2245,4 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         _outstandingHTTPSRequests.erase(transactionIt);
     }
     return commandsCompleted;
-}
-
-void BedrockServer::_addRequestID(SData& request) {
-    if (!request.isSet("requestID")) {
-        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        string requestID;
-        for (int i = 0; i < 6; i++) {
-            requestID += chars[SRandom::rand64() % chars.size()];
-        }
-        request["requestID"] = requestID;
-    }
 }

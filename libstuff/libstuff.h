@@ -78,12 +78,6 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
                                         << ")");                                                                       \
         }                                                                                                              \
     } while (false)
-#define SASSERTTHROW(condition, uuid)                                                                                  \
-    do {                                                                                                               \
-        if (!(condition)) {                                                                                            \
-            throw AssertionFailedException(#condition, uuid);                                                          \
-        }                                                                                                              \
-    } while (false)
 
 // --------------------------------------------------------------------------
 // A very simple name/value pair table with case-insensitive name matching
@@ -256,7 +250,7 @@ void STerminateHandler(void);
 // Log stuff
 // --------------------------------------------------------------------------
 // Log level management
-extern int _g_SLogMask;
+extern atomic<int> _g_SLogMask;
 inline void SLogLevel(int level) {
     _g_SLogMask = LOG_UPTO(level);
     setlogmask(_g_SLogMask);
@@ -265,46 +259,33 @@ inline void SLogLevel(int level) {
 // Stack trace logging
 void SLogStackTrace();
 
-#define SWHEREAMI                                                                                                      \
-    SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName \
-                   + "] "
-
-// Simply logs a stream to the debugger
-// **NOTE: rsyslog default max line size is 8k bytes.  We split on 7k byte bounderies in order to fit the
-//         syslog line prefix and the expanded \r\n to #015#012
-// **FIXME: Everything submitted to syslog as WARN; doesn't show otherwise
-#define SSYSLOG(_PRI_, _MSG_)                                                                                          \
-    do {                                                                                                               \
-        if (_g_SLogMask & (1 << (_PRI_))) {                                                                            \
-            ostringstream __out;                                                                                       \
-            __out << _MSG_ << endl;                                                                                    \
-            const string& __s = __out.str();                                                                           \
-            for (int __i = 0; __i < (int)__s.size(); __i += 7168)                                                      \
-                syslog(LOG_WARNING, "%s", (SWHEREAMI + __s.substr(__i, 7168).c_str()).c_str());                        \
-        }                                                                                                              \
+// **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
+#define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
+#define SSYSLOG(_PRI_, _MSG_)                                              \
+    do {                                                                   \
+        if (_g_SLogMask & (1 << (_PRI_))) {                                \
+            ostringstream __out;                                           \
+            __out << _MSG_ << endl;                                        \
+            const string s = __out.str();                                  \
+            const string prefix = SWHEREAMI;                               \
+            for (size_t i = 0; i < s.size(); i += 7168) {                  \
+                syslog(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+            }                                                              \
+        }                                                                  \
     } while (false)
 
 #define SLOGPREFIX ""
-#define SLOG(_MSG_) SSYSLOG(LOG_DEBUG, SLOGPREFIX << _MSG_)
 #define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
 #define SINFO(_MSG_) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
-#define SHMMM(_MSG_) SSYSLOG(LOG_WARNING, "[hmmm] " << SLOGPREFIX << _MSG_)
+#define SHMMM(_MSG_) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_)
 #define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
-#define SALERT(_MSG_) SSYSLOG(LOG_WARNING, "[alrt] " << SLOGPREFIX << _MSG_)
-#define SERROR(_MSG_)                                                                                                  \
-    do {                                                                                                               \
-        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_);                                               \
-        SLogStackTrace();                                                                                              \
-        fflush(stdout);                                                                                                \
-        abort();                                                                                                       \
+#define SALERT(_MSG_) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_)
+#define SERROR(_MSG_)                                       \
+    do {                                                    \
+        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_); \
+        SLogStackTrace();                                   \
+        abort();                                            \
     } while (false)
-#define STRACE() SLOG("[trac] " << __FILE__ << "(" << __LINE__ << ") :" << __FUNCTION__)
-
-// Convenience class for maintaining connections with a mesh of peers
-#define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
-#define PINFO(_MSG_) SINFO("->{" << peer->name << "} " << _MSG_)
-#define PHMMM(_MSG_) SHMMM("->{" << peer->name << "} " << _MSG_)
-#define PWARN(_MSG_) SWARN("->{" << peer->name << "} " << _MSG_)
 
 // --------------------------------------------------------------------------
 // Thread stuff
@@ -323,7 +304,8 @@ struct SAutoThreadPrefix {
     SAutoThreadPrefix(const SData& request) {
         // Retain the old prefix
         oldPrefix = SThreadLogPrefix;
-        SLogSetThreadPrefix(request["requestID"] + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
+        const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
+        SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
     }
     ~SAutoThreadPrefix() { SLogSetThreadPrefix(oldPrefix); }
 

@@ -4,7 +4,7 @@ env:
 addons:
     apt:
         sources:
-            - ubuntu-toolchain-r-test
+            - sourceline: "ppa:ubuntu-toolchain-r/test"
         packages:
             - gcc-9
             - g++-9
@@ -14,3 +14,14 @@ notifications:
 before_install:
 script: ./travis.sh
 dist: xenial
+deploy:
+    provider: releases
+    # `api_key` is an encrypted oauth token for rafecolton. See https://docs.travis-ci.com/user/deployment/releases
+    api_key:
+        secure: jW0XqsVQ7TH3qtgPoDIV6YbcH0RITL/oAnCNXhUHnlr2f4vstIN7Izpef4MTrGFf6QszlEYmSVKGtpNbpiH+KpVqc8UTW1oGjh5b3FHShGvLggwe1GtApVyN21tW9jsScTNjs3nu2kXjPSz9UfLSNi/seRhSH8+TqStG3B31ItyJQmhs4YOX+uCKQLHxCjQMeAUz7BHhvWWfmd80gmjioX9D8hXfKIPTVDgBRlC0asnSXuILicM6TSFDDhtCIvKHnH7MIF/M+0J76OYPIeSK6KkYjCDMO1Ik9E6V7eDWCFIDq5zKarOuMktOKZ9KzMEDWKK+3zxVg4VjMyHTPDJeKaDzRRcyx2Dlk1fSX3gRJfcrbTeg3lrBwdlLbYMNo3Y2sJYhIp0sn4ZTDTSmrD25qVIg3pRaXj1PSZju5PU8SZN8b1xFyPFJJPhADSuD2gQTU88hBFA12d1/2UElStDt3UnyQlTZSmm8DeJ3HtDuQ3W2e4E64fzeXDW85SxBx3ecdSL5J0gBhQIcoHg6FuxTmXOOB71nTYmJb8OVZzVlFYiWIkIm0FlPTY8QGqUXhbScp4D/mLqTWlnllLsTcVKCe8lwzRBpFMkfbLWQy4EAvqjpAAmcWxHfTH39ORrO/J5ipZX+LQAAPwF8qDoedBYsZhUf4Duj1c/U++PNbF3mDM4=
+    file:
+        - bedrock
+    skip_cleanup: true
+    prerelease: true
+    on:
+        tags: true

@@ -19,7 +19,6 @@ BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
-    delete httpsManager;
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
@@ -56,6 +55,14 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
   urls(request["urls"])
 {
 }
+
+void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
+    if (stage == STAGE::PEEK) {
+        // We don't reset `pendingResult`, `urls`, or `chainedHTTPResponseContent` because they preserve state across
+        // multiple `repeek` calls.
+    }
+    BedrockCommand::reset(stage);
+};
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
     return shouldPreventAttach;
@@ -186,7 +193,7 @@ bool TestPluginCommand::peek(SQLite& db) {
                 STHROW("Pending Result flag set but no requests!");
             }
             // There was a previous request, let's record it's result.
-            response.content += httpsRequests.back()->fullRequest["Host"] + ":" + to_string(httpsRequests.back()->response) + "\n";
+            chainedHTTPResponseContent += httpsRequests.back()->fullRequest["Host"] + ":" + to_string(httpsRequests.back()->response) + "\n";
         }
         list<string> remainingURLs = SParseList(urls);
         if (remainingURLs.size()) {
@@ -321,7 +328,7 @@ void TestPluginCommand::process(SQLite& db) {
         return;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Note that we eventually got to process, though we write nothing to the DB.
-        response.content += "PROCESSED\n";
+        response.content = chainedHTTPResponseContent + "PROCESSED\n";
     }
 }
 

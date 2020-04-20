@@ -211,6 +211,11 @@ class BedrockServer : public SQLiteServer {
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
+    // See if there's a plugin that can turn this request into a command.
+    // If not, we'll create a command that returns `430 Unrecognized command`.
+    unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
+    unique_ptr<BedrockCommand> getCommandFromPlugins(SQLiteCommand&& baseCommand);
+
     // If you want to exit from the detached state, set this to true and the server will exit after the next loop.
     // It has no effect when not detached (except that it will cause the server to exit immediately upon becoming
     // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.
@@ -351,11 +356,6 @@ class BedrockServer : public SQLiteServer {
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
-    // See if there's a plugin that can turn this request into a command.
-    // If not, we'll create a command that returns `430 Unrecognized command`.
-    unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
-    unique_ptr<BedrockCommand> getCommandFromPlugins(SQLiteCommand&& baseCommand);
-
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
     // depends on a future commit if we're a follower that's behind leader, and a client makes two requests, one to a node
     // more current than ourselves, and a following request to us. We'll move these commands to this special map until
@@ -459,8 +459,6 @@ class BedrockServer : public SQLiteServer {
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
 
-    static void _addRequestID(SData& request);
-
     // The number of seconds to wait between forcing a command to QUORUM.
     uint64_t _quorumCheckpointSeconds;
 
@@ -470,4 +468,7 @@ class BedrockServer : public SQLiteServer {
     // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
     // that just needs to be returned to a peer.
     BedrockTimeoutCommandQueue _completedCommands;
+
+    // Whether or not all plugins are detached
+    bool _pluginsDetached;
 };
