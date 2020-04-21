@@ -26,7 +26,8 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
-    creationTime(STimeNow())
+    creationTime(STimeNow()),
+    escalated(false)
 {
     // Initialize the consistency, if supplied.
     if (request.isSet("writeConsistency")) {

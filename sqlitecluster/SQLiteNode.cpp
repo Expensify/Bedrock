@@ -247,6 +247,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     SData escalate("ESCALATE");
     escalate["ID"] = command.id;
     escalate.content = command.request.serialize();
+    escalated = true;
 
     // Store the command as escalated, unless we intend to forget about it anyway.
     if (forget) {
