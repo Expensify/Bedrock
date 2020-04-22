@@ -1,6 +1,8 @@
+language: c++
 sudo: false
 env:
-    - GXX=g++-9 CC=gcc-9
+    - BUILD_PROCESS=make GXX=g++-9 CC=gcc-9
+    - BUILD_PROCESS=cmake CXX=g++-9 CC=gcc-9
 addons:
     apt:
         sources:
@@ -11,6 +13,9 @@ addons:
 notifications:
     email:
         on_success: never
+cache:
+    directories:
+        - ${HOME}/.local
 before_install:
 script: ./travis.sh
 dist: xenial
