@@ -52,7 +52,7 @@ struct TimingTest : tpunit::TestFixture {
             uint64_t processTime = SToUInt64(result["processTime"]);
             uint64_t totalTime = SToUInt64(result["totalTime"]);
 
-            // Only leader is expected to have these set.
+            // Leader should have peek and process times, followers only peek.
             if (i == 0) {
                 if (peekTime <= 0 || processTime <= 0) {
                     cout << "peekTime: " << peekTime << endl;
@@ -63,7 +63,7 @@ struct TimingTest : tpunit::TestFixture {
                 ASSERT_GREATER_THAN(peekTime, 0);
                 ASSERT_GREATER_THAN(processTime, 0);
             } else {
-                ASSERT_EQUAL(peekTime, 0);
+                ASSERT_GREATER_THAN(peekTime, 0);
                 ASSERT_EQUAL(processTime, 0);
             }
 
