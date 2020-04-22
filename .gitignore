@@ -5,6 +5,7 @@ test/clustertest/testplugin/testplugin.so
 test/bedrocktest_*
 test/clustertest/cluster_node_?_bedrocktest*
 bedrock
+build
 .build
 libbedrock.a
 libstuff.a
