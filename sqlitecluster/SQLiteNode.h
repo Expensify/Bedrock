@@ -75,7 +75,7 @@ class SQLiteNode : public STCPNode {
     // takes ownership of the command until it receives a response from the follower. When the command completes, it will
     // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
     // If the 'forget' flag is set, we will not expect a response from leader for this command.
-    void escalateCommand(SQLiteCommand&& command, bool forget = false);
+    void escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget = false);
 
     // This takes a completed command and sends the response back to the originating peer. If we're not the leader
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
@@ -185,7 +185,7 @@ class SQLiteNode : public STCPNode {
 
     // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
     // following map of commandID to Command until the follower responds.
-    map<string, SQLiteCommand> _escalatedCommandMap;
+    map<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
