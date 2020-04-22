@@ -41,7 +41,7 @@ clean:
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 # We're going to build a shared library from every CPP file in this directory or it's children.
-CPP = TestPlugin.cpp
+CPP = TestPlugin.cpp ../../lib/BedrockTester.cpp
 OBJ = $(CPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 DEP = $(CPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 

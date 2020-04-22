@@ -1,4 +1,5 @@
 #include "TestPlugin.h"
+#include "../../lib/BedrockTester.h"
 
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
@@ -24,6 +25,7 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
     static set<string> supportedCommands = {
         "testcommand",
+        "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
         "getbroadcasttimeouts",
@@ -54,6 +56,32 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
   pendingResult(false),
   urls(request["urls"])
 {
+}
+
+TestPluginCommand::~TestPluginCommand()
+{
+    if (request.methodLine == "testescalate") {
+        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string statString = "Destroying testescalate (" + serverState + ")\n";
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+
+        if (serverState == "FOLLOWER") {
+            // This should be the last thing that happens, so we can verify our state here.
+            string fileContents = SFileLoad(request["tempFile"]);
+            SFileDelete(request["tempFile"]);
+
+            // Verifiy this all happened in the right order.
+            if (fileContents != "Peeking testescalate (FOLLOWER)\n"
+                                "Peeking testescalate (LEADER)\n"
+                                "Processing testescalate (LEADER)\n"
+                                "Destroying testescalate (LEADER)\n"
+                                "Destroying testescalate (FOLLOWER)\n") {
+                cout << "Crashing the server on purpose, execution order is wrong: " << endl;
+                cout << fileContents;
+                SASSERT(false);
+            }
+        }
+    }
 }
 
 void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
@@ -217,6 +245,19 @@ bool TestPluginCommand::peek(SQLite& db) {
             // case
             return false;
         }
+    } else if (request.methodLine == "testescalate") {
+        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string statString = "Peeking testescalate (" + serverState + ")\n";
+        if (serverState == "FOLLOWER") {
+            // When peeking on a follower (which should be the first thing we do), let's create the temp file.
+            string tempFile = BedrockTester::getTempFileName("escalate_test");
+            const_cast<SData&>(request)["tempFile"] = tempFile;
+            SFileSave(tempFile, statString);
+        } else {
+            // And on leader, append to it.
+            SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        }
+        return false;
     }
 
     return false;
@@ -329,6 +370,11 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Note that we eventually got to process, though we write nothing to the DB.
         response.content = chainedHTTPResponseContent + "PROCESSED\n";
+    } else if (request.methodLine == "testescalate") {
+        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string statString = "Processing testescalate (" + serverState + ")\n";
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        return;
     }
 }
 
