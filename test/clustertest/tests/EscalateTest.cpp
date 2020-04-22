@@ -3,6 +3,10 @@
 struct EscalateTest : tpunit::TestFixture {
     EscalateTest() : tpunit::TestFixture("EscalateTest", TEST(EscalateTest::test)) { }
 
+    // NOTE: This test relies on two processes (the leader and follower Bedrock nodes) both writing to the same temp
+    // file at potentially the same time. It's not impossible that these two writes step on each other and this test
+    // fails because the file ends up in a corrupt state. If we see intermittent failures in this test, we may want to
+    // add some sort of file locking to the reading/writing from this file.
     void test()
     {
         BedrockClusterTester tester;
