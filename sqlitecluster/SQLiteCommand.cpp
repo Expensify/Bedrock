@@ -54,5 +54,6 @@ SQLiteCommand::SQLiteCommand() :
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
-    creationTime(STimeNow())
+    creationTime(STimeNow()),
+    escalated(false)
 { }
