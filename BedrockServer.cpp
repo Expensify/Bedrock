@@ -10,10 +10,14 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
+    acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
+}
+
+void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
-    if (SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
+    if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
         SData request;
-        request.deserialize(command.request.content);
+        request.deserialize(command->request.content);
 
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
@@ -27,14 +31,23 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
         unique_ptr<BedrockCommand> newCommand(nullptr);
-        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
+        if (SIEquals(command->request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
-            newRequest.deserialize(command.request.content);
+            newRequest.deserialize(command->request.content);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
         } else {
-            newCommand = getCommandFromPlugins(move(command));
+            // If we already have an existing BedrockCommand (as opposed to a base class SQLiteCommand) this is
+            // something that we've already constructed (most likely, a response from leader), so no need to ask the
+            // plugins to build it over again from scratch (this also preserves the existing state of the command).
+            BedrockCommand* isABedrockCommand = dynamic_cast<BedrockCommand*>(command.get());
+            if (isABedrockCommand) {
+                newCommand = unique_ptr<BedrockCommand>(isABedrockCommand);
+                command.release();
+            } else {
+                newCommand = getCommandFromPlugins(move(command));
+            }
             SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
         }
 
@@ -618,7 +631,7 @@ void BedrockServer::sync(const SData& args,
                 // bother peeking it again.
                 auto it = command->request.nameValueMap.find("Connection");
                 bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
-                server._syncNode->escalateCommand(move(*command), forget);
+                server._syncNode->escalateCommand(move(command), forget);
                 if (forget) {
                     // Command is no longer in progress.
                 }
@@ -1665,18 +1678,23 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 }
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
-    return getCommandFromPlugins(SQLiteCommand(move(request)));
+    return getCommandFromPlugins(make_unique<SQLiteCommand>(move(request)));
 }
 
-unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand) {
     for (auto pair : plugins) {
-        auto command = pair.second->getCommand(move(baseCommand));
+
+        // This is a bit weird to avoid changing this signature in all the plugins. It would be more straightforward if
+        // the plugins just accepted a `unique_ptr<SQLiteCommand>&&`, but this still works.
+        auto command = pair.second->getCommand(move(*baseCommand));
         if (command) {
             SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
             return command;
         }
     }
-    return make_unique<BedrockCommand>(move(baseCommand), nullptr);
+
+    // Same weirdness as above, but for default commands.
+    return make_unique<BedrockCommand>(move(*baseCommand), nullptr);
 }
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
