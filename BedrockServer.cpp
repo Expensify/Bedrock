@@ -364,11 +364,47 @@ void BedrockServer::sync(const SData& args,
             server._suppressMultiWrite.store(true);
         }
 
-        // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
-        // main loop over. This can let us wait for logins from peers (for example).
+        // If the node's not in a ready state at this point, we'll probably need to read from the network.
+        // First, test conditions from transitional edge cases (e.g. interrupted db upgrades and queued commands)
+        // and then start the main loop over. This can let us wait for new logins from peers (for example).
         if (nodeState != SQLiteNode::LEADING &&
             nodeState != SQLiteNode::FOLLOWING   &&
             nodeState != SQLiteNode::STANDINGDOWN) {
+
+            // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
+            // from the cluster).
+            if (preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN) {
+
+                // If we bailed out while doing a upgradeDB, clear state
+                if (upgradeInProgress.load()) {
+                    upgradeInProgress.store(false);
+                    server._syncThreadCommitMutex.unlock();
+                    committingCommand = false;
+                }
+
+                // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
+                // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
+                // processed here, or escalated to the new leader. Commands initiated on followers just get dropped,
+                // they will need to be re-escalated, potentially to a different leader.
+                int requeued = 0;
+                int dropped = 0;
+                try {
+                    while (true) {
+                        // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                        command = unique_ptr<BedrockCommand>(nullptr);
+                        command = syncNodeQueuedCommands.pop();
+                        if (command->initiatingClientID) {
+                            // This one came from a local client, so we can save it for later.
+                            server._commandQueue.push(move(command));
+                        }
+                    }
+                } catch (const out_of_range& e) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+
+                    // command will be null here, we should be able to restart the loop.
+                    continue;
+                }
+            }
             continue;
         }
 
@@ -384,6 +420,7 @@ void BedrockServer::sync(const SData& args,
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
+                SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -392,32 +429,6 @@ void BedrockServer::sync(const SData& args,
                 // the upgradeInProgress flag.
                 upgradeInProgress.store(false);
                 server._suppressMultiWrite.store(false);
-            }
-        } else if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN)
-                   && nodeState == SQLiteNode::SEARCHING) {
-            // If we were LEADING, but now we're searching, then something's gone wrong (perhaps we got disconnected
-            // from the cluster). We should give up an any commands, and let them be re-escalated. If commands were
-            // initiated locally, we can just re-queue them, they will get re-checked once things clear up, and then
-            // they'll get processed here, or escalated to the new leader.
-            // Commands initiated on followers just get dropped, they will need to be re-escalated, potentially to a
-            // different leader.
-            int requeued = 0;
-            int dropped = 0;
-            try {
-                while (true) {
-                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = unique_ptr<BedrockCommand>(nullptr);
-                    command = syncNodeQueuedCommands.pop();
-                    if (command->initiatingClientID) {
-                        // This one came from a local client, so we can save it for later.
-                        server._commandQueue.push(move(command));
-                    }
-                }
-            } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
-
-                // command will be null here, we should be able to restart the loop.
-                continue;
             }
         }
 
@@ -444,17 +455,21 @@ void BedrockServer::sync(const SData& args,
             }
 
             if (server._syncNode->commitSucceeded()) {
-                SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
+                if (command) {
+                    SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
-                // Otherwise, save the commit count, mark this command as complete, and reply.
-                command->response["commitCount"] = to_string(db.getCommitCount());
-                command->complete = true;
-                if (command->initiatingPeerID) {
-                    // This is a command that came from a peer. Have the sync node send the response back to the peer.
-                    server._finishPeerCommand(command);
+                    // Otherwise, save the commit count, mark this command as complete, and reply.
+                    command->response["commitCount"] = to_string(db.getCommitCount());
+                    command->complete = true;
+                    if (command->initiatingPeerID) {
+                        // This is a command that came from a peer. Have the sync node send the response back to the peer.
+                        server._finishPeerCommand(command);
+                    } else {
+                        // The only other option is this came from a client, so respond via the server.
+                        server._reply(command);
+                    }
                 } else {
-                    // The only other option is this came from a client, so respond via the server.
-                    server._reply(command);
+                    SINFO("Sync thread finished committing non-command");
                 }
             } else {
                 // This should only happen if the cluster becomes largely disconnected while we were in the process of
@@ -463,10 +478,22 @@ void BedrockServer::sync(const SData& args,
                 // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
                 // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
                 // probably indicates a bug (or a follower disk failure).
-                SINFO("requeueing command " << command->request.methodLine
-                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
-                      << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+
+                // While _upgradeDB isn't a normal command, it is still run as a QUORUM transaction, and so it can
+                // still fail if peers reject it (for example if run on low priority follower node that becomes
+                // leader during cluster instability) In that case, we will fail an upgradeDB distributed transaction, and we need to reset that state.
+                if (upgradeInProgress.load()) {
+                    SINFO("clearing stale _upgradeDB() state variables");
+                    upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
+                } else if (command) {
+                    SINFO("requeueing command " << command->request.methodLine
+                          << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                          << " queued commands.");
+                    syncNodeQueuedCommands.push(move(command));
+                } else {
+                    SERROR("Unexpected sync thread commit state.");
+                }
             }
         }
 
@@ -2045,6 +2072,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
     }
+    SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
 }
 
