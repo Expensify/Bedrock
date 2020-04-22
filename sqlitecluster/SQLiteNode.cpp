@@ -42,7 +42,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
       _handledCommitCount(0)
     {
     SASSERT(priority >= 0);
-    _priority = priority;
+    _originalPriority = priority;
+    _priority = -1;
     _state = SEARCHING;
     _syncPeer = nullptr;
     _leadPeer = nullptr;
@@ -537,6 +538,8 @@ bool SQLiteNode::update() {
         SASSERT(highestPriorityPeer);
         SASSERT(freshestPeer);
 
+        SDEBUG("Dumping evaluated cluster state: numLoggedInFullPeers=" << numLoggedInFullPeers << " freshestPeer=" << freshestPeer->name << " highestPriorityPeer=" << highestPriorityPeer->name << " currentLeader=" << (currentLeader ? currentLeader->name : "none"));
+
         // If there is already a leader that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
@@ -561,14 +564,13 @@ bool SQLiteNode::update() {
         }
 
         // No leader and we're in sync, perhaps everybody is waiting for us
-        // to stand up?  If we're higher than the highest priority, and are
-        // connected to enough full peers to achieve quorum we should be
-        // leader.
+        // to stand up?  If we're higher than the highest priority, are using 
+        // a real priority and are not a permafollower, and are connected to 
+        // enough full peers to achieve quorum, we should be leader.
         if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > highestPriorityPeer->calc("Priority")) {
+            _priority > 0 && _priority > highestPriorityPeer->calc("Priority")) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
-            SASSERT(_priority > 0); // Permafollower should never stand up
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
             for (auto peer : peerList) {
                 peer->erase("StandupResponse");
@@ -577,7 +579,7 @@ bool SQLiteNode::update() {
             return true; // Re-update
         }
 
-        // Keep waiting
+        // Otherwise, Keep waiting
         SDEBUG("Connected to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
                                << " with permafollowers), priority=" << _priority);
         break;
@@ -1036,6 +1038,7 @@ bool SQLiteNode::update() {
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     SASSERT(peer);
     SASSERTWARN(!message.empty());
+    SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
     // Every message broadcasts the current state of the node
     if (!message.isSet("CommitCount")) {
         STHROW("missing CommitCount");
@@ -1063,14 +1066,15 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!message.isSet("Version")) {
             STHROW("missing Version");
         }
-        if (peer->params["Permafollower"] == "true" && message.calc("Priority")) {
+        if (peer->params["Permafollower"] == "true" && message["Permafollower"] != "true") {
             STHROW("you're supposed to be a 0-priority permafollower");
         }
-        if (peer->params["Permafollower"] != "true" && !message.calc("Priority")) {
+        if (peer->params["Permafollower"] != "true" && message["Permafollower"] == "true") {
             STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
-        // It's an error to have to peers configured with the same priority, except 0.
-        SASSERT(!_priority || message.calc("Priority") != _priority);
+
+        // It's an error to have to peers configured with the same priority, except 0 and -1
+        SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
         peer->set("Priority", message["Priority"]);
@@ -1611,6 +1615,7 @@ void SQLiteNode::_onConnect(Peer* peer) {
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
+    login["Permafollower"] = _originalPriority ? "false" : "true";
     _sendToPeer(peer, login);
 }
 
@@ -1839,6 +1844,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                     "Switching from '" << stateName(_state) << "' to '" << stateName(newState)
                                        << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
+        } else if (newState == WAITING) {
+            // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
+            _priority = _originalPriority;
         }
 
         // Send to everyone we're connected to, whether or not

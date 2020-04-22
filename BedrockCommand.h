@@ -23,6 +23,11 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
     };
 
+    enum class STAGE {
+        PEEK,
+        PROCESS
+    };
+
     // Times in *milliseconds*.
     static const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
@@ -43,6 +48,14 @@ class BedrockCommand : public SQLiteCommand {
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
     virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
+
+    // Reset the command after a commit conflict. This is called both before `peek` and `process`. Typically, we don't
+    // want to reset anything in `process`, because we may have specifically stored values there in `peek` that we want
+    // to access later. However, we provide this functionality to allow commands that make HTTPS requests to handle
+    // this extra case, as we run `peek` and `process` as separate transactions for these commands.
+    // The base class version of this does *not* change anything with regards to HTTPS requests. These are preserved
+    // across `reset` calls.
+    virtual void reset(STAGE stage);
 
     // Return the name of the plugin for this command.
     const string& getName() const;

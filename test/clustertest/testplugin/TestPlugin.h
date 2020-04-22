@@ -39,10 +39,12 @@ class TestPluginCommand : public BedrockCommand {
     TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
+    virtual void reset(BedrockCommand::STAGE stage) override;
 
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }
 
     bool pendingResult;
+    string chainedHTTPResponseContent;
     string urls;
 };
