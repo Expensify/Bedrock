@@ -62,6 +62,9 @@ struct TimingTest : tpunit::TestFixture {
                 }
                 ASSERT_GREATER_THAN(peekTime, 0);
                 ASSERT_GREATER_THAN(processTime, 0);
+
+                // Make sure the command is not marked as escalated on the leader.
+                ASSERT_FALSE(result.test("escalated"));
             } else {
                 ASSERT_EQUAL(peekTime, 0);
                 ASSERT_EQUAL(processTime, 0);
@@ -92,6 +95,9 @@ struct TimingTest : tpunit::TestFixture {
                 ASSERT_LESS_THAN(escalationTime, totalTime);
                 ASSERT_LESS_THAN(upstreamTotalTime, escalationTime);
                 ASSERT_LESS_THAN(upstreamPeekTime + upstreamProcessTime, upstreamTotalTime);
+
+                // Make sure the command is marked as escalated on the followers.
+                ASSERT_TRUE(result.test("escalated"));
             }
         }
 
