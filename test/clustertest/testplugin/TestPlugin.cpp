@@ -1,5 +1,4 @@
 #include "TestPlugin.h"
-#include "../../lib/BedrockTester.h"
 
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
@@ -61,21 +60,23 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
 TestPluginCommand::~TestPluginCommand()
 {
     if (request.methodLine == "testescalate") {
-        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Destroying testescalate (" + serverState + ")\n";
         SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
 
-        if (serverState == "FOLLOWER") {
-            // This should be the last thing that happens, so we can verify our state here.
+        // The intention here is to verify that the destructor on our follower is the last thing that runs, however we
+        // check simply that we're not leading, because this should also fail if we end up in some weird state (we
+        // don't want the test to pass if our follower is actually `WAITING` or something strange).
+        if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
             string fileContents = SFileLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
             // Verifiy this all happened in the right order.
-            if (fileContents != "Peeking testescalate (FOLLOWER)\n"
-                                "Peeking testescalate (LEADER)\n"
-                                "Processing testescalate (LEADER)\n"
-                                "Destroying testescalate (LEADER)\n"
-                                "Destroying testescalate (FOLLOWER)\n") {
+            if (fileContents != "Peeking testescalate (FOLLOWING)\n"
+                                "Peeking testescalate (LEADING)\n"
+                                "Processing testescalate (LEADING)\n"
+                                "Destroying testescalate (LEADING)\n"
+                                "Destroying testescalate (FOLLOWING)\n") {
                 cout << "Crashing the server on purpose, execution order is wrong: " << endl;
                 cout << fileContents;
                 SASSERT(false);
@@ -246,17 +247,9 @@ bool TestPluginCommand::peek(SQLite& db) {
             return false;
         }
     } else if (request.methodLine == "testescalate") {
-        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Peeking testescalate (" + serverState + ")\n";
-        if (serverState == "FOLLOWER") {
-            // When peeking on a follower (which should be the first thing we do), let's create the temp file.
-            string tempFile = BedrockTester::getTempFileName("escalate_test");
-            const_cast<SData&>(request)["tempFile"] = tempFile;
-            SFileSave(tempFile, statString);
-        } else {
-            // And on leader, append to it.
-            SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
-        }
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
         return false;
     }
 
@@ -371,7 +364,7 @@ void TestPluginCommand::process(SQLite& db) {
         // Note that we eventually got to process, though we write nothing to the DB.
         response.content = chainedHTTPResponseContent + "PROCESSED\n";
     } else if (request.methodLine == "testescalate") {
-        string serverState = plugin().server.getState() == SQLiteNode::LEADING ? "LEADER" : "FOLLOWER";
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Processing testescalate (" + serverState + ")\n";
         SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
         return;

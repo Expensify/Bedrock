@@ -13,6 +13,7 @@ struct EscalateTest : tpunit::TestFixture {
         BedrockTester& brtester = tester.getTester(1);
         SData cmd("testescalate");
         cmd["writeConsistency"] = "ASYNC";
+        cmd["tempFile"] = BedrockTester::getTempFileName("escalate_test");
         brtester.executeWaitMultipleData({cmd});
 
         // Because the way the above escalation is verified is in the destructor for the command, we send another request to
@@ -23,4 +24,3 @@ struct EscalateTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
     }
 } __EscalateTest;
-
