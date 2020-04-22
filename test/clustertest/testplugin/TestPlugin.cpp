@@ -71,12 +71,12 @@ TestPluginCommand::~TestPluginCommand()
             string fileContents = SFileLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
-            // Verifiy this all happened in the right order.
-            if (fileContents != "Peeking testescalate (FOLLOWING)\n"
-                                "Peeking testescalate (LEADING)\n"
-                                "Processing testescalate (LEADING)\n"
-                                "Destroying testescalate (LEADING)\n"
-                                "Destroying testescalate (FOLLOWING)\n") {
+            // Verifiy this all happened in the right order. We're running this on the follower, but it's feasible the
+            // destructor on the leader hasn't happened yet. We verify everything up to the first destruction.
+            if (!SStartsWith(fileContents, "Peeking testescalate (FOLLOWING)\n"
+                                           "Peeking testescalate (LEADING)\n"
+                                           "Processing testescalate (LEADING)\n"
+                                           "Destroying testescalate")) {
                 cout << "Crashing the server on purpose, execution order is wrong: " << endl;
                 cout << fileContents;
                 SASSERT(false);
