@@ -10,10 +10,14 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
+    acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
+}
+
+void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
-    if (SIEquals(command.request.methodLine, "CRASH_COMMAND")) {
+    if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
         SData request;
-        request.deserialize(command.request.content);
+        request.deserialize(command->request.content);
 
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
@@ -27,14 +31,23 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     } else {
         unique_ptr<BedrockCommand> newCommand(nullptr);
-        if (SIEquals(command.request.methodLine, "BROADCAST_COMMAND")) {
+        if (SIEquals(command->request.methodLine, "BROADCAST_COMMAND")) {
             SData newRequest;
-            newRequest.deserialize(command.request.content);
+            newRequest.deserialize(command->request.content);
             newCommand = getCommandFromPlugins(move(newRequest));
             newCommand->initiatingClientID = -1;
             newCommand->initiatingPeerID = 0;
         } else {
-            newCommand = getCommandFromPlugins(move(command));
+            // If we already have an existing BedrockCommand (as opposed to a base class SQLiteCommand) this is
+            // something that we've already constructed (most likely, a response from leader), so no need to ask the
+            // plugins to build it over again from scratch (this also preserves the existing state of the command).
+            BedrockCommand* isABedrockCommand = dynamic_cast<BedrockCommand*>(command.get());
+            if (isABedrockCommand) {
+                newCommand = unique_ptr<BedrockCommand>(isABedrockCommand);
+                command.release();
+            } else {
+                newCommand = getCommandFromPlugins(move(command));
+            }
             SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
         }
 
@@ -364,11 +377,47 @@ void BedrockServer::sync(const SData& args,
             server._suppressMultiWrite.store(true);
         }
 
-        // If the node's not in a ready state at this point, we'll probably need to read from the network, so start the
-        // main loop over. This can let us wait for logins from peers (for example).
+        // If the node's not in a ready state at this point, we'll probably need to read from the network.
+        // First, test conditions from transitional edge cases (e.g. interrupted db upgrades and queued commands)
+        // and then start the main loop over. This can let us wait for new logins from peers (for example).
         if (nodeState != SQLiteNode::LEADING &&
             nodeState != SQLiteNode::FOLLOWING   &&
             nodeState != SQLiteNode::STANDINGDOWN) {
+
+            // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
+            // from the cluster).
+            if (preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN) {
+
+                // If we bailed out while doing a upgradeDB, clear state
+                if (upgradeInProgress.load()) {
+                    upgradeInProgress.store(false);
+                    server._syncThreadCommitMutex.unlock();
+                    committingCommand = false;
+                }
+
+                // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
+                // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
+                // processed here, or escalated to the new leader. Commands initiated on followers just get dropped,
+                // they will need to be re-escalated, potentially to a different leader.
+                int requeued = 0;
+                int dropped = 0;
+                try {
+                    while (true) {
+                        // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                        command = unique_ptr<BedrockCommand>(nullptr);
+                        command = syncNodeQueuedCommands.pop();
+                        if (command->initiatingClientID) {
+                            // This one came from a local client, so we can save it for later.
+                            server._commandQueue.push(move(command));
+                        }
+                    }
+                } catch (const out_of_range& e) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+
+                    // command will be null here, we should be able to restart the loop.
+                    continue;
+                }
+            }
             continue;
         }
 
@@ -384,6 +433,7 @@ void BedrockServer::sync(const SData& args,
                 committingCommand = true;
                 server._syncNode->startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
+                SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
                 continue;
@@ -392,32 +442,6 @@ void BedrockServer::sync(const SData& args,
                 // the upgradeInProgress flag.
                 upgradeInProgress.store(false);
                 server._suppressMultiWrite.store(false);
-            }
-        } else if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN)
-                   && nodeState == SQLiteNode::SEARCHING) {
-            // If we were LEADING, but now we're searching, then something's gone wrong (perhaps we got disconnected
-            // from the cluster). We should give up an any commands, and let them be re-escalated. If commands were
-            // initiated locally, we can just re-queue them, they will get re-checked once things clear up, and then
-            // they'll get processed here, or escalated to the new leader.
-            // Commands initiated on followers just get dropped, they will need to be re-escalated, potentially to a
-            // different leader.
-            int requeued = 0;
-            int dropped = 0;
-            try {
-                while (true) {
-                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = unique_ptr<BedrockCommand>(nullptr);
-                    command = syncNodeQueuedCommands.pop();
-                    if (command->initiatingClientID) {
-                        // This one came from a local client, so we can save it for later.
-                        server._commandQueue.push(move(command));
-                    }
-                }
-            } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
-
-                // command will be null here, we should be able to restart the loop.
-                continue;
             }
         }
 
@@ -444,17 +468,21 @@ void BedrockServer::sync(const SData& args,
             }
 
             if (server._syncNode->commitSucceeded()) {
-                SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
+                if (command) {
+                    SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
-                // Otherwise, save the commit count, mark this command as complete, and reply.
-                command->response["commitCount"] = to_string(db.getCommitCount());
-                command->complete = true;
-                if (command->initiatingPeerID) {
-                    // This is a command that came from a peer. Have the sync node send the response back to the peer.
-                    server._finishPeerCommand(command);
+                    // Otherwise, save the commit count, mark this command as complete, and reply.
+                    command->response["commitCount"] = to_string(db.getCommitCount());
+                    command->complete = true;
+                    if (command->initiatingPeerID) {
+                        // This is a command that came from a peer. Have the sync node send the response back to the peer.
+                        server._finishPeerCommand(command);
+                    } else {
+                        // The only other option is this came from a client, so respond via the server.
+                        server._reply(command);
+                    }
                 } else {
-                    // The only other option is this came from a client, so respond via the server.
-                    server._reply(command);
+                    SINFO("Sync thread finished committing non-command");
                 }
             } else {
                 // This should only happen if the cluster becomes largely disconnected while we were in the process of
@@ -463,10 +491,22 @@ void BedrockServer::sync(const SData& args,
                 // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
                 // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
                 // probably indicates a bug (or a follower disk failure).
-                SINFO("requeueing command " << command->request.methodLine
-                      << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
-                      << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+
+                // While _upgradeDB isn't a normal command, it is still run as a QUORUM transaction, and so it can
+                // still fail if peers reject it (for example if run on low priority follower node that becomes
+                // leader during cluster instability) In that case, we will fail an upgradeDB distributed transaction, and we need to reset that state.
+                if (upgradeInProgress.load()) {
+                    SINFO("clearing stale _upgradeDB() state variables");
+                    upgradeInProgress.store(false);
+                    server._suppressMultiWrite.store(false);
+                } else if (command) {
+                    SINFO("requeueing command " << command->request.methodLine
+                          << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                          << " queued commands.");
+                    syncNodeQueuedCommands.push(move(command));
+                } else {
+                    SERROR("Unexpected sync thread commit state.");
+                }
             }
         }
 
@@ -618,7 +658,7 @@ void BedrockServer::sync(const SData& args,
                 // bother peeking it again.
                 auto it = command->request.nameValueMap.find("Connection");
                 bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
-                server._syncNode->escalateCommand(move(*command), forget);
+                server._syncNode->escalateCommand(move(command), forget);
                 if (forget) {
                     // Command is no longer in progress.
                 }
@@ -1665,18 +1705,23 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 }
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
-    return getCommandFromPlugins(SQLiteCommand(move(request)));
+    return getCommandFromPlugins(make_unique<SQLiteCommand>(move(request)));
 }
 
-unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand) {
     for (auto pair : plugins) {
-        auto command = pair.second->getCommand(move(baseCommand));
+
+        // This is a bit weird to avoid changing this signature in all the plugins. It would be more straightforward if
+        // the plugins just accepted a `unique_ptr<SQLiteCommand>&&`, but this still works.
+        auto command = pair.second->getCommand(move(*baseCommand));
         if (command) {
             SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
             return command;
         }
     }
-    return make_unique<BedrockCommand>(move(baseCommand), nullptr);
+
+    // Same weirdness as above, but for default commands.
+    return make_unique<BedrockCommand>(move(*baseCommand), nullptr);
 }
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
@@ -2045,6 +2090,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     if (db.getUncommittedQuery().empty()) {
         db.rollback();
     }
+    SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
 }
 

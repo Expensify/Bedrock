@@ -162,6 +162,9 @@ class BedrockServer : public SQLiteServer {
     // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
     // being returned to the command queue (such as one that was previously escalated).
     // SQLiteNode API.
+    void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew = true);
+
+    // Backwards-compatible version of the above method for plugins that already used it.
     void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
     // Cancel a command.
@@ -214,7 +217,7 @@ class BedrockServer : public SQLiteServer {
     // See if there's a plugin that can turn this request into a command.
     // If not, we'll create a command that returns `430 Unrecognized command`.
     unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
-    unique_ptr<BedrockCommand> getCommandFromPlugins(SQLiteCommand&& baseCommand);
+    unique_ptr<BedrockCommand> getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand);
 
     // If you want to exit from the detached state, set this to true and the server will exit after the next loop.
     // It has no effect when not detached (except that it will cause the server to exit immediately upon becoming
