@@ -1,9 +1,7 @@
-
 #include "../BedrockClusterTester.h"
 
 struct EscalateTest : tpunit::TestFixture {
-    EscalateTest()
-        : tpunit::TestFixture("EscalateTest", TEST(EscalateTest::test)) { }
+    EscalateTest() : tpunit::TestFixture("EscalateTest", TEST(EscalateTest::test)) { }
 
     void test()
     {
