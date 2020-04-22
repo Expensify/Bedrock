@@ -1336,8 +1336,8 @@ void BedrockJobsCommand::handleFailedReply() {
 
         // Keep the request ID so we'll be able to associate these in the logs.
         requeue["requestID"] = request["requestID"];
-        SQLiteCommand cmd(move(requeue));
-        cmd.initiatingClientID = -1;
+        auto cmd = make_unique<SQLiteCommand>(move(requeue));
+        cmd->initiatingClientID = -1;
         _plugin->server.acceptCommand(move(cmd));
     }
 }

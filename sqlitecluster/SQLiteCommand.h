@@ -72,5 +72,5 @@ class SQLiteCommand {
     SQLiteCommand& operator=(SQLiteCommand&& from) = default;
 
     // Destructor.
-    ~SQLiteCommand() {}
+    virtual ~SQLiteCommand() {}
 };

@@ -42,7 +42,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
       _handledCommitCount(0)
     {
     SASSERT(priority >= 0);
-    _priority = priority;
+    _originalPriority = priority;
+    _priority = -1;
     _state = SEARCHING;
     _syncPeer = nullptr;
     _leadPeer = nullptr;
@@ -135,8 +136,8 @@ bool SQLiteNode::shutdownComplete() {
         if (_escalatedCommandMap.size()) {
             SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
             for (auto& commandPair : _escalatedCommandMap) {
-                commandPair.second.response.methodLine = "500 Abandoned";
-                commandPair.second.complete = true;
+                commandPair.second->response.methodLine = "500 Abandoned";
+                commandPair.second->complete = true;
                 _server.acceptCommand(move(commandPair.second), false);
             }
             _escalatedCommandMap.clear();
@@ -157,12 +158,12 @@ bool SQLiteNode::shutdownComplete() {
         if (!_escalatedCommandMap.empty()) {
             for (auto& cmd : _escalatedCommandMap) {
                 string name = cmd.first;
-                SQLiteCommand& command = cmd.second;
-                int64_t created = command.request.calcU64("commandExecuteTime");
+                unique_ptr<SQLiteCommand>& command = cmd.second;
+                int64_t created = command->request.calcU64("commandExecuteTime");
                 int64_t elapsed = STimeNow() - created;
                 double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
-                SINFO("Escalated command remaining at shutdown(" << name << "): " << command.request.methodLine
-                      << ". Created: " << command.request["commandExecuteTime"] << " (" << elapsedSeconds << "s ago)");
+                SINFO("Escalated command remaining at shutdown(" << name << "): " << command->request.methodLine
+                      << ". Created: " << command->request["commandExecuteTime"] << " (" << elapsedSeconds << "s ago)");
             }
         }
         return false;
@@ -228,7 +229,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
     unsentTransactions.store(false);
 }
 
-void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
+void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
     // If the leader is currently standing down, we won't escalate, we'll give the command back to the caller.
     if(_leadPeer->state == STANDINGDOWN) {
         SINFO("Asked to escalate command but leader standing down, letting server retry.");
@@ -239,14 +240,14 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
     // Send this to the leader
     SASSERT(_leadPeer);
     SASSERTEQUALS(_leadPeer->state, LEADING);
-    uint64_t elapsed = STimeNow() - command.request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command.request.methodLine << "' (" << command.id << ") to leader '" << _leadPeer->name
+    uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
+    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer->name
           << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our leader.
     SData escalate("ESCALATE");
-    escalate["ID"] = command.id;
-    escalate.content = command.request.serialize();
+    escalate["ID"] = command->id;
+    escalate.content = command->request.serialize();
 
     // Marking the command as escalated, even if we are going to forget it, because the command's destructor may need
     // this info.
@@ -254,10 +255,10 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
 
     // Store the command as escalated, unless we intend to forget about it anyway.
     if (forget) {
-        SINFO("Firing and forgetting command '" << command.request.methodLine << "' to leader.");
+        SINFO("Firing and forgetting command '" << command->request.methodLine << "' to leader.");
     } else {
-        command.escalationTimeUS = STimeNow();
-        _escalatedCommandMap.emplace(command.id, move(command));
+        command->escalationTimeUS = STimeNow();
+        _escalatedCommandMap.emplace(command->id, move(command));
     }
 
     // And send to leader.
@@ -267,7 +268,7 @@ void SQLiteNode::escalateCommand(SQLiteCommand&& command, bool forget) {
 list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
     list<string> returnList;
     for (auto& commandPair : _escalatedCommandMap) {
-        returnList.push_back(commandPair.second.request.methodLine);
+        returnList.push_back(commandPair.second->request.methodLine);
     }
     return returnList;
 }
@@ -541,6 +542,8 @@ bool SQLiteNode::update() {
         SASSERT(highestPriorityPeer);
         SASSERT(freshestPeer);
 
+        SDEBUG("Dumping evaluated cluster state: numLoggedInFullPeers=" << numLoggedInFullPeers << " freshestPeer=" << freshestPeer->name << " highestPriorityPeer=" << highestPriorityPeer->name << " currentLeader=" << (currentLeader ? currentLeader->name : "none"));
+
         // If there is already a leader that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
@@ -565,14 +568,13 @@ bool SQLiteNode::update() {
         }
 
         // No leader and we're in sync, perhaps everybody is waiting for us
-        // to stand up?  If we're higher than the highest priority, and are
-        // connected to enough full peers to achieve quorum we should be
-        // leader.
+        // to stand up?  If we're higher than the highest priority, are using 
+        // a real priority and are not a permafollower, and are connected to 
+        // enough full peers to achieve quorum, we should be leader.
         if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > highestPriorityPeer->calc("Priority")) {
+            _priority > 0 && _priority > highestPriorityPeer->calc("Priority")) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
-            SASSERT(_priority > 0); // Permafollower should never stand up
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
             for (auto peer : peerList) {
                 peer->erase("StandupResponse");
@@ -581,7 +583,7 @@ bool SQLiteNode::update() {
             return true; // Re-update
         }
 
-        // Keep waiting
+        // Otherwise, Keep waiting
         SDEBUG("Connected to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
                                << " with permafollowers), priority=" << _priority);
         break;
@@ -1040,6 +1042,7 @@ bool SQLiteNode::update() {
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     SASSERT(peer);
     SASSERTWARN(!message.empty());
+    SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
     // Every message broadcasts the current state of the node
     if (!message.isSet("CommitCount")) {
         STHROW("missing CommitCount");
@@ -1067,14 +1070,15 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!message.isSet("Version")) {
             STHROW("missing Version");
         }
-        if (peer->params["Permafollower"] == "true" && message.calc("Priority")) {
+        if (peer->params["Permafollower"] == "true" && message["Permafollower"] != "true") {
             STHROW("you're supposed to be a 0-priority permafollower");
         }
-        if (peer->params["Permafollower"] != "true" && !message.calc("Priority")) {
+        if (peer->params["Permafollower"] != "true" && message["Permafollower"] == "true") {
             STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
-        // It's an error to have to peers configured with the same priority, except 0.
-        SASSERT(!_priority || message.calc("Priority") != _priority);
+
+        // It's an error to have to peers configured with the same priority, except 0 and -1
+        SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
         peer->set("Priority", message["Priority"]);
@@ -1300,8 +1304,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             request["peerName"] = peer->name;
 
             // Create a command from this request and pass it on to the server to handle.
-            SQLiteCommand command(move(request));
-            command.initiatingPeerID = peer->id;
+            auto command = make_unique<SQLiteCommand>(move(request));
+            command->initiatingPeerID = peer->id;
             _server.acceptCommand(move(command), true);
         } else {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
@@ -1508,9 +1512,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
             // Create a new Command and send to the server.
-            SQLiteCommand command(move(request));
-            command.initiatingPeerID = peer->id;
-            command.id = message["ID"];
+            auto command = make_unique<SQLiteCommand>(move(request));
+            command->initiatingPeerID = peer->id;
+            command->id = message["ID"];
             _server.acceptCommand(move(command), true);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
@@ -1562,14 +1566,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
-            SQLiteCommand& command = commandIt->second;
-            if (command.escalationTimeUS) {
-                command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-                SINFO("Total escalation time for command " << command.request.methodLine << " was "
-                      << command.escalationTimeUS/1000 << "ms.");
+            unique_ptr<SQLiteCommand>& command = commandIt->second;
+            if (command->escalationTimeUS) {
+                command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
+                SINFO("Total escalation time for command " << command->request.methodLine << " was "
+                      << command->escalationTimeUS/1000 << "ms.");
             }
-            command.response = response;
-            command.complete = true;
+            command->response = response;
+            command->complete = true;
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
@@ -1589,9 +1593,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Re-queue this
-            SQLiteCommand& command = commandIt->second;
-            PINFO("Re-queueing command '" << message["ID"] << "' (" << command.request.methodLine << ") ("
-                  << command.id << ")");
+            unique_ptr<SQLiteCommand>& command = commandIt->second;
+            PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
+                  << command->id << ")");
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else
@@ -1600,7 +1604,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         // Create a new Command and send to the server.
         SData messageCopy = message;
         PINFO("Received " << message.methodLine << " command, forwarding to server.");
-        _server.acceptCommand(SQLiteCommand(move(messageCopy)), true);
+        _server.acceptCommand(make_unique<SQLiteCommand>(move(messageCopy)), true);
     } else {
         STHROW("unrecognized message");
     }
@@ -1615,6 +1619,7 @@ void SQLiteNode::_onConnect(Peer* peer) {
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
+    login["Permafollower"] = _originalPriority ? "false" : "true";
     _sendToPeer(peer, login);
 }
 
@@ -1662,11 +1667,11 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // progress when the leader died, in which case we say they completed with a 500 Error.
         for (auto& cmd : _escalatedCommandMap) {
             // If this isn't set, the leader hadn't actually started processing this, and we can re-queue it.
-            if (!cmd.second.transaction.methodLine.empty()) {
-                PWARN("Aborting escalated command '" << cmd.second.request.methodLine << "' (" << cmd.second.id
-                      << ") in transaction state '" << cmd.second.transaction.methodLine << "'");
-                cmd.second.complete = true;
-                cmd.second.response.methodLine = "500 Aborted";
+            if (!cmd.second->transaction.methodLine.empty()) {
+                PWARN("Aborting escalated command '" << cmd.second->request.methodLine << "' (" << cmd.second->id
+                      << ") in transaction state '" << cmd.second->transaction.methodLine << "'");
+                cmd.second->complete = true;
+                cmd.second->response.methodLine = "500 Aborted";
             }
             _server.acceptCommand(move(cmd.second), false);
         }
@@ -1843,6 +1848,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                     "Switching from '" << stateName(_state) << "' to '" << stateName(newState)
                                        << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
+        } else if (newState == WAITING) {
+            // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
+            _priority = _originalPriority;
         }
 
         // Send to everyone we're connected to, whether or not
@@ -2248,7 +2256,7 @@ void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
         // so we know that this command might be corrupted if the leader
         // crashes.
         SINFO("Leader is processing our command " << message["ID"] << " (" << message["Command"] << ")");
-        commandIt->second.transaction = message;
+        commandIt->second->transaction = message;
     }
 
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
@@ -2301,7 +2309,7 @@ void SQLiteNode::handleCommitTransaction(Peer* peer, const SData& message) {
         // We're starting the transaction for a given command; note this so we know that this command might be
         // corrupted if the leader crashes.
         SINFO("Leader has committed in response to our command " << message["ID"]);
-        commandIt->second.transaction = message;
+        commandIt->second->transaction = message;
     }
 
     _handledCommitCount++;
@@ -2333,6 +2341,6 @@ void SQLiteNode::handleRollbackTransaction(Peer* peer, const SData& message) {
         // We're starting the transaction for a given command; note this so we know that this command might be
         // corrupted if the leader crashes.
         SINFO("Leader has rolled back in response to our command " << message["ID"]);
-        commandIt->second.transaction = message;
+        commandIt->second->transaction = message;
     }
 }

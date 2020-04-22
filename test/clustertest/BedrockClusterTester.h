@@ -70,7 +70,8 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
                                 string pluginsToLoad)
 : _size((int)size)
 {
-    // We need three ports for each node.
+    // Generate three ports for each node.
+    bool ownPorts = false;
     vector<vector<uint16_t>> ports((int)size);
     for (size_t i = 0; i < (size_t)size; i++) {
         const uint16_t serverPort = BedrockTester::ports.getPort();
@@ -138,13 +139,14 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         for (auto& a : _args) {
             if (a.first == "-serverHost" || a.first == "-nodeHost" || a.first == "-controlPort") {
                 cout << "Skipping port overwriting, " << a.first << ":" << a.second << endl;
+                ownPorts = true;
             } else {
                 args[a.first] = a.second;
             }
         }
 
         // And add the new entry in the map.
-        _cluster.emplace_back(args, queries, false, false, serverPort, nodePort, controlPort, false);
+        _cluster.emplace_back(args, queries, false, false, serverPort, nodePort, controlPort, ownPorts);
     }
 
     // Now start them all.
@@ -159,12 +161,12 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     }
 
     // Ok, now we should be able to wait for the cluster to come up. Let's wait until each server responds to 'status'.
-    int count = 0;
     for (auto& node : _cluster) {
+        uint64_t startTime = STimeNow();
         while (1) {
-            count++;
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
-            if (count > 60 * 10) {
+            if (startTime + 60'000'000 < STimeNow()) {
+                cout << "ClusterTester constructor timed out starting cluster" << endl;
                 break;
             }
             try {

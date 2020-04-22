@@ -24,6 +24,7 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
     static set<string> supportedCommands = {
         "testcommand",
+        "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
         "getbroadcasttimeouts",
@@ -54,6 +55,34 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
   pendingResult(false),
   urls(request["urls"])
 {
+}
+
+TestPluginCommand::~TestPluginCommand()
+{
+    if (request.methodLine == "testescalate") {
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
+        string statString = "Destroying testescalate (" + serverState + ")\n";
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+
+        // The intention here is to verify that the destructor on our follower is the last thing that runs, however we
+        // check simply that we're not leading, because this should also fail if we end up in some weird state (we
+        // don't want the test to pass if our follower is actually `WAITING` or something strange).
+        if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
+            string fileContents = SFileLoad(request["tempFile"]);
+            SFileDelete(request["tempFile"]);
+
+            // Verifiy this all happened in the right order. We're running this on the follower, but it's feasible the
+            // destructor on the leader hasn't happened yet. We verify everything up to the first destruction.
+            if (!SStartsWith(fileContents, "Peeking testescalate (FOLLOWING)\n"
+                                           "Peeking testescalate (LEADING)\n"
+                                           "Processing testescalate (LEADING)\n"
+                                           "Destroying testescalate")) {
+                cout << "Crashing the server on purpose, execution order is wrong: " << endl;
+                cout << fileContents;
+                SASSERT(false);
+            }
+        }
+    }
 }
 
 void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
@@ -217,6 +246,11 @@ bool TestPluginCommand::peek(SQLite& db) {
             // case
             return false;
         }
+    } else if (request.methodLine == "testescalate") {
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
+        string statString = "Peeking testescalate (" + serverState + ")\n";
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        return false;
     }
 
     return false;
@@ -328,6 +362,11 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Note that we eventually got to process, though we write nothing to the DB.
         response.content = chainedHTTPResponseContent + "PROCESSED\n";
+    } else if (request.methodLine == "testescalate") {
+        string serverState = SQLiteNode::stateName(plugin().server.getState());
+        string statString = "Processing testescalate (" + serverState + ")\n";
+        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        return;
     }
 }
 
