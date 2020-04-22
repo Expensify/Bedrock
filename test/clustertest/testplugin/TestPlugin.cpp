@@ -275,8 +275,7 @@ void TestPluginCommand::process(SQLite& db) {
 
         // Done.
         return;
-    }
-    else if (SStartsWith(request.methodLine, "idcollision")) {
+    } else if (SStartsWith(request.methodLine, "idcollision")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
