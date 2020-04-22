@@ -22,7 +22,7 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
 }
 
-bool SFileAppend(const string& path, const string& buffer) {
+bool FileAppend(const string& path, const string& buffer) {
     // Try to open the file for appending.
     FILE* fp = fopen(path.c_str(), "a");
     if (!fp) {
@@ -43,7 +43,7 @@ bool SFileAppend(const string& path, const string& buffer) {
     return numWritten == buffer.size();
 }
 
-string SFileLockAndLoad(const string& path) {
+string FileLockAndLoad(const string& path) {
     string buffer;
     FILE* fp = fopen(path.c_str(), "rb");
     if (!fp) {
@@ -109,13 +109,13 @@ TestPluginCommand::~TestPluginCommand()
     if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Destroying testescalate (" + serverState + ")\n";
-        SFileAppend(request["tempFile"], statString);
+        FileAppend(request["tempFile"], statString);
 
         // The intention here is to verify that the destructor on our follower is the last thing that runs, however we
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
         if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
-            string fileContents = SFileLockAndLoad(request["tempFile"]);
+            string fileContents = FileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
             // Verifiy this all happened in the right order. We're running this on the follower, but it's feasible the
@@ -296,7 +296,7 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Peeking testescalate (" + serverState + ")\n";
-        SFileAppend(request["tempFile"], statString);
+        FileAppend(request["tempFile"], statString);
         return false;
     }
 
@@ -413,7 +413,7 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Processing testescalate (" + serverState + ")\n";
-        SFileAppend(request["tempFile"], statString);
+        FileAppend(request["tempFile"], statString);
         return;
     }
 }
