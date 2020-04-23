@@ -18,6 +18,10 @@ struct EscalateTest : tpunit::TestFixture {
         cmd["tempFile"] = BedrockTester::getTempFileName("escalate_test");
         brtester.executeWaitMultipleData({cmd});
 
+        // Sleep for 1 second to make sure, if there was a crash, that the next command does not run before the server
+        // fully crashes.
+        sleep(1);
+
         // Because the way the above escalation is verified is in the destructor for the command, we send another request to
         // verify the server hasn't crashed.
         SData status("Status");

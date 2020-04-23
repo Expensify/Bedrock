@@ -115,6 +115,7 @@ TestPluginCommand::~TestPluginCommand()
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
         if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
+            SASSERT(escalated);
             string fileContents = fileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
@@ -356,8 +357,7 @@ void TestPluginCommand::process(SQLite& db) {
 
         // Done.
         return;
-    }
-    else if (SStartsWith(request.methodLine, "idcollision")) {
+    } else if (SStartsWith(request.methodLine, "idcollision")) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());

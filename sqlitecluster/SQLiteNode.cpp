@@ -249,6 +249,10 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
     escalate["ID"] = command->id;
     escalate.content = command->request.serialize();
 
+    // Marking the command as escalated, even if we are going to forget it, because the command's destructor may need
+    // this info.
+    command->escalated = true;
+
     // Store the command as escalated, unless we intend to forget about it anyway.
     if (forget) {
         SINFO("Firing and forgetting command '" << command->request.methodLine << "' to leader.");
