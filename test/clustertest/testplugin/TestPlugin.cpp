@@ -1,4 +1,5 @@
 #include "TestPlugin.h"
+#include <sys/file.h>
 
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
@@ -19,6 +20,52 @@ BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
+}
+
+bool fileAppend(const string& path, const string& buffer) {
+    // Try to open the file for appending.
+    FILE* fp = fopen(path.c_str(), "a");
+    if (!fp) {
+        return false;
+    }
+
+    // Lock, nobody else can write.
+    flock(fileno(fp), LOCK_EX);
+
+    // Write.
+    size_t numWritten = fwrite(buffer.c_str(), 1, buffer.size(), fp);
+
+    // Done.
+    flock(fileno(fp), LOCK_UN);
+    fclose(fp);
+
+    // Return whether we wrote the whole thing.
+    return numWritten == buffer.size();
+}
+
+string fileLockAndLoad(const string& path) {
+    string buffer;
+    FILE* fp = fopen(path.c_str(), "rb");
+    if (!fp) {
+        return buffer;
+    }
+
+    // Lock so nobody writes while we're reading.
+    flock(fileno(fp), LOCK_EX);
+
+    // Read as much as we can
+    char readBuffer[32 * 1024];
+    size_t numRead = 0;
+    while ((numRead = fread(readBuffer, 1, sizeof(readBuffer), fp))) {
+        // Append to the buffer
+        size_t oldSize = buffer.size();
+        buffer.resize(oldSize + numRead);
+        memcpy(&buffer[oldSize], readBuffer, numRead);
+    }
+
+    flock(fileno(fp), LOCK_UN);
+    fclose(fp);
+    return buffer;
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
@@ -62,13 +109,13 @@ TestPluginCommand::~TestPluginCommand()
     if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Destroying testescalate (" + serverState + ")\n";
-        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        fileAppend(request["tempFile"], statString);
 
         // The intention here is to verify that the destructor on our follower is the last thing that runs, however we
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
         if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
-            string fileContents = SFileLoad(request["tempFile"]);
+            string fileContents = fileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
             // Verifiy this all happened in the right order. We're running this on the follower, but it's feasible the
@@ -249,7 +296,7 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Peeking testescalate (" + serverState + ")\n";
-        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        fileAppend(request["tempFile"], statString);
         return false;
     }
 
@@ -365,7 +412,7 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Processing testescalate (" + serverState + ")\n";
-        SFileSave(request["tempFile"], SFileLoad(request["tempFile"]) + statString);
+        fileAppend(request["tempFile"], statString);
         return;
     }
 }
