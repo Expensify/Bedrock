@@ -251,7 +251,7 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 
     // Marking the command as escalated, even if we are going to forget it, because the command's destructor may need
     // this info.
-    command.escalated = true;
+    command->escalated = true;
 
     // Store the command as escalated, unless we intend to forget about it anyway.
     if (forget) {
