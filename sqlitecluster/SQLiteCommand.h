@@ -56,6 +56,9 @@ class SQLiteCommand {
     // follower to leader.
     uint64_t creationTime;
 
+    // Whether or not the command has been escalated.
+    bool escalated;
+
     // Construct that takes a request object.
     SQLiteCommand(SData&& _request);
 
