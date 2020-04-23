@@ -1,3 +1,5 @@
+#include <libstuff/libstuff.h>
+
 // Track TCP ports to use with the tester.
 class PortMap {
   public:
@@ -24,4 +26,3 @@ class PortMap {
     set<uint16_t> _returned;
     mutex _m;
 };
-
