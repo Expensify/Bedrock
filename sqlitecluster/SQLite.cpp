@@ -791,7 +791,7 @@ int SQLite::commit() {
         if (_currentTransactionAttemptCount != -1) {
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
                              to_string(_currentTransactionAttemptCount) + " committed. report: " +
-                             sqlite3_begin_concurrent_report(_db);
+                             string(sqlite3_begin_concurrent_report(_db));
             syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
         _commitElapsed += STimeNow() - before;
@@ -874,7 +874,7 @@ void SQLite::rollback() {
         if (_currentTransactionAttemptCount != -1) {
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
                              to_string(_currentTransactionAttemptCount) + " rolled back. report: " +
-                             sqlite3_begin_concurrent_report(_db);
+                             string(sqlite3_begin_concurrent_report(_db));
             syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
 
