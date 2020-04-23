@@ -1,3 +1,4 @@
+#pragma once
 #include <libstuff/libstuff.h>
 
 // Track TCP ports to use with the tester.
