@@ -789,9 +789,10 @@ int SQLite::commit() {
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         if (_currentTransactionAttemptCount != -1) {
+            const char* report = sqlite3_begin_concurrent_report(_db);
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
                              to_string(_currentTransactionAttemptCount) + " committed. report: " +
-                             sqlite3_begin_concurrent_report(_db);
+                             (report ? string(report) : "null"s);
             syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
         _commitElapsed += STimeNow() - before;
@@ -872,9 +873,10 @@ void SQLite::rollback() {
         }
 
         if (_currentTransactionAttemptCount != -1) {
+            const char* report = sqlite3_begin_concurrent_report(_db);
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
                              to_string(_currentTransactionAttemptCount) + " rolled back. report: " +
-                             sqlite3_begin_concurrent_report(_db);
+                             (report ? string(report) : "null"s);
             syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
 
