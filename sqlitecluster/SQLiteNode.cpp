@@ -1070,10 +1070,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!message.isSet("Version")) {
             STHROW("missing Version");
         }
-        if (peer->params["Permafollower"] == "true" && message["Permafollower"] != "true") {
+        if (peer->params["Permafollower"] == "true" && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
             STHROW("you're supposed to be a 0-priority permafollower");
         }
-        if (peer->params["Permafollower"] != "true" && message["Permafollower"] == "true") {
+        if (peer->params["Permafollower"] != "true" && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
             STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
 
