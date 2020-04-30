@@ -47,7 +47,9 @@ clean:
 	rm -rf test/clustertest/clustertest
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
-	cd mbedtls && $(MAKE) clean
+	# If we've never run `make`, `mbedtls/Makefile` does not exist. Add a `test
+	# -f` check and `|| true` so it doesn't cause `make clean` to exit nonzero
+	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
 	cd test/clustertest/testplugin && $(MAKE) clean
 
 # The mbedtls libraries are all built the same way.
