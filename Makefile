@@ -47,7 +47,7 @@ clean:
 	rm -rf test/clustertest/clustertest
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
-	cd mbedtls && $(MAKE) clean
+	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
 	cd test/clustertest/testplugin && $(MAKE) clean
 
 # The mbedtls libraries are all built the same way.
