@@ -393,7 +393,7 @@ struct RetryJobTest : tpunit::TestFixture {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        command["jobPriority"] = 500;
+        command["jobPriority"] = "500";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -408,7 +408,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
         command["name"] = "newName";
-        command["jobPriority"] = 1000;
+        command["jobPriority"] = "1000";
         command["nextRun"] = getTimeInFuture(10);
         tester->executeWaitVerifyContent(command);
 
