@@ -1015,7 +1015,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 }
                 bool success = db.writeIdempotent("UPDATE jobs SET " +
                                                   (!name.empty() ? "name=" + SQ(name) + ", " : "") +
-                                                  (request.isSet("jobPriority") ? "priority=" + SQ(priority) : "") + " "
+                                                  (request.isSet("jobPriority") ? "priority=" + SQ(request["jobPriority"]) : "") + " "
                                                   "WHERE jobID=" + SQ(jobID) + ";");
                 if (!success) {
                     STHROW("502 Failed to update job name/priority");
