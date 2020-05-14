@@ -16,7 +16,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::hasRepeat),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
-                              TEST(RetryJobTest::changeNameAndPriority),
+                              TEST(RetryJobTest::changeName),
                               TEST(RetryJobTest::hasRepeatWithNextRun),
                               TEST(RetryJobTest::hasRepeatWithDelay),
                               TEST(RetryJobTest::hasDelayAndNextRun),
@@ -388,12 +388,11 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][0], nextRun);
     }
 
-    // Update the name and priority
-    void changeNameAndPriority() {
+    // Update the name
+    void changeName() {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
-        command["jobPriority"] = "500";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -408,15 +407,13 @@ struct RetryJobTest : tpunit::TestFixture {
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
         command["name"] = "newName";
-        command["jobPriority"] = "1000";
         command["nextRun"] = getTimeInFuture(10);
         tester->executeWaitVerifyContent(command);
 
         // Confirm the data updated
         SQResult result;
-        tester->readDB("SELECT name, priority FROM jobs WHERE jobID = " + jobID + ";", result);
+        tester->readDB("SELECT name FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "newName");
-        ASSERT_EQUAL(result[0][1], "1000");
     }
 
     // Repeat should take precedence over nextRun
