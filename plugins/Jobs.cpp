@@ -898,12 +898,11 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - jobID       - ID of the job to requeue
-        //     - delay       - Number of seconds to wait before retrying
-        //     - nextRun     - datetime of next scheduled run
-        //     - name        - An arbitrary string identifier (case insensitive)
-        //     - data        - Data to associate with this job
-        //     - jobPriority - The new priority to set for this job
+        //     - jobID   - ID of the job to requeue
+        //     - delay   - Number of seconds to wait before retrying
+        //     - nextRun - datetime of next scheduled run
+        //     - name    - An arbitrary string identifier (case insensitive)
+        //     - data    - Data to associate with this job
         //
         // - FinishJob( jobID, [data] )
         //
@@ -1006,20 +1005,11 @@ void BedrockJobsCommand::process(SQLite& db) {
             return;
         }
 
-        // If this is RetryJob and we want to update the name and/or priority, let's do that
+        // If this is RetryJob and we want to update the name, let's do that
         const string& name = request["name"];
-        if (SIEquals(requestVerb, "RetryJob")) {
-            if (!name.empty() || request.isSet("jobPriority")) {
-                if (request.isSet("jobPriority")) {
-                    _validatePriority(request.calc64("jobPriority"));
-                }
-                bool success = db.writeIdempotent("UPDATE jobs SET " +
-                                                  (!name.empty() ? "name=" + SQ(name) + ", " : "") +
-                                                  (request.isSet("jobPriority") ? "priority=" + SQ(request["jobPriority"]) : "") + " "
-                                                  "WHERE jobID=" + SQ(jobID) + ";");
-                if (!success) {
-                    STHROW("502 Failed to update job name/priority");
-                }
+        if (!name.empty() && SIEquals(requestVerb, "RetryJob")) {
+            if (!db.writeIdempotent("UPDATE jobs SET name=" + SQ(name) + " WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to update job name");
             }
         }
 
