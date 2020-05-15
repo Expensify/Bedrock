@@ -1009,14 +1009,16 @@ void BedrockJobsCommand::process(SQLite& db) {
         // If this is RetryJob and we want to update the name and/or priority, let's do that
         const string& name = request["name"];
         if (SIEquals(requestVerb, "RetryJob")) {
-            if (!name.empty() || request.isSet("jobPriority")) {
-                if (request.isSet("jobPriority")) {
-                    _validatePriority(request.calc64("jobPriority"));
-                }
-                bool success = db.writeIdempotent("UPDATE jobs SET " +
-                                                  (!name.empty() ? "name=" + SQ(name) + ", " : "") +
-                                                  (request.isSet("jobPriority") ? "priority=" + SQ(request["jobPriority"]) : "") + " "
-                                                  "WHERE jobID=" + SQ(jobID) + ";");
+            list<string> updates;
+            if (!name.empty()) {
+                updates.push_back("name=" + SQ(name) + " ");
+            }
+            if (request.isSet("jobPriority")) {
+                _validatePriority(request.calc64("jobPriority"));
+                updates.push_back("priority=" + SQ(request["jobPriority"]) + " ");
+            }
+            if (!updates.empty()) {
+                bool success = db.writeIdempotent("UPDATE jobs SET " + SComposeList(updates, ", ") + " WHERE jobID=" + SQ(jobID) + ";");
                 if (!success) {
                     STHROW("502 Failed to update job name/priority");
                 }
