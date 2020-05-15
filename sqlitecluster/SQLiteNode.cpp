@@ -2259,6 +2259,11 @@ void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
         commandIt->second->transaction = message;
     }
 
+    // calculate and log replication timers
+    if (leaderSentTimestamp > followerDequeueTimestamp) {
+        SWARN("Leader replication timestamp is " << (leaderSentTimestamp - followerDequeueTimestamp) << " usecs newer than our timestamp. Possible clock synchronization issue.");
+        leaderSentTimestamp = followerDequeueTimestamp;
+    }
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
     float transitTimeMS = (float)transitTimeUS / 1000.0;
