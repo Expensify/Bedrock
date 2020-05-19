@@ -1347,6 +1347,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 _changeState(SEARCHING);
             } else {
                 // Otherwise, more to go
+                if (_syncPeer->calcU64("CommitCount") < _freshestPeer->calcU64("CommitCount")) {
+                    peerCommitCount = _freshestPeer->calcU64("CommitCount");
+                }
                 SINFO("Synchronization underway, at commitCount #"
                       << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
                       << peerCommitCount - _db.getCommitCount() << " to go.");
