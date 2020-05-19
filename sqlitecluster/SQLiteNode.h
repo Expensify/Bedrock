@@ -118,6 +118,9 @@ class SQLiteNode : public STCPNode {
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
     Peer* _syncPeer;
+    
+    // Track the freshest peer, so we can calculate our commit status relative to the rest of the cluster
+    Peer* _freshestPeer;
 
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.

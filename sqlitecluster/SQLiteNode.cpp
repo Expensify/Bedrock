@@ -46,6 +46,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, con
     _priority = -1;
     _state = SEARCHING;
     _syncPeer = nullptr;
+    _freshestPeer = nullptr;
     _leadPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
@@ -2013,6 +2014,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 void SQLiteNode::_updateSyncPeer()
 {
     Peer* newSyncPeer = nullptr;
+    Peer* newFreshestPeer = nullptr;
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : peerList) {
         // If either of these conditions are true, then we can't use this peer.
@@ -2039,6 +2041,13 @@ void SQLiteNode::_updateSyncPeer()
         // Finally, if this peer is faster than the best, but not 0 itself, it's the new best.
         else if (peer->latency != 0 && peer->latency < newSyncPeer->latency) {
             newSyncPeer = peer;
+        }
+
+        // Keep an eye on freshest commit counts too
+        if(!newFreshestPeer) {
+            newFreshestPeer = peer;
+        } else if (newFreshestPeer->calc64("CommitCount") < peer->calc64("CommitCount")) {
+            newFreshestPeer = peer;
         }
     }
 
@@ -2076,6 +2085,7 @@ void SQLiteNode::_updateSyncPeer()
 
         // And save the new sync peer internally.
         _syncPeer = newSyncPeer;
+        _freshestPeer = newFreshestPeer;
     }
 }
 
