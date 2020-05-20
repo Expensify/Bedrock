@@ -36,15 +36,17 @@ struct UpdateJobTest : tpunit::TestFixture {
         command["data"] = "{key:\"value\"}";
         command["repeat"] = "HOURLY";
         command["jobPriority"] = "1000";
+        command["nextRun"] = "2020-01-01 00:00:00";
         tester->executeWaitVerifyContent(command);
 
         // Verify that the job was actually updated
         SQResult currentJob;
-        tester->readDB("SELECT repeat, data, priority FROM jobs WHERE jobID = " + jobID + ";", currentJob);
+        tester->readDB("SELECT repeat, data, priority, nextRun FROM jobs WHERE jobID = " + jobID + ";", currentJob);
         ASSERT_EQUAL(currentJob[0][0], "HOURLY");
         ASSERT_EQUAL(currentJob[0][1], "{key:\"value\"}");
         ASSERT_EQUAL(currentJob[0][2], "1000");
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
+        ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
     }
 
 } __UpdateJobTest;
