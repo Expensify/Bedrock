@@ -828,6 +828,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - data  - A JSON object describing work to be done
         //     - repeat - A description of how to repeat (optional)
         //     - jobPriority - The priority of the job (optional)
+        //     - nextRun - The time to run the job (optional)
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         BedrockPlugin::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
@@ -863,8 +864,13 @@ void BedrockJobsCommand::process(SQLite& db) {
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
 
-        // Are we rescheduling?
-        const string& newNextRun = request["repeat"].size() ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
+        // Passed next run takes priority over the one computed via the repeat feature
+        string newNextRun;
+        if (request["nextRun"].empty()) {
+            newNextRun = request["repeat"].size() ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
+        } else {
+            newNextRun = SQ(request["nextRun"]);
+        }
 
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
