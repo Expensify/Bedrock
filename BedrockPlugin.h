@@ -11,10 +11,16 @@ class BedrockPlugin {
     static constexpr int64_t MAX_SIZE_BLOB = 1024 * 1024;
     static constexpr int64_t MAX_SIZE_SMALL = 255;
 
+    /**
+     * Check if a date or datetime is valid
+     */
+    static bool isValidDate(const string& date);
+
     // Utility functions for verifying expected input.
     static void verifyAttributeInt64(const SData& request, const string& name, size_t minSize);
     static void verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize);
     static void verifyAttributeBool(const SData& request, const string& name, bool require = true);
+    static void verifyAttributeDate(const SData& request, const char* key, bool require);
 
     BedrockPlugin(BedrockServer& s);
     virtual ~BedrockPlugin();
