@@ -656,11 +656,19 @@ void BedrockServer::sync(const SData& args,
                 // If we're following, we just escalate directly to leader without peeking. We can only get an incomplete
                 // command on the follower sync thread if a follower worker thread peeked it unsuccessfully, so we don't
                 // bother peeking it again.
-                auto it = command->request.nameValueMap.find("Connection");
-                bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
-                server._syncNode->escalateCommand(move(command), forget);
-                if (forget) {
-                    // Command is no longer in progress.
+                // We may have multiple commands waiting. If so, escalate them all.
+                size_t escalatedCount = 0;
+                do {
+                    auto it = command->request.nameValueMap.find("Connection");
+                    bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
+                    server._syncNode->escalateCommand(move(command), forget);
+
+                    // Reset this to blank. This releases the existing command and allows it to get cleaned up.
+                    command = unique_ptr<BedrockCommand>(nullptr);
+                    escalatedCount++;
+                } while (command = syncNodeQueuedCommands.pop());
+                if (escalatedCount > 1) {
+                    SINFO("Escalated " << escalatedCount << " commands from syncNodeQueuedCommands while following.");
                 }
             }
         } catch (const out_of_range& e) {
