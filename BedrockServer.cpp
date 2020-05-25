@@ -666,10 +666,14 @@ void BedrockServer::sync(const SData& args,
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
                     command = unique_ptr<BedrockCommand>(nullptr);
                     escalatedCount++;
+                    if (escalatedCount > 1 && syncNodeQueuedCommands.empty()) {
+                        // NOTE: There's a race condition here. It's possible that this queue is empty right now, but
+                        // won't be when we call `pop()` below in a second, so it's feasible we trigger this logline
+                        // multiple times. This is not really important enough to worry about for the problem we're
+                        // fixing.
+                        SINFO("Escalated " << escalatedCount << " commands from syncNodeQueuedCommands while following.");
+                    }
                 } while (command = syncNodeQueuedCommands.pop());
-                if (escalatedCount > 1) {
-                    SINFO("Escalated " << escalatedCount << " commands from syncNodeQueuedCommands while following.");
-                }
             }
         } catch (const out_of_range& e) {
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
