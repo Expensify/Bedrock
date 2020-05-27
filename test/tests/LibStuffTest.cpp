@@ -62,9 +62,16 @@ struct LibStuff : tpunit::TestFixture {
 
     void testJSON() {
         // Floating point value tests
-        ASSERT_EQUAL(SToJSON("{\"imAFloat\":1.2}"), "{\"imAFloat\":1.2}");
+        ASSERT_EQUAL(SToJSON("{\"imAFloat\":0.0000}"), "{\"imAFloat\":0.0000}");
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":-0.23456789}"), "{\"imAFloat\":-0.23456789}");
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":-123456789.23456789}"), "{\"imAFloat\":-123456789.23456789}");
+        ASSERT_EQUAL(SToJSON("{\"object\":{\"imAFloat\":1.00}}"), "{\"object\":{\"imAFloat\":1.00}}");
+
+        STable test;
+        test["imAFloat"] = (double)0.0000;
+        string returnVal = SComposeJSONObject(test);
+        cout << "returnVal: " << returnVal << endl;
+        ASSERT_EQUAL(returnVal, "{\"imAFloat\":0.0000}");
 
         // Scientific notation tests
         ASSERT_EQUAL(SToJSON("{\"science\":1.5e-8}"), "{\"science\":1.5e-8}");
