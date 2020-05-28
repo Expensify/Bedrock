@@ -67,11 +67,10 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":-123456789.23456789}"), "{\"imAFloat\":-123456789.23456789}");
         ASSERT_EQUAL(SToJSON("{\"object\":{\"imAFloat\":1.00}}"), "{\"object\":{\"imAFloat\":1.00}}");
 
-        STable test;
-        test["imAFloat"] = (double)0.0000;
-        string returnVal = SComposeJSONObject(test);
-        cout << "returnVal: " << returnVal << endl;
-        ASSERT_EQUAL(returnVal, "{\"imAFloat\":0.0000}");
+        STable testFloats;
+        testFloats["imAFloat"] = (double)0.000;
+        string returnVal = SComposeJSONObject(testFloats);
+        ASSERT_EQUAL(returnVal, "{\"imAFloat\":0.000000}");
 
         // Scientific notation tests
         ASSERT_EQUAL(SToJSON("{\"science\":1.5e-8}"), "{\"science\":1.5e-8}");

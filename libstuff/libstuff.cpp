@@ -1191,8 +1191,13 @@ extern const char* _SParseJSONValue(const char* ptr, const char* end, string& va
 
 string SToJSON(const string& value, const bool forceString) {
     // Is it an integer?
-    if (SToStr(SToInt64(value.c_str())) == value)
+    if (SToStr(SToInt64(value.c_str())) == value) {
         return value;
+    }
+    // Is it a float?
+    if (SToStr(SToFloat(value.c_str())) == value) {
+        return value;
+    }
 
     // Is it boolean?
     if (SIEquals(value, "true"))
