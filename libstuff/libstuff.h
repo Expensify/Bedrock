@@ -26,6 +26,7 @@
 #include <cctype>
 #include <chrono>
 #include <condition_variable>
+#include <iomanip>
 #include <iostream>
 #include <list>
 #include <map>
@@ -378,7 +379,7 @@ string SHexStringFromBase32(const string& buffer);
 // **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
 template <class T> inline string SToStr(const T& t) {
     ostringstream ss;
-    ss << t;
+    ss << fixed << showpoint << setprecision(6) << t;
     return ss.str();
 }
 
