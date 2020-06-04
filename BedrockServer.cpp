@@ -533,8 +533,26 @@ void BedrockServer::sync(const SData& args,
                 continue;
             }
 
-            // We're going to run through all of the commands in our queue.
-            while (true) {
+            // We want to run through all of the commands in our queue. However, we set a maximum limit. There's a race
+            // condition that can happen when leader is standing down. In that case, when we escalate a command,
+            // SQLiteNode immediately gives it back to the BedrockServer to handle, which will peek and then process it
+            // normally, and it can then be ready to be escalated again. So it gets back here, and this causes a loop
+            // of re-processing the command multiple times until the leader finishes standing down.
+            //
+            // This means that it's possible we get stuck in an infinite loop here until the server finishes standing
+            // down, though that in itself wouldn't be too horrible. It'd resolve when leader finished standing down.
+            // 
+            // There are two problems.
+            // 1. We don't know that leader is done standing down until we poll the sync node, so we need to get out of
+            // this loop to check.
+            // 2. The pipe we use inside of `syncNodeQueuedCommands` has a buffer size of 64k. If we add more than 64k
+            // items to the queue without reading from the pipe, we'll block further writes, causing deadlocks until we
+            // read again, but again, the read is done in postPoll, so we need to break out of this loop so we can
+            // clear that buffer.
+            // TODO: We could probably make writes non-blocking as well, and mitigate case 2 above, but we'd still have
+            // to deal with case 1.
+            size_t escalatedCount = 0;
+            while (++escalateCount < 1000) {
 
                 // Reset this to blank. This releases the existing command and allows it to get cleaned up.
                 command = unique_ptr<BedrockCommand>(nullptr);
@@ -666,6 +684,9 @@ void BedrockServer::sync(const SData& args,
                     bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
                     server._syncNode->escalateCommand(move(command), forget);
                 }
+            }
+            if (escalatedCount == 1000) {
+                SINFO("Escalated 1000 commands without hitting the end of the queue. Breaking.");
             }
         } catch (const out_of_range& e) {
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
