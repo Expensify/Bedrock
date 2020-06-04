@@ -551,7 +551,7 @@ void BedrockServer::sync(const SData& args,
             // clear that buffer.
             // TODO: We could probably make writes non-blocking as well, and mitigate case 2 above, but we'd still have
             // to deal with case 1.
-            size_t escalatedCount = 0;
+            size_t escalateCount = 0;
             while (++escalateCount < 1000) {
 
                 // Reset this to blank. This releases the existing command and allows it to get cleaned up.
@@ -685,7 +685,7 @@ void BedrockServer::sync(const SData& args,
                     server._syncNode->escalateCommand(move(command), forget);
                 }
             }
-            if (escalatedCount == 1000) {
+            if (escalateCount == 1000) {
                 SINFO("Escalated 1000 commands without hitting the end of the queue. Breaking.");
             }
         } catch (const out_of_range& e) {
