@@ -2344,3 +2344,10 @@ void SQLiteNode::handleRollbackTransaction(Peer* peer, const SData& message) {
         commandIt->second->transaction = message;
     }
 }
+
+SQLiteNode::State SQLiteNode::leaderState() const {
+    if (_leadPeer) {
+        return _leadPeer->state;
+    }
+    return State::UNKNOWN;
+}
