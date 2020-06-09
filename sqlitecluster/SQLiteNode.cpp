@@ -580,6 +580,7 @@ bool SQLiteNode::update() {
                 peer->erase("StandupResponse");
             }
             _changeState(STANDINGUP);
+            _leaderVersion = _version;
             return true; // Re-update
         }
 
