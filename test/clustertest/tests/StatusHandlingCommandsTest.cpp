@@ -25,20 +25,22 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
         thread healthCheckThread([this, &results, &follower](){
             SData cmd("GET /status/handlingCommands HTTP/1.1");
             string result;
-            bool found0, found1, found2;
+            bool foundLeader = false;
+            bool foundFollower = false;
+            bool foundStandingdown = false;
             chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-            while (chrono::steady_clock::now() < start + 60s && (!found0 || !found1 || !found2)) {
+            while (chrono::steady_clock::now() < start + 60s && (!foundLeader || !foundFollower || !foundStandingdown)) {
                 result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
                 if (result == "HTTP/1.1 200 LEADING") {
                     results[0] = result;
-                    found0 = true;
+                    foundLeader = true;
                 } else if (result == "HTTP/1.1 200 FOLLOWING") {
                     results[1] = result;
-                    found1 = true;
+                    foundFollower = true;
                 } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
                     results[2] = result;
-                    found2 = true;
+                    foundStandingdown = true;
                 }
             }
         });
