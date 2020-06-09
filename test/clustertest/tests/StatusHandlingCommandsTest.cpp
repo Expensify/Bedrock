@@ -9,7 +9,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup () {
         tester = new BedrockClusterTester();
     }
 
@@ -18,67 +18,52 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
     }
 
     void test() {
-        bool success = false;
-        int count = 0;
         vector<string> results(3);
         BedrockTester& leader = tester->getTester(0);
         BedrockTester& follower = tester->getTester(1);
 
-        while (count++ < 10) {
-            thread healthCheckThread([this, &results, &follower](){
-                SData cmd("GET /status/handlingCommands HTTP/1.1");
-                string result;
-                bool found0, found1, found2;
-                chrono::steady_clock::time_point start = chrono::steady_clock::now();
+        thread healthCheckThread([this, &results, &follower](){
+            SData cmd("GET /status/handlingCommands HTTP/1.1");
+            string result;
+            bool found0, found1, found2;
+            chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-                while (chrono::steady_clock::now() < start + 60s && (!found0 || !found1 || !found2)) {
-                    result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
-                    if (result == "HTTP/1.1 200 LEADING") {
-                        results[0] = result;
-                        found0 = true;
-                    } else if (result == "HTTP/1.1 200 FOLLOWING") {
-                        results[1] = result;
-                        found1 = true;
-                    } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
-                        results[2] = result;
-                        found2 = true;
-                    }
+            while (chrono::steady_clock::now() < start + 60s && (!found0 || !found1 || !found2)) {
+                result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
+                if (result == "HTTP/1.1 200 LEADING") {
+                    results[0] = result;
+                    found0 = true;
+                } else if (result == "HTTP/1.1 200 FOLLOWING") {
+                    results[1] = result;
+                    found1 = true;
+                } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
+                    results[2] = result;
+                    found2 = true;
                 }
-            });
-
-            leader.stopServer();
-
-            // Execute a slow query while the follower is leading so when the
-            // leader is brought back up, it will be STANDINGDOWN until it finishes
-            thread slowQueryThread([this, &follower](){
-                SData slow("slowquery");
-                slow["processTimeout"] = "5000"; // 5s
-                follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
-            });
-
-            leader.startServer(true);
-            slowQueryThread.join();
-            healthCheckThread.join();
-
-            if (results[0] ==  "HTTP/1.1 200 LEADING" &&
-                results[1] == "HTTP/1.1 200 FOLLOWING" &&
-                results[2] == "HTTP/1.1 200 STANDINGDOWN")
-            {
-                success = true;
-                break;
             }
+        });
 
-            sleep(1);
+        leader.stopServer();
+
+        // Execute a slow query while the follower is leading so when the
+        // leader is brought back up, it will be STANDINGDOWN until it finishes
+        thread slowQueryThread([this, &follower](){
+            SData slow("slowquery");
+            slow["processTimeout"] = "5000"; // 5s
+            follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
+        });
+
+        leader.startServer(true);
+        slowQueryThread.join();
+        healthCheckThread.join();
+
+        for (auto &result : results) {
+            cerr << result << endl;
         }
 
-        if (!success) {
-            for (auto &result : results) {
-                cerr << result << endl;
-            }
-        }
-
-
-        ASSERT_TRUE(success);
+        ASSERT_EQUAL(results[0], "HTTP/1.1 200 LEADING")
+        ASSERT_EQUAL(results[1], "HTTP/1.1 200 FOLLOWING")
+        ASSERT_EQUAL(results[2], "HTTP/1.1 200 STANDINGDOWN")
     }
 
 } __StatusHandlingCommandsTest;
