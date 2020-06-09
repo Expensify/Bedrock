@@ -85,13 +85,36 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 
     _replicationThreadsShouldExit = true;
+    _replicationCV.notify_all();
     for (auto& t : _replicationThreads) {
         t.join();
     }
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db) {
+    while (true) {
+        // Exit when required.
+        if (node._replicationThreadsShouldExit) {
+            return;
+        }
 
+        // Lock and check the queue.
+        unique_lock<mutex> lock(node._replicationMutex);
+        if (node._replicationCommands.empty()) {
+            node._replicationCV.wait(lock);
+        }
+        // If it's *still* empty, then there's no work to do, jump to the top, maybe we were spuriously interrupted, or
+        // maybe we're shutting down.
+        if (node._replicationCommands.empty()) {
+            continue; // Waited, but no command. Start from top.
+        }
+
+        // Dequeue.
+        SData command = node._replicationCommands.front();
+        node._replicationCommands.pop_front();
+        lock.unlock();
+        // handleCommand();
+    }
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)

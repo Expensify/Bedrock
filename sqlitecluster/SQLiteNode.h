@@ -214,5 +214,9 @@ class SQLiteNode : public STCPNode {
     atomic<bool> _replicationThreadsShouldExit;
     list<thread> _replicationThreads;
 
+    mutex _replicationMutex;
+    condition_variable _replicationCV;
+    list<SData> _replicationCommands;
+
     static void replicate(SQLiteNode& node, SQLite& db);
 };
