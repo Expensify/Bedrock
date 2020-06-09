@@ -34,10 +34,15 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
-SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
-                       const string& peerList, int priority, uint64_t firstTimeout, const string& version)
+SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicationDBs, const string& name,
+                       const string& host, const string& peerList, int priority, uint64_t firstTimeout,
+                       const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
+      _db(db),
+      _replicationDBs(replicationDBs),
+      _commitState(CommitState::UNINITIALIZED),
+      _server(server),
+      _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
       _handledCommitCount(0)
     {

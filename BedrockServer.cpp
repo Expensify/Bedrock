@@ -163,6 +163,8 @@ void BedrockServer::sync(const SData& args,
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
     int workerThreads = args.calc("-workerThreads");
 
+    int replicationThreads = 8; // TODO: make configurable.
+
     // TODO: remove when nothing uses readThreads.
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
@@ -174,9 +176,17 @@ void BedrockServer::sync(const SData& args,
         workerThreads = 2;
     }
 
+    int maxJournalTableID = workerThreads + replicationThreads - 1;
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, workerThreads - 1, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+
+    list<SQLite> replicationDBs;
+    for (int i = 0; i < replicationThreads; i++) {
+        replicationDBs.emplace_back(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads + i, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    }
+
+    // Create some more 
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -185,7 +195,7 @@ void BedrockServer::sync(const SData& args,
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    server._syncNode = make_shared<SQLiteNode>(server, db, args["-nodeName"], args["-nodeHost"],
+    server._syncNode = make_shared<SQLiteNode>(server, db, replicationDBs, args["-nodeName"], args["-nodeHost"],
                                                args["-peerList"], args.calc("-priority"), firstTimeout,
                                                server._version);
 
@@ -209,7 +219,7 @@ void BedrockServer::sync(const SData& args,
                                       ref(server._completedCommands),
                                       ref(server),
                                       threadId,
-                                      workerThreads);
+                                      maxJournalTableID);
     }
 
     // Now we jump into our main command processing loop.

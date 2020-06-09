@@ -35,8 +35,8 @@ class SQLiteNode : public STCPNode {
     };
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
-               int priority, uint64_t firstTimeout, const string& version);
+    SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicationDBs, const string& name, const string& host,
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.
@@ -113,6 +113,8 @@ class SQLiteNode : public STCPNode {
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
     // to commit and replicate them.
     SQLite& _db;
+
+    list<SQLite>& _replicationDBs;
 
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.
