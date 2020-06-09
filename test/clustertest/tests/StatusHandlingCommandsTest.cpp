@@ -49,7 +49,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
         // leader is brought back up, it will be STANDINGDOWN until it finishes
         thread slowQueryThread([this, &follower](){
             SData slow("slowquery");
-            slow["processTimeout"] = "3000"; // 3s
+            slow["processTimeout"] = "5000"; // 5s
             follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
         });
 
