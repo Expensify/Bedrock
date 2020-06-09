@@ -57,6 +57,10 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
         slowQueryThread.join();
         healthCheckThread.join();
 
+        for (auto &result : results) {
+            cerr << result << endl;
+        }
+
         ASSERT_EQUAL(results[0], "HTTP/1.1 200 LEADING")
         ASSERT_EQUAL(results[1], "HTTP/1.1 200 FOLLOWING")
         ASSERT_EQUAL(results[2], "HTTP/1.1 200 STANDINGDOWN")
