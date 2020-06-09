@@ -210,4 +210,9 @@ class SQLiteNode : public STCPNode {
 
     WallClockTimer _syncTimer;
     uint64_t _handledCommitCount;
+
+    atomic<bool> _replicationThreadsShouldExit;
+    list<thread> _replicationThreads;
+
+    static void replicate(SQLiteNode& node, SQLite& db);
 };

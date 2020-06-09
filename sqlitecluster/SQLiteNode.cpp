@@ -44,7 +44,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
       _server(server),
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
-      _handledCommitCount(0)
+      _handledCommitCount(0),
+     _replicationThreadsShouldExit(false)
     {
     SASSERT(priority >= 0);
     _originalPriority = priority;
@@ -71,12 +72,26 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
         }
         addPeer(name, host, params);
     }
+
+    // Start the replication threads.
+    for (auto& rdb : _replicationDBs) {
+        _replicationThreads.emplace_back(replicate, ref(*this), ref(rdb));
+    }
 }
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
+
+    _replicationThreadsShouldExit = true;
+    for (auto& t : _replicationThreads) {
+        t.join();
+    }
+}
+
+void SQLiteNode::replicate(SQLiteNode& node, SQLite& db) {
+
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
