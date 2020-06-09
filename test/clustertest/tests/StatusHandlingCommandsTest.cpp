@@ -29,20 +29,16 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
             bool found0, found1, found2;
 
             while (STimeNow() < start + 6'0000'000 && (!found0 || !found1 || !found2)) {
-                try {
-                    result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
-                    if (result == "HTTP/1.1 200 LEADING") {
-                        results[0] = result;
-                        found0 = true;
-                    } else if (result == "HTTP/1.1 200 FOLLOWING") {
-                        results[1] = result;
-                        found1 = true;
-                    } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
-                        results[2] = result;
-                        found2 = true;
-                    }
-                } catch (...) {
-                    // Doesn't do anything, we'll fall through to the sleep and try again.
+                result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
+                if (result == "HTTP/1.1 200 LEADING") {
+                    results[0] = result;
+                    found0 = true;
+                } else if (result == "HTTP/1.1 200 FOLLOWING") {
+                    results[1] = result;
+                    found1 = true;
+                } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
+                    results[2] = result;
+                    found2 = true;
                 }
             }
         });
