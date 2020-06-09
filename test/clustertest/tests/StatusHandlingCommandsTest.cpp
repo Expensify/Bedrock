@@ -25,10 +25,10 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
         thread healthCheckThread([this, &results, &follower](){
             SData cmd("GET /status/handlingCommands HTTP/1.1");
             string result;
-            uint64_t start = STimeNow();
             bool found0, found1, found2;
+            chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-            while (STimeNow() < start + 6'0000'000 && (!found0 || !found1 || !found2)) {
+            while (chrono::steady_clock::now() < start + 60s && (!found0 || !found1 || !found2)) {
                 result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
                 if (result == "HTTP/1.1 200 LEADING") {
                     results[0] = result;
