@@ -204,9 +204,9 @@ class SQLiteNode : public STCPNode {
     chrono::steady_clock::time_point _lastNetStatTime;
 
     // Handler for transaction messages.
-    void handleBeginTransaction(Peer* peer, const SData& message);
-    void handleCommitTransaction(Peer* peer, const SData& message);
-    void handleRollbackTransaction(Peer* peer, const SData& message);
+    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message);
+    void handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
+    void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
 
     WallClockTimer _syncTimer;
     uint64_t _handledCommitCount;
@@ -216,7 +216,10 @@ class SQLiteNode : public STCPNode {
 
     mutex _replicationMutex;
     condition_variable _replicationCV;
-    list<SData> _replicationCommands;
+    list<pair<Peer*, SData>> _replicationCommands;
+    atomic<uint64_t> _replicationCommitCount;
+    atomic<uint64_t> _replicationLastCommitted;
+    map<uint64_t, string> _replicationHashes;
 
-    static void replicate(SQLiteNode& node, SQLite& db);
+    static void replicate(SQLiteNode& node, SQLite& db, int threadNum);
 };
