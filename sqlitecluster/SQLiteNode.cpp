@@ -46,8 +46,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
       _lastNetStatTime(chrono::steady_clock::now()),
       _handledCommitCount(0),
      _replicationThreadsShouldExit(false),
-     _replicationCommitCount(0),
-     _replicationLastCommitted(_db.getCommitCount())
+     _replicationCommitCount(0)
     {
     SASSERT(priority >= 0);
     _originalPriority = priority;
@@ -106,68 +105,82 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             return;
         }
 
-        // Lock and check the queue.
-        unique_lock<mutex> lock(node._replicationMutex);
-        if (node._replicationCommands.empty()) {
-            node._replicationCV.wait(lock);
-        }
-        // If it's *still* empty, then there's no work to do, jump to the top, maybe we were spuriously interrupted, or
-        // maybe we're shutting down.
-        if (node._replicationCommands.empty()) {
-            continue;
-        }
+        // Get a command to work on.
+        try {
+            // Currently, this will spin if there's nothing to do.
+            auto p = node._replicationCommands.pop();
+            auto& peer = p.first;
+            auto& command = p.second;
 
-        // Dequeue.
-        auto p = node._replicationCommands.front();
-        node._replicationCommands.pop_front();
-        // lock.unlock(); TODO: uncomment, make actually multi-threaded.
-        auto& peer = p.first;
-        auto& command = p.second;
+            // Important note:
+            // If everyone dequeues BEGIN_TRANSACTIONs at the same time, then they'll all be waiting and can't run
+            // COMMIT_TRANSACTIONs, and we're stuck. Since they're always come staggered, though, as long as we have two
+            // threads, this should be impossible.
+            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+                SINFO("TYLER begin newCount = " << command.calcU64("NewCount"));
 
-        // Important note:
-        // If everyone dequeues BEGIN_TRANSACTIONs at the same time, then they'll all be waiting and can't run
-        // COMMIT_TRANSACTIONs, and we're stuck. Since they're always come staggered, though, as long as we have two
-        // threads, this should be impossible.
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            SINFO("TYLER begin");
-            node.handleBeginTransaction(db, peer, command);
+                uint64_t commandCommitCount = command.calcU64("NewCount");
+                unique_lock<mutex> lock(node._replicationCommitMutex);
 
-            // Now we need to wait for a commit or rollback;
-            uint64_t commandCommitCount = command.calcU64("NewCount");
-            while (true) {
-                SINFO("TYLER: " << node._replicationCommitCount << " >= " << commandCommitCount << " && " << node._replicationLastCommitted << " == " << commandCommitCount << " - 1");
-                if (node._replicationCommitCount >= commandCommitCount && node._replicationLastCommitted == commandCommitCount - 1) {
-                    {
-                        // lock_guard<mutex> lock(_replicationMutex); TODO: uncomment, make actually multi-threaded.
-                        // (guards _replicationHashes)
-
-                        // IMPORTANT: This assumes this succeeds.
-                        SINFO("TYLER commit");
-                        node.handleCommitTransaction(db, peer, commandCommitCount, node._replicationHashes[commandCommitCount]);
-                        node._replicationLastCommitted = commandCommitCount;
-                    }
-
-                    // Notify any other thread that's waiting on _replicationLastCommitted.
-                    node._replicationCV.notify_all();
-                    break;
-                } else if (false) {
-                    // Some rollback condition.
-                    node.handleRollbackTransaction(db, peer, command);
+                // in synchronous "BEGIN TRANSACTION" mode, we can't lock here unless we're going to be the next
+                // commit.
+                bool isConcurrent = false;
+                while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
+                    SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
+                    node._replicationCV.wait(lock);
                 }
-                node._replicationCV.wait(lock);
-            }
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            // Note that these can get committed.
-            {
-                // lock_guard<mutex> lock(_replicationMutex); TODO: uncomment, make actually multi-threaded.
-                node._replicationCommitCount = command.calcU64("CommitCount");
-                node._replicationHashes.emplace(make_pair(node._replicationCommitCount.load(), command["Hash"]));
-            }
 
-            // No idea which thread might care.
-            node._replicationCV.notify_all();
-        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            // TODO: Should do something.
+                // This can take forever (or, a long time), which means we're blocking the lock. That's find for this first
+                // case, we're trying to organize this so that it works for "BEGIN TRANSACTION" messages, which are
+                // non-concurrent. I think we need a separate lock for managing the queue and committing transactions,
+                // though.
+                node.handleBeginTransaction(db, peer, command);
+
+                // Now we need to wait for a commit or rollback;
+                while (true) {
+                    // TODO: Sometimes this starts at 2 instead of 1????
+                    SINFO("TYLER: " << node._replicationCommitCount << " >= " << commandCommitCount << " && " << node._db.getCommitCount() << " == " << commandCommitCount << " - 1");
+                    if (node._replicationCommitCount >= commandCommitCount && node._db.getCommitCount() == commandCommitCount - 1) {
+                        {
+                            string hash;
+                            {
+                                lock_guard<mutex> lock(node._replicationHashMutex);
+                                hash = node._replicationHashes[commandCommitCount];
+                            }
+
+                            // IMPORTANT: This assumes this succeeds.
+                            SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
+                            node.handleCommitTransaction(db, peer, commandCommitCount, node._replicationHashes[commandCommitCount]);
+
+                            {
+                                lock_guard<mutex> lock(node._replicationHashMutex);
+                                node._replicationHashes.erase(commandCommitCount);
+                            }
+                        }
+
+                        node._replicationCV.notify_all();
+                        break;
+                    } else if (false) {
+                        // Some rollback condition.
+                        node.handleRollbackTransaction(db, peer, command);
+                    }
+                    node._replicationCV.wait(lock);
+                }
+            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+                // Note that these can get committed.
+                {
+                    lock_guard<mutex> lock(node._replicationHashMutex);
+                    node._replicationCommitCount = command.calcU64("CommitCount");
+                    node._replicationHashes.emplace(make_pair(node._replicationCommitCount.load(), command["Hash"]));
+                }
+
+                // No idea which thread might care.
+                node._replicationCV.notify_all();
+            } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
+                // TODO: Should do something.
+            }
+        } catch (const out_of_range& e) {
+            // No commands to work on.
         }
     }
 }
@@ -1524,8 +1537,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
         {
-            lock_guard<mutex> lock(_replicationMutex);
-            _replicationCommands.push_back(make_pair(peer, message));
+            if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
+                SINFO("TYLER enqueue newCount = " << message.calcU64("NewCount"));
+            }
+            _replicationCommands.push(make_pair(peer, message));
         }
         _replicationCV.notify_one();
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
@@ -2095,6 +2110,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Transaction succeeded, commit and go to the next
+        SINFO("Tyler synchronized " << commit.calcU64("CommitIndex"));
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
         if (_db.getCommittedHash() != commit["Hash"])

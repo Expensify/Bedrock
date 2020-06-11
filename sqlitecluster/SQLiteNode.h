@@ -1,6 +1,7 @@
 #pragma once
 #include "SQLite.h"
 #include "WallClockTimer.h"
+#include "libstuff/SSynchronizedQueue.h"
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -214,11 +215,11 @@ class SQLiteNode : public STCPNode {
     atomic<bool> _replicationThreadsShouldExit;
     list<thread> _replicationThreads;
 
-    mutex _replicationMutex;
+    mutex _replicationHashMutex;
+    mutex _replicationCommitMutex;
     condition_variable _replicationCV;
-    list<pair<Peer*, SData>> _replicationCommands;
+    SSynchronizedQueue<pair<Peer*, SData>> _replicationCommands;
     atomic<uint64_t> _replicationCommitCount;
-    atomic<uint64_t> _replicationLastCommitted;
     map<uint64_t, string> _replicationHashes;
 
     static void replicate(SQLiteNode& node, SQLite& db, int threadNum);
