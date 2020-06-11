@@ -141,21 +141,29 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     // TODO: Sometimes this starts at 2 instead of 1????
                     SINFO("TYLER: " << node._replicationCommitCount << " >= " << commandCommitCount << " && " << node._db.getCommitCount() << " == " << commandCommitCount << " - 1");
                     if (node._replicationCommitCount >= commandCommitCount && node._db.getCommitCount() == commandCommitCount - 1) {
-                        {
-                            string hash;
+                        string hash;
+
+                        // These can be blank if we run through `COMMIT_TRANSACTION` messages out of order, but we
+                        // know that they will get set shortly if we've gotten this far.
+                        while (hash == "") {
                             {
                                 lock_guard<mutex> lock(node._replicationHashMutex);
                                 hash = node._replicationHashes[commandCommitCount];
                             }
 
-                            // IMPORTANT: This assumes this succeeds.
-                            SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
-                            node.handleCommitTransaction(db, peer, commandCommitCount, node._replicationHashes[commandCommitCount]);
-
-                            {
-                                lock_guard<mutex> lock(node._replicationHashMutex);
-                                node._replicationHashes.erase(commandCommitCount);
+                            // Ugly, but skips the wait of we got it on the first try.
+                            if (hash == "") {
+                                node._replicationCV.wait(lock);
                             }
+                        }
+
+                        // IMPORTANT: This assumes this succeeds.
+                        SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
+                        node.handleCommitTransaction(db, peer, commandCommitCount, node._replicationHashes[commandCommitCount]);
+
+                        {
+                            lock_guard<mutex> lock(node._replicationHashMutex);
+                            node._replicationHashes.erase(commandCommitCount);
                         }
 
                         node._replicationCV.notify_all();
@@ -169,9 +177,12 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
                 // Note that these can get committed.
                 {
+                    // TODO: These can get run out-of-order, so we might have blank hashes for commits we haven't
+                    // inserted yet.
                     lock_guard<mutex> lock(node._replicationHashMutex);
                     node._replicationCommitCount = command.calcU64("CommitCount");
                     node._replicationHashes.emplace(make_pair(node._replicationCommitCount.load(), command["Hash"]));
+                    SINFO("TYLER hash for commit " << command.calcU64("CommitCount") << ": " << command["Hash"]);
                 }
 
                 // No idea which thread might care.
@@ -1542,7 +1553,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
             _replicationCommands.push(make_pair(peer, message));
         }
-        _replicationCV.notify_one();
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
         // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
@@ -2110,7 +2120,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Transaction succeeded, commit and go to the next
-        SINFO("Tyler synchronized " << commit.calcU64("CommitIndex"));
+        SINFO("TYLER synchronized " << commit.calcU64("CommitIndex"));
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
         if (_db.getCommittedHash() != commit["Hash"])
@@ -2402,7 +2412,7 @@ void SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t 
               + to_string(db.getCommitCount() + 1));
     }
     if (commandCommitHash != db.getUncommittedHash()) {
-        STHROW("hash mismatch");
+        STHROW("hash mismatch:" + commandCommitHash + "!=" + db.getUncommittedHash() + ";");
     }
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
