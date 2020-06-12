@@ -100,8 +100,8 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
     SInitialize("repl" + to_string(threadNum));
     while (true) {
-        // Exit when required.
-        if (node._replicationThreadsShouldExit) {
+        // Exit when required. We don't actually exit until the queue is empty.
+        if (node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
             return;
         }
 
@@ -148,22 +148,28 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         while (hash == "") {
                             {
                                 lock_guard<mutex> lock(node._replicationHashMutex);
-                                hash = node._replicationHashes[commandCommitCount];
+                                auto it = node._replicationHashes.find(commandCommitCount);
+                                if (it != node._replicationHashes.end()) {
+                                    hash = it->second;
+                                }
                             }
 
                             // Ugly, but skips the wait of we got it on the first try.
                             if (hash == "") {
+                                SINFO("TYLER waiting on hash");
                                 node._replicationCV.wait(lock);
+                                SINFO("TYLER done waiting on hash, re-checking");
                             }
                         }
 
                         // IMPORTANT: This assumes this succeeds.
                         SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
-                        node.handleCommitTransaction(db, peer, commandCommitCount, node._replicationHashes[commandCommitCount]);
+                        node.handleCommitTransaction(db, peer, commandCommitCount, hash);
 
                         {
                             lock_guard<mutex> lock(node._replicationHashMutex);
                             node._replicationHashes.erase(commandCommitCount);
+                            SINFO("TYLER clearing hash for commit " << commandCommitCount);
                         }
 
                         node._replicationCV.notify_all();
@@ -175,14 +181,19 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     node._replicationCV.wait(lock);
                 }
             } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-                // Note that these can get committed.
                 {
-                    // TODO: These can get run out-of-order, so we might have blank hashes for commits we haven't
-                    // inserted yet.
-                    lock_guard<mutex> lock(node._replicationHashMutex);
-                    node._replicationCommitCount = command.calcU64("CommitCount");
-                    node._replicationHashes.emplace(make_pair(node._replicationCommitCount.load(), command["Hash"]));
-                    SINFO("TYLER hash for commit " << command.calcU64("CommitCount") << ": " << command["Hash"]);
+                    uint64_t commandCommitCount = command.calcU64("CommitCount");
+                    {
+                        lock_guard<mutex> lock(node._replicationHashMutex);
+                        // NOTE: assignment to _replicationCommitCount is guarded by _replicationHashMutex, which is maybe
+                        // unclear. This is intentional and important because of the comparison done around the
+                        // assignment.
+                        if (commandCommitCount > node._replicationCommitCount) {
+                            node._replicationCommitCount = commandCommitCount;
+                        }
+                        node._replicationHashes.emplace(make_pair(commandCommitCount, command["Hash"]));
+                    }
+                    SINFO("TYLER hash for commit " << commandCommitCount << ": " << command["Hash"]);
                 }
 
                 // No idea which thread might care.
