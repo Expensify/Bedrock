@@ -74,23 +74,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
         addPeer(name, host, params);
     }
 
-    // Start the replication threads.
-    int i = 0;
-    for (auto& rdb : _replicationDBs) {
-        _replicationThreads.emplace_back(replicate, ref(*this), ref(rdb), i++);
-    }
 }
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
-
-    _replicationThreadsShouldExit = true;
-    _replicationCV.notify_all();
-    for (auto& t : _replicationThreads) {
-        t.join();
-    }
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
@@ -128,6 +117,9 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
                     SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
                     node._replicationCV.wait(lock);
+                    if (node._state != FOLLOWING) {
+                        return;
+                    }
                 }
 
                 // This can take forever (or, a long time), which means we're blocking the lock. That's find for this first
@@ -159,6 +151,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                                 SINFO("TYLER waiting on hash");
                                 node._replicationCV.wait(lock);
                                 SINFO("TYLER done waiting on hash, re-checking");
+                                if (node._state != FOLLOWING) {
+                                    db.rollback();
+                                    return;
+                                }
                             }
                         }
 
@@ -179,6 +175,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         node.handleRollbackTransaction(db, peer, command);
                     }
                     node._replicationCV.wait(lock);
+                    if (node._state != FOLLOWING) {
+                        db.rollback();
+                        return;
+                    }
                 }
             } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
                 {
@@ -1918,6 +1918,36 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Did we actually change _state?
     State oldState = _state;
     if (newState != oldState) {
+        // If we were following, and now we're not, we give up an any replications.
+        unique_lock<decltype(_replicationCommitMutex)> lock(_replicationCommitMutex, defer_lock);
+        if (oldState == FOLLOWING) {
+            // Prevent replication from continuing while state changes.
+            lock.lock();
+
+            // Clear the replication queue.
+            while (true) {
+                try {
+                    _replicationCommands.pop();
+                } catch (const out_of_range& e) {
+                    break;
+                }
+            }
+
+            // Kill the threads until we're following again.
+            _replicationThreadsShouldExit = true;
+            _replicationCV.notify_all();
+            for (auto& t : _replicationThreads) {
+                t.join();
+            }
+            _replicationThreads.clear();
+        }
+        if (newState == FOLLOWING) {
+            // Start the replication threads.
+            int i = 0;
+            for (auto& rdb : _replicationDBs) {
+                _replicationThreads.emplace_back(replicate, ref(*this), ref(rdb), i++);
+            }
+        }
         // Depending on the state, set a timeout
         SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
         uint64_t timeout = 0;
