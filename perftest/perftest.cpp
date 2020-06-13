@@ -30,6 +30,7 @@ static int global_csv = 0;
 static int global_begin_concurrent = 0;
 static const char* global_vms = "unix";
 static const char* global_locking_mode = "NORMAL";
+static bool global_verbose = false;
 
 // Data about the database
 static uint64_t global_dbRows = 0;
@@ -330,6 +331,10 @@ int main(int argc, char *argv[]) {
             cout << "numa_num_task_cpus=" << numa_num_task_cpus() << endl;
             cout << "numa_num_task_nodes=" << numa_num_task_nodes() << endl;
         } else
+        if (z == string("-v")) {
+            // Output additional details
+            global_verbose = true;
+        } else
         {
             cerr << "unknown option: " << argv[i] << "\n";
             exit(1);
@@ -364,21 +369,25 @@ int main(int argc, char *argv[]) {
             testQuery += "COMMIT;";
         }
     }
-    cout << "global_bMmap: " << global_bMmap << endl;
-    cout << "global_dbFilename: " << global_dbFilename << endl;
-    cout << "global_cacheSize: " << global_cacheSize << endl;
-    cout << "global_readSize: " << global_readSize << endl;
-    cout << "global_writeSize: " << global_writeSize << endl;
-    cout << "global_writePercent: " << global_writePercent << endl;
-    cout << "global_numa: " << global_numa << endl;
-    cout << "global_numaPack: " << global_numaPack << endl;
-    cout << "global_testSeconds: " << global_testSeconds << endl;
-    cout << "global_linear: " << global_linear << endl;
-    cout << "global_csv: " << global_csv << endl;
-    cout << "global_vms: " << global_vms << endl;
-    cout << "global_locking_mode: " << global_locking_mode << endl;
-    cout << "global_begin_concurrent: " << global_begin_concurrent << endl;
-    cout << "testQuery: " << testQuery << endl;
+
+    // Output everything we've read, if asked
+    if (global_verbose) {
+        cout << "global_bMmap: " << global_bMmap << endl;
+        cout << "global_dbFilename: " << global_dbFilename << endl;
+        cout << "global_cacheSize: " << global_cacheSize << endl;
+        cout << "global_readSize: " << global_readSize << endl;
+        cout << "global_writeSize: " << global_writeSize << endl;
+        cout << "global_writePercent: " << global_writePercent << endl;
+        cout << "global_numa: " << global_numa << endl;
+        cout << "global_numaPack: " << global_numaPack << endl;
+        cout << "global_testSeconds: " << global_testSeconds << endl;
+        cout << "global_linear: " << global_linear << endl;
+        cout << "global_csv: " << global_csv << endl;
+        cout << "global_vms: " << global_vms << endl;
+        cout << "global_locking_mode: " << global_locking_mode << endl;
+        cout << "global_begin_concurrent: " << global_begin_concurrent << endl;
+        cout << "testQuery: " << testQuery << endl;
+    }
 
     // Run the test for however many configurations were requested
     if (global_csv) {
