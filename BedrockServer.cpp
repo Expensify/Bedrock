@@ -1901,13 +1901,19 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         }
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
-        SQLiteNode::State state = _replicationState.load();
-        if (state != SQLiteNode::FOLLOWING) {
-            response.methodLine = "HTTP/1.1 500 Not following. State=" + SQLiteNode::stateName(state);
-        } else if (_version != _leaderVersion.load()) {
+
+        if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            response.methodLine = "HTTP/1.1 200 Following";
+            SQLiteNode::State state = _replicationState.load();
+            string method = "HTTP/1.1 ";
+
+            if (state == SQLiteNode::FOLLOWING || state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN) {
+                method += "200";
+            } else {
+                method += "500";
+            }
+            response.methodLine = method + " " + SQLiteNode::stateName(state);
         }
     }
 
