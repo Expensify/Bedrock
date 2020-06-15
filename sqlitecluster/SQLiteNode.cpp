@@ -204,7 +204,11 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 // TODO: Should do something.
             }
         } catch (const out_of_range& e) {
-            // No commands to work on.
+            // No commands to work on. Make sure we don't hit a race condition, and wait for one.
+            unique_lock<mutex> lock(node._replicationCommitMutex);
+            if (node._replicationCommands.empty()) {
+                node._replicationCV.wait(lock);
+            }
         }
     }
 }
@@ -1565,6 +1569,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("TYLER enqueue newCount = " << message.calcU64("NewCount"));
             }
             _replicationCommands.push(make_pair(peer, message));
+            _replicationCV.notify_all();
         }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
