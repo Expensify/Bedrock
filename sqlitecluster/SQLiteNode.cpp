@@ -177,6 +177,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     }
                     node._replicationCV.wait(lock);
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
+                        SINFO("TYLER Need to exit, quitting replication thread.");
                         db.rollback();
                         return;
                     }
@@ -1920,34 +1921,30 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     State oldState = _state;
     if (newState != oldState) {
         // If we were following, and now we're not, we give up an any replications.
-        unique_lock<decltype(_replicationCommitMutex)> lock(_replicationCommitMutex, defer_lock);
         if (oldState == FOLLOWING) {
-            // Prevent replication from continuing while state changes.
-            lock.lock();
-
-            // Clear the replication queue.
-            while (true) {
-                try {
-                    // TODO: Maybe do the opposite and wait for everything to finish, perhaps we're expecting
-                    // everything that was received in FOLLOWING to have been applied when we go LEADING?
-                    _replicationCommands.pop();
-                } catch (const out_of_range& e) {
-                    break;
+            {
+                SINFO("TYLER stopping following.");
+                unique_lock<decltype(_replicationCommitMutex)> lock(_replicationCommitMutex);
+                // Clear the replication queue.
+                while (true) {
+                    try {
+                        // TODO: Maybe do the opposite and wait for everything to finish, perhaps we're expecting
+                        // everything that was received in FOLLOWING to have been applied when we go LEADING?
+                        _replicationCommands.pop();
+                    } catch (const out_of_range& e) {
+                        break;
+                    }
                 }
-            }
 
-            // Kill the threads until we're following again.
-            _replicationThreadsShouldExit = true;
-            lock.unlock();
+                // Kill the threads until we're following again.
+                _replicationThreadsShouldExit = true;
+            }
             _replicationCV.notify_all();
             for (auto& t : _replicationThreads) {
                 t.join();
             }
             _replicationThreads.clear();
-
-            // Not sure this is necessary. Probably isn't cause the threads above should be the only other place that
-            // can effect this, and they've exited.
-            lock.lock();
+            SINFO("TYLER stopped following.");
         }
         if (newState == FOLLOWING) {
             // Start the replication threads.

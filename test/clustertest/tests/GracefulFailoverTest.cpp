@@ -185,6 +185,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up leader.
+        cout << "Killing server number: " << tester->getTester(0).getNodePort() << endl;
         tester->getTester(0).stopServer(SIGKILL);
 
         // Wait for node 1 to be leader.
