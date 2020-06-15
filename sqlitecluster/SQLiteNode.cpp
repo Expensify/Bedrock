@@ -129,11 +129,16 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 // case, we're trying to organize this so that it works for "BEGIN TRANSACTION" messages, which are
                 // non-concurrent. I think we need a separate lock for managing the queue and committing transactions,
                 // though.
-                node.handleBeginTransaction(db, peer, command);
+                try {
+                    node.handleBeginTransaction(db, peer, command);
+                } catch (const SException& e) {
+                    // Assume we want to exit.
+                    SINFO("TYLER Replication exit 2.1: " << e.what());
+                    return;
+                }
 
                 // Now we need to wait for a commit or rollback;
                 while (true) {
-                    // TODO: Sometimes this starts at 2 instead of 1????
                     SINFO("TYLER: " << node._replicationCommitCount << " >= " << commandCommitCount << " && " << node._db.getCommitCount() << " == " << commandCommitCount << " - 1");
                     if (node._replicationCommitCount >= commandCommitCount && node._db.getCommitCount() == commandCommitCount - 1) {
                         string hash;
@@ -164,7 +169,13 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                         // IMPORTANT: This assumes this succeeds.
                         SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
-                        node.handleCommitTransaction(db, peer, commandCommitCount, hash);
+                        try {
+                            node.handleCommitTransaction(db, peer, commandCommitCount, hash);
+                        } catch (const SException& e) {
+                            db.rollback();
+                            SINFO("TYLER Replication exit 3.1: " << e.what());
+                            return;
+                        }
 
                         {
                             lock_guard<mutex> lock(node._replicationHashMutex);
@@ -210,7 +221,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
         } catch (const out_of_range& e) {
             // No commands to work on. Make sure we don't hit a race condition, and wait for one.
             unique_lock<mutex> lock(node._replicationCommitMutex);
-            if (node._replicationCommands.empty()) {
+            if (!node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
                 node._replicationCV.wait(lock);
             }
         }
@@ -2358,6 +2369,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     if (_state != FOLLOWING) {
         STHROW("not following");
     }
+    // Race condition here.
     if (!_leadPeer) {
         STHROW("no leader?");
     }
