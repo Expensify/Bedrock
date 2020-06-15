@@ -78,6 +78,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
+    SINFO("Destroying SQLiteNode in state: " << stateName(_state));
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
 }
@@ -117,7 +118,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
                     SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
                     node._replicationCV.wait(lock);
-                    if (node._state != FOLLOWING) {
+                    if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         return;
                     }
                 }
@@ -151,7 +152,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                                 SINFO("TYLER waiting on hash");
                                 node._replicationCV.wait(lock);
                                 SINFO("TYLER done waiting on hash, re-checking");
-                                if (node._state != FOLLOWING) {
+                                if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                                     db.rollback();
                                     return;
                                 }
@@ -175,7 +176,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         node.handleRollbackTransaction(db, peer, command);
                     }
                     node._replicationCV.wait(lock);
-                    if (node._state != FOLLOWING) {
+                    if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         db.rollback();
                         return;
                     }
@@ -1927,6 +1928,8 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Clear the replication queue.
             while (true) {
                 try {
+                    // TODO: Maybe do the opposite and wait for everything to finish, perhaps we're expecting
+                    // everything that was received in FOLLOWING to have been applied when we go LEADING?
                     _replicationCommands.pop();
                 } catch (const out_of_range& e) {
                     break;
@@ -1935,11 +1938,16 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
             // Kill the threads until we're following again.
             _replicationThreadsShouldExit = true;
+            lock.unlock();
             _replicationCV.notify_all();
             for (auto& t : _replicationThreads) {
                 t.join();
             }
             _replicationThreads.clear();
+
+            // Not sure this is necessary. Probably isn't cause the threads above should be the only other place that
+            // can effect this, and they've exited.
+            lock.lock();
         }
         if (newState == FOLLOWING) {
             // Start the replication threads.
