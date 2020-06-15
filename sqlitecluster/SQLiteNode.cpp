@@ -92,6 +92,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
     while (true) {
         // Exit when required. We don't actually exit until the queue is empty.
         if (node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
+            SINFO("TYLER Replication exit 1");
             return;
         }
 
@@ -119,6 +120,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
                     node._replicationCV.wait(lock);
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
+                        SINFO("TYLER Replication exit 2");
                         return;
                     }
                 }
@@ -154,6 +156,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                                 SINFO("TYLER done waiting on hash, re-checking");
                                 if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                                     db.rollback();
+                                    SINFO("TYLER Replication exit 3");
                                     return;
                                 }
                             }
@@ -179,6 +182,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         SINFO("TYLER Need to exit, quitting replication thread.");
                         db.rollback();
+                        SINFO("TYLER Replication exit 4");
                         return;
                     }
                 }
@@ -211,6 +215,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             }
         }
     }
+    SINFO("TYLER Replication exit 5");
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -1949,6 +1954,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 t.join();
             }
             _replicationThreads.clear();
+
+            // Done exiting.
+            _replicationThreadsShouldExit = false;
             SINFO("TYLER stopped following.");
         }
         if (newState == FOLLOWING) {
