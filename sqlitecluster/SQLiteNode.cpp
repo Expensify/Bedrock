@@ -353,6 +353,7 @@ bool SQLiteNode::update() {
             // There are no peers, jump straight to leading
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(LEADING);
+            _leaderVersion = _version;
             return true; // Re-update immediately
         }
 
@@ -580,7 +581,6 @@ bool SQLiteNode::update() {
                 peer->erase("StandupResponse");
             }
             _changeState(STANDINGUP);
-            _leaderVersion = _version;
             return true; // Re-update
         }
 
@@ -641,6 +641,7 @@ bool SQLiteNode::update() {
             // Complete standup
             SINFO("All peers approved standup, going LEADING.");
             _changeState(LEADING);
+            _leaderVersion = _version;
             return true; // Re-update
         }
 
