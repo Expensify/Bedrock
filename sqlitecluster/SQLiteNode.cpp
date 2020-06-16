@@ -217,6 +217,8 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 node._replicationCV.notify_all();
             } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
                 // TODO: Should do something.
+                SINFO("TYLER OF COURSE THIS FAILS");
+                cout << "Failing cause ROLLBACK is unimplemented." << endl;
             }
         } catch (const out_of_range& e) {
             // No commands to work on. Make sure we don't hit a race condition, and wait for one.
