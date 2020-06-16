@@ -221,6 +221,7 @@ class SQLiteNode : public STCPNode {
     SSynchronizedQueue<pair<Peer*, SData>> _replicationCommands;
     atomic<uint64_t> _replicationCommitCount;
     map<uint64_t, string> _replicationHashes;
+    set<string> _rollbackHashes;
 
     static void replicate(SQLiteNode& node, SQLite& db, int threadNum);
 };

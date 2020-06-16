@@ -185,9 +185,20 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                         node._replicationCV.notify_all();
                         break;
-                    } else if (false) {
-                        // Some rollback condition.
-                        node.handleRollbackTransaction(db, peer, command);
+                    } else {
+                        bool rollback = false;
+                        {
+                            lock_guard<mutex> lock(node._replicationHashMutex);
+                            rollback = node._rollbackHashes.count(command["NewHash"]);
+                        }
+                        if (rollback) {
+                            cout << "Rolling back:" << endl;
+                            cout << command.serialize() << endl;
+                            cout << "======" << endl;
+                            node.handleRollbackTransaction(db, peer, command);
+                            node._replicationCV.notify_all();
+                            break;
+                        }
                     }
                     node._replicationCV.wait(lock);
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
@@ -202,9 +213,6 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     uint64_t commandCommitCount = command.calcU64("CommitCount");
                     {
                         lock_guard<mutex> lock(node._replicationHashMutex);
-                        // NOTE: assignment to _replicationCommitCount is guarded by _replicationHashMutex, which is maybe
-                        // unclear. This is intentional and important because of the comparison done around the
-                        // assignment.
                         if (commandCommitCount > node._replicationCommitCount) {
                             node._replicationCommitCount = commandCommitCount;
                         }
@@ -216,9 +224,17 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 // No idea which thread might care.
                 node._replicationCV.notify_all();
             } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-                // TODO: Should do something.
-                SINFO("TYLER OF COURSE THIS FAILS");
-                cout << "Failing cause ROLLBACK is unimplemented." << endl;
+                {
+                    cout << "Setting rollback:" << endl;
+                    cout << command.serialize() << endl;
+                    cout << "======" << endl;
+                    lock_guard<mutex> lock(node._replicationHashMutex);
+
+                    // NOTE: We can rollback the same transaction number multiple times, so the number itself isn't
+                    // actually an adequate identifier of the transaction to roll back.
+                    node._rollbackHashes.insert(command["NewHash"]);
+                }
+                node._replicationCV.notify_all();
             }
         } catch (const out_of_range& e) {
             // No commands to work on. Make sure we don't hit a race condition, and wait for one.
@@ -931,12 +947,13 @@ bool SQLiteNode::update() {
             if (numFullDenied || (everybodyResponded && !consistentEnough)) {
                 SINFO("Rolling back transaction because everybody currently connected responded "
                       "but not consistent enough. Num denied: " << numFullDenied << ". Follower write failure?");
-                _db.rollback();
 
                 // Notify everybody to rollback
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback.set("ID", _lastSentTransactionID + 1);
+                rollback.set("NewHash", _db.getUncommittedHash());
                 _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
+                _db.rollback();
 
                 // Finished, but failed.
                 _commitState = CommitState::FAILED;
@@ -949,7 +966,6 @@ bool SQLiteNode::update() {
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
-                    _db.rollback();
 
                     // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
                     // roll back.
@@ -957,7 +973,9 @@ bool SQLiteNode::update() {
                           << " commit, rolling back.");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
+                    rollback.set("NewHash", _db.getUncommittedHash());
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
+                    _db.rollback();
 
                     // Finished, but failed.
                     _commitState = CommitState::FAILED;
