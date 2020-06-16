@@ -192,11 +192,12 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                             rollback = node._rollbackHashes.count(command["NewHash"]);
                         }
                         if (rollback) {
-                            cout << "Rolling back:" << endl;
-                            cout << command.serialize() << endl;
-                            cout << "======" << endl;
                             node.handleRollbackTransaction(db, peer, command);
                             node._replicationCV.notify_all();
+                            {
+                                lock_guard<mutex> lock(node._replicationHashMutex);
+                                node._rollbackHashes.erase(command["NewHash"]);
+                            }
                             break;
                         }
                     }
@@ -225,9 +226,6 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 node._replicationCV.notify_all();
             } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
                 {
-                    cout << "Setting rollback:" << endl;
-                    cout << command.serialize() << endl;
-                    cout << "======" << endl;
                     lock_guard<mutex> lock(node._replicationHashMutex);
 
                     // NOTE: We can rollback the same transaction number multiple times, so the number itself isn't
