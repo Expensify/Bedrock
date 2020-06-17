@@ -118,11 +118,14 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 bool isConcurrent = false;
                 while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
                     SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
-                    node._replicationCV.wait(lock);
+
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         SINFO("TYLER Replication exit 2");
                         return;
                     }
+                    SINFO("Waiting to be notified");
+                    node._replicationCV.wait(lock);
+                    SINFO("notified");
                 }
 
                 // This can take forever (or, a long time), which means we're blocking the lock. That's find for this first
@@ -147,7 +150,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         // know that they will get set shortly if we've gotten this far.
                         while (hash == "") {
                             {
-                                lock_guard<mutex> lock(node._replicationHashMutex);
+                                lock_guard<mutex> hashlock(node._replicationHashMutex);
                                 auto it = node._replicationHashes.find(commandCommitCount);
                                 if (it != node._replicationHashes.end()) {
                                     hash = it->second;
@@ -156,14 +159,14 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                             // Ugly, but skips the wait of we got it on the first try.
                             if (hash == "") {
-                                SINFO("TYLER waiting on hash");
-                                node._replicationCV.wait(lock);
-                                SINFO("TYLER done waiting on hash, re-checking");
                                 if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                                     db.rollback();
                                     SINFO("TYLER Replication exit 3");
                                     return;
                                 }
+                                SINFO("Waiting to be notified");
+                                node._replicationCV.wait(lock);
+                                SINFO("notified");
                             }
                         }
 
@@ -178,7 +181,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         }
 
                         {
-                            lock_guard<mutex> lock(node._replicationHashMutex);
+                            lock_guard<mutex> hashlock(node._replicationHashMutex);
                             node._replicationHashes.erase(commandCommitCount);
                             SINFO("TYLER clearing hash for commit " << commandCommitCount);
                         }
@@ -188,32 +191,34 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     } else {
                         bool rollback = false;
                         {
-                            lock_guard<mutex> lock(node._replicationHashMutex);
+                            lock_guard<mutex> hashlock(node._replicationHashMutex);
                             rollback = node._rollbackHashes.count(command["NewHash"]);
                         }
                         if (rollback) {
                             node.handleRollbackTransaction(db, peer, command);
-                            node._replicationCV.notify_all();
                             {
-                                lock_guard<mutex> lock(node._replicationHashMutex);
+                                lock_guard<mutex> hashlock(node._replicationHashMutex);
                                 node._rollbackHashes.erase(command["NewHash"]);
                             }
+                            node._replicationCV.notify_all();
                             break;
                         }
                     }
-                    node._replicationCV.wait(lock);
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         SINFO("TYLER Need to exit, quitting replication thread.");
                         db.rollback();
                         SINFO("TYLER Replication exit 4");
                         return;
                     }
+                    SINFO("Waiting to be notified");
+                    node._replicationCV.wait(lock);
+                    SINFO("notified");
                 }
             } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
                 {
                     uint64_t commandCommitCount = command.calcU64("CommitCount");
                     {
-                        lock_guard<mutex> lock(node._replicationHashMutex);
+                        lock_guard<mutex> hashlock(node._replicationHashMutex);
                         if (commandCommitCount > node._replicationCommitCount) {
                             node._replicationCommitCount = commandCommitCount;
                         }
@@ -226,7 +231,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 node._replicationCV.notify_all();
             } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
                 {
-                    lock_guard<mutex> lock(node._replicationHashMutex);
+                    lock_guard<mutex> hashlock(node._replicationHashMutex);
 
                     // NOTE: We can rollback the same transaction number multiple times, so the number itself isn't
                     // actually an adequate identifier of the transaction to roll back.
@@ -238,7 +243,9 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             // No commands to work on. Make sure we don't hit a race condition, and wait for one.
             unique_lock<mutex> lock(node._replicationCommitMutex);
             if (!node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
+                SINFO("Waiting to be notified");
                 node._replicationCV.wait(lock);
+                SINFO("notified");
             }
         }
     }
@@ -363,6 +370,11 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
+    if (_state != LEADING && _state != STANDINGDOWN) {
+        // Don't lock, which can cause a deadlock with the replications threads when following.
+        SINFO("Skipping lock in _sendOutstandingTransactions");
+        return;
+    }
     SQLITE_COMMIT_AUTOLOCK;
 
     // Make sure we have something to do.
@@ -1979,6 +1991,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _replicationThreadsShouldExit = true;
             }
             _replicationCV.notify_all();
+            SINFO("TYLER joining _replicationThreads.");
             for (auto& t : _replicationThreads) {
                 t.join();
             }
@@ -2023,6 +2036,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _commitState = CommitState::FAILED;
                 _db.rollback();
             }
+            //TODO: call to _sendOutstandingTransactions above should be here instead.
         }
 
         // Clear some state if we can
@@ -2468,6 +2482,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
 
     // Check our escalated commands and see if it's one being processed
     //TODO: uncomment but lock around this.
+    /*
     auto commandIt = _escalatedCommandMap.find(message["ID"]);
     if (commandIt != _escalatedCommandMap.end()) {
         // We're starting the transaction for a given command; note this
@@ -2476,6 +2491,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
         SINFO("Leader is processing our command " << message["ID"] << " (" << message["Command"] << ")");
         commandIt->second->transaction = message;
     }
+    */
 
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
