@@ -73,26 +73,19 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
         }
         addPeer(name, host, params);
     }
-
 }
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    SINFO("Destroying SQLiteNode in state: " << stateName(_state));
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
-    // Logging hacks.
-    string name = "xx";
-    State _state = node._state;
-
     SInitialize("repl" + to_string(threadNum));
     while (true) {
         // Exit when required. We don't actually exit until the queue is empty.
         if (node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
-            SINFO("TYLER Replication exit 1");
             return;
         }
 
@@ -108,7 +101,6 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             // COMMIT_TRANSACTIONs, and we're stuck. Since they're always come staggered, though, as long as we have two
             // threads, this should be impossible.
             if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-                SINFO("TYLER begin newCount = " << command.calcU64("NewCount"));
 
                 uint64_t commandCommitCount = command.calcU64("NewCount");
                 unique_lock<mutex> lock(node._replicationCommitMutex);
@@ -117,15 +109,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 // commit.
                 bool isConcurrent = false;
                 while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
-                    SINFO("TYLER commandCommitCount is " << commandCommitCount << ", waiting for " << node._db.getCommitCount() + 1);
-
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
-                        SINFO("TYLER Replication exit 2");
                         return;
                     }
-                    SINFO("Waiting to be notified");
                     node._replicationCV.wait(lock);
-                    SINFO("notified");
                 }
 
                 // This can take forever (or, a long time), which means we're blocking the lock. That's find for this first
@@ -136,13 +123,11 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     node.handleBeginTransaction(db, peer, command);
                 } catch (const SException& e) {
                     // Assume we want to exit.
-                    SINFO("TYLER Replication exit 2.1: " << e.what());
                     return;
                 }
 
                 // Now we need to wait for a commit or rollback;
                 while (true) {
-                    SINFO("TYLER: " << node._replicationCommitCount << " >= " << commandCommitCount << " && " << node._db.getCommitCount() << " == " << commandCommitCount << " - 1");
                     if (node._replicationCommitCount >= commandCommitCount && node._db.getCommitCount() == commandCommitCount - 1) {
                         string hash;
 
@@ -161,29 +146,23 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                             if (hash == "") {
                                 if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                                     db.rollback();
-                                    SINFO("TYLER Replication exit 3");
                                     return;
                                 }
-                                SINFO("Waiting to be notified");
                                 node._replicationCV.wait(lock);
-                                SINFO("notified");
                             }
                         }
 
                         // IMPORTANT: This assumes this succeeds.
-                        SINFO("TYLER commit newCount = " << command.calcU64("NewCount"));
                         try {
                             node.handleCommitTransaction(db, peer, commandCommitCount, hash);
                         } catch (const SException& e) {
                             db.rollback();
-                            SINFO("TYLER Replication exit 3.1: " << e.what());
                             return;
                         }
 
                         {
                             lock_guard<mutex> hashlock(node._replicationHashMutex);
                             node._replicationHashes.erase(commandCommitCount);
-                            SINFO("TYLER clearing hash for commit " << commandCommitCount);
                         }
 
                         node._replicationCV.notify_all();
@@ -205,14 +184,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         }
                     }
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
-                        SINFO("TYLER Need to exit, quitting replication thread.");
                         db.rollback();
-                        SINFO("TYLER Replication exit 4");
                         return;
                     }
-                    SINFO("Waiting to be notified");
                     node._replicationCV.wait(lock);
-                    SINFO("notified");
                 }
             } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
                 {
@@ -224,7 +199,6 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                         }
                         node._replicationHashes.emplace(make_pair(commandCommitCount, command["Hash"]));
                     }
-                    SINFO("TYLER hash for commit " << commandCommitCount << ": " << command["Hash"]);
                 }
 
                 // No idea which thread might care.
@@ -243,13 +217,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             // No commands to work on. Make sure we don't hit a race condition, and wait for one.
             unique_lock<mutex> lock(node._replicationCommitMutex);
             if (!node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
-                SINFO("Waiting to be notified");
                 node._replicationCV.wait(lock);
-                SINFO("notified");
             }
         }
     }
-    SINFO("TYLER Replication exit 5");
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -370,11 +341,6 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    if (_state != LEADING && _state != STANDINGDOWN) {
-        // Don't lock, which can cause a deadlock with the replications threads when following.
-        SINFO("Skipping lock in _sendOutstandingTransactions");
-        return;
-    }
     SQLITE_COMMIT_AUTOLOCK;
 
     // Make sure we have something to do.
@@ -1610,13 +1576,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-        {
-            if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
-                SINFO("TYLER enqueue newCount = " << message.calcU64("NewCount"));
-            }
-            _replicationCommands.push(make_pair(peer, message));
-            _replicationCV.notify_all();
-        }
+        _replicationCommands.push(make_pair(peer, message));
+        _replicationCV.notify_all();
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
         // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
@@ -1963,24 +1924,16 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
     unique_lock<decltype(stateMutex)> lock(stateMutex);
 
-    // We send any unsent transactions here before we finish switching states. Normally, this does nothing, unless
-    // we're switching down from LEADING or STANDINGDOWN, but we need to make sure these are all sent to the new
-    // leader before we complete the transition.
-    _sendOutstandingTransactions();
-
     // Did we actually change _state?
     State oldState = _state;
     if (newState != oldState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             {
-                SINFO("TYLER stopping following.");
                 unique_lock<decltype(_replicationCommitMutex)> lock(_replicationCommitMutex);
                 // Clear the replication queue.
                 while (true) {
                     try {
-                        // TODO: Maybe do the opposite and wait for everything to finish, perhaps we're expecting
-                        // everything that was received in FOLLOWING to have been applied when we go LEADING?
                         _replicationCommands.pop();
                     } catch (const out_of_range& e) {
                         break;
@@ -1991,7 +1944,6 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _replicationThreadsShouldExit = true;
             }
             _replicationCV.notify_all();
-            SINFO("TYLER joining _replicationThreads.");
             for (auto& t : _replicationThreads) {
                 t.join();
             }
@@ -1999,7 +1951,6 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
             // Done exiting.
             _replicationThreadsShouldExit = false;
-            SINFO("TYLER stopped following.");
         }
         if (newState == FOLLOWING) {
             // Start the replication threads.
@@ -2008,6 +1959,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _replicationThreads.emplace_back(replicate, ref(*this), ref(rdb), i++);
             }
         }
+
         // Depending on the state, set a timeout
         SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
         uint64_t timeout = 0;
@@ -2036,7 +1988,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _commitState = CommitState::FAILED;
                 _db.rollback();
             }
-            //TODO: call to _sendOutstandingTransactions above should be here instead.
+
+            // We send any unsent transactions here before we finish switching states, we need to make sure these are
+            // all sent to the new leader before we complete the transition.
+            _sendOutstandingTransactions();
         }
 
         // Clear some state if we can
@@ -2222,7 +2177,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         }
 
         // Transaction succeeded, commit and go to the next
-        SINFO("TYLER synchronized " << commit.calcU64("CommitIndex"));
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
         if (_db.getCommittedHash() != commit["Hash"])

@@ -12,7 +12,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
     void setup() {
         tester = new BedrockClusterTester();
-        SInitialize("TEST", "bedrockTest");
     }
 
     void teardown() {
@@ -186,18 +185,10 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Blow up leader.
-        cout << "Killing server number: " << tester->getTester(0).getNodePort() << endl;
-        SWARN("Killing server number: " << tester->getTester(0).getNodePort());
-        syslog(LOG_WARNING, "%s", ("TYLER bedrock test Killing server number: " + to_string(tester->getTester(0).getNodePort())).c_str());
         tester->getTester(0).stopServer(SIGKILL);
-        cout << "Killed, waiting." << endl;
 
         // Wait for node 1 to be leader.
-        // Hmmm, secondary leader doesn't seen to get it's first status message for over 40 seconds. Does it take that
-        // long for the above to stop?
-        // No, it's done in 2 seconds.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
-        cout << "Done waiting." << endl;
 
         // Now bring leader back up.
         sleep(2);
