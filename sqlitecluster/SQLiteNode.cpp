@@ -83,143 +83,124 @@ SQLiteNode::~SQLiteNode() {
 
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
     SInitialize("repl" + to_string(threadNum));
+
+    // If we're already in the middle of handling a transaction, we'll set this to true. This allows us to re-use the
+    // main loop and wait logic.
+    // 0 = no command.
+    // 1 = command not started.
+    // 2 = command begun
+    int transactionState = 0;
+    uint64_t commandCommitCount = 0;
+
+    // Create a dummy placeholder command.
+    pair<Peer*, SData> p(nullptr, SData(""));
+
     while (true) {
-        // Exit when required. We don't actually exit until the queue is empty.
+        unique_lock<mutex> lock(node._replicationCommitMutex);
+        // Exit when we're shutting down, the queue is empty.
         if (node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
+            if (transactionState == 2) {
+                db.rollback();
+            }
             return;
         }
 
-        // Get a command to work on.
-        try {
-            // Currently, this will spin if there's nothing to do.
-            auto p = node._replicationCommands.pop();
-            auto& peer = p.first;
-            auto& command = p.second;
-
-            // Important note:
-            // If everyone dequeues BEGIN_TRANSACTIONs at the same time, then they'll all be waiting and can't run
-            // COMMIT_TRANSACTIONs, and we're stuck. Since they're always come staggered, though, as long as we have two
-            // threads, this should be impossible.
-            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-
-                uint64_t commandCommitCount = command.calcU64("NewCount");
-                unique_lock<mutex> lock(node._replicationCommitMutex);
-
-                // in synchronous "BEGIN TRANSACTION" mode, we can't lock here unless we're going to be the next
-                // commit.
-                bool isConcurrent = false;
-                while (!isConcurrent && commandCommitCount != db.getCommitCount() + 1) {
-                    if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
-                        return;
-                    }
-                    node._replicationCV.wait(lock);
-                }
-
-                // This can take forever (or, a long time), which means we're blocking the lock. That's find for this first
-                // case, we're trying to organize this so that it works for "BEGIN TRANSACTION" messages, which are
-                // non-concurrent. I think we need a separate lock for managing the queue and committing transactions,
-                // though.
-                try {
-                    node.handleBeginTransaction(db, peer, command);
-                } catch (const SException& e) {
-                    // Assume we want to exit.
-                    return;
-                }
-
-                // Now we need to wait for a commit or rollback;
-                while (true) {
-                    if (node._replicationCommitCount >= commandCommitCount && db.getCommitCount() == commandCommitCount - 1) {
-                        string hash;
-
-                        // These can be blank if we run through `COMMIT_TRANSACTION` messages out of order, but we
-                        // know that they will get set shortly if we've gotten this far.
-                        while (hash == "") {
-                            {
-                                lock_guard<mutex> hashlock(node._replicationHashMutex);
-                                auto it = node._replicationHashes.find(commandCommitCount);
-                                if (it != node._replicationHashes.end()) {
-                                    hash = it->second;
-                                }
-                            }
-
-                            // Ugly, but skips the wait of we got it on the first try.
-                            if (hash == "") {
-                                if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
-                                    db.rollback();
-                                    return;
-                                }
-                                node._replicationCV.wait(lock);
-                            }
-                        }
-
-                        // IMPORTANT: This assumes this succeeds.
-                        try {
-                            node.handleCommitTransaction(db, peer, commandCommitCount, hash);
-                        } catch (const SException& e) {
-                            db.rollback();
-                            return;
-                        }
-
-                        {
-                            lock_guard<mutex> hashlock(node._replicationHashMutex);
-                            node._replicationHashes.erase(commandCommitCount);
-                        }
-
-                        node._replicationCV.notify_all();
-                        break;
-                    } else {
-                        bool rollback = false;
-                        {
-                            lock_guard<mutex> hashlock(node._replicationHashMutex);
-                            rollback = node._rollbackHashes.count(command["NewHash"]);
-                        }
-                        if (rollback) {
-                            node.handleRollbackTransaction(db, peer, command);
-                            {
-                                lock_guard<mutex> hashlock(node._replicationHashMutex);
-                                node._rollbackHashes.erase(command["NewHash"]);
-                            }
-                            node._replicationCV.notify_all();
-                            break;
-                        }
-                    }
-                    if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
-                        db.rollback();
-                        return;
-                    }
-                    node._replicationCV.wait(lock);
-                }
-            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-                {
-                    uint64_t commandCommitCount = command.calcU64("CommitCount");
-                    {
-                        lock_guard<mutex> hashlock(node._replicationHashMutex);
-                        if (commandCommitCount > node._replicationCommitCount) {
-                            node._replicationCommitCount = commandCommitCount;
-                        }
-                        node._replicationHashes.emplace(make_pair(commandCommitCount, command["Hash"]));
-                    }
-                }
-
-                // No idea which thread might care.
-                node._replicationCV.notify_all();
-            } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-                {
-                    lock_guard<mutex> hashlock(node._replicationHashMutex);
-
-                    // NOTE: We can rollback the same transaction number multiple times, so the number itself isn't
-                    // actually an adequate identifier of the transaction to roll back.
-                    node._rollbackHashes.insert(command["NewHash"]);
-                }
-                node._replicationCV.notify_all();
-            }
-        } catch (const out_of_range& e) {
-            // No commands to work on. Make sure we don't hit a race condition, and wait for one.
-            unique_lock<mutex> lock(node._replicationCommitMutex);
-            if (!node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
+        // If we're not already handling a transaction, let's see if we can get a new command.
+        if (!transactionState) {
+            try {
+                p = node._replicationCommands.pop();
+            } catch (const out_of_range& e) {
+                // We needed a command, but we couldn't find one. Wait until something happens, and then start our
+                // loop over.
                 node._replicationCV.wait(lock);
+                continue;
             }
         }
+
+        // Convenience vars.
+        auto& peer = p.first;
+        auto& command = p.second;
+
+        // Now, if there's not transaction state, we just got a new command.
+        if (!transactionState) {
+            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+                commandCommitCount = command.calcU64("NewCount");
+                // Indicate that this command is starting.
+                transactionState = 1;
+            }
+            if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
+                lock_guard<mutex> hashlock(node._replicationHashMutex);
+                node._rollbackHashes.insert(command["NewHash"]);
+                node._replicationCV.notify_all();
+                continue;
+            }
+            if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+                commandCommitCount = command.calcU64("CommitCount");
+                lock_guard<mutex> hashlock(node._replicationHashMutex);
+                if (commandCommitCount > node._replicationCommitCount) {
+                    node._replicationCommitCount = commandCommitCount;
+                }
+                node._replicationHashes.emplace(make_pair(commandCommitCount, command["Hash"]));
+                node._replicationCV.notify_all();
+                continue;
+            }
+        }
+
+        //try {
+            // The following block only runs if there's already a command ready to run. This includes a command we just
+            // created
+            if (transactionState == 1) {
+                if (commandCommitCount == db.getCommitCount() + 1) {
+                    node.handleBeginTransaction(db, peer, command);
+                    transactionState = 2;
+                } else {
+                    // Wait and then start from the beginning.
+                    node._replicationCV.wait(lock);
+                    continue;
+                }
+            }
+
+            // And the next step.
+            if (transactionState == 2) {
+                // Look up our hashes.
+                string hash;
+                bool rollback = false;
+                {
+                    lock_guard<mutex> hashlock(node._replicationHashMutex);
+                    auto it = node._replicationHashes.find(commandCommitCount);
+                    if (it != node._replicationHashes.end()) {
+                        hash = it->second;
+                    }
+                    rollback = node._rollbackHashes.count(command["NewHash"]);
+                }
+
+                // If we have everything we need, we can commit.
+                if (!hash.empty() && db.getCommitCount() == commandCommitCount - 1) {
+                    node.handleCommitTransaction(db, peer, commandCommitCount, hash);
+                    lock_guard<mutex> hashlock(node._replicationHashMutex);
+                    node._replicationHashes.erase(commandCommitCount);
+                    transactionState = 0;
+                    continue;
+                } else if (rollback) {
+                    node.handleRollbackTransaction(db, peer, command);
+                    lock_guard<mutex> hashlock(node._replicationHashMutex);
+                    node._rollbackHashes.erase(command["NewHash"]);
+                    transactionState = 0;
+                    continue;
+                } else {
+                    node._replicationCV.wait(lock);
+                    continue;
+                }
+            }
+        /*} catch (const SException& e) {
+            auto _state = node._state.load();
+            string name = "xxx";
+            SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
+            if (transactionState == 2) {
+                db.rollback();
+            }
+            return;
+        }*/
     }
 }
 
@@ -1585,6 +1566,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+        lock_guard<mutex> lock(_replicationCommitMutex);
         _replicationCommands.push(make_pair(peer, message));
         _replicationCV.notify_all();
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
@@ -1935,7 +1917,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             {
-                unique_lock<decltype(_replicationCommitMutex)> lock(_replicationCommitMutex);
+                unique_lock<mutex> lock(_replicationCommitMutex);
                 // Clear the replication queue.
                 while (true) {
                     try {
