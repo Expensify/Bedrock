@@ -2506,8 +2506,9 @@ void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& 
 }
 
 SQLiteNode::State SQLiteNode::leaderState() const {
+    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
     if (_leadPeer) {
-        return _leadPeer->state;
+        return _leadPeer.load()->state;
     }
     return State::UNKNOWN;
 }
