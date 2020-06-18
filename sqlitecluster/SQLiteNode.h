@@ -128,17 +128,22 @@ class SQLiteNode : public STCPNode {
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
-    int _priority;
+    atomic<int> _priority;
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     int _originalPriority;
 
     // Our current State.
-    State _state;
+    atomic<State> _state;
     
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
-    Peer* _leadPeer;
+    atomic<Peer*> _leadPeer;
+
+    // There's a mutex here to lock around changes to this, or any complex operations that expect leader to remain
+    // unchanged throughout, notably, _sendToPeer. This is sort of a mess, but replication threads need to send
+    // acknowledgments to the lead peer, but the main sync loop can update that at any time.
+    mutex _leadPeerMutex;
 
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;
@@ -210,7 +215,7 @@ class SQLiteNode : public STCPNode {
     void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
 
     WallClockTimer _syncTimer;
-    uint64_t _handledCommitCount;
+    atomic<uint64_t> _handledCommitCount;
 
     atomic<bool> _replicationThreadsShouldExit;
     list<thread> _replicationThreads;

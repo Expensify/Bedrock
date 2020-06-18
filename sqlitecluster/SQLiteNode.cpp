@@ -108,7 +108,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 // in synchronous "BEGIN TRANSACTION" mode, we can't lock here unless we're going to be the next
                 // commit.
                 bool isConcurrent = false;
-                while (!isConcurrent && commandCommitCount != node._db.getCommitCount() + 1) {
+                while (!isConcurrent && commandCommitCount != db.getCommitCount() + 1) {
                     if (node._state != FOLLOWING || node._replicationThreadsShouldExit) {
                         return;
                     }
@@ -128,7 +128,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                 // Now we need to wait for a commit or rollback;
                 while (true) {
-                    if (node._replicationCommitCount >= commandCommitCount && node._db.getCommitCount() == commandCommitCount - 1) {
+                    if (node._replicationCommitCount >= commandCommitCount && db.getCommitCount() == commandCommitCount - 1) {
                         string hash;
 
                         // These can be blank if we run through `COMMIT_TRANSACTION` messages out of order, but we
@@ -379,18 +379,21 @@ void SQLiteNode::_sendOutstandingTransactions() {
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
+    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+    // Send this to the leader
+    SASSERT(_leadPeer);
+
     // If the leader is currently standing down, we won't escalate, we'll give the command back to the caller.
-    if(_leadPeer->state == STANDINGDOWN) {
+    if(_leadPeer.load()->state == STANDINGDOWN) {
         SINFO("Asked to escalate command but leader standing down, letting server retry.");
         _server.acceptCommand(move(command), false);
         return;
     }
 
-    // Send this to the leader
-    SASSERT(_leadPeer);
-    SASSERTEQUALS(_leadPeer->state, LEADING);
+    SASSERTEQUALS(_leadPeer.load()->state, LEADING);
+
     uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer->name
+    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer.load()->name
           << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our leader.
@@ -699,6 +702,8 @@ bool SQLiteNode::update() {
         if (currentLeader && _priority < highestPriorityPeer->calc("Priority") && currentLeader->state == LEADING) {
             // Subscribe to the leader
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
+
+            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
             _leaderVersion = (*_leadPeer)["Version"];
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
@@ -1127,6 +1132,8 @@ bool SQLiteNode::update() {
         if (STimeNow() > _stateTimeout) {
             // Give up
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to leader and re-SEARCHING.");
+
+            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _reconnectPeer(_leadPeer);
             _leadPeer = nullptr;
             _changeState(SEARCHING);
@@ -1144,7 +1151,6 @@ bool SQLiteNode::update() {
     ///
     case FOLLOWING:
         SASSERTWARN(!_syncPeer);
-        SASSERT(_leadPeer);
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
@@ -1158,7 +1164,8 @@ bool SQLiteNode::update() {
         // If the leader stops leading (or standing down), we'll go SEARCHING, which allows us to look for a new
         // leader. We don't want to go searching before that, because we won't know when leader is done sending its
         // final transactions.
-        if (_leadPeer->state != LEADING && _leadPeer->state != STANDINGDOWN) {
+        SASSERT(_leadPeer);
+        if (_leadPeer.load()->state != LEADING && _leadPeer.load()->state != STANDINGDOWN) {
             // Leader stepping down
             SHMMM("Leader stepping down, re-queueing commands.");
 
@@ -1799,7 +1806,10 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // transaction response and re-SEARCH
         PHMMM("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SUBSCRIBING || _state == FOLLOWING);
-        _leadPeer = nullptr;
+        {
+            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            _leadPeer = nullptr;
+        }
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
             // approve or deny, but we'll never get its response.  Roll it
@@ -1813,13 +1823,6 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // If there were escalated commands, give them back to the server to retry, unless it looks like they were in
         // progress when the leader died, in which case we say they completed with a 500 Error.
         for (auto& cmd : _escalatedCommandMap) {
-            // If this isn't set, the leader hadn't actually started processing this, and we can re-queue it.
-            if (!cmd.second->transaction.methodLine.empty()) {
-                PWARN("Aborting escalated command '" << cmd.second->request.methodLine << "' (" << cmd.second->id
-                      << ") in transaction state '" << cmd.second->transaction.methodLine << "'");
-                cmd.second->complete = true;
-                cmd.second->response.methodLine = "500 Aborted";
-            }
             _server.acceptCommand(move(cmd.second), false);
         }
         _escalatedCommandMap.clear();
@@ -1997,6 +2000,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Clear some state if we can
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
+            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = nullptr;
         }
 
@@ -2355,20 +2359,9 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     if (_state != FOLLOWING) {
         STHROW("not following");
     }
-    // Race condition here.
-    if (!_leadPeer) {
-        STHROW("no leader?");
-    }
     if (!db.getUncommittedHash().empty()) {
         STHROW("already in a transaction");
     }
-
-    // TODO: Can't do this check once we have real multi-threading.
-    /*
-    if (db.getCommitCount() + 1 != message.calcU64("NewCount")) {
-        STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: " + to_string(db.getCommitCount() + 1));
-    }
-    */
 
     // This block repeats until we successfully commit, or error out of it.
     // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
@@ -2424,7 +2417,11 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-            // TODO : lock here.
+
+            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            if (!_leadPeer) {
+                STHROW("no leader?");
+            }
             _sendToPeer(_leadPeer, response);
         } else {
             PINFO("Skipping " << verb << " for ASYNC command.");
@@ -2433,19 +2430,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << ") for command '" << message["Command"] << "', but a permafollower -- keeping quiet.");
     }
-
-    // Check our escalated commands and see if it's one being processed
-    //TODO: uncomment but lock around this.
-    /*
-    auto commandIt = _escalatedCommandMap.find(message["ID"]);
-    if (commandIt != _escalatedCommandMap.end()) {
-        // We're starting the transaction for a given command; note this
-        // so we know that this command might be corrupted if the leader
-        // crashes.
-        SINFO("Leader is processing our command " << message["ID"] << " (" << message["Command"] << ")");
-        commandIt->second->transaction = message;
-    }
-    */
 
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
@@ -2491,17 +2475,6 @@ void SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t 
           << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
           << rollbackElapsed / 1000 << "ms)");
 
-    // Look up in our escalated commands and see if it's one being processed
-    /*
-    auto commandIt = _escalatedCommandMap.find(message["ID"]);
-    if (commandIt != _escalatedCommandMap.end()) {
-        // We're starting the transaction for a given command; note this so we know that this command might be
-        // corrupted if the leader crashes.
-        SINFO("Leader has committed in response to our command " << message["ID"]);
-        commandIt->second->transaction = message;
-    }
-    */
-
     _handledCommitCount++;
     if (_handledCommitCount % 5000 == 0) {
         // Log how much time we've spent handling 5000 commits.
@@ -2524,15 +2497,4 @@ void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& 
         SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
     }
     db.rollback();
-
-    // Look through our escalated commands and see if it's one being processed
-    /*
-    auto commandIt = _escalatedCommandMap.find(message["ID"]);
-    if (commandIt != _escalatedCommandMap.end()) {
-        // We're starting the transaction for a given command; note this so we know that this command might be
-        // corrupted if the leader crashes.
-        SINFO("Leader has rolled back in response to our command " << message["ID"]);
-        commandIt->second->transaction = message;
-    }
-    */
 }
