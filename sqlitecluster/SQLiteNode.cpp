@@ -505,6 +505,7 @@ bool SQLiteNode::update() {
             // There are no peers, jump straight to leading
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(LEADING);
+            _leaderVersion = _version;
             return true; // Re-update immediately
         }
 
@@ -794,6 +795,7 @@ bool SQLiteNode::update() {
             // Complete standup
             SINFO("All peers approved standup, going LEADING.");
             _changeState(LEADING);
+            _leaderVersion = _version;
             return true; // Re-update
         }
 
@@ -1984,6 +1986,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
         // Additional logic for some old states
         if (SWITHIN(LEADING, oldState, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
+            // If we stop leading, unset _leaderVersion from our own _version.
+            // It will get re-set to the version on the new leader.
+            _leaderVersion = "";
+
             // We are no longer leading.  Are we processing a command?
             if (commitInProgress()) {
                 // Abort this command
@@ -2497,4 +2503,11 @@ void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& 
         SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
     }
     db.rollback();
+}
+
+SQLiteNode::State SQLiteNode::leaderState() const {
+    if (_leadPeer) {
+        return _leadPeer->state;
+    }
+    return State::UNKNOWN;
 }

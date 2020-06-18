@@ -543,24 +543,24 @@ void BedrockServer::sync(const SData& args,
                 continue;
             }
 
-            // We want to run through all of the commands in our queue. However, we set a maximum limit. There's a race
-            // condition that can happen when leader is standing down. In that case, when we escalate a command,
-            // SQLiteNode immediately gives it back to the BedrockServer to handle, which will peek and then process it
-            // normally, and it can then be ready to be escalated again. So it gets back here, and this causes a loop
-            // of re-processing the command multiple times until the leader finishes standing down.
-            //
-            // This means that it's possible we get stuck in an infinite loop here until the server finishes standing
-            // down, though that in itself wouldn't be too horrible. It'd resolve when leader finished standing down.
-            // 
-            // There are two problems.
-            // 1. We don't know that leader is done standing down until we poll the sync node, so we need to get out of
-            // this loop to check.
-            // 2. The pipe we use inside of `syncNodeQueuedCommands` has a buffer size of 64k. If we add more than 64k
-            // items to the queue without reading from the pipe, we'll block further writes, causing deadlocks until we
-            // read again, but again, the read is done in postPoll, so we need to break out of this loop so we can
-            // clear that buffer.
-            // TODO: We could probably make writes non-blocking as well, and mitigate case 2 above, but we'd still have
-            // to deal with case 1.
+            // Don't escalate, leader can't handle the command anyway. Don't even dequeue the command, just leave it
+            // until one of these states changes. This prevents an endless loop of escalating commands, having
+            // SQLiteNode re-queue them because leader is standing down, and then escalating them again until leader
+            // sorts itself out.
+            if (nodeState == SQLiteNode::FOLLOWING && server._syncNode->leaderState() == SQLiteNode::STANDINGDOWN) {
+                continue;
+            }
+
+            // We want to run through all of the commands in our queue. However, we set a maximum limit. This list is
+            // potentially infinite, as we can add new commands to the list as we iterate across it (coming from
+            // workers), and we will need to break and read from the network to see what to do next at some point.
+            // Additionally, in exceptional cases, if we get stuck in this loop for more than 64k commands, we can hit
+            // the internal limit of the buffer for the pipe inside syncNodeQueuedCommands, and writes there will
+            // block, and this can cause deadlocks in various places. This is cleared every time we run `postPoll` for
+            // syncNodeQueuedCommands, which occurs when break out of this loop, so we do so periodically to avoid
+            // this.
+            // TODO: We could potentially make writes to the pipe in the queue non-blocking and help to mitigate that
+            // part of this issue as well.
             size_t escalateCount = 0;
             while (++escalateCount < 1000) {
 
@@ -1911,13 +1911,19 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         }
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
-        SQLiteNode::State state = _replicationState.load();
-        if (state != SQLiteNode::FOLLOWING) {
-            response.methodLine = "HTTP/1.1 500 Not following. State=" + SQLiteNode::stateName(state);
-        } else if (_version != _leaderVersion.load()) {
+
+        if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            response.methodLine = "HTTP/1.1 200 Following";
+            SQLiteNode::State state = _replicationState.load();
+            string method = "HTTP/1.1 ";
+
+            if (state == SQLiteNode::FOLLOWING || state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN) {
+                method += "200";
+            } else {
+                method += "500";
+            }
+            response.methodLine = method + " " + SQLiteNode::stateName(state);
         }
     }
 

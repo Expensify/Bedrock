@@ -68,6 +68,9 @@ class SQLiteNode : public STCPNode {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
+    // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
+    State leaderState() const;
+
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
     void startCommit(ConsistencyLevel consistency);
