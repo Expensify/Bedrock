@@ -97,18 +97,14 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
     pair<Peer*, SData> p(nullptr, SData(""));
 
     while (true) {
-        // Exit when we're shutting down, the queue is empty.
-        if (node._replicationThreadsShouldExit && node._replicationCommands.empty()) {
-            if (transactionState == 2) {
-                db.rollback();
-            }
-            SINFO("Replication thread exiting");
-            return;
-        }
-
         // If we're not already handling a transaction, let's see if we can get a new command.
         if (!transactionState) {
             unique_lock<mutex> lock(node._replicationCommandMutex);
+            if (node._replicationThreadsShouldExit) {
+                // Every time we lock, we may be falling out of FOLLOWING, and might not receive any more
+                // notifications, so we need to check this each time the lock is acquired.
+                return;
+            }
             try {
                 p = node._replicationCommands.pop();
             } catch (const out_of_range& e) {
@@ -149,6 +145,9 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             // created
             if (transactionState == 1) {
                 unique_lock<mutex> lock(node._replicationCommandMutex);
+                if (node._replicationThreadsShouldExit) {
+                    return;
+                }
                 if (commandCommitCount == db.getCommitCount() + 1) {
                     // We can unlock once we know our condition has passed, there's no race in case it changes after
                     // we've checked it but before we wait again, as we wont wait. We do this before any DB operations
@@ -172,6 +171,10 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             // And the next step.
             if (transactionState == 2) {
                 unique_lock<mutex> lock(node._replicationCommandMutex);
+                if (node._replicationThreadsShouldExit) {
+                    db.rollback();
+                    return;
+                }
                 // Look up our hashes.
                 string hash;
                 bool rollback = false;
