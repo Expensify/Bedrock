@@ -83,6 +83,8 @@ SQLiteNode::~SQLiteNode() {
 
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
     SInitialize("repl" + to_string(threadNum));
+    auto _state = node._state.load();
+    string name = "xxx";
 
     // If we're already in the middle of handling a transaction, we'll set this to true. This allows us to re-use the
     // main loop and wait logic.
@@ -102,6 +104,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             if (transactionState == 2) {
                 db.rollback();
             }
+            SINFO("Replication thread exiting");
             return;
         }
 
@@ -146,7 +149,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
             }
         }
 
-        //try {
+        try {
             // The following block only runs if there's already a command ready to run. This includes a command we just
             // created
             if (transactionState == 1) {
@@ -180,27 +183,27 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     lock_guard<mutex> hashlock(node._replicationHashMutex);
                     node._replicationHashes.erase(commandCommitCount);
                     transactionState = 0;
+                    node._replicationCV.notify_all();
                     continue;
                 } else if (rollback) {
                     node.handleRollbackTransaction(db, peer, command);
                     lock_guard<mutex> hashlock(node._replicationHashMutex);
                     node._rollbackHashes.erase(command["NewHash"]);
                     transactionState = 0;
+                    node._replicationCV.notify_all();
                     continue;
                 } else {
                     node._replicationCV.wait(lock);
                     continue;
                 }
             }
-        /*} catch (const SException& e) {
-            auto _state = node._state.load();
-            string name = "xxx";
+        } catch (const SException& e) {
             SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
             if (transactionState == 2) {
                 db.rollback();
             }
             return;
-        }*/
+        }
     }
 }
 
