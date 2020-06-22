@@ -230,9 +230,7 @@ class SQLiteNode : public STCPNode {
     mutex _replicationHashMutex;
     map<uint64_t, string> _replicationHashes;
 
-    // Mutex, condition variable, and queue object for command 
-    mutex _replicationCommandMutex;
-    condition_variable _replicationCV;
+    // Queue object for commands
     SSynchronizedQueue<pair<Peer*, SData>> _replicationCommands;
 
     // Set of hashes for commands that need to be rolled back. This re-uses the _replicationHashMutex as a guard for
