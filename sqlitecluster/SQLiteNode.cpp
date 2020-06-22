@@ -85,132 +85,114 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
     auto _state = node._state.load();
     string name = "xxx";
 
-    enum class TransactionState {
-        NO_COMMAND,
-        COMMAND_NOT_STARTED,
-        COMMAND_IN_PROGRESS,
-    };
-    TransactionState transactionState = TransactionState::NO_COMMAND;
-
     // Create a dummy placeholder command.
     pair<Peer*, SData> p(nullptr, SData(""));
 
     // We'll loop indefinitely until we're instructed to exit, which is when this node stops FOLLOWING.
     while (true) {
         // If we're not already handling a transaction, let's see if we can get a new command.
-        if (transactionState == TransactionState::NO_COMMAND) {
-            {
-                unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
-                if (node._replicationThreadsShouldExit) {
-                    // Every time we lock, we may be falling out of FOLLOWING, and might not receive any more
-                    // notifications, so we need to check this each time the lock is acquired.
-                    return;
-                }
-                try {
-                    p = node._replicationCommands.pop();
-                } catch (const out_of_range& e) {
-                    // We needed a command, but we couldn't find one. Wait until something happens, and then start our
-                    // loop over.
-                    node._replicationCommands.wait(lock);
-                    continue;
-                }
+        {
+            unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+            if (node._replicationThreadsShouldExit) {
+                // Every time we lock, we may be falling out of FOLLOWING, and might not receive any more
+                // notifications, so we need to check this each time the lock is acquired.
+                return;
             }
-
-            // We just got a new command.
-            auto& command = p.second;
-            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-                // Set the state of this command so that if we return to the start of the loop, we resume without
-                // trying to find a new command to work on.
-                transactionState = TransactionState::COMMAND_NOT_STARTED;
-            } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-                lock_guard<mutex> hashlock(node._replicationHashMutex);
-                node._replicationHashesToRollback.insert(command["NewHash"]);
-                node._replicationCommands.notify_all();
-                continue;
-            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-                lock_guard<mutex> hashlock(node._replicationHashMutex);
-                node._replicationHashesToCommit.insert(command["Hash"]);
-                node._replicationCommands.notify_all();
+            try {
+                p = node._replicationCommands.pop();
+            } catch (const out_of_range& e) {
+                // We needed a command, but we couldn't find one. Wait until something happens, and then start our
+                // loop over.
+                node._replicationCommands.wait(lock);
                 continue;
             }
         }
 
-        try {
-            // Convenience vars.
-            auto& peer = p.first;
-            auto& command = p.second;
+        // We just got a new command.
+        auto& command = p.second;
+        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+            try {
+                // Convenience vars.
+                auto& peer = p.first;
+                auto& command = p.second;
 
-            // The following block only runs if there's already a command ready to run. This includes a command we just
-            // created
-            if (transactionState == TransactionState::COMMAND_NOT_STARTED) {
-                unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
-                if (node._replicationThreadsShouldExit) {
-                    return;
-                }
-                if (command.calcU64("NewCount") == db.getCommitCount() + 1) {
-                    // We can unlock once we know our condition has passed, there's no race in case it changes after
-                    // we've checked it but before we wait again, as we wont wait. We do this before any DB operations
-                    // so that waiting on the DB can't block enqueueing new commands. But it's important that we do
-                    // hold this lock before checking the conditions that determine if we can proceed with our DB
-                    // operations.
-                    lock.unlock();
+                // Wait for the DB to come up to date.
+                while (true) {
+                    unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+                    if (node._replicationThreadsShouldExit) {
+                        return;
+                    }
+                    if (command.calcU64("NewCount") == db.getCommitCount() + 1) {
+                        // We can unlock once we know our condition has passed, there's no race in case it changes after
+                        // we've checked it but before we wait again, as we wont wait. We do this before any DB operations
+                        // so that waiting on the DB can't block enqueueing new commands. But it's important that we do
+                        // hold this lock before checking the conditions that determine if we can proceed with our DB
+                        // operations.
+                        lock.unlock();
 
-                    // Importantly, we don't start our transaction until the previous transaction has fully completed.
-                    // In the next version, where we handle concurrent transactions, this will need to be able to start
-                    // regardless of whether the previous transaction has started.
-                    node.handleBeginTransaction(db, peer, command);
-                    transactionState = TransactionState::COMMAND_IN_PROGRESS;
-                } else {
-                    // Wait and then start from the beginning.
-                    node._replicationCommands.wait(lock);
-                    continue;
-                }
-            }
-
-            // And the next step.
-            if (transactionState == TransactionState::COMMAND_IN_PROGRESS) {
-                unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
-                if (node._replicationThreadsShouldExit) {
-                    db.rollback();
-                    return;
+                        // Importantly, we don't start our transaction until the previous transaction has fully completed.
+                        // In the next version, where we handle concurrent transactions, this will need to be able to start
+                        // regardless of whether the previous transaction has started.
+                        node.handleBeginTransaction(db, peer, command);
+                        break;
+                    } else {
+                        // Wait and then start from the beginning.
+                        node._replicationCommands.wait(lock);
+                    }
                 }
 
-                // Look up our hashes to see if we can COMMIT or ROLLBACK.
-                bool commit = false;
-                bool rollback = false;
-                {
-                    lock_guard<mutex> hashlock(node._replicationHashMutex);
-                    commit = node._replicationHashesToCommit.count(command["NewHash"]);
-                    rollback = node._replicationHashesToRollback.count(command["NewHash"]);
-                }
+                // Wait for a COMMIT or ROLLBACK.
+                while (true) {
+                    unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+                    if (node._replicationThreadsShouldExit) {
+                        db.rollback();
+                        return;
+                    }
 
-                // If we can't do either, keep waiting.
-                if (!commit && !rollback) {
-                    node._replicationCommands.wait(lock);
-                } else {
-                    // Otherwise, we can either commit, or rollback. First we unlock so that we don't block other
-                    // threads on the DB operation.
-                    lock.unlock();
-
-                    // Do the appropriate DB operation.
-                    commit ? node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]) : node.handleRollbackTransaction(db, peer, command);
-
-                    // And clean up.
+                    // Look up our hashes to see if we can COMMIT or ROLLBACK.
+                    bool commit = false;
+                    bool rollback = false;
                     {
                         lock_guard<mutex> hashlock(node._replicationHashMutex);
-                        commit ? node._replicationHashesToCommit.erase(command["NewHash"]) : node._replicationHashesToRollback.erase(command["NewHash"]);
+                        commit = node._replicationHashesToCommit.count(command["NewHash"]);
+                        rollback = node._replicationHashesToRollback.count(command["NewHash"]);
                     }
-                    transactionState = TransactionState::NO_COMMAND;
-                    node._replicationCommands.notify_all();
+
+                    // If we can't do either, keep waiting.
+                    if (!commit && !rollback) {
+                        node._replicationCommands.wait(lock);
+                    } else {
+                        // Otherwise, we can either commit, or rollback. First we unlock so that we don't block other
+                        // threads on the DB operation.
+                        lock.unlock();
+
+                        // Do the appropriate DB operation.
+                        commit ? node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]) : node.handleRollbackTransaction(db, peer, command);
+
+                        // And clean up.
+                        {
+                            lock_guard<mutex> hashlock(node._replicationHashMutex);
+                            commit ? node._replicationHashesToCommit.erase(command["NewHash"]) : node._replicationHashesToRollback.erase(command["NewHash"]);
+                        }
+
+                        // Let any threads waiting on the DB to be up-to-date know that the state has changed.
+                        node._replicationCommands.notify_all();
+                        break;
+                    }
                 }
-                continue;
-            }
-        } catch (const SException& e) {
-            SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
-            if (transactionState == TransactionState::COMMAND_IN_PROGRESS) {
+            } catch (const SException& e) {
+                SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
                 db.rollback();
+                return;
             }
-            return;
+        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
+            lock_guard<mutex> hashlock(node._replicationHashMutex);
+            node._replicationHashesToRollback.insert(command["NewHash"]);
+            node._replicationCommands.notify_all();
+        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+            lock_guard<mutex> hashlock(node._replicationHashMutex);
+            node._replicationHashesToCommit.insert(command["Hash"]);
+            node._replicationCommands.notify_all();
         }
     }
 }
