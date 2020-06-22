@@ -118,6 +118,8 @@ class SQLiteNode : public STCPNode {
     // to commit and replicate them.
     SQLite& _db;
 
+    // We have a separate list of DB handles used solely for replication, so that we can do replication in parallel
+    // threads without causing conflicts in the journal.
     list<SQLite>& _replicationDBs;
 
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
@@ -228,14 +230,11 @@ class SQLiteNode : public STCPNode {
 
     // Mutex that guards the map of hashes for transactions currently being replicated.
     mutex _replicationHashMutex;
-    map<uint64_t, string> _replicationHashes;
+    set<string> _replicationHashesToCommit;
+    set<string> _replicationHashesToRollback;
 
-    // Queue object for commands
+    // Queue object for replication commands
     SSynchronizedQueue<pair<Peer*, SData>> _replicationCommands;
-
-    // Set of hashes for commands that need to be rolled back. This re-uses the _replicationHashMutex as a guard for
-    // changes. This is seldom used.
-    set<string> _rollbackHashes;
 
     // Replication thread main loop.
     static void replicate(SQLiteNode& node, SQLite& db, int threadNum);

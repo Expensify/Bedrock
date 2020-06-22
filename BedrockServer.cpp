@@ -176,17 +176,16 @@ void BedrockServer::sync(const SData& args,
         workerThreads = 2;
     }
 
-    int maxJournalTableID = workerThreads + replicationThreads - 1;
     // Initialize the DB.
+    int maxJournalTableID = workerThreads + replicationThreads - 1;
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
     SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
 
+    // Initialize the replication DB handles that will be used when this node is a FOLLOWER in the cluster.
     list<SQLite> replicationDBs;
     for (int i = 0; i < replicationThreads; i++) {
         replicationDBs.emplace_back(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads + i, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     }
-
-    // Create some more 
 
     // And the command processor.
     BedrockCore core(db, server);
