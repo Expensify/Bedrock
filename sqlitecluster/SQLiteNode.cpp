@@ -80,26 +80,47 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 }
 
+// This is the main replication loop that's run in the replication threads. It pops commands off of the
+// `_replicationCommands` queue, and handles them *in parallel* as we run multiple instances of this function
+// simultaneously. It's important to note that we NEED to run this function in at least two threads or we run into a
+// starvation issue where a thread that's performing a transaction won't ever be notified that the transaction can be
+// committed.
+//
+// There are three commands we handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and COMMIT_TRANSACTION.
+// ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the hash of the transaction that is ready to be
+// COMMIT'ted (or rolled back), and notify any other threads that are waiting for this info that they can continue.
+//
+// BEGIN_TRANSACTION is where the interesting case is. This waits for the DB to be up-to-date, which is to say, the
+// commit count of the DB is one behind the new commit count of the transaction it's attempting to run.
+// Once that happens, it runs `handleBeginTransaction()` to do the body of work of the transaction.
+//
+// Finally, it waits for the new hash for the transaction to be ready to either COMMIT or ROLLBACK, and once that's
+// true, it performs the corresponding operation and notifies any other threads that are waiting on the DB to come
+// up-to-date that the commit count in the DB has changed.
+//
+// This thread exits when node._replicationThreadsShouldExit is set, which happens when a node stops FOLLOWING.
 void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
-    SInitialize("repl" + to_string(threadNum));
+    SInitialize("replicate" + to_string(threadNum));
+
+    // These make the logging macros work, as they expect these variables to be in scope.
     auto _state = node._state.load();
-    string name = "xxx";
+    string name = node.name;
 
     // Create a dummy placeholder command.
-    pair<Peer*, SData> p(nullptr, SData(""));
+    pair<Peer*, SData> commandWithPeer(nullptr, SData(""));
 
     // We'll loop indefinitely until we're instructed to exit, which is when this node stops FOLLOWING.
     while (true) {
         // If we're not already handling a transaction, let's see if we can get a new command.
         {
-            unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+            auto lock = node._replicationCommands.getUniqueLock();
             if (node._replicationThreadsShouldExit) {
                 // Every time we lock, we may be falling out of FOLLOWING, and might not receive any more
                 // notifications, so we need to check this each time the lock is acquired.
                 return;
             }
             try {
-                p = node._replicationCommands.pop();
+                commandWithPeer = node._replicationCommands.pop();
             } catch (const out_of_range& e) {
                 // We needed a command, but we couldn't find one. Wait until something happens, and then start our
                 // loop over.
@@ -109,19 +130,17 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
         }
 
         // We just got a new command.
-        auto& command = p.second;
+        auto& peer = commandWithPeer.first;
+        auto& command = commandWithPeer.second;
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
             try {
-                // Convenience vars.
-                auto& peer = p.first;
-                auto& command = p.second;
-
-                // Wait for the DB to come up to date.
                 while (true) {
-                    unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+                    auto lock = node._replicationCommands.getUniqueLock();
                     if (node._replicationThreadsShouldExit) {
                         return;
                     }
+
+                    // Wait for the DB to come up to date.
                     if (command.calcU64("NewCount") == db.getCommitCount() + 1) {
                         // We can unlock once we know our condition has passed, there's no race in case it changes after
                         // we've checked it but before we wait again, as we wont wait. We do this before any DB operations
@@ -143,7 +162,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                 // Wait for a COMMIT or ROLLBACK.
                 while (true) {
-                    unique_lock<recursive_mutex> lock(node._replicationCommands.getMutex());
+                    auto lock = node._replicationCommands.getUniqueLock();
                     if (node._replicationThreadsShouldExit) {
                         db.rollback();
                         return;
@@ -153,7 +172,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                     bool commit = false;
                     bool rollback = false;
                     {
-                        lock_guard<mutex> hashlock(node._replicationHashMutex);
+                        lock_guard<mutex> hashLock(node._replicationHashMutex);
                         commit = node._replicationHashesToCommit.count(command["NewHash"]);
                         rollback = node._replicationHashesToRollback.count(command["NewHash"]);
                     }
@@ -171,7 +190,7 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
 
                         // And clean up.
                         {
-                            lock_guard<mutex> hashlock(node._replicationHashMutex);
+                            lock_guard<mutex> hashLock(node._replicationHashMutex);
                             commit ? node._replicationHashesToCommit.erase(command["NewHash"]) : node._replicationHashesToRollback.erase(command["NewHash"]);
                         }
 
@@ -186,11 +205,11 @@ void SQLiteNode::replicate(SQLiteNode& node, SQLite& db, int threadNum) {
                 return;
             }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            lock_guard<mutex> hashlock(node._replicationHashMutex);
+            lock_guard<mutex> hashLock(node._replicationHashMutex);
             node._replicationHashesToRollback.insert(command["NewHash"]);
             node._replicationCommands.notify_all();
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            lock_guard<mutex> hashlock(node._replicationHashMutex);
+            lock_guard<mutex> hashLock(node._replicationHashMutex);
             node._replicationHashesToCommit.insert(command["Hash"]);
             node._replicationCommands.notify_all();
         }
@@ -365,7 +384,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
     }
 
     SASSERTEQUALS(_leadPeer.load()->state, LEADING);
-
     uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
     SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer.load()->name
           << "' after " << elapsed / 1000 << " ms");
@@ -1907,7 +1925,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (oldState == FOLLOWING) {
             {
                 // Clear the replication queue and instruct threads to exit.
-                unique_lock<recursive_mutex> lock(_replicationCommands.getMutex());
+                auto lock = _replicationCommands.getUniqueLock();
                 _replicationCommands.clear();
                 _replicationThreadsShouldExit = true;
             }
@@ -2389,7 +2407,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             if (!_leadPeer) {
                 STHROW("no leader?");

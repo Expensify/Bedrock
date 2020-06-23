@@ -34,11 +34,6 @@ class SSynchronizedQueue {
     // Returns the queue's size.
     size_t size() const;
 
-    // Returns the queue's internal mutex by reference.
-    auto& getMutex() const {
-        return _queueMutex;
-    }
-
     // Apply a lambda to each item in the queue.
     void each(const function<void (T&)> f);
 
@@ -62,6 +57,18 @@ class SSynchronizedQueue {
     // timeout on network activity. Since queue activity also causes poll() to return
     // if there is work in the queue.
     int _pipeFD[2] = {-1, -1};
+
+  public:
+    // Returns the queue's internal mutex by reference.
+    decltype(_queueMutex)& getMutex() const {
+        return _queueMutex;
+    }
+
+    // Return a unique_lock object by move to the caller so they don't need to worry about the internal type of our
+    // mutex.
+    unique_lock<decltype(_queueMutex)> getUniqueLock() const {
+        return unique_lock<decltype(_queueMutex)>(_queueMutex);
+    }
 };
 
 template<typename T>
