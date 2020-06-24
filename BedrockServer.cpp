@@ -163,8 +163,6 @@ void BedrockServer::sync(const SData& args,
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
     int workerThreads = args.calc("-workerThreads");
 
-    int replicationThreads = 8; // TODO: make configurable.
-
     // TODO: remove when nothing uses readThreads.
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
@@ -177,15 +175,8 @@ void BedrockServer::sync(const SData& args,
     }
 
     // Initialize the DB.
-    int maxJournalTableID = workerThreads + replicationThreads - 1;
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), -1, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
-
-    // Initialize the replication DB handles that will be used when this node is a FOLLOWER in the cluster.
-    list<SQLite> replicationDBs;
-    for (int i = 0; i < replicationThreads; i++) {
-        replicationDBs.emplace_back(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads + i, maxJournalTableID, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
-    }
+    SQLite db(args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
 
     // And the command processor.
     BedrockCore core(db, server);
@@ -194,7 +185,7 @@ void BedrockServer::sync(const SData& args,
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    server._syncNode = make_shared<SQLiteNode>(server, db, replicationDBs, args["-nodeName"], args["-nodeHost"],
+    server._syncNode = make_shared<SQLiteNode>(server, db, args["-nodeName"], args["-nodeHost"],
                                                args["-peerList"], args.calc("-priority"), firstTimeout,
                                                server._version);
 
@@ -210,15 +201,14 @@ void BedrockServer::sync(const SData& args,
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
         workerThreadList.emplace_back(worker,
-                                      ref(args),
+                                      ref(db),
                                       ref(replicationState),
                                       ref(upgradeInProgress),
                                       ref(leaderVersion),
                                       ref(syncNodeQueuedCommands),
                                       ref(server._completedCommands),
                                       ref(server),
-                                      threadId,
-                                      maxJournalTableID);
+                                      threadId);
     }
 
     // Now we jump into our main command processing loop.
@@ -764,20 +754,18 @@ void BedrockServer::sync(const SData& args,
     server._syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(const SData& args,
+void BedrockServer::worker(SQLite& baseDB,
                            atomic<SQLiteNode::State>& replicationState,
                            atomic<bool>& upgradeInProgress,
                            atomic<string>& leaderVersion,
                            BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                            BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                            BedrockServer& server,
-                           int threadId,
-                           int threadCount)
+                           int threadId)
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
-    int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLite db(args["-db"], args.calc("-cacheSize"), false, args.calc("-maxJournalSize"), threadId, threadCount - 1, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    SQLite db(baseDB);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.

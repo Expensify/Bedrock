@@ -36,7 +36,7 @@ class SQLiteNode : public STCPNode {
     };
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicationDBs, const string& name, const string& host,
+    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
                const string& peerList, int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
@@ -120,7 +120,7 @@ class SQLiteNode : public STCPNode {
 
     // We have a separate list of DB handles used solely for replication, so that we can do replication in parallel
     // threads without causing conflicts in the journal.
-    list<SQLite>& _replicationDBs;
+    list<SQLite> _replicationDBs;
 
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.

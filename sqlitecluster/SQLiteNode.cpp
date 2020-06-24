@@ -34,12 +34,11 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
-SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicationDBs, const string& name,
+SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _db(db),
-      _replicationDBs(replicationDBs),
       _commitState(CommitState::UNINITIALIZED),
       _server(server),
       _stateChangeCount(0),
@@ -47,6 +46,13 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, list<SQLite>& replicati
       _handledCommitCount(0),
      _replicationThreadsShouldExit(false)
     {
+
+    // TODO: Remove and spawn these per thread.
+    for (int i = 0; i < 8; i++) {
+        _replicationDBs.emplace_back(db);
+    }
+
+
     SASSERT(priority >= 0);
     _originalPriority = priority;
     _priority = -1;

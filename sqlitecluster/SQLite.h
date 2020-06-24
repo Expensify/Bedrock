@@ -32,20 +32,18 @@ class SQLite {
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
     static SLockTimer<recursive_mutex> g_commitLock;
 
-    // Loads a database and confirms its schema
-    // The journalTable and numJournalTables parameters are maybe less than straightforward, here's what they mean:
-    //
-    // journalTable: this is the numerical id of the journalTable that this DB will *write* to. It can be -1 to
-    //               indicate that the table to use is 'journal', otherwise it will be journalNNNN, where NNNN is the
-    //               integer passed in. The actual table name use will always have at least four digits (leading 0s
-    //               for numbers less than 1000).
-    //
-    // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
-    //                            'journal' and no numbered tables.
+    // createJournalTables: Creates the specified number of journal tables. If `0`, no tables are created. This
+    //                      specifies the total number of journal tables, not new ones, so if there are 50 existent
+    //                      tables and you pass `100` here, you get 100 total tables, not 150. 
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
+           int createJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+
+    // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
+    // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
+    // exist because we already have a SQLite object for this file.
+    SQLite(const SQLite& from);
     ~SQLite();
 
     // Returns the canonicalized filename for this database
@@ -211,6 +209,9 @@ class SQLite {
         // This is the last committed hash by *any* thread for this file.
         atomic<string> _lastCommittedHash;
 
+        // An identifier used to choose the next journal table to use with this set of DB handles.
+        atomic<int64_t> _nextJournalCount;
+
         // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
         // peers.
         set<uint64_t> _committedTransactionIDs;
@@ -220,7 +221,7 @@ class SQLite {
         atomic<uint64_t> _commitCount;
 
         // Names of journal tables for this database.
-        list<string> _journalNames;
+        vector<string> _journalNames;
 
         // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
         // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
@@ -273,15 +274,11 @@ class SQLite {
         // when required to make sure it can get exclusive use of the DB.
         mutex blockNewTransactionsMutex;
 
-        // These three varialbes let us notify the checkpoint thread when a tranasction ends (or starts, but it will
+        // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
         // have blocked any new ones from starting by locking blockNewTransactionsMutex).
         mutex notifyWaitMutex;
         condition_variable blockNewTransactionsCV;
         atomic<int> currentTransactionCount;
-
-        // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
-        // if the SQLite object that initiated it has been deleted since it started.
-        set<SQLite*> validObjects;
 
         // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
@@ -313,7 +310,7 @@ class SQLite {
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
     // Returns the name of a journal table based on it's index.
-    static string _getJournalTableName(int journalTableID);
+    string _getJournalTableName(int64_t journalTableID, bool create = false);
 
     // Attributes
     sqlite3* _db;
@@ -324,7 +321,7 @@ class SQLite {
     string _uncommittedQuery;
     string _uncommittedHash;
 
-    // The name of the journal table, computed from the 'journalTable' parameter passed to our constructor.
+    // The name of the journal table
     string _journalName;
 
     // Timing information.
@@ -440,4 +437,9 @@ class SQLite {
     static atomic<int64_t> _transactionAttemptCount;
     static mutex _pageLogMutex;
     int64_t _currentTransactionAttemptCount;
+
+    // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
+    int _cacheSize;
+    const string _synchronous;
+    int64_t _mmapSizeGB;
 };
