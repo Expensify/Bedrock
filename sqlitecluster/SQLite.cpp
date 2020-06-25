@@ -272,9 +272,6 @@ SQLite::SQLite(const SQLite& from) :
         sqlite3_begin_concurrent_report_enable(_db, 1);
     }
 
-    // WAL is what allows simultaneous read/writing.
-    SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
-
     if (_mmapSizeGB) {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
@@ -1218,3 +1215,64 @@ currentTransactionCount(0),
 _currentPageCount(0),
 _checkpointThreadBusy(0)
 { }
+
+SQLitePool::SQLitePool(size_t maxDBs,
+                      const string& filename,
+                      int cacheSize,
+                      bool enableFullCheckpoints,
+                      int maxJournalSize,
+                      int createJournalTables,
+                      const string& synchronous,
+                      int64_t mmapSizeGB,
+                      bool pageLoggingEnabled)
+: _maxDBs(max(maxDBs, 1ul)),
+  _baseDB(new SQLite(filename, cacheSize, enableFullCheckpoints, maxJournalSize, createJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled))
+{ }
+
+SQLitePool::~SQLitePool() {
+    lock_guard<mutex> lock(_sync);
+    if (_inUseHandles.size()) {
+        SWARN("Destroying SQLitePool with DBs in use.");
+    }
+    for (auto dbHandle : _availableHandles) {
+        delete dbHandle;
+    }
+    for (auto dbHandle : _inUseHandles) {
+        delete dbHandle;
+    }
+    delete _baseDB;
+}
+
+SQLite& SQLitePool::getBase() {
+    return *_baseDB;
+}
+
+SQLite& SQLitePool::get() {
+    while (true) {
+        unique_lock<mutex> lock(_sync);
+        if (_availableHandles.size()) {
+            // Return an existing handle.
+            auto frontIt = _availableHandles.begin();
+            _availableHandles.erase(frontIt);
+            _inUseHandles.insert(*frontIt);
+            return **frontIt;
+        } else if (_availableHandles.size() + _inUseHandles.size() < (_maxDBs - 1)) {
+            // Create a new handle.
+            SQLite* db = new SQLite(*_baseDB);
+            _inUseHandles.insert(db);
+            return *db;
+        } else {
+            // Wait for a handle.
+            _wait.wait(lock);
+        }
+    }
+}
+
+void SQLitePool::returnToPool(SQLite& object) {
+    {
+        lock_guard<mutex> lock(_sync);
+        _availableHandles.insert(&object);
+        _inUseHandles.erase(&object);
+    }
+    _wait.notify_one();
+}

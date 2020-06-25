@@ -222,8 +222,8 @@ class SQLiteNode : public STCPNode {
     WallClockTimer _syncTimer;
     atomic<uint64_t> _handledCommitCount;
 
-    // List of threads that are handling replication. These are transient and only exist while FOLLOWING.
-    list<thread> _replicationThreads;
+    // Count of current number of working threads, we keep track of this so we can tell when they've finished.
+    atomic<int64_t> _replicationThreads;
 
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
@@ -233,9 +233,9 @@ class SQLiteNode : public STCPNode {
     set<string> _replicationHashesToCommit;
     set<string> _replicationHashesToRollback;
 
-    // Queue object for replication commands
-    SSynchronizedQueue<pair<Peer*, SData>> _replicationCommands;
+    mutex _replicationMutex;
+    condition_variable _replicationCV;
 
-    // Replication thread main loop.
-    static void replicate(SQLiteNode& node, SQLite& db, int threadNum);
+    // Replication thread main body.
+    static void replicate(SQLiteNode& node, Peer* peer, SData command);
 };
