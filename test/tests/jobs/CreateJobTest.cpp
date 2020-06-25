@@ -113,6 +113,7 @@ struct CreateJobTest : tpunit::TestFixture {
         string data = "{\"blabla\":\"blabla\"}";
         command["name"] = jobName;
         command["data"] = data;
+        const string& startTime = SCURRENT_TIMESTAMP();
         STable response = tester->executeWaitVerifyContentTable(command);
         ASSERT_GREATER_THAN(stol(response["jobID"]), 0);
 
@@ -123,8 +124,9 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created
-        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
+        // nextRun and created should be equal or higher to the time we started the test
+        ASSERT_TRUE(originalJob[0][0].compare(startTime) >= 0);
+        ASSERT_TRUE(originalJob[0][4].compare(startTime) >= 0);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], data);
