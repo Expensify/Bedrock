@@ -36,7 +36,7 @@ class SQLiteNode : public STCPNode {
     };
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
+    SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name, const string& host,
                const string& peerList, int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
@@ -112,6 +112,8 @@ class SQLiteNode : public STCPNode {
     void _onConnect(Peer* peer);
     void _onDisconnect(Peer* peer);
     void _onMESSAGE(Peer* peer, const SData& message);
+
+    SQLitePool& _dbPool;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()

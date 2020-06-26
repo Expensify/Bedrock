@@ -168,7 +168,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // We'll let this go a couple of times. It's feasible that these won't match if the whole journal hasn't
         // replicated yet.
         int tries = 0;
-        while(tries++ < 10) {
+        while(tries++ < 50) {
 
             // Now lets compose a query for the journal of each node.
             allResults.clear();
@@ -205,7 +205,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             if (allResults[0] == allResults[1] && allResults[1] == allResults[2]) {
                 break;
             }
-            cout << "[ConflictSpamTest] Results didn't match, waiting for journals to equalize." << endl;
+            cout << "[ConflictSpamTest] Results didn't match, waiting for journals to equalize." << allResults[0] << ", " << allResults[1] << ", " << allResults[2] << endl;
             sleep(1);
         }
 

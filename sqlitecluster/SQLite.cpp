@@ -1253,16 +1253,20 @@ SQLite& SQLitePool::get() {
         if (_availableHandles.size()) {
             // Return an existing handle.
             auto frontIt = _availableHandles.begin();
+            SQLite* db = *frontIt;
+            _inUseHandles.insert(db);
             _availableHandles.erase(frontIt);
-            _inUseHandles.insert(*frontIt);
-            return **frontIt;
+            SINFO("Returning existing DB handle");
+            return *db;
         } else if (_availableHandles.size() + _inUseHandles.size() < (_maxDBs - 1)) {
             // Create a new handle.
             SQLite* db = new SQLite(*_baseDB);
             _inUseHandles.insert(db);
+            SINFO("Returning new DB handle: " << (_availableHandles.size() + _inUseHandles.size()));
             return *db;
         } else {
             // Wait for a handle.
+            SINFO("Waiting for DB handle");
             _wait.wait(lock);
         }
     }
@@ -1273,6 +1277,7 @@ void SQLitePool::returnToPool(SQLite& object) {
         lock_guard<mutex> lock(_sync);
         _availableHandles.insert(&object);
         _inUseHandles.erase(&object);
+        SINFO("DB handle returned to pool.");
     }
     _wait.notify_one();
 }

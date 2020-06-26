@@ -314,7 +314,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SQLite& baseDB,
+    static void worker(SQLitePool& dbPool,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& leaderVersion,
