@@ -70,6 +70,9 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
 
+    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+    _dbNotifier.notifyThrough(_db.getCommitCount());
+
     // Get this party started
     _changeState(SEARCHING);
 
@@ -135,13 +138,17 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                     return;
                 }
 
+                // This waits for the DB to come up to date. It needs to be interruptable though, for instance, to
+                // handle _replicationThreadsShouldExit, and spurious wakeups.
+                SINFO("[NOTIFY] waiting for DB commit count: " << command.calcU64("NewCount") - 1);
+                lock.unlock();
+                node._dbNotifier.waitFor(command.calcU64("NewCount") - 1);
+                lock.lock();
+
                 // Wait for the DB to come up to date. We use the base object because there's no lock required to get
                 // that one, and all we want to do is check the current commit count.
-                if (command.calcU64("NewCount") != node._dbPool.getBase().getCommitCount() + 1) {
-                    SINFO("Waiting for DB to be up-to-date (need: " << (command.calcU64("NewCount") - 1) << ")");
-                    node._replicationCV.wait(lock);
-                    SINFO("Done waiting for DB to be up-to-date");
-                } else {
+                if (command.calcU64("NewCount") == node._dbPool.getBase().getCommitCount() + 1) {
+                    // Otherwise, maybe the exit condition was hit, or we woke spuriously.
                     break;
                 }
             }
@@ -171,7 +178,10 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                 // If we can't do either, keep waiting.
                 if (!commit && !rollback) {
                     SINFO("Waiting on commit or rollback");
-                    node._replicationCV.wait(lock);
+                    SINFO("[NOTIFY] waiting for COMMIT commit count: " << command.calcU64("NewCount"));
+                    lock.unlock();
+                    node._commitNotifier.waitFor(command.calcU64("NewCount"));
+                    lock.lock();
                     SINFO("Done waiting on commit or rollback");
                 } else {
                     // Do the appropriate DB operation.
@@ -184,6 +194,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                     }
 
                     SINFO("Notifying DB at: " << db.getCommitCount());
+                    SINFO("[NOTIFY] notifying for DB commit count: " << db.getCommitCount());
+                    node._dbNotifier.notifyThrough(db.getCommitCount());
                     break;
                 }
             }
@@ -197,6 +209,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
             lock_guard<mutex> lock(node._replicationMutex);
             lock_guard<mutex> hashLock(node._replicationHashMutex);
             node._replicationHashesToRollback.insert(command["NewHash"]);
+            SINFO("[NOTIFY] notifying all for ROLLBACK");
+            node._commitNotifier.notifyAll();
         }
         SINFO("Notifying ROLLBACK");
     } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
@@ -204,12 +218,11 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
             lock_guard<mutex> lock(node._replicationMutex);
             lock_guard<mutex> hashLock(node._replicationHashMutex);
             node._replicationHashesToCommit.insert(command["Hash"]);
+            SINFO("[NOTIFY] notifying for COMMIT commit count: " << command.calcU64("CommitCount"));
+            node._commitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
         SINFO("Notifying COMMIT");
     }
-
-    // Notify everyone that we're done, regardless of what we did.
-    node._replicationCV.notify_all();
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -1570,9 +1583,24 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             throw e;
         }
     } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-        auto threadID = _replicationThreads.fetch_add(1);
-        SINFO("Spawning concurrent replicate thread: " << threadID);
-        thread(replicate, ref(*this), peer, message).detach();
+        if (_replicationThreadsShouldExit) {
+            SINFO("Discarding replication message, shutting down");
+        } else {
+            auto threadID = _replicationThreads.fetch_add(1);
+            // TODO: I don't think we need this hack, and I don't think this is why we're getting stuck. When we fix the
+            // stuckness, I bet this stays small.
+            // Edit: Not sure, maybe performance is just bad with this many notifications. There's no way to notify someone
+            // in specific. What if we had a thread that just does commits? Workers can hand off their DBs to it, and it
+            // commits in order.
+            while (threadID > 10) {
+                usleep(10'000);
+                _replicationThreads.fetch_sub(1);
+                threadID = _replicationThreads.fetch_add(1);
+                SINFO("Hack, too many threads. Sleeping.");
+            }
+            SINFO("Spawning concurrent replicate thread: " << threadID);
+            thread(replicate, ref(*this), peer, message).detach();
+        }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
         // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
@@ -1917,11 +1945,18 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
     // Did we actually change _state?
     State oldState = _state;
+
+    // Not sure if this is entirely adequate.
+    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+    _dbNotifier.notifyThrough(_db.getCommitCount());
+
     if (newState != oldState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            _replicationCV.notify_all();
+            SINFO("[NOTIFY] _replicationThreadsShouldExit");
+            _dbNotifier.notifyAll();
+            _commitNotifier.notifyAll();
 
             // Polling wait for threads to quit.
             while (_replicationThreads) {
@@ -2156,6 +2191,11 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         // Transaction succeeded, commit and go to the next
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
+
+        // Should work here.
+        SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+        _dbNotifier.notifyThrough(_db.getCommitCount());
+
         if (_db.getCommittedHash() != commit["Hash"])
             STHROW("potential hash mismatch");
         --commitsRemaining;
@@ -2475,4 +2515,35 @@ SQLiteNode::State SQLiteNode::leaderState() const {
         return _leadPeer.load()->state;
     }
     return State::UNKNOWN;
+}
+
+void NotifyAtValue::waitFor(uint64_t value) {
+    shared_ptr<mutex> m(nullptr);
+    shared_ptr<condition_variable> cv(nullptr);
+    {
+        lock_guard<mutex> lock(_m);
+        if (value <= _value) {
+            return;
+        }
+        auto entry = pending.find(value);
+        if (entry == pending.end()) {
+            entry = pending.emplace(value, make_pair(shared_ptr<mutex>(new mutex), shared_ptr<condition_variable>(new condition_variable))).first;
+        }
+        m = entry->second.first;
+        cv = entry->second.second;
+    }
+    unique_lock<mutex> lock(*m);
+    cv->wait(lock);
+}
+
+void NotifyAtValue::notifyThrough(uint64_t value) {
+    lock_guard<mutex> lock(_m);
+    _value = value;
+    while (pending.size() && pending.begin()->first <= _value) {
+        pending.begin()->second.second->notify_all();
+        pending.erase(pending.begin());
+    }
+}
+void NotifyAtValue::notifyAll() {
+    notifyThrough(ULLONG_MAX);
 }

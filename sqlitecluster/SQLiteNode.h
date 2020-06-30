@@ -5,6 +5,19 @@
 class SQLiteCommand;
 class SQLiteServer;
 
+class NotifyAtValue {
+  public:
+    NotifyAtValue() : _value(0) {}
+    void waitFor(uint64_t value);
+    void notifyThrough(uint64_t value);
+    void notifyAll();
+
+  private:
+    mutex _m;
+    map <uint64_t, pair<shared_ptr<mutex>, shared_ptr<condition_variable>>> pending;
+    uint64_t _value;
+};
+
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
     // This exists to expose internal state to a test harness. It is not used otherwise.
@@ -236,7 +249,8 @@ class SQLiteNode : public STCPNode {
     set<string> _replicationHashesToRollback;
 
     mutex _replicationMutex;
-    condition_variable _replicationCV;
+    NotifyAtValue _dbNotifier;
+    NotifyAtValue _commitNotifier;
 
     // Replication thread main body.
     static void replicate(SQLiteNode& node, Peer* peer, SData command);
