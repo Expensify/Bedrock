@@ -13,7 +13,8 @@ mutex SQLite::_pageLogMutex;
 map<string, SQLite::SharedData*> SQLite::_sharedDataLookupMap;
 
 // This is our only public static variable. It needs to be initialized after `_commitLock`.
-SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
+// TODO: This can be removed and just use _commitLock directly if we don't need SLockTimer back.
+recursive_mutex& SQLite::g_commitLock(SQLite::_commitLock);
 
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)

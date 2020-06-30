@@ -1,9 +1,8 @@
 #pragma once
-#include <libstuff/SLockTimer.h>
 #include <libstuff/sqlite3.h>
 
 // Convenience macro for locking our static commit lock.
-#define SQLITE_COMMIT_AUTOLOCK SLockTimerGuard<decltype(SQLite::g_commitLock)> \
+#define SQLITE_COMMIT_AUTOLOCK lock_guard<decltype(SQLite::g_commitLock)> \
         __SSQLITEAUTOLOCK_##__LINE__(SQLite::g_commitLock)
 
 class SQLite {
@@ -30,7 +29,7 @@ class SQLite {
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
-    static SLockTimer<recursive_mutex> g_commitLock;
+    static recursive_mutex& g_commitLock;
 
     // createJournalTables: Creates the specified number of journal tables. If `0`, no tables are created. This
     //                      specifies the total number of journal tables, not new ones, so if there are 50 existent
