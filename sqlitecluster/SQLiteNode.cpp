@@ -210,7 +210,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
             lock_guard<mutex> hashLock(node._replicationHashMutex);
             node._replicationHashesToRollback.insert(command["NewHash"]);
             SINFO("[NOTIFY] notifying all for ROLLBACK");
-            node._commitNotifier.notifyAll();
+            node._commitNotifier.cancel();
         }
         SINFO("Notifying ROLLBACK");
     } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
@@ -1955,8 +1955,8 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (oldState == FOLLOWING) {
             _replicationThreadsShouldExit = true;
             SINFO("[NOTIFY] _replicationThreadsShouldExit");
-            _dbNotifier.notifyAll();
-            _commitNotifier.notifyAll();
+            _dbNotifier.cancel();
+            _commitNotifier.cancel();
 
             // Polling wait for threads to quit.
             while (_replicationThreads) {
@@ -2517,33 +2517,56 @@ SQLiteNode::State SQLiteNode::leaderState() const {
     return State::UNKNOWN;
 }
 
-void NotifyAtValue::waitFor(uint64_t value) {
+bool NotifyAtValue::waitFor(uint64_t value) {
     shared_ptr<mutex> m(nullptr);
     shared_ptr<condition_variable> cv(nullptr);
+    shared_ptr<atomic<bool>> cancel(nullptr);
     {
         lock_guard<mutex> lock(_m);
         if (value <= _value) {
-            return;
+            return true;
         }
-        auto entry = pending.find(value);
-        if (entry == pending.end()) {
-            entry = pending.emplace(value, make_pair(shared_ptr<mutex>(new mutex), shared_ptr<condition_variable>(new condition_variable))).first;
+        auto entry = _pending.find(value);
+        if (entry == _pending.end()) {
+            entry = _pending.emplace(value, MapVal(make_shared<mutex>(), make_shared<condition_variable>(), _currentCancel)).first;
         }
-        m = entry->second.first;
-        cv = entry->second.second;
+        m = entry->second.m;
+        cv = entry->second.cv;
+        cancel = entry->second.cancel;
     }
-    unique_lock<mutex> lock(*m);
-    cv->wait(lock);
+    while (true) {
+        unique_lock<mutex> lock(*m);
+        if (*cancel) {
+            return false;
+        } else if (_value >= value) {
+            return true;
+        }
+        cv->wait(lock);
+    }
 }
 
 void NotifyAtValue::notifyThrough(uint64_t value) {
     lock_guard<mutex> lock(_m);
-    _value = value;
-    while (pending.size() && pending.begin()->first <= _value) {
-        pending.begin()->second.second->notify_all();
-        pending.erase(pending.begin());
+    if (value > _value) {
+        _value = value;
+    }
+    while (!_pending.empty() && _pending.begin()->first <= _value) {
+        // TODO: Do I need to lock the mutex in here? I think so. This will guarantee that the check if we're done
+        // happens not-in-parallel with the change to _value, though if I unlock before notifying, I don't see how that
+        // works.
+        _pending.begin()->second.cv->notify_all();
+        _pending.erase(_pending.begin());
     }
 }
-void NotifyAtValue::notifyAll() {
-    notifyThrough(ULLONG_MAX);
+void NotifyAtValue::cancel() {
+    lock_guard<mutex> lock(_m);
+    *_currentCancel = true;
+    _currentCancel = make_shared<atomic<bool>>(false);
+    for (auto& entry : _pending) {
+        // TODO: Do I need to lock the mutex in here? I think so. This will guarantee that the check if we're done
+        // happens not-in-parallel with the change to _currentCancel, though if I unlock before notifying, I don't see how that
+        // works.
+        entry.second.cv->notify_all();
+    }
+    _pending.clear();
 }

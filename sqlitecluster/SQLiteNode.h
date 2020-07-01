@@ -7,15 +7,23 @@ class SQLiteServer;
 
 class NotifyAtValue {
   public:
-    NotifyAtValue() : _value(0) {}
-    void waitFor(uint64_t value);
+    NotifyAtValue() : _value(0), _currentCancel(make_shared<atomic<bool>>(false)) {}
+    bool waitFor(uint64_t value);
     void notifyThrough(uint64_t value);
-    void notifyAll();
+    void cancel();
 
   private:
+    struct MapVal {
+        MapVal(shared_ptr<mutex>&& _m, shared_ptr<condition_variable>&& _cv, shared_ptr<atomic<bool>>& _cancel) : m(_m), cv(_cv), cancel(_cancel) {};
+        shared_ptr<mutex> m;
+        shared_ptr<condition_variable> cv;
+        shared_ptr<atomic<bool>> cancel;
+    };
+
     mutex _m;
-    map <uint64_t, pair<shared_ptr<mutex>, shared_ptr<condition_variable>>> pending;
-    uint64_t _value;
+    map <uint64_t, MapVal> _pending;
+    atomic<uint64_t> _value;
+    shared_ptr<atomic<bool>> _currentCancel;
 };
 
 // Distributed, leader/follower, failover, transactional DB cluster
