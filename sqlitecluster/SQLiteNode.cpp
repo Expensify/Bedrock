@@ -2517,10 +2517,8 @@ SQLiteNode::State SQLiteNode::leaderState() const {
     return State::UNKNOWN;
 }
 
-bool NotifyAtValue::waitFor(uint64_t value) {
-    shared_ptr<mutex> m(nullptr);
-    shared_ptr<condition_variable> cv(nullptr);
-    shared_ptr<atomic<bool>> cancel(nullptr);
+bool SequentialNotifier::waitFor(uint64_t value) {
+    shared_ptr<WaitState> state(nullptr);
     {
         lock_guard<mutex> lock(_m);
         if (value <= _value) {
@@ -2528,45 +2526,41 @@ bool NotifyAtValue::waitFor(uint64_t value) {
         }
         auto entry = _pending.find(value);
         if (entry == _pending.end()) {
-            entry = _pending.emplace(value, MapVal(make_shared<mutex>(), make_shared<condition_variable>(), _currentCancel)).first;
+            entry = _pending.emplace(value, make_shared<WaitState>()).first;
         }
-        m = entry->second.m;
-        cv = entry->second.cv;
-        cancel = entry->second.cancel;
+        state = entry->second;
     }
     while (true) {
-        unique_lock<mutex> lock(*m);
-        if (*cancel) {
+        unique_lock<mutex> lock(state->m);
+        if (state->canceled) {
             return false;
-        } else if (_value >= value) {
+        } else if (state->completed) {
             return true;
         }
-        cv->wait(lock);
+        state->cv.wait(lock);
     }
 }
 
-void NotifyAtValue::notifyThrough(uint64_t value) {
+void SequentialNotifier::notifyThrough(uint64_t value) {
     lock_guard<mutex> lock(_m);
     if (value > _value) {
         _value = value;
     }
-    while (!_pending.empty() && _pending.begin()->first <= _value) {
-        // TODO: Do I need to lock the mutex in here? I think so. This will guarantee that the check if we're done
-        // happens not-in-parallel with the change to _value, though if I unlock before notifying, I don't see how that
-        // works.
-        _pending.begin()->second.cv->notify_all();
+    while (!_pending.empty() && _pending.begin()->first <= value) {
+        lock_guard<mutex> lock(_pending.begin()->second->m);
+        _pending.begin()->second->completed = true;
+        _pending.begin()->second->cv.notify_all();
         _pending.erase(_pending.begin());
     }
 }
-void NotifyAtValue::cancel() {
+
+void SequentialNotifier::cancel() {
     lock_guard<mutex> lock(_m);
-    *_currentCancel = true;
-    _currentCancel = make_shared<atomic<bool>>(false);
-    for (auto& entry : _pending) {
-        // TODO: Do I need to lock the mutex in here? I think so. This will guarantee that the check if we're done
-        // happens not-in-parallel with the change to _currentCancel, though if I unlock before notifying, I don't see how that
-        // works.
-        entry.second.cv->notify_all();
+    for (auto& p : _pending) {
+        lock_guard<mutex> lock(p.second->m);
+        p.second->canceled = true;
+        p.second->cv.notify_all();
     }
     _pending.clear();
+    _value = 0;
 }

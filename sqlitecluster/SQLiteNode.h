@@ -5,25 +5,25 @@
 class SQLiteCommand;
 class SQLiteServer;
 
-class NotifyAtValue {
+class SequentialNotifier {
   public:
-    NotifyAtValue() : _value(0), _currentCancel(make_shared<atomic<bool>>(false)) {}
+    SequentialNotifier() : _value(0) {}
     bool waitFor(uint64_t value);
     void notifyThrough(uint64_t value);
     void cancel();
 
   private:
-    struct MapVal {
-        MapVal(shared_ptr<mutex>&& _m, shared_ptr<condition_variable>&& _cv, shared_ptr<atomic<bool>>& _cancel) : m(_m), cv(_cv), cancel(_cancel) {};
-        shared_ptr<mutex> m;
-        shared_ptr<condition_variable> cv;
-        shared_ptr<atomic<bool>> cancel;
+    struct WaitState {
+        WaitState() : canceled(false), completed(false) {}
+        mutex m;
+        condition_variable cv;
+        bool canceled;
+        bool completed;
     };
 
     mutex _m;
-    map <uint64_t, MapVal> _pending;
-    atomic<uint64_t> _value;
-    shared_ptr<atomic<bool>> _currentCancel;
+    map<uint64_t, shared_ptr<WaitState>> _pending;
+    uint64_t _value;
 };
 
 // Distributed, leader/follower, failover, transactional DB cluster
@@ -257,8 +257,8 @@ class SQLiteNode : public STCPNode {
     set<string> _replicationHashesToRollback;
 
     mutex _replicationMutex;
-    NotifyAtValue _dbNotifier;
-    NotifyAtValue _commitNotifier;
+    SequentialNotifier _dbNotifier;
+    SequentialNotifier _commitNotifier;
 
     // Replication thread main body.
     static void replicate(SQLiteNode& node, Peer* peer, SData command);
