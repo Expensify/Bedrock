@@ -18,9 +18,6 @@ class SSynchronizedQueue {
     // Returns true if the queue is empty.
     bool empty() const;
 
-    // Empties the queue.
-    void clear();
-
     // Return a const reference to the front item in the list, for inspection.
     // throws out_of_range if nothing is available.
     virtual const T& front() const;
@@ -37,15 +34,9 @@ class SSynchronizedQueue {
     // Apply a lambda to each item in the queue.
     void each(const function<void (T&)> f);
 
-    // These are pass-through methods that just call the internal condition_variable methods.
-    void notify_one();
-    void notify_all();
-    void wait(unique_lock<recursive_mutex>& lock);
-
   protected:
     list<T> _queue;
     mutable recursive_mutex _queueMutex;
-    condition_variable_any _cv;
 
     // You may be wondering why we use a pipe instead of a condition variable
     // for alerting threads that work is available. That's because we are treating
@@ -57,18 +48,6 @@ class SSynchronizedQueue {
     // timeout on network activity. Since queue activity also causes poll() to return
     // if there is work in the queue.
     int _pipeFD[2] = {-1, -1};
-
-  public:
-    // Returns the queue's internal mutex by reference.
-    decltype(_queueMutex)& getMutex() const {
-        return _queueMutex;
-    }
-
-    // Return a unique_lock object by move to the caller so they don't need to worry about the internal type of our
-    // mutex.
-    unique_lock<decltype(_queueMutex)> getUniqueLock() const {
-        return unique_lock<decltype(_queueMutex)>(_queueMutex);
-    }
 };
 
 template<typename T>
@@ -162,28 +141,7 @@ size_t SSynchronizedQueue<T>::size() const {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::clear() {
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    _queue.clear();
-}
-
-template<typename T>
 void SSynchronizedQueue<T>::each(const function<void (T&)> f) {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     for_each(_queue.begin(), _queue.end(), f);
-}
-
-template<typename T>
-void SSynchronizedQueue<T>::notify_one() {
-    _cv.notify_one();
-}
-
-template<typename T>
-void SSynchronizedQueue<T>::notify_all() {
-    _cv.notify_all();
-}
-
-template<typename T>
-void SSynchronizedQueue<T>::wait(unique_lock<recursive_mutex>& lock) {
-    _cv.wait(lock);
 }

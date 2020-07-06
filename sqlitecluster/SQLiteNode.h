@@ -1,7 +1,6 @@
 #pragma once
 #include "SQLite.h"
 #include "WallClockTimer.h"
-#include "libstuff/SSynchronizedQueue.h"
 class SQLiteCommand;
 class SQLiteServer;
 
