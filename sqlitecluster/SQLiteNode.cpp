@@ -121,107 +121,57 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
     SInitialize("replicate" + to_string(currentCommandThreadID.fetch_add(1)));
 
     // Make sure when this thread exits we decrement our thread counter.
-    DecrementOnDestruction dod(node._replicationThreads);
+    bool goSearchingOnExit = false;
+    {
+        DecrementOnDestruction dod(node._replicationThreads);
 
-    // These make the logging macros work, as they expect these variables to be in scope.
-    auto _state = node._state.load();
-    string name = node.name;
-    SINFO("Replicate thread started: " << command.methodLine);
+        // These make the logging macros work, as they expect these variables to be in scope.
+        auto _state = node._state.load();
+        string name = node.name;
+        SINFO("Replicate thread started: " << command.methodLine);
 
-    if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-        try {
-            SINFO("Starting transaction that will be commit: " << command.calcU64("NewCount"));
-            while (true) {
+        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
 
-                unique_lock<mutex> lock(node._replicationMutex);
-                if (node._replicationThreadsShouldExit) {
-                    return;
-                }
-
-                // This waits for the DB to come up to date. It needs to be interruptable though, for instance, to
-                // handle _replicationThreadsShouldExit, and spurious wakeups.
-                SINFO("[NOTIFY] waiting for DB commit count: " << command.calcU64("NewCount") - 1);
-                lock.unlock();
-                node._dbNotifier.waitFor(command.calcU64("NewCount") - 1);
-                lock.lock();
-
-                // Wait for the DB to come up to date. We use the base object because there's no lock required to get
-                // that one, and all we want to do is check the current commit count.
-                if (command.calcU64("NewCount") == node._dbPool.getBase().getCommitCount() + 1) {
-                    // Otherwise, maybe the exit condition was hit, or we woke spuriously.
-                    break;
-                }
+            SINFO("[NOTIFY] waiting for DB commit count: " << command.calcU64("NewCount") - 1);
+            if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                SINFO("[NOTIFY] canceled while waiting for DB to come up-to-date");
+                return;
             }
 
-            // We now know the DB is up-to-date, we have to grab another DB handle to work on.
+            // Ok, the transaction before us has finished, we can start ours.
             SQLitePoolScopedGet dbScope(node._dbPool);
             SQLite& db = dbScope.db();
-            node.handleBeginTransaction(db, peer, command);
 
-            // Wait for a COMMIT or ROLLBACK.
-            while (true) {
-                unique_lock<mutex> lock(node._replicationMutex);
-                if (node._replicationThreadsShouldExit) {
+            try {
+                node.handleBeginTransaction(db, peer, command);
+
+                // Now see if we can commit.
+                SINFO("[NOTIFY] waiting for COMMIT commit count: " << command.calcU64("NewCount"));
+                if (!node._commitNotifier.waitFor(command.calcU64("NewCount"))) {
+                    SINFO("[NOTIFY] canceled or ROLLBACK waiting on commit");
                     db.rollback();
-                    return;
                 }
+                SINFO("[NOTIFY] done waiting for COMMIT commit count: " << command.calcU64("NewCount"));
 
-                // Look up our hashes to see if we can COMMIT or ROLLBACK.
-                bool commit = false;
-                bool rollback = false;
-                {
-                    lock_guard<mutex> hashLock(node._replicationHashMutex);
-                    commit = node._replicationHashesToCommit.count(command["NewHash"]);
-                    rollback = node._replicationHashesToRollback.count(command["NewHash"]);
-                }
+                node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                node._dbNotifier.notifyThrough(db.getCommitCount());
 
-                // If we can't do either, keep waiting.
-                if (!commit && !rollback) {
-                    SINFO("Waiting on commit or rollback");
-                    SINFO("[NOTIFY] waiting for COMMIT commit count: " << command.calcU64("NewCount"));
-                    lock.unlock();
-                    node._commitNotifier.waitFor(command.calcU64("NewCount"));
-                    lock.lock();
-                    SINFO("Done waiting on commit or rollback");
-                } else {
-                    // Do the appropriate DB operation.
-                    commit ? node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]) : node.handleRollbackTransaction(db, peer, command);
-
-                    // And clean up.
-                    {
-                        lock_guard<mutex> hashLock(node._replicationHashMutex);
-                        commit ? node._replicationHashesToCommit.erase(command["NewHash"]) : node._replicationHashesToRollback.erase(command["NewHash"]);
-                    }
-
-                    SINFO("Notifying DB at: " << db.getCommitCount());
-                    SINFO("[NOTIFY] notifying for DB commit count: " << db.getCommitCount());
-                    node._dbNotifier.notifyThrough(db.getCommitCount());
-                    break;
-                }
+            } catch (const SException& e) {
+                SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
+                db.rollback();
             }
-        } catch (const SException& e) {
-            SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
-            // db.rollback(); Hmm...
-            return;
-        }
-    } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-        {
-            lock_guard<mutex> lock(node._replicationMutex);
-            lock_guard<mutex> hashLock(node._replicationHashMutex);
-            node._replicationHashesToRollback.insert(command["NewHash"]);
+        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
             SINFO("[NOTIFY] notifying all for ROLLBACK");
-            node._commitNotifier.cancel();
-        }
-        SINFO("Notifying ROLLBACK");
-    } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-        {
-            lock_guard<mutex> lock(node._replicationMutex);
-            lock_guard<mutex> hashLock(node._replicationHashMutex);
-            node._replicationHashesToCommit.insert(command["Hash"]);
+            // DecrementOnDestruction needs to go away to decrement our thread count before we can change state out of
+            // FOLLOWING.
+            goSearchingOnExit = true;
+        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
             SINFO("[NOTIFY] notifying for COMMIT commit count: " << command.calcU64("CommitCount"));
             node._commitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
-        SINFO("Notifying COMMIT");
+    }
+    if (goSearchingOnExit) {
+        node._changeState(SEARCHING);
     }
 }
 
@@ -1965,6 +1915,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
             // Done exiting. Reset so that we can resume FOLLOWING in the future.
             _replicationThreadsShouldExit = false;
+
+            // Guaranteed to be done right now.
+            _dbNotifier.reset();
+            _commitNotifier.reset();
         }
 
         // Depending on the state, set a timeout

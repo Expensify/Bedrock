@@ -15,7 +15,7 @@ bool SQLiteSequentialNotifier::waitFor(uint64_t value) {
     }
     while (true) {
         unique_lock<mutex> lock(state->m);
-        if (state->canceled) {
+        if (_canceled) {
             return false;
         } else if (state->completed) {
             return true;
@@ -39,11 +39,17 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
 
 void SQLiteSequentialNotifier::cancel() {
     lock_guard<mutex> lock(_m);
+    _canceled = true;
     for (auto& p : _pending) {
         lock_guard<mutex> lock(p.second->m);
-        p.second->canceled = true;
         p.second->cv.notify_all();
     }
     _pending.clear();
+    _value = 0;
+}
+
+void SQLiteSequentialNotifier::reset() {
+    lock_guard<mutex> lock(_m);
+    _canceled = false;
     _value = 0;
 }

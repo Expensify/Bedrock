@@ -230,11 +230,6 @@ class SQLiteNode : public STCPNode {
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
 
-    // Mutex that guards the map of hashes for transactions currently being replicated.
-    mutex _replicationHashMutex;
-    set<string> _replicationHashesToCommit;
-    set<string> _replicationHashesToRollback;
-
     mutex _replicationMutex;
     SQLiteSequentialNotifier _dbNotifier;
     SQLiteSequentialNotifier _commitNotifier;
