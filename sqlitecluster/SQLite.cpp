@@ -488,6 +488,7 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
+    _uncommittedConcurrency = false;
 
     // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
@@ -519,6 +520,7 @@ bool SQLite::beginConcurrentTransaction(bool useCache, const string& transaction
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
+    _uncommittedConcurrency = true;
 
     // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
@@ -777,7 +779,7 @@ bool SQLite::prepare() {
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData->_inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
+    _sharedData->_inFlightTransactions[commitCount + 1] = make_tuple(_uncommittedQuery, _uncommittedHash, _uncommittedConcurrency);
 
     int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
@@ -902,11 +904,11 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
+map<uint64_t, tuple<string, string, bool>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
-    // Maps a committed transaction ID to the correct query and hash for that transaction.
-    map<uint64_t, pair<string,string>> result;
+    // Maps a committed transaction ID to the correct query, hash, and concurrency for that transaction.
+    map<uint64_t, tuple<string, string, bool>> result;
 
     // If nothing's been committed, nothing to return.
     if (_sharedData->_committedTransactionIDs.empty()) {
@@ -979,6 +981,7 @@ void SQLite::rollback() {
     _useCache = false;
     _queryCount = 0;
     _cacheHits = 0;
+    _uncommittedConcurrency = false;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
