@@ -26,6 +26,14 @@ class SQLite {
         const char* what() const noexcept { return "checkpoint_required"; }
     };
 
+    // Abstract base class for objects that need to be notified when we set `checkpointRequired` and then when tyhat
+    // checkpoint is complete.
+    class CheckpointRequiredListener {
+      public:
+        virtual void checkpointRequired(SQLite& db) = 0;
+        virtual void checkpointComplete(SQLite& db) = 0;
+    };
+
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
@@ -175,6 +183,10 @@ class SQLite {
     // Reset timing after finishing a timed operation.
     void resetTiming();
 
+    // Register and deregister listeners for checkpoint operations.
+    void addCheckpointListener(CheckpointRequiredListener& listener);
+    void removeCheckpointListener(CheckpointRequiredListener& listener);
+
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, concurrent), so that those transactions can
     // be replicated out to peers.
@@ -285,6 +297,10 @@ class SQLite {
 
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
+
+        // set of objects listening for checkpoints.
+        mutex _checkpointListenerMutex;
+        set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
     };
 
     // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want

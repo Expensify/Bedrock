@@ -17,6 +17,8 @@ bool SQLiteSequentialNotifier::waitFor(uint64_t value) {
         unique_lock<mutex> lock(state->m);
         if (_canceled) {
             return false;
+        } else if (_checkpointRequired) {
+            throw SQLite::checkpoint_required_error();
         } else if (state->completed) {
             return true;
         }
@@ -48,8 +50,25 @@ void SQLiteSequentialNotifier::cancel() {
     _value = 0;
 }
 
+void SQLiteSequentialNotifier::checkpointRequired(SQLite& db) {
+    lock_guard<mutex> lock(_m);
+    _checkpointRequired = true;
+    for (auto& p : _pending) {
+        lock_guard<mutex> lock(p.second->m);
+        p.second->cv.notify_all();
+    }
+    _pending.clear();
+    _value = 0;
+}
+
+void SQLiteSequentialNotifier::checkpointComplete(SQLite& db) {
+    reset();
+    notifyThrough(db.getCommitCount());
+}
+
 void SQLiteSequentialNotifier::reset() {
     lock_guard<mutex> lock(_m);
     _canceled = false;
+    _checkpointRequired = false;
     _value = 0;
 }

@@ -76,6 +76,10 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     // Get this party started
     _changeState(SEARCHING);
 
+    // Make sure we get notified when the DB needs to checkpoint.
+    _dbPool.getBase().addCheckpointListener(_dbNotifier);
+    _dbPool.getBase().addCheckpointListener(_commitNotifier);
+
     // Add any peers.
     list<string> parsedPeerList = SParseList(peerList);
     for (const string& peer : parsedPeerList) {
@@ -95,6 +99,10 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
+
+    // Don't notify these, they won't exist anymore.
+    _dbPool.getBase().removeCheckpointListener(_dbNotifier);
+    _dbPool.getBase().removeCheckpointListener(_commitNotifier);
 }
 
 // This is the main replication loop that's run in the replication threads. It pops commands off of the
@@ -152,48 +160,53 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                 int result = -1;
                 int attemptCount = 1;
                 while (result != SQLITE_OK) {
-                    if (attemptCount > 1) {
-                        SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
-                    }
-                    SINFO("BEGIN for commit " << (command.calcU64("NewCount") - 1));
-                    node.handleBeginTransaction(db, peer, command, concurrent);
-
-                    // Now we need to wait for the DB to be up-to-date (if the transaction is non-concurrent, we can
-                    // skip this, we did it above) to enforce that commits are in the same order on followers as on
-                    // leader.
-                    if (concurrent) {
-                        // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
-                        // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
-                        // on the checkpoint if these are started out of order.
-                        //
-                        // Let's see if we can verify that happened.
-                        // Yes, we get this line logged 4 times from four threads as their last activity and then:
-                        // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                        SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << (command.calcU64("NewCount") - 1));
-                        if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
-                            // Canceled.
-                            db.rollback();
-                            return;
+                    try {
+                        if (attemptCount > 1) {
+                            SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
                         }
-                    }
+                        SINFO("BEGIN for commit " << (command.calcU64("NewCount") - 1));
+                        node.handleBeginTransaction(db, peer, command, concurrent);
 
-                    // Ok, almost ready.
-                    SINFO("PREPARE");
-                    node.handlePrepareTransaction(db, peer, command, concurrent);
+                        // Now we need to wait for the DB to be up-to-date (if the transaction is non-concurrent, we can
+                        // skip this, we did it above) to enforce that commits are in the same order on followers as on
+                        // leader.
+                        if (concurrent) {
+                            // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
+                            // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
+                            // on the checkpoint if these are started out of order.
+                            //
+                            // Let's see if we can verify that happened.
+                            // Yes, we get this line logged 4 times from four threads as their last activity and then:
+                            // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
+                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << (command.calcU64("NewCount") - 1));
+                            if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                                // Canceled.
+                                db.rollback();
+                                return;
+                            }
+                        }
 
-                    // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
-                    // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
-                    // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
-                    // a commit after us will be able to commit, either.
-                    if (!node._commitNotifier.waitFor(command.calcU64("NewCount"))) {
-                        SINFO("Canceled waiting for commit message, rolling back.");
-                        db.rollback();
-                        break;
-                    }
+                        // Ok, almost ready.
+                        SINFO("PREPARE");
+                        node.handlePrepareTransaction(db, peer, command, concurrent);
 
-                    ++attemptCount;
-                    result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                    if (result != SQLITE_OK) {
+                        // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
+                        // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
+                        // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
+                        // a commit after us will be able to commit, either.
+                        if (!node._commitNotifier.waitFor(command.calcU64("NewCount"))) {
+                            SINFO("Canceled waiting for commit message, rolling back.");
+                            db.rollback();
+                            break;
+                        }
+
+                        ++attemptCount;
+                        result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                        if (result != SQLITE_OK) {
+                            db.rollback();
+                        }
+                    } catch (const SQLite::checkpoint_required_error& e) {
+                        SINFO("Checkpoint required in replication, stopping");
                         db.rollback();
                     }
                 }
