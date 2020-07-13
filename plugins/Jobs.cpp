@@ -1238,7 +1238,7 @@ void BedrockJobsCommand::process(SQLite& db) {
     else if (SIEquals(requestVerb, "RequeueJobs")) {
         SINFO("Requeueing jobs with IDs: " << request["jobIDs"]);
         list<int64_t> jobIDs = SParseIntegerList(request["jobIDs"]);
-        
+
         if (jobIDs.size()) {
             const string& name = request["name"];
             string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
