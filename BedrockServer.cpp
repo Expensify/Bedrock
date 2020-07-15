@@ -176,7 +176,7 @@ void BedrockServer::sync(const SData& args,
 
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLitePool dbPool(workerThreads * 2, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    SQLitePool dbPool(workerThreads * 100, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = dbPool.getBase();
 
     // And the command processor.

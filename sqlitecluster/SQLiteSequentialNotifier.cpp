@@ -58,12 +58,12 @@ void SQLiteSequentialNotifier::checkpointRequired(SQLite& db) {
         p.second->cv.notify_all();
     }
     _pending.clear();
-    _value = 0;
 }
 
 void SQLiteSequentialNotifier::checkpointComplete(SQLite& db) {
-    reset();
-    notifyThrough(db.getCommitCount());
+    lock_guard<mutex> lock(_m);
+    _canceled = false;
+    _checkpointRequired = false;
 }
 
 void SQLiteSequentialNotifier::reset() {

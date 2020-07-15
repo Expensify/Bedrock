@@ -1,16 +1,16 @@
 #include "../BedrockClusterTester.h"
 
-struct MasteringTest : tpunit::TestFixture {
-    MasteringTest()
-        : tpunit::TestFixture("Mastering",
-                              BEFORE_CLASS(MasteringTest::setup),
-                              AFTER_CLASS(MasteringTest::teardown),
-                              TEST(MasteringTest::clusterUp),
-                              TEST(MasteringTest::failover),
+struct LeadingTest : tpunit::TestFixture {
+    LeadingTest()
+        : tpunit::TestFixture("Leading",
+                              BEFORE_CLASS(LeadingTest::setup),
+                              AFTER_CLASS(LeadingTest::teardown),
+                              TEST(LeadingTest::clusterUp),
+                              TEST(LeadingTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
-                              // TEST(MasteringTest::standDownTimeout),
-                              TEST(MasteringTest::restoreMaster),
-                              TEST(MasteringTest::synchronizing)
+                              // TEST(LeadingTest::standDownTimeout),
+                              TEST(LeadingTest::restoreMaster),
+                              TEST(LeadingTest::synchronizing)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -191,4 +191,4 @@ struct MasteringTest : tpunit::TestFixture {
         ASSERT_TRUE(wasFollowing);
     }
 
-} __MasteringTest;
+} __LeadingTest;

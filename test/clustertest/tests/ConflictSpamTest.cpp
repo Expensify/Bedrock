@@ -27,7 +27,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             BedrockTester& node = tester->getTester(i);
             SData controlCommand("SetCheckpointIntervals");
             controlCommand["passiveCheckpointPageMin"] = to_string(3);
-            controlCommand["fullCheckpointPageMin"] = to_string(10);
+            controlCommand["fullCheckpointPageMin"] = to_string(50);
             vector<SData> results = node.executeWaitMultipleData({controlCommand}, 1, true);
 
             // Verify we got a reasonable result.
@@ -168,7 +168,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // We'll let this go a couple of times. It's feasible that these won't match if the whole journal hasn't
         // replicated yet.
         int tries = 0;
-        while(tries++ < 10) {
+        while(tries++ < 60) {
 
             // Now lets compose a query for the journal of each node.
             allResults.clear();
