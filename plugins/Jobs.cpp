@@ -103,27 +103,9 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
     // TODO: we can't set isProductionServer by calling BedrockPlugin_Auth::isLiveServer() since this is bedrock jobs
-    SASSERT(db.verifyIndex(
-                "jobsName",         // index name
-                "jobs",             // table name
-                "( name )",         // index criteria
-                false,              // is unique?
-                false
-    ));
-    SASSERT(db.verifyIndex(
-            "jobsParentJobIDState",
-            "jobs",
-            "( parentJobID, state ) WHERE parentJobID != 0",
-            false,
-            !BedrockPlugin_Jobs::isLive
-    ));
-    SASSERT(db.verifyIndex(
-            "jobsStatePriorityNextRunName",
-            "jobs",
-            "( state, priority, nextRun, name )",
-            false,
-            !BedrockPlugin_Jobs::isLive
-    ));
+    SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsParentJobIDState", "jobs", "( parentJobID, state ) WHERE parentJobID != 0", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsStatePriorityNextRunName", "jobs", "( state, priority, nextRun, name )", false, !BedrockPlugin_Jobs::isLive));
 }
 
 // ==========================================================================
