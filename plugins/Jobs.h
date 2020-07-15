@@ -16,6 +16,8 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     // Set of supported verbs for jobs with case-insensitive matching.
     static const set<string,STableComp>supportedRequestVerbs;
 
+    const bool isLive;
+
   private:
     static int64_t getNextID(SQLite& db);
     static const string name;

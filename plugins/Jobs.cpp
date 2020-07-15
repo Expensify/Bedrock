@@ -49,7 +49,9 @@ BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugi
 {
 }
 
-BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
+BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) :
+    BedrockPlugin(s),
+    isLive(server.args.isSet("-live"))
 {
 }
 
@@ -100,9 +102,28 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
 
     // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
     // using the Bedrock::DB plugin.
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
+    // TODO: we can't set isProductionServer by calling BedrockPlugin_Auth::isLiveServer() since this is bedrock jobs
+    SASSERT(db.verifyIndex(
+                "jobsName",         // index name
+                "jobs",             // table name
+                "( name )",         // index criteria
+                false,              // is unique?
+                false
+    ));
+    SASSERT(db.verifyIndex(
+            "jobsParentJobIDState",
+            "jobs",
+            "( parentJobID, state ) WHERE parentJobID != 0",
+            false,
+            !BedrockPlugin_Jobs::isLive
+    ));
+    SASSERT(db.verifyIndex(
+            "jobsStatePriorityNextRunName",
+            "jobs",
+            "( state, priority, nextRun, name )",
+            false,
+            !BedrockPlugin_Jobs::isLive
+    ));
 }
 
 // ==========================================================================
