@@ -6,6 +6,9 @@
 #include "BedrockCore.h"
 #include <iomanip>
 
+#include <sys/time.h>
+#include <sys/resource.h>
+
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 
@@ -176,7 +179,19 @@ void BedrockServer::sync(const SData& args,
 
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    SQLitePool dbPool(workerThreads * 100, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    // This pool size is picked to avoid causing us to run out of file handles (1024 on dev) while still hopefully
+    // being enough that we can't really use all of them. Having any finite cap here potentially causes a deadlock if a
+    // very early committer in a replication thread can't get a DB handle because many later commits have taken them
+    // all.
+    struct rlimit limits;
+    if (getrlimit(RLIMIT_NOFILE, &limits)) {
+        SALERT("FD limit FAILED");
+    } else {
+        SINFO("FD limit soft: " <<  limits.rlim_cur << ", FD limit hard: " << limits.rlim_max);
+    }
+    int fdLimit = limits.rlim_cur / 8;
+    SINFO("FD limit setting to: " << fdLimit);
+    SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = dbPool.getBase();
 
     // And the command processor.

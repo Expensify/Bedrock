@@ -136,16 +136,10 @@ struct LeadingTest : tpunit::TestFixture {
         vector<SData> requests(5000);
         int count = 0;
         for (auto& request : requests) {
-            if (!count) {
-                request.methodLine = "Query";
-                request["writeConsistency"] = "ASYNC";
-                request["query"] = "INSERT INTO test VALUES(12345, '');";
-                count++;
-            } else {
-                request.methodLine = "Query";
-                request["writeConsistency"] = "ASYNC";
-                request["query"] = "UPDATE test SET value = 'xxx" + to_string(count++) + "' WHERE id = 12345;";
-            }
+            request.methodLine = "Query";
+            request["writeConsistency"] = "ASYNC";
+            request["query"] = "INSERT INTO test VALUES(" + SQ(SRandom::rand64() % 1'000'000) + ", '');";
+            count++;
         }
 
         // Send these all to leader.
