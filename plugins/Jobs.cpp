@@ -99,8 +99,7 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                "parentJobID INTEGER NOT NULL DEFAULT 0, "
                                "retryAfter  TEXT NOT NULL DEFAULT \"\")",
                            ignore));
-
-    // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis using the Bedrock::DB plugin.
+    // verify and conditionally create indexes
     SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsParentJobIDState", "jobs", "( parentJobID, state ) WHERE parentJobID != 0", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsStatePriorityNextRunName", "jobs", "( state, priority, nextRun, name )", false, !BedrockPlugin_Jobs::isLive));
