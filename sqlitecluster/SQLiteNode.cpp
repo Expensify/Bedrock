@@ -141,10 +141,11 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
 
             SINFO("Thread for commit " << (command.calcU64("NewCount") - 1));
-            bool concurrent = command.test("Concurrent");
+            bool quorum = !SStartsWith(command["ID"], "ASYNC");
 
             // We have to wait for the DB to come up-to-date for non-concurrent transactions.
-            if (!concurrent) {
+            // TODO: This needs to be QUORUM transactions.
+            if (quorum) {
                 SINFO("Waiting on DB");
                 if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
                     return;
@@ -165,12 +166,12 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                             SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
                         }
                         SINFO("BEGIN for commit " << (command.calcU64("NewCount") - 1));
-                        node.handleBeginTransaction(db, peer, command, concurrent);
+                        node.handleBeginTransaction(db, peer, command);
 
                         // Now we need to wait for the DB to be up-to-date (if the transaction is non-concurrent, we can
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
                         // leader.
-                        if (concurrent) {
+                        if (!quorum) {
                             // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
                             // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
                             // on the checkpoint if these are started out of order.
@@ -188,7 +189,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
 
                         // Ok, almost ready.
                         SINFO("PREPARE");
-                        node.handlePrepareTransaction(db, peer, command, concurrent);
+                        node.handlePrepareTransaction(db, peer, command);
 
                         // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
                         // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
@@ -1592,6 +1593,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             SINFO("Discarding replication message, stopping FOLLOWING");
         } else {
             auto threadID = _replicationThreads.fetch_add(1);
+            // TODO: Every thread gets a DB handle.
             SINFO("Spawning concurrent replicate thread: " << threadID);
             thread(replicate, ref(*this), peer, message).detach();
         }
@@ -2347,7 +2349,7 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
     return false;
 }
 
-void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool concurrent) {
+void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
@@ -2370,14 +2372,8 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             SINFO("Waiting for checkpoint");
             db.waitForCheckpoint();
             SINFO("Done waiting for checkpoint");
-            if (concurrent) {
-                if (!db.beginConcurrentTransaction()) {
-                    STHROW("failed to begin concurrent transaction");
-                }
-            } else {
-                if (!db.beginTransaction()) {
-                    STHROW("failed to begin transaction");
-                }
+            if (!db.beginTransaction()) {
+                STHROW("failed to begin transaction");
             }
 
             // Inside transaction; get ready to back out on error
@@ -2400,7 +2396,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     }
 }
 
-void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message, bool concurrent) {
+void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
@@ -2432,16 +2428,6 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
             // This needs to move out of here,it holds the commit lock.
             if (!db.prepare()) {
                 STHROW("failed to prepare transaction");
-            }
-
-            // Successful transaction so far, if we're not in concurrent mode, make sure the hashes match.
-            if (!concurrent && db.getUncommittedHash() != message["NewHash"]) {
-                // Something is screwed up
-                PWARN("New hash mismatch: command='" << message["Command"] << "', commitCount=#" << db.getCommitCount()
-                      << "', committedHash='" << db.getCommittedHash() << "', uncommittedHash='"
-                      << db.getUncommittedHash() << "', messageHash='" << message["NewHash"] << "', uncommittedQuery='"
-                      << db.getUncommittedQuery() << "'");
-                STHROW("new hash mismatch");
             }
 
             // Done, break out of `while (true)`.

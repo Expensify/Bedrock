@@ -495,38 +495,6 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
-    _uncommittedConcurrency = false;
-
-    // Reset before the query, as it's possible the query sets these.
-    _abandonForCheckpoint = false;
-    _autoRolledBack = false;
-
-    SDEBUG("Beginning transaction");
-    uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN TRANSACTION");
-    _queryCache.clear();
-    _transactionName = transactionName;
-    _useCache = useCache;
-    _queryCount = 0;
-    _cacheHits = 0;
-    _beginElapsed = STimeNow() - before;
-    _readElapsed = 0;
-    _writeElapsed = 0;
-    _prepareElapsed = 0;
-    _commitElapsed = 0;
-    _rollbackElapsed = 0;
-    return _insideTransaction;
-}
-
-bool SQLite::beginConcurrentTransaction(bool useCache, const string& transactionName) {
-    SASSERT(!_insideTransaction);
-    SASSERT(_uncommittedHash.empty());
-    SASSERT(_uncommittedQuery.empty());
-    {
-        unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
-        _sharedData->currentTransactionCount++;
-    }
-    _sharedData->blockNewTransactionsCV.notify_one();
     _uncommittedConcurrency = true;
 
     // Reset before the query, as it's possible the query sets these.

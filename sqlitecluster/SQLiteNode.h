@@ -217,8 +217,8 @@ class SQLiteNode : public STCPNode {
     chrono::steady_clock::time_point _lastNetStatTime;
 
     // Handler for transaction messages.
-    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool concurrent = false);
-    void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message, bool concurrent = false);
+    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message);
+    void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
     int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
 

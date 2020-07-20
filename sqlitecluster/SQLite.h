@@ -67,11 +67,6 @@ class SQLite {
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
     bool beginTransaction(bool useCache = false, const string& transactionName = "");
 
-    // Begins a new concurrent transaction. Returns true on success. Can optionally be instructed to use the query
-    // cache, if so the transaction can be named so that log lines about cache success can be associated to the
-    // transaction.
-    bool beginConcurrentTransaction(bool useCache = false, const string& transactionName = "");
-
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
     // table is already there with the wrong schema, it returns false.

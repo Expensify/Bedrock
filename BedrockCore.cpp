@@ -82,7 +82,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.startTiming(timeout);
 
         try {
-            if (!_db.beginConcurrentTransaction(true, command->request.methodLine)) {
+            if (!_db.beginTransaction(true, command->request.methodLine)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
 
@@ -187,7 +187,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
         // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
         // case we need to open a new transaction.
-        if (!_db.insideTransaction() && !_db.beginConcurrentTransaction(true, command->request.methodLine)) {
+        if (!_db.insideTransaction() && !_db.beginTransaction(true, command->request.methodLine)) {
             STHROW("501 Failed to begin concurrent transaction");
         }
 
