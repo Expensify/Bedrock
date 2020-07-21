@@ -124,7 +124,7 @@ SQLiteNode::~SQLiteNode() {
 // up-to-date that the commit count in the DB has changed.
 //
 // This thread exits when node._replicationThreadsShouldExit is set, which happens when a node stops FOLLOWING.
-void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
+void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentCommandThreadID.fetch_add(1)));
 
@@ -148,14 +148,10 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
             if (quorum) {
                 SINFO("Waiting on DB");
                 if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                    node._dbPool.returnToPool(db);
                     return;
                 }
             }
-
-            // Ok, the transaction before us has finished, we can start ours.
-            // Note: this can block. Is it feasible for us to get stuck here at shutdown?
-            SQLitePoolScopedGet dbScope(node._dbPool);
-            SQLite& db = dbScope.db();
 
             try {
                 int result = -1;
@@ -183,6 +179,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
                             if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
                                 // Canceled.
                                 db.rollback();
+                                node._dbPool.returnToPool(db);
                                 return;
                             }
                         }
@@ -228,6 +225,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command) {
     if (goSearchingOnExit) {
         node._changeState(SEARCHING);
     }
+    node._dbPool.returnToPool(db);
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -1594,8 +1592,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         } else {
             auto threadID = _replicationThreads.fetch_add(1);
             // TODO: Every thread gets a DB handle.
-            SINFO("Spawning concurrent replicate thread: " << threadID);
-            thread(replicate, ref(*this), peer, message).detach();
+            SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+            thread(replicate, ref(*this), peer, message, ref(_dbPool.get())).detach();
         }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and

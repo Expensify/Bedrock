@@ -235,5 +235,5 @@ class SQLiteNode : public STCPNode {
     SQLiteSequentialNotifier _commitNotifier;
 
     // Replication thread main body.
-    static void replicate(SQLiteNode& node, Peer* peer, SData command);
+    static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);
 };
