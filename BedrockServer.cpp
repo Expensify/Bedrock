@@ -183,14 +183,13 @@ void BedrockServer::sync(const SData& args,
     // being enough that we can't really use all of them. Having any finite cap here potentially causes a deadlock if a
     // very early committer in a replication thread can't get a DB handle because many later commits have taken them
     // all.
+
     struct rlimit limits;
     if (getrlimit(RLIMIT_NOFILE, &limits)) {
-        SALERT("FD limit FAILED");
-    } else {
-        SINFO("FD limit soft: " <<  limits.rlim_cur << ", FD limit hard: " << limits.rlim_max);
+        SERROR("Failed to get FD limit");
     }
-    int fdLimit = limits.rlim_cur / 8;
-    SINFO("FD limit setting to: " << fdLimit);
+    int fdLimit = limits.rlim_cur / 10;
+    SINFO("Setting dbPool size to 1/10th FD limit: " << fdLimit);
     SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = dbPool.getBase();
 

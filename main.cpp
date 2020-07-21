@@ -12,6 +12,7 @@
 #include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
+#include <sys/resource.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -292,6 +293,17 @@ int main(int argc, char* argv[]) {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");
         SASSERT(SFileExists(args["-db"]));
+    }
+
+    // 10x our FD limit.
+    struct rlimit limits;
+    if (!getrlimit(RLIMIT_NOFILE, &limits)) {
+        limits.rlim_cur *= 10;
+        if (setrlimit(RLIMIT_NOFILE, &limits)) {
+            SERROR("Couldn't set FD limit");
+        }
+    } else {
+        SERROR("Couldn't get FD limit");
     }
 
     // Log stack traces if we have unhandled exceptions.
