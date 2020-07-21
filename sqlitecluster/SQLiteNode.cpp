@@ -359,15 +359,13 @@ void SQLiteNode::_sendOutstandingTransactions() {
         if (id <= _lastSentTransactionID) {
             continue;
         }
-        string& query = get<0>(i.second);
-        string& hash = get<1>(i.second);
-        bool concurrent = get<2>(i.second);
+        string& query = i.second.first;
+        string& hash = i.second.second;
         SData transaction("BEGIN_TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
         transaction["ID"] = "ASYNC_" + to_string(id);
-        transaction["Concurrent"] = concurrent ? "true" : "false";
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
         for (auto peer : peerList) {

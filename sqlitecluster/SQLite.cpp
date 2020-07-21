@@ -754,7 +754,7 @@ bool SQLite::prepare() {
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData->_inFlightTransactions[commitCount + 1] = make_tuple(_uncommittedQuery, _uncommittedHash, _uncommittedConcurrency);
+    _sharedData->_inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
 
     int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
@@ -879,11 +879,11 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, tuple<string, string, bool>> SQLite::getCommittedTransactions() {
+map<uint64_t, pair<string, string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
     // Maps a committed transaction ID to the correct query, hash, and concurrency for that transaction.
-    map<uint64_t, tuple<string, string, bool>> result;
+    map<uint64_t, pair<string, string>> result;
 
     // If nothing's been committed, nothing to return.
     if (_sharedData->_committedTransactionIDs.empty()) {
