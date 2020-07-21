@@ -128,6 +128,9 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentCommandThreadID.fetch_add(1)));
 
+    // Allow the DB handle to be returned regardless of how this function exits.
+    SQLiteScopedHandle dbScope(node._dbPool, db);
+
     // Make sure when this thread exits we decrement our thread counter.
     bool goSearchingOnExit = false;
     {
@@ -148,7 +151,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             if (quorum) {
                 SINFO("Waiting on DB");
                 if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
-                    node._dbPool.returnToPool(db);
                     return;
                 }
             }
@@ -179,7 +181,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                             if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
                                 // Canceled.
                                 db.rollback();
-                                node._dbPool.returnToPool(db);
                                 return;
                             }
                         }
@@ -225,7 +226,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
     if (goSearchingOnExit) {
         node._changeState(SEARCHING);
     }
-    node._dbPool.returnToPool(db);
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)

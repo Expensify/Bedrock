@@ -1,5 +1,6 @@
 #pragma once
 #include "SQLite.h"
+#include "SQLitePool.h"
 #include "SQLiteSequentialNotifier.h"
 #include "WallClockTimer.h"
 class SQLiteCommand;

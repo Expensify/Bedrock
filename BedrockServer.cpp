@@ -179,21 +179,20 @@ void BedrockServer::sync(const SData& args,
 
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-    // This pool size is picked to avoid causing us to run out of file handles (1024 on dev) while still hopefully
-    // being enough that we can't really use all of them. Having any finite cap here potentially causes a deadlock if a
-    // very early committer in a replication thread can't get a DB handle because many later commits have taken them
-    // all.
 
+    // We allocate 10% of the total available file handles to our DB pool. Note that on Linux, the default limit is only
+    // 2014 file handles, so this can be as low as 256 if not adjusted elsewhere (it's adjusted in main.cpp for live
+    // servers).
     struct rlimit limits;
     if (getrlimit(RLIMIT_NOFILE, &limits)) {
         SERROR("Failed to get FD limit");
     }
-    int fdLimit = limits.rlim_cur / 10;
-    SINFO("Setting dbPool size to 1/10th FD limit: " << fdLimit);
+    int fdLimit = limits.rlim_cur / 4;
+    SINFO("Setting dbPool size to 1/4th FD limit: " << fdLimit);
     SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = dbPool.getBase();
 
-    // And the command processor.
+    // Initialize the command processor.
     BedrockCore core(db, server);
 
     // And the sync node.
@@ -781,9 +780,9 @@ void BedrockServer::worker(SQLitePool& dbPool,
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
-    // Get a DB handle to work on. This will automatically be returned when it goes out of scope.
-    SQLitePoolScopedGet dbScope(dbPool);
-    SQLite& db = dbScope.db();
+    // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
+    SQLite& db = dbPool.get();
+    SQLiteScopedHandle dbScope(dbPool, db);
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
