@@ -3,18 +3,6 @@
 #include "SQLiteServer.h"
 #include "SQLiteCommand.h"
 
-// A bit of a hack until I think of a better way to do this.
-atomic<uint64_t> currentCommandThreadID(0);
-class DecrementOnDestruction {
-  public:
-    DecrementOnDestruction(atomic<int64_t>& counter) : _counter(counter) {} 
-    ~DecrementOnDestruction() {
-        _counter--;
-    }
-  private:
-    atomic<int64_t>& _counter;
-};
-
 // Introduction
 // ------------
 // SQLiteNode builds atop STCPNode and SQLite to provide a distributed transactional SQL database. The STCPNode base
@@ -46,6 +34,8 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
+atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
+
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version)
@@ -57,8 +47,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
       _handledCommitCount(0),
-      _replicationThreads(0),
-     _replicationThreadsShouldExit(false)
+     _replicationThreadsShouldExit(false),
+      _replicationThreadCount(0)
     {
 
     SASSERT(priority >= 0);
@@ -126,7 +116,7 @@ SQLiteNode::~SQLiteNode() {
 // This thread exits when node._replicationThreadsShouldExit is set, which happens when a node stops FOLLOWING.
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db) {
     // Initialize each new thread with a new number.
-    SInitialize("replicate" + to_string(currentCommandThreadID.fetch_add(1)));
+    SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(node._dbPool, db);
@@ -134,7 +124,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
     // Make sure when this thread exits we decrement our thread counter.
     bool goSearchingOnExit = false;
     {
-        DecrementOnDestruction dod(node._replicationThreads);
+        ScopedDecrement<decltype(_replicationThreadCount)> decrementer(node._replicationThreadCount);
 
         // These make the logging macros work, as they expect these variables to be in scope.
         auto _state = node._state.load();
@@ -144,10 +134,9 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
 
             SINFO("Thread for commit " << (command.calcU64("NewCount") - 1));
-            bool quorum = !SStartsWith(command["ID"], "ASYNC");
 
-            // We have to wait for the DB to come up-to-date for non-concurrent transactions.
-            // TODO: This needs to be QUORUM transactions.
+            // We have to wait for the DB to come up-to-date for QUORUM transactions.
+            bool quorum = !SStartsWith(command["ID"], "ASYNC");
             if (quorum) {
                 SINFO("Waiting on DB");
                 if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
@@ -216,7 +205,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                 db.rollback();
             }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            // DecrementOnDestruction needs to go away to decrement our thread count before we can change state out of
+            // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
             // FOLLOWING.
             goSearchingOnExit = true;
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
@@ -1588,10 +1577,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_replicationThreadsShouldExit) {
             SINFO("Discarding replication message, stopping FOLLOWING");
         } else {
-            auto threadID = _replicationThreads.fetch_add(1);
-            // TODO: Every thread gets a DB handle.
+            auto threadID = _replicationThreadCount.fetch_add(1);
             SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
             thread(replicate, ref(*this), peer, message, ref(_dbPool.get())).detach();
+            SINFO("Done spawning concurrent replicate thread: " << threadID);
         }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
@@ -1950,8 +1939,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             _dbNotifier.cancel();
             _commitNotifier.cancel();
 
-            // Polling wait for threads to quit.
-            while (_replicationThreads) {
+            // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
+            // which would probably be "better" but introduces yet more state variables for a state that we're rarely
+            // in, and so I've left it out for the time being.
+            while (_replicationThreadCount) {
                 usleep(10'000);
             }
 

@@ -330,7 +330,6 @@ class SQLite {
     bool _insideTransaction;
     string _uncommittedQuery;
     string _uncommittedHash;
-    bool _uncommittedConcurrency;
 
     // The name of the journal table
     string _journalName;

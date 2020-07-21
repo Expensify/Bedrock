@@ -180,7 +180,7 @@ void BedrockServer::sync(const SData& args,
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
-    // We allocate 10% of the total available file handles to our DB pool. Note that on Linux, the default limit is only
+    // We allocate 25% of the total available file handles to our DB pool. Note that on Linux, the default limit is only
     // 2014 file handles, so this can be as low as 256 if not adjusted elsewhere (it's adjusted in main.cpp for live
     // servers).
     struct rlimit limits;

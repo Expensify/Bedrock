@@ -72,11 +72,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     }
     SINFO("Opening sqlite database: " << _filename);
 
-    // We lock here To initialize the database. Because there's a global map of currently opened DB files, we lock
+    // We lock here to initialize the database. Because there's a global map of currently opened DB files, we lock
     // whenever we might need to insert a new one. These are only ever added or changed in the constructor and
     // destructor.
-    // TODO: Can we remove this lock, or most of it?
-    // What if we pass an existing DB object to initialize from? Then we know a bunch of stuff has already been done.
     SQLITE_COMMIT_AUTOLOCK;
 
     // sqlite3_config can't run concurrently with *anything* else, so we make sure it's set not only on creating
@@ -495,7 +493,6 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
         _sharedData->currentTransactionCount++;
     }
     _sharedData->blockNewTransactionsCV.notify_one();
-    _uncommittedConcurrency = true;
 
     // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
@@ -882,7 +879,7 @@ int SQLite::commit() {
 map<uint64_t, pair<string, string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
-    // Maps a committed transaction ID to the correct query, hash, and concurrency for that transaction.
+    // Maps a committed transaction ID to the correct query and hash for that transaction.
     map<uint64_t, pair<string, string>> result;
 
     // If nothing's been committed, nothing to return.
@@ -956,7 +953,6 @@ void SQLite::rollback() {
     _useCache = false;
     _queryCount = 0;
     _cacheHits = 0;
-    _uncommittedConcurrency = false;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,

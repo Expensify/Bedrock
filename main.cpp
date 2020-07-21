@@ -295,7 +295,7 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
-    // 10x our FD limit, but not in tests, cause Travis sucks.
+    // 10x our FD limit, but not in tests, because it seems to break in Travis.
     struct rlimit limits;
     if (args.isSet("-live")) {
         if (!getrlimit(RLIMIT_NOFILE, &limits)) {

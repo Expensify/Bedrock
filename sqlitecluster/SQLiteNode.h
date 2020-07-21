@@ -226,8 +226,6 @@ class SQLiteNode : public STCPNode {
     WallClockTimer _syncTimer;
     atomic<uint64_t> _handledCommitCount;
 
-    // Count of current number of working threads, we keep track of this so we can tell when they've finished.
-    atomic<int64_t> _replicationThreads;
 
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
@@ -237,4 +235,23 @@ class SQLiteNode : public STCPNode {
 
     // Replication thread main body.
     static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);
+
+    // Counter of the total number of currently active replication threads. This is used to let us know when all
+    // threads have finished.
+    atomic<int64_t> _replicationThreadCount;
+
+    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
+    static atomic<int64_t> _currentCommandThreadID;
+
+    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
+    template <typename CounterType>
+    class ScopedDecrement {
+      public:
+        ScopedDecrement(CounterType& counter) : _counter(counter) {} 
+        ~ScopedDecrement() {
+            --_counter;
+        }
+      private:
+        CounterType& _counter;
+    };
 };
