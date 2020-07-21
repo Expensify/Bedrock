@@ -295,15 +295,17 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
-    // 10x our FD limit.
+    // 10x our FD limit, but not in tests, cause Travis sucks.
     struct rlimit limits;
-    if (!getrlimit(RLIMIT_NOFILE, &limits)) {
-        limits.rlim_cur *= 10;
-        if (setrlimit(RLIMIT_NOFILE, &limits)) {
-            SERROR("Couldn't set FD limit");
+    if (args.isSet("-live")) {
+        if (!getrlimit(RLIMIT_NOFILE, &limits)) {
+            limits.rlim_cur *= 10;
+            if (setrlimit(RLIMIT_NOFILE, &limits)) {
+                SERROR("Couldn't set FD limit");
+            }
+        } else {
+            SERROR("Couldn't get FD limit");
         }
-    } else {
-        SERROR("Couldn't get FD limit");
     }
 
     // Log stack traces if we have unhandled exceptions.
