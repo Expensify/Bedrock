@@ -295,17 +295,15 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
-    // 10x our FD limit, but not in tests, because it seems to break in Travis.
+    // Set our soft limit to the same as our hard limit to allow for more file handles.
     struct rlimit limits;
-    if (args.isSet("-live")) {
-        if (!getrlimit(RLIMIT_NOFILE, &limits)) {
-            limits.rlim_cur *= 10;
-            if (setrlimit(RLIMIT_NOFILE, &limits)) {
-                SERROR("Couldn't set FD limit");
-            }
-        } else {
-            SERROR("Couldn't get FD limit");
+    if (!getrlimit(RLIMIT_NOFILE, &limits)) {
+        limits.rlim_cur = limits.rlim_max;
+        if (setrlimit(RLIMIT_NOFILE, &limits)) {
+            SERROR("Couldn't set FD limit");
         }
+    } else {
+        SERROR("Couldn't get FD limit");
     }
 
     // Log stack traces if we have unhandled exceptions.

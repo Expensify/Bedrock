@@ -114,16 +114,14 @@ class SQLiteNode : public STCPNode {
     void _onDisconnect(Peer* peer);
     void _onMESSAGE(Peer* peer, const SData& message);
 
+    // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
+    // replication threads as required. It's passed in via the constructor.
     SQLitePool& _dbPool;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
     // to commit and replicate them.
     SQLite& _db;
-
-    // We have a separate list of DB handles used solely for replication, so that we can do replication in parallel
-    // threads without causing conflicts in the journal.
-    list<SQLite> _replicationDBs;
 
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.
@@ -226,14 +224,29 @@ class SQLiteNode : public STCPNode {
     WallClockTimer _syncTimer;
     atomic<uint64_t> _handledCommitCount;
 
-
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
 
     SQLiteSequentialNotifier _localCommitNotifier;
     SQLiteSequentialNotifier _leaderCommitNotifier;
 
-    // Replication thread main body.
+    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
+    // each new relevant replication command received by the sync thread.
+    //
+    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
+    // COMMIT_TRANSACTION.
+    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
+    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    //
+    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
+    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
+    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
+    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading. Also worth
+    // noting is that a checkpoint can interrupt a transaction, forcing it to restart. See
+    // SQLite::CheckpointRequiredListener for more information on that process.
+    //
+    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
+    // which happens when a node stops FOLLOWING.
     static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);
 
     // Counter of the total number of currently active replication threads. This is used to let us know when all

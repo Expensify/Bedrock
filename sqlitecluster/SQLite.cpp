@@ -4,17 +4,13 @@
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
 // Globally shared mutex for locking around commits and creating/destroying instances.
-recursive_mutex SQLite::_commitLock;
+recursive_mutex SQLite::g_commitLock;
 
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
 
 // Global map for looking up shared data by file when creating new instances.
 map<string, SQLite::SharedData*> SQLite::_sharedDataLookupMap;
-
-// This is our only public static variable. It needs to be initialized after `_commitLock`.
-// TODO: This can be removed and just use _commitLock directly if we don't need SLockTimer back.
-recursive_mutex& SQLite::g_commitLock(SQLite::_commitLock);
 
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
@@ -455,9 +451,10 @@ string SQLite::_getJournalTableName(int64_t journalTableID, bool create) {
         sprintf(buff, "journal%04li", journalTableID);
         return buff;
     } else {
-        if (_sharedData->_journalNames.size() == 0) {
+        if (_sharedData->_journalNames.empty()) {
             STHROW("Attempting to get a journal table name for existing journals, but there are none!");
         }
+
         // This deliberately skips `journal` itself, assuming that's in position 1.
         size_t journalTableIndex = (journalTableID % _sharedData->_journalNames.size() - 1) + 1 ;
         return _sharedData->_journalNames[journalTableIndex];

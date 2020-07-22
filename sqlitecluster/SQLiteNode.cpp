@@ -47,7 +47,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
       _handledCommitCount(0),
-     _replicationThreadsShouldExit(false),
+      _replicationThreadsShouldExit(false),
       _replicationThreadCount(0)
     {
 
@@ -95,25 +95,6 @@ SQLiteNode::~SQLiteNode() {
     _dbPool.getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
-// This is the main replication loop that's run in the replication threads. It pops commands off of the
-// `_replicationCommands` queue, and handles them *in parallel* as we run multiple instances of this function
-// simultaneously. It's important to note that we NEED to run this function in at least two threads or we run into a
-// starvation issue where a thread that's performing a transaction won't ever be notified that the transaction can be
-// committed.
-//
-// There are three commands we handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and COMMIT_TRANSACTION.
-// ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the hash of the transaction that is ready to be
-// COMMIT'ted (or rolled back), and notify any other threads that are waiting for this info that they can continue.
-//
-// BEGIN_TRANSACTION is where the interesting case is. This waits for the DB to be up-to-date, which is to say, the
-// commit count of the DB is one behind the new commit count of the transaction it's attempting to run.
-// Once that happens, it runs `handleBeginTransaction()` to do the body of work of the transaction.
-//
-// Finally, it waits for the new hash for the transaction to be ready to either COMMIT or ROLLBACK, and once that's
-// true, it performs the corresponding operation and notifies any other threads that are waiting on the DB to come
-// up-to-date that the commit count in the DB has changed.
-//
-// This thread exits when node._replicationThreadsShouldExit is set, which happens when a node stops FOLLOWING.
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
@@ -121,25 +102,24 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(node._dbPool, db);
 
-    // Make sure when this thread exits we decrement our thread counter.
     bool goSearchingOnExit = false;
     {
+        // Make sure when this thread exits we decrement our thread counter.
         ScopedDecrement<decltype(_replicationThreadCount)> decrementer(node._replicationThreadCount);
 
         // These make the logging macros work, as they expect these variables to be in scope.
         auto _state = node._state.load();
         string name = node.name;
         SINFO("Replicate thread started: " << command.methodLine);
-
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-
-            SINFO("Thread for commit " << (command.calcU64("NewCount") - 1));
+            uint64_t currentCount = command.calcU64("NewCount") - 1;
 
             // We have to wait for the DB to come up-to-date for QUORUM transactions.
+            SINFO("Thread for commit " << currentCount);
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             if (quorum) {
                 SINFO("Waiting on DB");
-                if (!node._localCommitNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                if (!node._localCommitNotifier.waitFor(currentCount)) {
                     return;
                 }
             }
@@ -152,10 +132,10 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                         if (attemptCount > 1) {
                             SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
                         }
-                        SINFO("BEGIN for commit " << (command.calcU64("NewCount") - 1));
+                        SINFO("BEGIN for commit " << currentCount);
                         node.handleBeginTransaction(db, peer, command);
 
-                        // Now we need to wait for the DB to be up-to-date (if the transaction is non-concurrent, we can
+                        // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
                         // leader.
                         if (!quorum) {
@@ -166,8 +146,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                             // Let's see if we can verify that happened.
                             // Yes, we get this line logged 4 times from four threads as their last activity and then:
                             // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << (command.calcU64("NewCount") - 1));
-                            if (!node._localCommitNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                            if (!node._localCommitNotifier.waitFor(currentCount)) {
                                 // Canceled.
                                 db.rollback();
                                 return;
@@ -175,7 +155,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                         }
 
                         // Ok, almost ready.
-                        SINFO("PREPARE");
                         node.handlePrepareTransaction(db, peer, command);
 
                         // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
@@ -188,6 +167,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                             break;
                         }
 
+                        // Leader says it has committed this transaction, so we can too.
                         ++attemptCount;
                         result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
                         if (result != SQLITE_OK) {
@@ -202,6 +182,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
 
             } catch (const SException& e) {
                 SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
+                goSearchingOnExit = true;
                 db.rollback();
             }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
@@ -925,7 +906,6 @@ bool SQLiteNode::update() {
                 // Notify everybody to rollback
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback.set("ID", _lastSentTransactionID + 1);
-                rollback.set("NewHash", _db.getUncommittedHash());
                 _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
                 _db.rollback();
 
@@ -946,7 +926,6 @@ bool SQLiteNode::update() {
                           << " commit, rolling back.");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
-                    rollback.set("NewHash", _db.getUncommittedHash());
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
                     _db.rollback();
 
@@ -2412,7 +2391,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            // This needs to move out of here,it holds the commit lock.
+            // This will grab the commit lock and hold it until we commit or rollback.
             if (!db.prepare()) {
                 STHROW("failed to prepare transaction");
             }

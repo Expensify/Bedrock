@@ -2,14 +2,14 @@
 #include "SQLitePool.h"
 
 SQLitePool::SQLitePool(size_t maxDBs,
-                      const string& filename,
-                      int cacheSize,
-                      bool enableFullCheckpoints,
-                      int maxJournalSize,
-                      int createJournalTables,
-                      const string& synchronous,
-                      int64_t mmapSizeGB,
-                      bool pageLoggingEnabled)
+                       const string& filename,
+                       int cacheSize,
+                       bool enableFullCheckpoints,
+                       int maxJournalSize,
+                       int createJournalTables,
+                       const string& synchronous,
+                       int64_t mmapSizeGB,
+                       bool pageLoggingEnabled)
 : _maxDBs(max(maxDBs, 1ul)),
   _baseDB(new SQLite(filename, cacheSize, enableFullCheckpoints, maxJournalSize, createJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled))
 { }

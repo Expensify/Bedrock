@@ -41,7 +41,7 @@ class SQLite {
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
-    static recursive_mutex& g_commitLock;
+    static recursive_mutex g_commitLock;
 
     // createJournalTables: Creates the specified number of journal tables. If `0`, no tables are created. This
     //                      specifies the total number of journal tables, not new ones, so if there are 50 existent
@@ -182,7 +182,8 @@ class SQLite {
     // Reset timing after finishing a timed operation.
     void resetTiming();
 
-    // Register and deregister listeners for checkpoint operations.
+    // Register and deregister listeners for checkpoint operations. See the comments on `CheckpointRequiredListener`
+    // above for why checkpoint listeners are useful.
     void addCheckpointListener(CheckpointRequiredListener& listener);
     void removeCheckpointListener(CheckpointRequiredListener& listener);
 
@@ -274,7 +275,7 @@ class SQLite {
         //
         // NOTE: Both of the following collections (_inFlightTransactions and _committedtransactionIDs) are shared between
         // all threads and need to be accessed in a synchronized fashion. They do *NOT* implement their own synchronization
-        // and must be protected by locking `_commitLock`.
+        // and must be protected by locking `g_commitLock`.
         //
         // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
         // called to generate a journal row, but have not yet been sent to peers.
@@ -301,16 +302,6 @@ class SQLite {
         mutex _checkpointListenerMutex;
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
     };
-
-    // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
-    // monotonically increasing commit numbers, so we implement a lock around changing that value. This lock is wrapped
-    // and publicly exposed only through 'g_commitLock'. This *should* be part of SharedData and specific to each file
-    // we're using, but it isn't because it's externally referenced as a static class member, because we didn't used to
-    // support multiple files here. This will cause a performance bottleneck if using multiple files, as they'll both
-    // unnecessarily compete for the same commit lock. We also use this global lock for inserting and removing items in
-    // _sharedDataLookupMap, and if we were to move this to being per-filename, we'd need a separate lock just for
-    // _sharedDataLookupMap.
-    static recursive_mutex _commitLock;
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
     // database file. It's a map of canonicalized filename to a sharedData object.

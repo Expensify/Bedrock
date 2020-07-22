@@ -9,8 +9,8 @@ class SQLitePool {
                int createJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
     ~SQLitePool();
 
-    // Get the base object (the first one created, which uses the `journal` table). Waits until this handle is
-    // available if it isn't.
+    // Get the base object (the first one created, which uses the `journal` table). Note that if called by multiple
+    // threads, both threads may hold the same DB handle.
     SQLite& getBase();
 
     // Get any object except the base. Will wait for an available handle if there are already maxDBs.

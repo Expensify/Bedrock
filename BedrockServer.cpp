@@ -180,15 +180,9 @@ void BedrockServer::sync(const SData& args,
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
-    // We allocate 25% of the total available file handles to our DB pool. Note that on Linux, the default limit is only
-    // 1024 file handles, so this can be as low as 256 if not adjusted elsewhere (it's adjusted in main.cpp for live
-    // servers).
-    struct rlimit limits;
-    if (getrlimit(RLIMIT_NOFILE, &limits)) {
-        SERROR("Failed to get FD limit");
-    }
-    int fdLimit = limits.rlim_cur / 4;
-    SINFO("Setting dbPool size to 1/4th FD limit: " << fdLimit);
+    // We use fewer FDs on test machines that have other resource restrictions in place.
+    int fdLimit = args.isSet("-live") ? 25'000 : 250;
+    SINFO("Setting dbPool size to: " << fdLimit);
     SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), true, args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = dbPool.getBase();
 
