@@ -230,8 +230,8 @@ class SQLiteNode : public STCPNode {
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
 
-    SQLiteSequentialNotifier _dbNotifier;
-    SQLiteSequentialNotifier _commitNotifier;
+    SQLiteSequentialNotifier _localCommitNotifier;
+    SQLiteSequentialNotifier _leaderCommitNotifier;
 
     // Replication thread main body.
     static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);

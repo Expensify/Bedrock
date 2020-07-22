@@ -61,14 +61,14 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     _version = version;
 
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _dbNotifier.notifyThrough(_db.getCommitCount());
+    _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     // Get this party started
     _changeState(SEARCHING);
 
     // Make sure we get notified when the DB needs to checkpoint.
-    _dbPool.getBase().addCheckpointListener(_dbNotifier);
-    _dbPool.getBase().addCheckpointListener(_commitNotifier);
+    _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
+    _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
 
     // Add any peers.
     list<string> parsedPeerList = SParseList(peerList);
@@ -91,8 +91,8 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 
     // Don't notify these, they won't exist anymore.
-    _dbPool.getBase().removeCheckpointListener(_dbNotifier);
-    _dbPool.getBase().removeCheckpointListener(_commitNotifier);
+    _dbPool.getBase().removeCheckpointListener(_localCommitNotifier);
+    _dbPool.getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
 // This is the main replication loop that's run in the replication threads. It pops commands off of the
@@ -139,7 +139,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             if (quorum) {
                 SINFO("Waiting on DB");
-                if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                if (!node._localCommitNotifier.waitFor(command.calcU64("NewCount") - 1)) {
                     return;
                 }
             }
@@ -167,7 +167,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                             // Yes, we get this line logged 4 times from four threads as their last activity and then:
                             // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
                             SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << (command.calcU64("NewCount") - 1));
-                            if (!node._dbNotifier.waitFor(command.calcU64("NewCount") - 1)) {
+                            if (!node._localCommitNotifier.waitFor(command.calcU64("NewCount") - 1)) {
                                 // Canceled.
                                 db.rollback();
                                 return;
@@ -182,7 +182,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                         // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
                         // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
                         // a commit after us will be able to commit, either.
-                        if (!node._commitNotifier.waitFor(command.calcU64("NewCount"))) {
+                        if (!node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"))) {
                             SINFO("Canceled waiting for commit message, rolling back.");
                             db.rollback();
                             break;
@@ -198,7 +198,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                         db.rollback();
                     }
                 }
-                node._dbNotifier.notifyThrough(db.getCommitCount());
+                node._localCommitNotifier.notifyThrough(db.getCommitCount());
 
             } catch (const SException& e) {
                 SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
@@ -209,7 +209,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             // FOLLOWING.
             goSearchingOnExit = true;
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            node._commitNotifier.notifyThrough(command.calcU64("CommitCount"));
+            node._leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
     }
     if (goSearchingOnExit) {
@@ -1929,15 +1929,15 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
     // Not sure if this is entirely adequate.
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _dbNotifier.notifyThrough(_db.getCommitCount());
+    _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     if (newState != oldState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             _replicationThreadsShouldExit = true;
             SINFO("[NOTIFY] _replicationThreadsShouldExit");
-            _dbNotifier.cancel();
-            _commitNotifier.cancel();
+            _localCommitNotifier.cancel();
+            _leaderCommitNotifier.cancel();
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
@@ -1950,8 +1950,8 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             _replicationThreadsShouldExit = false;
 
             // Guaranteed to be done right now.
-            _dbNotifier.reset();
-            _commitNotifier.reset();
+            _localCommitNotifier.reset();
+            _leaderCommitNotifier.reset();
         }
 
         // Depending on the state, set a timeout
@@ -2181,7 +2181,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 
         // Should work here.
         SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-        _dbNotifier.notifyThrough(_db.getCommitCount());
+        _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
         if (_db.getCommittedHash() != commit["Hash"])
             STHROW("potential hash mismatch");

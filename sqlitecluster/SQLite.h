@@ -27,7 +27,11 @@ class SQLite {
     };
 
     // Abstract base class for objects that need to be notified when we set `checkpointRequired` and then when that
-    // checkpoint is complete.
+    // checkpoint is complete. Why do we need to notify anyone that we're going to do a checkpoint? Because restart
+    // checkpoints can't run simultaneously with any other transactions, and thus will block new transactions and wait
+    // for all current transactions to finish, but all current transactions may not finish gracefully on their own, and
+    // may need to be interrupted by another mechanism. This allows an object with this behavior (blocking during a
+    // transaction) to be notified that it needs to either finish or abandon the transaction.
     class CheckpointRequiredListener {
       public:
         virtual void checkpointRequired(SQLite& db) = 0;
