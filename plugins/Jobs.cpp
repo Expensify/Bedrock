@@ -49,7 +49,9 @@ BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugi
 {
 }
 
-BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) : BedrockPlugin(s)
+BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) :
+    BedrockPlugin(s),
+    isLive(server.args.isSet("-live"))
 {
 }
 
@@ -97,12 +99,10 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
                                "parentJobID INTEGER NOT NULL DEFAULT 0, "
                                "retryAfter  TEXT NOT NULL DEFAULT \"\")",
                            ignore));
-
-    // These indexes are not used by the Bedrock::Jobs plugin, but provided for easy analysis
-    // using the Bedrock::DB plugin.
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsName     ON jobs ( name     );"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0;"));
-    SASSERT(db.write("CREATE INDEX IF NOT EXISTS jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name );"));
+    // verify and conditionally create indexes
+    SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsParentJobIDState", "jobs", "( parentJobID, state ) WHERE parentJobID != 0", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsStatePriorityNextRunName", "jobs", "( state, priority, nextRun, name )", false, !BedrockPlugin_Jobs::isLive));
 }
 
 // ==========================================================================
@@ -1238,7 +1238,7 @@ void BedrockJobsCommand::process(SQLite& db) {
     else if (SIEquals(requestVerb, "RequeueJobs")) {
         SINFO("Requeueing jobs with IDs: " << request["jobIDs"]);
         list<int64_t> jobIDs = SParseIntegerList(request["jobIDs"]);
-        
+
         if (jobIDs.size()) {
             const string& name = request["name"];
             string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
