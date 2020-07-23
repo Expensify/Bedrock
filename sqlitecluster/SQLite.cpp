@@ -36,6 +36,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _currentlyRunningRewritten(false),
     _timeoutLimit(0),
     _abandonForCheckpoint(false),
+    _enableCheckpointInterrupt(true),
     _autoRolledBack(false),
     _noopUpdateMode(false),
     _enableFullCheckpoints(enableFullCheckpoints),
@@ -234,9 +235,13 @@ int SQLite::_progressHandlerCallback(void* arg) {
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
     } else if (sqlite->_sharedData->_checkpointThreadBusy.load()) {
-        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
-        sqlite->_abandonForCheckpoint = true;
-        return 2;
+        if (sqlite->_enableCheckpointInterrupt) {
+            SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
+            sqlite->_abandonForCheckpoint = true;
+            return 2;
+        } else {
+            SINFO("[checkpoint] Not unblocking transaction for checkpoint because _enableCheckpointInterrupt disabled.");
+        }
     }
     return 0;
 }
@@ -796,6 +801,9 @@ int SQLite::commit() {
         }
     }
 
+    // Reset this to the default on any completion of the transaction, successful or not.
+    _enableCheckpointInterrupt = true;
+
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
@@ -878,6 +886,9 @@ void SQLite::rollback() {
     _useCache = false;
     _queryCount = 0;
     _cacheHits = 0;
+
+    // Reset this to the default on any completion of the transaction, successful or not.
+    _enableCheckpointInterrupt = true;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,

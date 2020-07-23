@@ -82,6 +82,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.startTiming(timeout);
 
         try {
+            if (request.test("disableCheckpointInterrupt")) {
+                _db.disableCheckpointInterruptForNextTransaction();
+            }
             if (!_db.beginTransaction(true, command->request.methodLine)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
@@ -184,11 +187,17 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
         // Time in US.
         _db.startTiming(timeout);
-        // If a transaction was already begun in `peek`, then this is a no-op. We call it here to support the case where
-        // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
-        // case we need to open a new transaction.
-        if (!_db.insideTransaction() && !_db.beginTransaction(true, command->request.methodLine)) {
-            STHROW("501 Failed to begin concurrent transaction");
+        if (!_db.insideTransaction()) {
+            if (request.test("disableCheckpointInterrupt")) {
+                _db.disableCheckpointInterruptForNextTransaction();
+            }
+
+            // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
+            // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
+            // case we need to open a new transaction.
+            if (!_db.beginTransaction(true, command->request.methodLine)) {
+                STHROW("501 Failed to begin concurrent transaction");
+            }
         }
 
         // If the command is mocked, turn on UpdateNoopMode.
