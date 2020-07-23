@@ -195,6 +195,13 @@ class SQLite {
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 
+    // Calling this before starting a transaction will prevent the next transaction from being interrupted by a restart
+    // checkpoint and restarting. This causes a potential performance issue so only do this if it's *really important*
+    // that this transaction isn't interrupted. The primary reason for adding this was to enable slow but very
+    // infrequent transactions to complete, even though they take longer than the typical interval between restart
+    // checkpoints to complete, thus causing an endless cycle of interrupted transactions.
+    void disableCheckpointInterruptForNextTransaction() { _enableCheckpointInterrupt = false; }
+
   private:
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
@@ -390,6 +397,7 @@ class SQLite {
     uint64_t _timeoutStart;
     uint64_t _timeoutError;
     bool _abandonForCheckpoint;
+    bool _enableCheckpointInterrupt;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
