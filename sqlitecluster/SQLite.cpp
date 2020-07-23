@@ -240,7 +240,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
             sqlite->_abandonForCheckpoint = true;
             return 2;
         } else {
-            SINFO("[checkpoint] Not unblocking transaction for checkpoint because _enableCheckpointInterrupt disabled.");
+            SHMMM("[checkpoint] Not unblocking transaction for checkpoint because _enableCheckpointInterrupt disabled.");
         }
     }
     return 0;
