@@ -7,11 +7,10 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         if (value <= _value) {
             return RESULT::COMPLETED;
         }
-        auto entry = _valueToPendingThreadMap.find(value);
-        if (entry == _valueToPendingThreadMap.end()) {
-            entry = _valueToPendingThreadMap.emplace(value, make_shared<WaitState>()).first;
-        }
-        state = entry->second;
+
+        // Create a new WaitState object and save a shared_ptr to it in `state`.
+        state = make_shared<WaitState>();
+        _valueToPendingThreadMap.emplace(value, state);
     }
     while (true) {
         unique_lock<mutex> lock(state->waitingThreadMutex);

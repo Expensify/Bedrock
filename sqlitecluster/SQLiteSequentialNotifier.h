@@ -59,7 +59,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     };
 
     mutex _internalStateMutex;
-    map<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMap;
+    multimap<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMap;
     uint64_t _value;
 
     // If there is a global result for all pending operations (i.e., they've been canceled or a checkpoint needs to
