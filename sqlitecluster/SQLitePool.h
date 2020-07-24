@@ -6,7 +6,7 @@ class SQLitePool {
   public:
     // Create a pool of DB handles.
     SQLitePool(size_t maxDBs, const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
-               int createJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+               int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
     ~SQLitePool();
 
     // Get the base object (the first one created, which uses the `journal` table). Note that if called by multiple
@@ -28,8 +28,10 @@ class SQLitePool {
     // system-imposed limits on FDs.
     size_t _maxDBs;
 
-    // Pointers to all of our objects.
-    SQLite* _baseDB;
+    // Our base object that all others are based upon.
+    SQLite _baseDB;
+
+    // Pointers to every other object we create.
     set<SQLite*> _availableHandles;
     set<SQLite*> _inUseHandles;
 };

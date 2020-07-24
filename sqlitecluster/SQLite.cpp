@@ -19,7 +19,7 @@ atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are ass
 atomic<bool> SQLite::enableTrace(false);
 
 SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
-               int createJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
     whitelist(nullptr),
     _maxJournalSize(maxJournalSize),
     _insideTransaction(false),
@@ -152,7 +152,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
     // Now we (if we're the initializer) verify (and create if non-existent) all of our required journal tables.
     if (initializer) {
-        for (int i = -1; i < createJournalTables; i++) {
+        for (int i = -1; i < minJournalTables; i++) {
             if (SQVerifyTable(_db, _getJournalTableName(i, true), "CREATE TABLE " + _getJournalTableName(i, true) +
                               " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
                 SHMMM("Created " << _getJournalTableName(i, true) << " table.");

@@ -49,7 +49,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     };
 
     mutex _m;
-    map<uint64_t, shared_ptr<WaitState>> _pending;
+    map<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMap;
     uint64_t _value;
     bool _canceled;
     bool _checkpointRequired;

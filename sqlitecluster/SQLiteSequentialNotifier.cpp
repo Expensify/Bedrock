@@ -7,9 +7,9 @@ bool SQLiteSequentialNotifier::waitFor(uint64_t value) {
         if (value <= _value) {
             return true;
         }
-        auto entry = _pending.find(value);
-        if (entry == _pending.end()) {
-            entry = _pending.emplace(value, make_shared<WaitState>()).first;
+        auto entry = _valueToPendingThreadMap.find(value);
+        if (entry == _valueToPendingThreadMap.end()) {
+            entry = _valueToPendingThreadMap.emplace(value, make_shared<WaitState>()).first;
         }
         state = entry->second;
     }
@@ -31,33 +31,33 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     if (value > _value) {
         _value = value;
     }
-    while (!_pending.empty() && _pending.begin()->first <= value) {
-        lock_guard<mutex> lock(_pending.begin()->second->m);
-        _pending.begin()->second->completed = true;
-        _pending.begin()->second->cv.notify_all();
-        _pending.erase(_pending.begin());
+    while (!_valueToPendingThreadMap.empty() && _valueToPendingThreadMap.begin()->first <= value) {
+        lock_guard<mutex> lock(_valueToPendingThreadMap.begin()->second->m);
+        _valueToPendingThreadMap.begin()->second->completed = true;
+        _valueToPendingThreadMap.begin()->second->cv.notify_all();
+        _valueToPendingThreadMap.erase(_valueToPendingThreadMap.begin());
     }
 }
 
 void SQLiteSequentialNotifier::cancel() {
     lock_guard<mutex> lock(_m);
     _canceled = true;
-    for (auto& p : _pending) {
+    for (auto& p : _valueToPendingThreadMap) {
         lock_guard<mutex> lock(p.second->m);
         p.second->cv.notify_all();
     }
-    _pending.clear();
+    _valueToPendingThreadMap.clear();
     _value = 0;
 }
 
 void SQLiteSequentialNotifier::checkpointRequired(SQLite& db) {
     lock_guard<mutex> lock(_m);
     _checkpointRequired = true;
-    for (auto& p : _pending) {
+    for (auto& p : _valueToPendingThreadMap) {
         lock_guard<mutex> lock(p.second->m);
         p.second->cv.notify_all();
     }
-    _pending.clear();
+    _valueToPendingThreadMap.clear();
 }
 
 void SQLiteSequentialNotifier::checkpointComplete(SQLite& db) {

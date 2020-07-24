@@ -6,12 +6,12 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int cacheSize,
                        bool enableFullCheckpoints,
                        int maxJournalSize,
-                       int createJournalTables,
+                       int minJournalTables,
                        const string& synchronous,
                        int64_t mmapSizeGB,
                        bool pageLoggingEnabled)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(new SQLite(filename, cacheSize, enableFullCheckpoints, maxJournalSize, createJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled))
+  _baseDB(filename, cacheSize, enableFullCheckpoints, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled)
 { }
 
 SQLitePool::~SQLitePool() {
@@ -25,11 +25,10 @@ SQLitePool::~SQLitePool() {
     for (auto dbHandle : _inUseHandles) {
         delete dbHandle;
     }
-    delete _baseDB;
 }
 
 SQLite& SQLitePool::getBase() {
-    return *_baseDB;
+    return _baseDB;
 }
 
 SQLite& SQLitePool::get() {
@@ -45,7 +44,7 @@ SQLite& SQLitePool::get() {
             return *db;
         } else if (_availableHandles.size() + _inUseHandles.size() < (_maxDBs - 1)) {
             // Create a new handle.
-            SQLite* db = new SQLite(*_baseDB);
+            SQLite* db = new SQLite(_baseDB);
             _inUseHandles.insert(db);
             SINFO("Returning new DB handle: " << (_availableHandles.size() + _inUseHandles.size()));
             return *db;
