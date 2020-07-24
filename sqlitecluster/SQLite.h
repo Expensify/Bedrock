@@ -447,4 +447,9 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
+
+    // This is a bit of a weird construct. We lock this in the destructor for an SQLite object because we spawn a
+    // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
+    // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
+    mutex _destructorMutex;
 };
