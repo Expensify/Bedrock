@@ -51,6 +51,9 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     void reset();
 
   private:
+    // This encapsulates the set of values we need to have a thread wait. It's a mutex and condition_variable that the
+    // thread can use to wait, and a result indicating if the required result has actually been reached (because
+    // condition_variables can be spuriously interrupted and need a second `wait()` call).
     struct WaitState {
         WaitState() : result(RESULT::UNKNOWN) {}
         mutex waitingThreadMutex;
