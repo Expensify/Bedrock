@@ -18,11 +18,21 @@
 // checkpoint B can complete.
 class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
   public:
-    SQLiteSequentialNotifier() : _value(0), _canceled(false), _checkpointRequired(false) {}
 
-    // Returns `true` when the counter matches or exceeds `value`, or `false` when someone calls `cancel`. Otherwise,
-    // it will wait forever.
-    bool waitFor(uint64_t value);
+    // Enumeration of all the possible states to result from waiting.
+    enum class RESULT {
+        UNKNOWN,
+        COMPLETED,
+        CANCELED,
+        CHECKPOINT_REQUIRED,
+    };
+
+    // Constructor
+    SQLiteSequentialNotifier() : _value(0), _globalResult(RESULT::UNKNOWN) {}
+
+    // Blocks until `_value` meets or exceeds `value`, unless an exceptional case (CANCELED, CHEKPOINT_REQUIRED) is
+    // hit, and returns the corresponding RESULT.
+    SQLiteSequentialNotifier::RESULT waitFor(uint64_t value);
 
     // Causes any threads waiting for a value up to and including `value` to return `true`.
     void notifyThrough(uint64_t value);
@@ -42,15 +52,17 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
 
   private:
     struct WaitState {
-        WaitState() : completed(false) {}
-        mutex m;
-        condition_variable cv;
-        bool completed;
+        WaitState() : result(RESULT::UNKNOWN) {}
+        mutex waitingThreadMutex;
+        condition_variable waitingThreadConditionVariable;
+        RESULT result;
     };
 
-    mutex _m;
+    mutex _internalStateMutex;
     map<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMap;
     uint64_t _value;
-    bool _canceled;
-    bool _checkpointRequired;
+
+    // If there is a global result for all pending operations (i.e., they've been canceled or a checkpoint needs to
+    // happen), that is stored here.
+    RESULT _globalResult;
 };

@@ -119,7 +119,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             if (quorum) {
                 SINFO("Waiting on DB");
-                if (!node._localCommitNotifier.waitFor(currentCount)) {
+                if (node._localCommitNotifier.waitFor(currentCount) != SQLiteSequentialNotifier::RESULT::COMPLETED) {
                     return;
                 }
             }
@@ -128,58 +128,64 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                 int result = -1;
                 int attemptCount = 1;
                 while (result != SQLITE_OK) {
-                    try {
-                        if (attemptCount > 1) {
-                            SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
-                        }
-                        SINFO("BEGIN for commit " << currentCount);
-                        node.handleBeginTransaction(db, peer, command);
+                    if (attemptCount > 1) {
+                        SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
+                    }
+                    SINFO("BEGIN for commit " << currentCount);
+                    node.handleBeginTransaction(db, peer, command);
 
-                        // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
-                        // skip this, we did it above) to enforce that commits are in the same order on followers as on
-                        // leader.
-                        if (!quorum) {
-                            // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
-                            // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
-                            // on the checkpoint if these are started out of order.
-                            //
-                            // Let's see if we can verify that happened.
-                            // Yes, we get this line logged 4 times from four threads as their last activity and then:
-                            // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
-                            if (!node._localCommitNotifier.waitFor(currentCount)) {
-                                // Canceled.
-                                db.rollback();
-                                return;
-                            }
-                        }
-
-                        // Ok, almost ready.
-                        node.handlePrepareTransaction(db, peer, command);
-
-                        // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
-                        // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
-                        // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
-                        // a commit after us will be able to commit, either.
-                        if (!node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"))) {
-                            SINFO("Canceled waiting for commit message, rolling back.");
+                    // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
+                    // skip this, we did it above) to enforce that commits are in the same order on followers as on
+                    // leader.
+                    if (!quorum) {
+                        // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
+                        // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
+                        // on the checkpoint if these are started out of order.
+                        //
+                        // Let's see if we can verify that happened.
+                        // Yes, we get this line logged 4 times from four threads as their last activity and then:
+                        // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
+                        SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                        SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
+                        if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                            SINFO("Replication canceled mid-transaction, stopping.");
                             db.rollback();
                             break;
-                        }
-
-                        // Leader says it has committed this transaction, so we can too.
-                        ++attemptCount;
-                        result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                        if (result != SQLITE_OK) {
+                        } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
+                            SINFO("Checkpoint required in replication, restarting transaction.");
                             db.rollback();
+                            continue;
                         }
-                    } catch (const SQLite::checkpoint_required_error& e) {
-                        SINFO("Checkpoint required in replication, stopping");
+                    }
+
+                    // Ok, almost ready.
+                    node.handlePrepareTransaction(db, peer, command);
+
+                    // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
+                    // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
+                    // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
+                    // a commit after us will be able to commit, either.
+                    SQLiteSequentialNotifier::RESULT waitResult = node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"));
+                    if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                        SINFO("Replication canceled mid-transaction, stopping.");
+                        db.rollback();
+                        break;
+                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
+                        SINFO("Checkpoint required in replication, restarting transaction.");
+                        db.rollback();
+                        continue;
+                    }
+
+                    // Leader says it has committed this transaction, so we can too.
+                    ++attemptCount;
+                    result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                    if (result != SQLITE_OK) {
                         db.rollback();
                     }
                 }
-                node._localCommitNotifier.notifyThrough(db.getCommitCount());
 
+                // Notify that we've succeeded (it actually also notifies if we were canceled, but that's fine).
+                node._localCommitNotifier.notifyThrough(db.getCommitCount());
             } catch (const SException& e) {
                 SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
                 goSearchingOnExit = true;
