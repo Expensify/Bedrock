@@ -152,7 +152,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
     // Now we (if we're the initializer) verify (and create if non-existent) all of our required journal tables.
     if (initializer) {
-        for (int i = -1; i < minJournalTables; i++) {
+        for (int i = -1; i <= minJournalTables; i++) {
             if (SQVerifyTable(_db, _getJournalTableName(i, true), "CREATE TABLE " + _getJournalTableName(i, true) +
                               " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
                 SHMMM("Created " << _getJournalTableName(i, true) << " table.");

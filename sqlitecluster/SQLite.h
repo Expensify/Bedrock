@@ -43,13 +43,18 @@ class SQLite {
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
     static recursive_mutex g_commitLock;
 
-    // minJournalTables: Creates the specified number of journal tables. If `0`, no tables are created. This
-    //                   specifies the total number of journal tables, not new ones, so if there are 50 existent
-    //                   tables and you pass `100` here, you get 100 total tables, not 150. 
+    // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
+    //                   created. If some value larger than -1 is passed, then journals `journal0000 through
+    //                   journalNNNN` are created (or left alone if such tables already exist). If -2 or less is
+    //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
            int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+
+    // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
+    SQLite(const string& filename, int cacheSize, int enableFullCheckpoints, int maxJournalSize, int minJournalTables, int synchronous) :
+        SQLite(filename, cacheSize, (bool)enableFullCheckpoints, maxJournalSize, minJournalTables, "") {}
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
