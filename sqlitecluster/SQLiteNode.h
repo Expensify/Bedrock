@@ -1,5 +1,7 @@
 #pragma once
 #include "SQLite.h"
+#include "SQLitePool.h"
+#include "SQLiteSequentialNotifier.h"
 #include "WallClockTimer.h"
 class SQLiteCommand;
 class SQLiteServer;
@@ -35,8 +37,8 @@ class SQLiteNode : public STCPNode {
     };
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host, const string& peerList,
-               int priority, uint64_t firstTimeout, const string& version);
+    SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name, const string& host,
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.
@@ -112,6 +114,10 @@ class SQLiteNode : public STCPNode {
     void _onDisconnect(Peer* peer);
     void _onMESSAGE(Peer* peer, const SData& message);
 
+    // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
+    // replication threads as required. It's passed in via the constructor.
+    SQLitePool& _dbPool;
+
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
     // to commit and replicate them.
@@ -128,17 +134,22 @@ class SQLiteNode : public STCPNode {
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
-    int _priority;
+    atomic<int> _priority;
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     int _originalPriority;
 
     // Our current State.
-    State _state;
+    atomic<State> _state;
     
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
-    Peer* _leadPeer;
+    atomic<Peer*> _leadPeer;
+
+    // There's a mutex here to lock around changes to this, or any complex operations that expect leader to remain
+    // unchanged throughout, notably, _sendToPeer. This is sort of a mess, but replication threads need to send
+    // acknowledgments to the lead peer, but the main sync loop can update that at any time.
+    mutable mutex _leadPeerMutex;
 
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;
@@ -205,10 +216,55 @@ class SQLiteNode : public STCPNode {
     chrono::steady_clock::time_point _lastNetStatTime;
 
     // Handler for transaction messages.
-    void handleBeginTransaction(Peer* peer, const SData& message);
-    void handleCommitTransaction(Peer* peer, const SData& message);
-    void handleRollbackTransaction(Peer* peer, const SData& message);
+    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message);
+    void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
+    int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
+    void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
 
     WallClockTimer _syncTimer;
-    uint64_t _handledCommitCount;
+    atomic<uint64_t> _handledCommitCount;
+
+    // State variable that indicates when the above threads should quit.
+    atomic<bool> _replicationThreadsShouldExit;
+
+    SQLiteSequentialNotifier _localCommitNotifier;
+    SQLiteSequentialNotifier _leaderCommitNotifier;
+
+    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
+    // each new relevant replication command received by the sync thread.
+    //
+    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
+    // COMMIT_TRANSACTION.
+    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
+    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    //
+    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
+    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
+    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
+    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading. Also worth
+    // noting is that a checkpoint can interrupt a transaction, forcing it to restart. See
+    // SQLite::CheckpointRequiredListener for more information on that process.
+    //
+    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
+    // which happens when a node stops FOLLOWING.
+    static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);
+
+    // Counter of the total number of currently active replication threads. This is used to let us know when all
+    // threads have finished.
+    atomic<int64_t> _replicationThreadCount;
+
+    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
+    static atomic<int64_t> _currentCommandThreadID;
+
+    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
+    template <typename CounterType>
+    class ScopedDecrement {
+      public:
+        ScopedDecrement(CounterType& counter) : _counter(counter) {} 
+        ~ScopedDecrement() {
+            --_counter;
+        }
+      private:
+        CounterType& _counter;
+    };
 };

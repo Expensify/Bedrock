@@ -4,7 +4,7 @@
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
 // Globally shared mutex for locking around commits and creating/destroying instances.
-recursive_mutex SQLite::_commitLock;
+recursive_mutex SQLite::g_commitLock;
 
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
@@ -12,17 +12,14 @@ mutex SQLite::_pageLogMutex;
 // Global map for looking up shared data by file when creating new instances.
 map<string, SQLite::SharedData*> SQLite::_sharedDataLookupMap;
 
-// This is our only public static variable. It needs to be initialized after `_commitLock`.
-SLockTimer<recursive_mutex> SQLite::g_commitLock("Commit Lock", SQLite::_commitLock);
-
 atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
 atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
-SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-               int maxRequiredJournalTableID, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
     whitelist(nullptr),
     _maxJournalSize(maxJournalSize),
     _insideTransaction(false),
@@ -32,6 +29,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _prepareElapsed(0),
     _commitElapsed(0),
     _rollbackElapsed(0),
+    _mutexLocked(false),
     _enableRewrite(false),
     _currentlyRunningRewritten(false),
     _timeoutLimit(0),
@@ -45,11 +43,14 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _useCache(false),
     _isDeterministicQuery(false),
     _pageLoggingEnabled(pageLoggingEnabled),
-    _currentTransactionAttemptCount(-1)
+    _currentTransactionAttemptCount(-1),
+    _cacheSize(cacheSize),
+    _synchronous(synchronous),
+    _mmapSizeGB(mmapSizeGB)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
-    SASSERT(cacheSize > 0);
+    SASSERT(_cacheSize > 0);
     SASSERT(maxJournalSize > 0);
 
     // Canonicalize our filename and save that version.
@@ -68,10 +69,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     }
     SINFO("Opening sqlite database: " << _filename);
 
-    // Set our journal table name for this DB handle.
-    _journalName = _getJournalTableName(journalTable);
-
-    // We lock here To initialize the database. Because there's a global map of currently opened DB files, we lock
+    // We lock here to initialize the database. Because there's a global map of currently opened DB files, we lock
     // whenever we might need to insert a new one. These are only ever added or changed in the constructor and
     // destructor.
     SQLITE_COMMIT_AUTOLOCK;
@@ -112,9 +110,6 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         _sharedData = sharedDataIterator->second;
     }
 
-    // Insert ourself in the list of objects for our `SharedData`.
-    _sharedData->validObjects.insert(this);
-
     // Open the DB in read-write mode.
     DBINFO((SFileExists(_filename) ? "Opening" : "Creating") << " database '" << _filename << "'.");
     const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
@@ -137,8 +132,8 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
 
     // Check if synchronous has been set and run query to use a custom synchronous setting
-    if (!synchronous.empty()) {
-        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(synchronous)  + ";"));
+    if (!_synchronous.empty()) {
+        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
     } else {
         DBINFO("Using SQLite default PRAGMA synchronous");
     }
@@ -153,15 +148,15 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
     // Update the cache. -size means KB; +size means pages
-    SINFO("Setting cache_size to " << cacheSize << "KB");
-    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(cacheSize) + ";");
+    SINFO("Setting cache_size to " << _cacheSize << "KB");
+    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
 
     // Now we (if we're the initializer) verify (and create if non-existent) all of our required journal tables.
     if (initializer) {
-        for (int i = -1; i <= maxRequiredJournalTableID; i++) {
-            if (SQVerifyTable(_db, _getJournalTableName(i), "CREATE TABLE " + _getJournalTableName(i) +
+        for (int i = -1; i <= minJournalTables; i++) {
+            if (SQVerifyTable(_db, _getJournalTableName(i, true), "CREATE TABLE " + _getJournalTableName(i, true) +
                               " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
-                SHMMM("Created " << _getJournalTableName(i) << " table.");
+                SHMMM("Created " << _getJournalTableName(i, true) << " table.");
             }
         }
 
@@ -169,7 +164,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         // sequential.
         int currentJounalTable = -1;
         while(true) {
-            string name = _getJournalTableName(currentJounalTable);
+            string name = _getJournalTableName(currentJounalTable, true);
             if (SQVerifyTableExists(_db, name)) {
                 _sharedData->_journalNames.push_back(name);
                 currentJounalTable++;
@@ -178,6 +173,9 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
             }
         }
     }
+
+    // Set our journal table name for this DB handle.
+    _journalName = _getJournalTableName(_sharedData->_nextJournalCount.fetch_add(1));
 
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
     // limit.
@@ -215,6 +213,88 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
             SWARN("Loaded commit count " << commitCount << " with empty hash.");
         }
     }
+
+    // Register the authorizer callback which allows callers to whitelist particular data in the DB.
+    sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
+
+    // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
+    // second. This is set to be a bit more granular than that, which is probably adequate.
+    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+}
+
+SQLite::SQLite(const SQLite& from) :
+    whitelist(nullptr),
+    _sharedData(from._sharedData),
+    _filename(from._filename),
+    _journalSize(from._journalSize),
+    _maxJournalSize(from._maxJournalSize),
+    _insideTransaction(false),
+    _beginElapsed(0),
+    _readElapsed(0),
+    _writeElapsed(0),
+    _prepareElapsed(0),
+    _commitElapsed(0),
+    _rollbackElapsed(0),
+    _mutexLocked(false),
+    _enableRewrite(false),
+    _currentlyRunningRewritten(false),
+    _timeoutLimit(0),
+    _abandonForCheckpoint(false),
+    _autoRolledBack(false),
+    _noopUpdateMode(false),
+    _enableFullCheckpoints(from._enableFullCheckpoints),
+    _queryCount(0),
+    _cacheHits(0),
+    _useCache(false),
+    _isDeterministicQuery(false),
+    _pageLoggingEnabled(from._pageLoggingEnabled),
+    _currentTransactionAttemptCount(-1),
+    _cacheSize(from._cacheSize),
+    _synchronous(from._synchronous),
+    _mmapSizeGB(from._mmapSizeGB)
+{
+    SINFO("Opening sqlite database: " << _filename);
+
+    // Set our journal table name for this DB handle.
+    _journalName = _getJournalTableName(_sharedData->_nextJournalCount.fetch_add(1));
+
+    // Open the DB in read-write mode.
+    DBINFO("Opening database '" << _filename << "'.");
+    const int DB_WRITE_OPEN_FLAGS = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX;
+    SASSERT(!sqlite3_open_v2(_filename.c_str(), &_db, DB_WRITE_OPEN_FLAGS, NULL));
+
+    // Turn on page logging if specified.
+    if (_pageLoggingEnabled) {
+        sqlite3_begin_concurrent_report_enable(_db, 1);
+    }
+
+    if (_mmapSizeGB) {
+        SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+    }
+
+    // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
+    // any tables to be effective.
+    SASSERT(!SQuery(_db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
+
+    // Check if synchronous has been set and run query to use a custom synchronous setting
+    if (!_synchronous.empty()) {
+        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
+    } else {
+        DBINFO("Using SQLite default PRAGMA synchronous");
+    }
+
+    // These other pragmas only relate to read/write databases.
+    SASSERT(!SQuery(_db, "disabling change counting", "PRAGMA count_changes = OFF;"));
+
+    // Do our own checkpointing.
+    sqlite3_wal_hook(_db, _sqliteWALCallback, this);
+
+    // Enable tracing for performance analysis.
+    sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
+
+    // Update the cache. -size means KB; +size means pages
+    SINFO("Setting cache_size to " << _cacheSize << "KB");
+    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
@@ -289,7 +369,14 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             return SQLITE_OK;
         }
         SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData->_currentPageCount.load());
-        thread([object, filename, dbNameCopy]() {
+
+        // We pass `destructorLock` into the thread to block the SQLite object's destructor from running while
+        // the checkpoint is still using that object. The lock is created in the parent thread, and then passed
+        // by move to the checkpoint thread, guaranteeing that there's no race here in returning from
+        // _sqliteWALCallback before we've acquired the lock. This does not protect in the opposite direction: if you
+        // destroy an SQLite while `_sqliteWALCallback` is running (i.e., inside a call to `SQLite::write()`, then
+        // things will still break.
+        thread([object, filename, dbNameCopy, destructorLock = unique_lock<mutex>(object->_destructorMutex)]() {
             SInitialize("checkpoint");
             uint64_t start = STimeNow();
 
@@ -316,23 +403,12 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
+                    for (auto listener : object->_sharedData->_checkpointListeners) {
+                        listener->checkpointRequired(*object);
+                    }
                 }
 
                 if (count == 0) {
-                    // Grab the global commit lock. Then we can look up this object and see if it still exists.
-                    // This is safe to do, we know nobody's committing, since we just waited for all transactions
-                    // to be finished. Why this global lock? Because we re-used it for modifying SharedData
-                    // objects, because that's only done at creation/destruction of SQLite objects and here.
-                    SQLITE_COMMIT_AUTOLOCK;
-
-                    // Verify the SQLite object passed into this function still exists. It's feasible (though
-                    // unlikely), that it could have been deleted if we tried to run a checkpoint just before
-                    // shutting down (or otherwise destroying an SQLite object).
-                    auto it = _sharedDataLookupMap.find(filename);
-                    if (it == _sharedDataLookupMap.end() || it->second->validObjects.find(object) == it->second->validObjects.end()) {
-                        SWARN("Aborting checkpoint, SQLite object deleted.");
-                        break;
-                    }
 
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
@@ -346,6 +422,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
                     // We're done. Anyone can start a new transaction.
+                    for (auto listener : object->_sharedData->_checkpointListeners) {
+                        listener->checkpointComplete(*object);
+                    }
                     break;
                 }
 
@@ -370,31 +449,28 @@ string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
     return query;
 }
 
-string SQLite::_getJournalTableName(int journalTableID) {
+string SQLite::_getJournalTableName(int64_t journalTableID, bool create) {
+    // Return the base name if the number specified is negative.
     if (journalTableID < 0) {
         return "journal";
     }
-    char buff[27] = {0};
-    sprintf(buff, "journal%04d", journalTableID);
-    return buff;
+    if (create) {
+        char buff[27] = {0};
+        sprintf(buff, "journal%04li", journalTableID);
+        return buff;
+    } else {
+        if (_sharedData->_journalNames.empty()) {
+            STHROW("Attempting to get a journal table name for existing journals, but there are none!");
+        }
+
+        // This deliberately skips `journal` itself, assuming that's in position 1.
+        size_t journalTableIndex = (journalTableID % _sharedData->_journalNames.size() - 1) + 1 ;
+        return _sharedData->_journalNames[journalTableIndex];
+    }
 }
 
 SQLite::~SQLite() {
-    // Lock around changes to the global shared list.
-    SINFO("Locking g_commitLock in destructor.");
-    SQLITE_COMMIT_AUTOLOCK;
-    SINFO("g_commitLock acquired in destructor.");
-
-    // Remove ourself from the list of valid objects.
-    _sharedData->validObjects.erase(this);
-
-    // If there are none left, remove the entire entry.
-    if (_sharedData->validObjects.size() == 0) {
-        auto it = _sharedDataLookupMap.find(_filename);
-        delete it->second;
-        _sharedDataLookupMap.erase(it);
-    }
-
+    lock_guard<mutex> lock(_destructorMutex);
     // Now we can clean up our own data.
     // First, rollback any incomplete transaction.
     if (!_uncommittedQuery.empty()) {
@@ -809,11 +885,11 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, pair<string,string>> SQLite::getCommittedTransactions() {
+map<uint64_t, pair<string, string>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
     // Maps a committed transaction ID to the correct query and hash for that transaction.
-    map<uint64_t, pair<string,string>> result;
+    map<uint64_t, pair<string, string>> result;
 
     // If nothing's been committed, nothing to return.
     if (_sharedData->_committedTransactionIDs.empty()) {
@@ -1120,7 +1196,18 @@ bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
 }
 
+void SQLite::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
+    lock_guard<mutex> lock(_sharedData->_checkpointListenerMutex);
+    _sharedData->_checkpointListeners.insert(&listener);
+}
+
+void SQLite::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
+    lock_guard<mutex> lock(_sharedData->_checkpointListenerMutex);
+    _sharedData->_checkpointListeners.erase(&listener);
+}
+
 SQLite::SharedData::SharedData() :
+_nextJournalCount(-1),
 currentTransactionCount(0),
 _currentPageCount(0),
 _checkpointThreadBusy(0)

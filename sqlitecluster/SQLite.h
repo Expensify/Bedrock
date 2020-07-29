@@ -1,9 +1,8 @@
 #pragma once
-#include <libstuff/SLockTimer.h>
 #include <libstuff/sqlite3.h>
 
 // Convenience macro for locking our static commit lock.
-#define SQLITE_COMMIT_AUTOLOCK SLockTimerGuard<decltype(SQLite::g_commitLock)> \
+#define SQLITE_COMMIT_AUTOLOCK lock_guard<decltype(SQLite::g_commitLock)> \
         __SSQLITEAUTOLOCK_##__LINE__(SQLite::g_commitLock)
 
 class SQLite {
@@ -27,25 +26,40 @@ class SQLite {
         const char* what() const noexcept { return "checkpoint_required"; }
     };
 
+    // Abstract base class for objects that need to be notified when we set `checkpointRequired` and then when that
+    // checkpoint is complete. Why do we need to notify anyone that we're going to do a checkpoint? Because restart
+    // checkpoints can't run simultaneously with any other transactions, and thus will block new transactions and wait
+    // for all current transactions to finish, but all current transactions may not finish gracefully on their own, and
+    // may need to be interrupted by another mechanism. This allows an object with this behavior (blocking during a
+    // transaction) to be notified that it needs to either finish or abandon the transaction.
+    class CheckpointRequiredListener {
+      public:
+        virtual void checkpointRequired(SQLite& db) = 0;
+        virtual void checkpointComplete(SQLite& db) = 0;
+    };
+
     // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
     // such, when they determine that those operations must be made atomically with operations happening in SQLite.
     // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
-    static SLockTimer<recursive_mutex> g_commitLock;
+    static recursive_mutex g_commitLock;
 
-    // Loads a database and confirms its schema
-    // The journalTable and numJournalTables parameters are maybe less than straightforward, here's what they mean:
-    //
-    // journalTable: this is the numerical id of the journalTable that this DB will *write* to. It can be -1 to
-    //               indicate that the table to use is 'journal', otherwise it will be journalNNNN, where NNNN is the
-    //               integer passed in. The actual table name use will always have at least four digits (leading 0s
-    //               for numbers less than 1000).
-    //
-    // maxRequiredJournalTableID: This is the maximum journal table ID that we'll verify. If it's -1, we'll only verify
-    //                            'journal' and no numbered tables.
+    // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
+    //                   created. If some value larger than -1 is passed, then journals `journal0000 through
+    //                   journalNNNN` are created (or left alone if such tables already exist). If -2 or less is
+    //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize, int journalTable,
-           int maxRequiredJournalTableID, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
+           int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+
+    // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
+    SQLite(const string& filename, int cacheSize, int enableFullCheckpoints, int maxJournalSize, int minJournalTables, int synchronous) :
+        SQLite(filename, cacheSize, (bool)enableFullCheckpoints, maxJournalSize, minJournalTables, "") {}
+
+    // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
+    // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
+    // exist because we already have a SQLite object for this file.
+    SQLite(const SQLite& from);
     ~SQLite();
 
     // Returns the canonicalized filename for this database
@@ -173,6 +187,11 @@ class SQLite {
     // Reset timing after finishing a timed operation.
     void resetTiming();
 
+    // Register and deregister listeners for checkpoint operations. See the comments on `CheckpointRequiredListener`
+    // above for why checkpoint listeners are useful.
+    void addCheckpointListener(CheckpointRequiredListener& listener);
+    void removeCheckpointListener(CheckpointRequiredListener& listener);
+
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
     // out to peers.
@@ -213,6 +232,9 @@ class SQLite {
         // This is the last committed hash by *any* thread for this file.
         atomic<string> _lastCommittedHash;
 
+        // An identifier used to choose the next journal table to use with this set of DB handles.
+        atomic<int64_t> _nextJournalCount;
+
         // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
         // peers.
         set<uint64_t> _committedTransactionIDs;
@@ -222,7 +244,7 @@ class SQLite {
         atomic<uint64_t> _commitCount;
 
         // Names of journal tables for this database.
-        list<string> _journalNames;
+        vector<string> _journalNames;
 
         // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
         // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
@@ -265,7 +287,7 @@ class SQLite {
         //
         // NOTE: Both of the following collections (_inFlightTransactions and _committedtransactionIDs) are shared between
         // all threads and need to be accessed in a synchronized fashion. They do *NOT* implement their own synchronization
-        // and must be protected by locking `_commitLock`.
+        // and must be protected by locking `g_commitLock`.
         //
         // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
         // called to generate a journal row, but have not yet been sent to peers.
@@ -275,15 +297,11 @@ class SQLite {
         // when required to make sure it can get exclusive use of the DB.
         mutex blockNewTransactionsMutex;
 
-        // These three varialbes let us notify the checkpoint thread when a tranasction ends (or starts, but it will
+        // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
         // have blocked any new ones from starting by locking blockNewTransactionsMutex).
         mutex notifyWaitMutex;
         condition_variable blockNewTransactionsCV;
         atomic<int> currentTransactionCount;
-
-        // This contains a list of all the valid objects for this data. This lets the checkpoint thread bail out early
-        // if the SQLite object that initiated it has been deleted since it started.
-        set<SQLite*> validObjects;
 
         // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
@@ -291,17 +309,11 @@ class SQLite {
 
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
-    };
 
-    // We have designed this so that multiple threads can write to multiple journals simultaneously, but we want
-    // monotonically increasing commit numbers, so we implement a lock around changing that value. This lock is wrapped
-    // and publicly exposed only through 'g_commitLock'. This *should* be part of SharedData and specific to each file
-    // we're using, but it isn't because it's externally referenced as a static class member, because we didn't used to
-    // support multiple files here. This will cause a performance bottleneck if using multiple files, as they'll both
-    // unnecessarily compete for the same commit lock. We also use this global lock for inserting and removing items in
-    // _sharedDataLookupMap, and if we were to move this to being per-filename, we'd need a separate lock just for
-    // _sharedDataLookupMap.
-    static recursive_mutex _commitLock;
+        // set of objects listening for checkpoints.
+        mutex _checkpointListenerMutex;
+        set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
+    };
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
     // database file. It's a map of canonicalized filename to a sharedData object.
@@ -315,7 +327,7 @@ class SQLite {
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
     // Returns the name of a journal table based on it's index.
-    static string _getJournalTableName(int journalTableID);
+    string _getJournalTableName(int64_t journalTableID, bool create = false);
 
     // Attributes
     sqlite3* _db;
@@ -326,7 +338,7 @@ class SQLite {
     string _uncommittedQuery;
     string _uncommittedHash;
 
-    // The name of the journal table, computed from the 'journalTable' parameter passed to our constructor.
+    // The name of the journal table
     string _journalName;
 
     // Timing information.
@@ -443,4 +455,14 @@ class SQLite {
     static atomic<int64_t> _transactionAttemptCount;
     static mutex _pageLogMutex;
     int64_t _currentTransactionAttemptCount;
+
+    // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
+    int _cacheSize;
+    const string _synchronous;
+    int64_t _mmapSizeGB;
+
+    // This is a bit of a weird construct. We lock this in the destructor for an SQLite object because we spawn a
+    // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
+    // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
+    mutex _destructorMutex;
 };

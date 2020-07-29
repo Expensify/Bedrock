@@ -314,15 +314,14 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(const SData& args,
+    static void worker(SQLitePool& dbPool,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& leaderVersion,
                        BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                        BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
-                       int threadId,
-                       int threadCount);
+                       int threadId);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.

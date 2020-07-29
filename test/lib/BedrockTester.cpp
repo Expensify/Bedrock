@@ -511,7 +511,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
-        _db = new SQLite(_dbName, 1000000, 0, 3000000, -1, 0);
+        _db = new SQLite(_dbName, 1000000, false, 3000000, -1);
     }
     return *_db;
 }
