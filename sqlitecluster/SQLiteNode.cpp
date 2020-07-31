@@ -119,8 +119,23 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             if (quorum) {
                 SINFO("Waiting on DB");
-                if (node._localCommitNotifier.waitFor(currentCount) != SQLiteSequentialNotifier::RESULT::COMPLETED) {
-                    return;
+                while (true) {
+                    SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(currentCount);
+                    if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
+                        // This should be impossible.
+                        SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
+                    } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
+                        // Success case.
+                        break;
+                    } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                        SINFO("_localCommitNotifier.waitFor canceled early, returning.");
+                        return;
+                    } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
+                        SINFO("Checkpoint required while waiting for DB to come up-to-date. Just waiting again.");
+                        continue;
+                    } else {
+                        SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
+                    }
                 }
             }
 
