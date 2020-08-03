@@ -195,7 +195,7 @@ void BedrockServer::sync(const SData& args,
     // Initialize the shared pointer to our sync node object.
     server._syncNode = make_shared<SQLiteNode>(server, dbPool, args["-nodeName"], args["-nodeHost"],
                                                args["-peerList"], args.calc("-priority"), firstTimeout,
-                                               server._version);
+                                               server._version, args.test("-parallelReplication"));
 
     // This should be empty anyway, but let's make sure.
     if (server._completedCommands.size()) {
