@@ -38,7 +38,7 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version);
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
     ~SQLiteNode();
 
     // Simple Getters. See property definitions for details.
@@ -220,6 +220,11 @@ class SQLiteNode : public STCPNode {
     void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
     int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
+    
+    // Legacy versions of the above functions for serial replication.
+    void handleSerialBeginTransaction(Peer* peer, const SData& message);
+    void handleSerialCommitTransaction(Peer* peer, const SData& message);
+    void handleSerialRollbackTransaction(Peer* peer, const SData& message);
 
     WallClockTimer _syncTimer;
     atomic<uint64_t> _handledCommitCount;
@@ -252,6 +257,9 @@ class SQLiteNode : public STCPNode {
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
     atomic<int64_t> _replicationThreadCount;
+
+    // Indicates whether this node is configured for parallel replication.
+    const bool _useParallelReplication;
 
     // Monotonically increasing thread counter, used for thread IDs for logging purposes.
     static atomic<int64_t> _currentCommandThreadID;
