@@ -2060,12 +2060,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
 
 bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>& command) {
     // A list of non-secure control commands that can be run from another host
-    if (SIEquals(command->request.methodLine, "SuppressCommandPort") ||
-        SIEquals(command->request.methodLine, "ClearCommandPort")
-        ) {
-        return true;
-    }
-    return false;
+    return SIEquals(command->request.methodLine, "SuppressCommandPort") || SIEquals(command->request.methodLine, "ClearCommandPort");
 }
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
