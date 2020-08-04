@@ -1169,8 +1169,9 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
         _reply(command);
         return true;
     } else if (_isControlCommand(command)) {
-        // Control commands can only come from localhost (and thus have an empty `_source`).
-        if (command->request["_source"].empty()) {
+        // Control commands can only come from localhost (and thus have an empty `_source`)
+        // with the exception of non-secure control commands
+        if (command->request["_source"].empty() || _isNonSecureControlCommand(command)) {
             _control(command);
         } else {
             SWARN("Got control command " << command->request.methodLine << " on non-localhost socket ("
@@ -2051,6 +2052,16 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "SetCheckpointIntervals") ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")
+        ) {
+        return true;
+    }
+    return false;
+}
+
+bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>& command) {
+    // A list of non-secure control commands that can be run from another host
+    if (SIEquals(command->request.methodLine, "SuppressCommandPort") ||
+        SIEquals(command->request.methodLine, "ClearCommandPort")
         ) {
         return true;
     }
