@@ -349,6 +349,7 @@ class BedrockServer : public SQLiteServer {
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
     void _status(unique_ptr<BedrockCommand>& command);
     bool _isControlCommand(const unique_ptr<BedrockCommand>& command);
+    bool _isNonSecureControlCommand(const unique_ptr<BedrockCommand>& command);
     void _control(unique_ptr<BedrockCommand>& command);
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
