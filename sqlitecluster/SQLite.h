@@ -195,7 +195,7 @@ class SQLite {
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
     // out to peers.
-    map<uint64_t, pair<string,string>> getCommittedTransactions();
+    map<uint64_t, tuple<string,string, uint64_t>> getCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -220,6 +220,9 @@ class SQLite {
     // infrequent transactions to complete, even though they take longer than the typical interval between restart
     // checkpoints to complete, thus causing an endless cycle of interrupted transactions.
     void disableCheckpointInterruptForNextTransaction() { _enableCheckpointInterrupt = false; }
+
+    // public read-only accessor for _dbCountAtStart.
+    uint64_t getDBCountAtStart() const;
 
   private:
 
@@ -291,7 +294,7 @@ class SQLite {
         //
         // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
         // called to generate a journal row, but have not yet been sent to peers.
-        map<uint64_t, pair<string, string>> _inFlightTransactions;
+        map<uint64_t, tuple<string, string, uint64_t>> _inFlightTransactions;
 
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
         // when required to make sure it can get exclusive use of the DB.
@@ -337,6 +340,11 @@ class SQLite {
     bool _insideTransaction;
     string _uncommittedQuery;
     string _uncommittedHash;
+
+    // The latest transaction ID at the start of the current transaction (note: it is allowed for this to be *higher*
+    // than the state inside the transaction, if another thread committed to the DB while we were in
+    // `beginTransaction`).
+    uint64_t _dbCountAtStart;
 
     // The name of the journal table
     string _journalName;
