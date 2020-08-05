@@ -113,30 +113,31 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
         string name = node.name;
         SINFO("Replicate thread started: " << command.methodLine);
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            uint64_t currentCount = command.calcU64("NewCount") - 1;
+            uint64_t newCount = command.calcU64("NewCount");
+            uint64_t currentCount = newCount - 1;
 
-            // We have to wait for the DB to come up-to-date for QUORUM transactions.
-            SINFO("Thread for commit " << currentCount);
+            // Transactions are either ASYNC or QUORUM. QUORUM transactions can only start when the DB is completely
+            // up-to-date. ASYNC transactions can start as soon as the DB is at `dbCountAtStart` (the same value that
+            // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
-            if (quorum) {
-                SINFO("Waiting on DB");
-                while (true) {
-                    SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(currentCount);
-                    if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
-                        // This should be impossible.
-                        SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
-                    } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
-                        // Success case.
-                        break;
-                    } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                        SINFO("_localCommitNotifier.waitFor canceled early, returning.");
-                        return;
-                    } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                        SINFO("Checkpoint required while waiting for DB to come up-to-date. Just waiting again.");
-                        continue;
-                    } else {
-                        SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
-                    }
+            uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calc("dbCountAtStart") : currentCount;
+            SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
+            while (true) {
+                SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount);
+                if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
+                    // This should be impossible.
+                    SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
+                } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
+                    // Success case.
+                    break;
+                } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                    SINFO("_localCommitNotifier.waitFor canceled early, returning.");
+                    return;
+                } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
+                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Just waiting again.");
+                    continue;
+                } else {
+                    SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
                 }
             }
 
@@ -147,7 +148,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                     if (attemptCount > 1) {
                         SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
                     }
-                    SINFO("BEGIN for commit " << currentCount);
+                    SINFO("BEGIN for commit " << newCount);
                     node.handleBeginTransaction(db, peer, command);
 
                     // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
@@ -351,12 +352,14 @@ void SQLiteNode::_sendOutstandingTransactions() {
         if (id <= _lastSentTransactionID) {
             continue;
         }
-        string& query = i.second.first;
-        string& hash = i.second.second;
+        string& query = get<0>(i.second);
+        string& hash = get<1>(i.second);
+        int64_t dbCountAtStart = get<2>(i.second);
         SData transaction("BEGIN_TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
+        transaction["dbCountAtStart"] = to_string(dbCountAtStart);
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
@@ -1012,10 +1015,6 @@ bool SQLiteNode::update() {
             // We'll send the commit count to peers.
             uint64_t commitCount = _db.getCommitCount();
 
-            // If there was nothing changed, then we shouldn't have anything to commit.
-            // Except that this is allowed right now.
-            // SASSERT(!_db.getUncommittedQuery().empty());
-
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
             SASSERT(_db.prepare());
@@ -1027,8 +1026,9 @@ bool SQLiteNode::update() {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
+            transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
             if (_commitConsistency == ASYNC) {
-                transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
+                transaction.set("ID", "ASYNC_" + to_string(_lastSentTransactionID + 1));
             } else {
                 transaction.set("ID", _lastSentTransactionID + 1);
             }
@@ -1547,6 +1547,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
+            transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
             transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);

@@ -23,6 +23,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     whitelist(nullptr),
     _maxJournalSize(maxJournalSize),
     _insideTransaction(false),
+    _dbCountAtStart(0),
     _beginElapsed(0),
     _readElapsed(0),
     _writeElapsed(0),
@@ -229,6 +230,7 @@ SQLite::SQLite(const SQLite& from) :
     _journalSize(from._journalSize),
     _maxJournalSize(from._maxJournalSize),
     _insideTransaction(false),
+    _dbCountAtStart(0),
     _beginElapsed(0),
     _readElapsed(0),
     _writeElapsed(0),
@@ -508,6 +510,13 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     uint64_t before = STimeNow();
     _currentTransactionAttemptCount = -1;
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+
+    // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
+    // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
+    // leader. However, this is perfectly safe, it just adds the possibility that threads on followers wait for an
+    // extra transaction to complete before starting, which is an anti-optimization, but the alternative is wrapping
+    // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
+    _dbCountAtStart = getCommitCount();
     _queryCache.clear();
     _transactionName = transactionName;
     _useCache = useCache;
@@ -757,7 +766,7 @@ bool SQLite::prepare() {
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData->_inFlightTransactions[commitCount + 1] = make_pair(_uncommittedQuery, _uncommittedHash);
+    _sharedData->_inFlightTransactions[commitCount + 1] = make_tuple(_uncommittedQuery, _uncommittedHash, _dbCountAtStart);
 
     int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
@@ -868,6 +877,7 @@ int SQLite::commit() {
         _useCache = false;
         _queryCount = 0;
         _cacheHits = 0;
+        _dbCountAtStart = 0;
     } else {
         if (_currentTransactionAttemptCount != -1) {
             string logLine = SWHEREAMI  + "[row-level-locking] transaction attempt:" +
@@ -885,11 +895,11 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, pair<string, string>> SQLite::getCommittedTransactions() {
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions() {
     SQLITE_COMMIT_AUTOLOCK;
 
-    // Maps a committed transaction ID to the correct query and hash for that transaction.
-    map<uint64_t, pair<string, string>> result;
+    // Maps a committed transaction ID to the correct query and hash, and starting commit count for that transaction.
+    map<uint64_t, tuple<string, string, uint64_t>> result;
 
     // If nothing's been committed, nothing to return.
     if (_sharedData->_committedTransactionIDs.empty()) {
@@ -962,6 +972,7 @@ void SQLite::rollback() {
     _useCache = false;
     _queryCount = 0;
     _cacheHits = 0;
+    _dbCountAtStart = 0;
 
     // Reset this to the default on any completion of the transaction, successful or not.
     _enableCheckpointInterrupt = true;
@@ -1194,6 +1205,10 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
 bool SQLite::getUpdateNoopMode() const {
     return _noopUpdateMode;
+}
+
+uint64_t SQLite::getDBCountAtStart() const {
+    return _dbCountAtStart;
 }
 
 void SQLite::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {

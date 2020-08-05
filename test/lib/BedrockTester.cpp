@@ -88,20 +88,21 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
     }
 
     map <string, string> defaultArgs = {
-        {"-db",               _dbName},
-        {"-serverHost",       _serverAddr},
-        {"-nodeName",         "bedrock_test"},
-        {"-nodeHost",         "localhost:" + to_string(_nodePort)},
-        {"-controlPort",      "localhost:" + to_string(_controlPort)},
-        {"-priority",         "200"},
-        {"-plugins",          "db"},
-        {"-workerThreads",    "8"},
-        {"-mmapSizeGB",       "1"},
-        {"-maxJournalSize",   "25000"},
-        {"-v",                ""},
+        {"-db", _dbName},
+        {"-serverHost", _serverAddr},
+        {"-nodeName", "bedrock_test"},
+        {"-nodeHost", "localhost:" + to_string(_nodePort)},
+        {"-controlPort", "localhost:" + to_string(_controlPort)},
+        {"-priority", "200"},
+        {"-plugins", "db"},
+        {"-workerThreads", "8"},
+        {"-mmapSizeGB", "1"},
+        {"-maxJournalSize", "25000"},
+        {"-v", ""},
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
-        {"-cacheSize",        "1000"},
+        {"-cacheSize", "1000"},
+        {"-parallelReplication", "true"},
     };
 
     // Set defaults.
