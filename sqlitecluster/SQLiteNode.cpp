@@ -120,7 +120,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
             // up-to-date. ASYNC transactions can start as soon as the DB is at `dbCountAtStart` (the same value that
             // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
-            uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calc("dbCountAtStart") : currentCount;
+            uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
             SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
                 SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount);
@@ -354,7 +354,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
         }
         string& query = get<0>(i.second);
         string& hash = get<1>(i.second);
-        int64_t dbCountAtStart = get<2>(i.second);
+        uint64_t dbCountAtStart = get<2>(i.second);
         SData transaction("BEGIN_TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
