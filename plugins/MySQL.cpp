@@ -83,11 +83,11 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += (string) "5.0.0"; // server version
+    handshake.payload += "5.0.0"s; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
-    handshake.payload += (string) "xxxxxxxx";     // auth_plugin_data_part_1
+    handshake.payload += "xxxxxxxx"s;     // auth_plugin_data_part_1
     handshake.payload += lenEncInt(0);            // filler
 
     uint32_t CLIENT_LONG_PASSWORD = 0x00000001;
@@ -107,20 +107,18 @@ string MySQLPacket::serializeHandshake() {
 
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
-    // Random challenge bytes client expects for mysql_native_password authentication.
-    // Hardcoded for now as proper authentication is not yet supported by Bedrock.
-    // Specific bytes are taken from example handshake packed provided by Oracle:
+    // The first byte is the length of the auth_plugin_name string. Followed by 10 NULL
+    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION 
+    // in our capabilities we can skip auth-plugin-data-part-2
     // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
     // (Initial Handshake Packet)
     uint8_t auth_plugin_data[] = {
         0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x40, 0x42, 0x68, 0x66, 0x48,
-        0x74, 0x2f, 0x2d, 0x34, 0x5e, 0x5a, 0x2c, 0x00 };
+        0x00, 0x00, 0x00 };
 
     SAppend(handshake.payload, auth_plugin_data, sizeof(auth_plugin_data));
 
-    handshake.payload += (string) "mysql_native_password"; // auth_plugin_name
-    handshake.payload += lenEncInt(0);                     // filler
+    handshake.payload += "mysql_native_password"s; // auth_plugin_name
 
     return handshake.serialize();
 }
