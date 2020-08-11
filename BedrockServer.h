@@ -314,14 +314,15 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SQLitePool& dbPool,
+    static void worker(const SData& args,
                        atomic<SQLiteNode::State>& _replicationState,
                        atomic<bool>& upgradeInProgress,
                        atomic<string>& leaderVersion,
                        BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                        BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
                        BedrockServer& server,
-                       int threadId);
+                       int threadId,
+                       int threadCount);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
@@ -349,7 +350,6 @@ class BedrockServer : public SQLiteServer {
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
     void _status(unique_ptr<BedrockCommand>& command);
     bool _isControlCommand(const unique_ptr<BedrockCommand>& command);
-    bool _isNonSecureControlCommand(const unique_ptr<BedrockCommand>& command);
     void _control(unique_ptr<BedrockCommand>& command);
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down

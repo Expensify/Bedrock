@@ -42,9 +42,9 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         // This exposes just enough to test the peer selection logic.
         int fd = mkstemp(filename);
         close(fd);
-        SQLitePool dbPool(10, filename, 1000000, 100, 5000, 0);
+        SQLite db(filename, 1000000, 100, 5000, -1, -1);
         TestServer server("");
-        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", "", 1, 1000000000, "1.0");
+        SQLiteNode testNode(server, db, "test", "localhost:19998", "", 1, 1000000000, "1.0");
 
         STable dummyParams;
         testNode.addPeer("peer1", "host1.fake:15555", dummyParams);

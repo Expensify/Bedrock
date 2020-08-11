@@ -12,7 +12,6 @@
 #include "plugins/MySQL.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
-#include <sys/resource.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -295,17 +294,6 @@ int main(int argc, char* argv[]) {
         SASSERT(SFileExists(args["-db"]));
     }
 
-    // Set our soft limit to the same as our hard limit to allow for more file handles.
-    struct rlimit limits;
-    if (!getrlimit(RLIMIT_NOFILE, &limits)) {
-        limits.rlim_cur = limits.rlim_max;
-        if (setrlimit(RLIMIT_NOFILE, &limits)) {
-            SERROR("Couldn't set FD limit");
-        }
-    } else {
-        SERROR("Couldn't get FD limit");
-    }
-
     // Log stack traces if we have unhandled exceptions.
     set_terminate(STerminateHandler);
 
@@ -363,6 +351,9 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
+
+    // Log how much time we spent in our main mutex.
+    SQLite::g_commitLock.log();
 
     // All done
     SINFO("Graceful process shutdown complete");

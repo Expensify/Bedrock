@@ -1,16 +1,16 @@
 #include "../BedrockClusterTester.h"
 
-struct LeadingTest : tpunit::TestFixture {
-    LeadingTest()
-        : tpunit::TestFixture("Leading",
-                              BEFORE_CLASS(LeadingTest::setup),
-                              AFTER_CLASS(LeadingTest::teardown),
-                              TEST(LeadingTest::clusterUp),
-                              TEST(LeadingTest::failover),
+struct MasteringTest : tpunit::TestFixture {
+    MasteringTest()
+        : tpunit::TestFixture("Mastering",
+                              BEFORE_CLASS(MasteringTest::setup),
+                              AFTER_CLASS(MasteringTest::teardown),
+                              TEST(MasteringTest::clusterUp),
+                              TEST(MasteringTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
-                              // TEST(LeadingTest::standDownTimeout),
-                              TEST(LeadingTest::restoreMaster),
-                              TEST(LeadingTest::synchronizing)
+                              // TEST(MasteringTest::standDownTimeout),
+                              TEST(MasteringTest::restoreMaster),
+                              TEST(MasteringTest::synchronizing)
                              ) { }
 
     BedrockClusterTester* tester;
@@ -136,10 +136,16 @@ struct LeadingTest : tpunit::TestFixture {
         vector<SData> requests(5000);
         int count = 0;
         for (auto& request : requests) {
-            request.methodLine = "Query";
-            request["writeConsistency"] = "ASYNC";
-            request["query"] = "INSERT INTO test VALUES(" + SQ(SRandom::rand64() % 1'000'000) + ", '');";
-            count++;
+            if (!count) {
+                request.methodLine = "Query";
+                request["writeConsistency"] = "ASYNC";
+                request["query"] = "INSERT INTO test VALUES(12345, '');";
+                count++;
+            } else {
+                request.methodLine = "Query";
+                request["writeConsistency"] = "ASYNC";
+                request["query"] = "UPDATE test SET value = 'xxx" + to_string(count++) + "' WHERE id = 12345;";
+            }
         }
 
         // Send these all to leader.
@@ -185,4 +191,4 @@ struct LeadingTest : tpunit::TestFixture {
         ASSERT_TRUE(wasFollowing);
     }
 
-} __LeadingTest;
+} __MasteringTest;

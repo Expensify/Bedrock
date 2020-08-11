@@ -34,24 +34,13 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
-atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
-
-SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name,
-                       const string& host, const string& peerList, int priority, uint64_t firstTimeout,
-                       const string& version, const bool useParallelReplication)
+SQLiteNode::SQLiteNode(SQLiteServer& server, SQLite& db, const string& name, const string& host,
+                       const string& peerList, int priority, uint64_t firstTimeout, const string& version)
     : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _dbPool(dbPool),
-      _db(_dbPool.getBase()),
-      _commitState(CommitState::UNINITIALIZED),
-      _server(server),
-      _stateChangeCount(0),
+      _db(db), _commitState(CommitState::UNINITIALIZED), _server(server), _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
-      _handledCommitCount(0),
-      _replicationThreadsShouldExit(false),
-      _replicationThreadCount(0),
-      _useParallelReplication(useParallelReplication)
+      _handledCommitCount(0)
     {
-
     SASSERT(priority >= 0);
     _originalPriority = priority;
     _priority = -1;
@@ -61,15 +50,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     _stateTimeout = STimeNow() + firstTimeout;
     _version = version;
 
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
     // Get this party started
     _changeState(SEARCHING);
-
-    // Make sure we get notified when the DB needs to checkpoint.
-    _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
-    _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
 
     // Add any peers.
     list<string> parsedPeerList = SParseList(peerList);
@@ -90,135 +72,6 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
-
-    // Don't notify these, they won't exist anymore.
-    _dbPool.getBase().removeCheckpointListener(_localCommitNotifier);
-    _dbPool.getBase().removeCheckpointListener(_leaderCommitNotifier);
-}
-
-void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db) {
-    // Initialize each new thread with a new number.
-    SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
-
-    // Allow the DB handle to be returned regardless of how this function exits.
-    SQLiteScopedHandle dbScope(node._dbPool, db);
-
-    bool goSearchingOnExit = false;
-    {
-        // Make sure when this thread exits we decrement our thread counter.
-        ScopedDecrement<decltype(_replicationThreadCount)> decrementer(node._replicationThreadCount);
-
-        // These make the logging macros work, as they expect these variables to be in scope.
-        auto _state = node._state.load();
-        string name = node.name;
-        SINFO("Replicate thread started: " << command.methodLine);
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            uint64_t newCount = command.calcU64("NewCount");
-            uint64_t currentCount = newCount - 1;
-
-            // Transactions are either ASYNC or QUORUM. QUORUM transactions can only start when the DB is completely
-            // up-to-date. ASYNC transactions can start as soon as the DB is at `dbCountAtStart` (the same value that
-            // the DB was at when the transaction began on leader).
-            bool quorum = !SStartsWith(command["ID"], "ASYNC");
-            uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
-            while (true) {
-                SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount);
-                if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
-                    // This should be impossible.
-                    SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
-                } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
-                    // Success case.
-                    break;
-                } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                    SINFO("_localCommitNotifier.waitFor canceled early, returning.");
-                    return;
-                } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Just waiting again.");
-                    continue;
-                } else {
-                    SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
-                }
-            }
-
-            try {
-                int result = -1;
-                int attemptCount = 1;
-                while (result != SQLITE_OK) {
-                    if (attemptCount > 1) {
-                        SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
-                    }
-                    SINFO("BEGIN for commit " << newCount);
-                    node.handleBeginTransaction(db, peer, command);
-
-                    // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
-                    // skip this, we did it above) to enforce that commits are in the same order on followers as on
-                    // leader.
-                    if (!quorum) {
-                        // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
-                        // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
-                        // on the checkpoint if these are started out of order.
-                        //
-                        // Let's see if we can verify that happened.
-                        // Yes, we get this line logged 4 times from four threads as their last activity and then:
-                        // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                        SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
-                        SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
-                        if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                            SINFO("Replication canceled mid-transaction, stopping.");
-                            db.rollback();
-                            break;
-                        } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                            SINFO("Checkpoint required in replication, restarting transaction.");
-                            db.rollback();
-                            continue;
-                        }
-                    }
-
-                    // Ok, almost ready.
-                    node.handlePrepareTransaction(db, peer, command);
-
-                    // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
-                    // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
-                    // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
-                    // a commit after us will be able to commit, either.
-                    SQLiteSequentialNotifier::RESULT waitResult = node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"));
-                    if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                        SINFO("Replication canceled mid-transaction, stopping.");
-                        db.rollback();
-                        break;
-                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                        SINFO("Checkpoint required in replication, restarting transaction.");
-                        db.rollback();
-                        continue;
-                    }
-
-                    // Leader says it has committed this transaction, so we can too.
-                    ++attemptCount;
-                    result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                    if (result != SQLITE_OK) {
-                        db.rollback();
-                    }
-                }
-
-                // Notify that we've succeeded (it actually also notifies if we were canceled, but that's fine).
-                node._localCommitNotifier.notifyThrough(db.getCommitCount());
-            } catch (const SException& e) {
-                SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
-                goSearchingOnExit = true;
-                db.rollback();
-            }
-        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
-            // FOLLOWING.
-            goSearchingOnExit = true;
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            node._leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
-        }
-    }
-    if (goSearchingOnExit) {
-        node._changeState(SEARCHING);
-    }
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency)
@@ -352,14 +205,13 @@ void SQLiteNode::_sendOutstandingTransactions() {
         if (id <= _lastSentTransactionID) {
             continue;
         }
-        string& query = get<0>(i.second);
-        string& hash = get<1>(i.second);
-        uint64_t dbCountAtStart = get<2>(i.second);
+        string& query = i.second.first;
+        string& hash = i.second.second;
         SData transaction("BEGIN_TRANSACTION");
+        transaction["Command"] = "ASYNC";
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
-        transaction["dbCountAtStart"] = to_string(dbCountAtStart);
         transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
         _sendToAllPeers(transaction, true); // subscribed only
@@ -378,20 +230,18 @@ void SQLiteNode::_sendOutstandingTransactions() {
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
-    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
-    // Send this to the leader
-    SASSERT(_leadPeer);
-
     // If the leader is currently standing down, we won't escalate, we'll give the command back to the caller.
-    if(_leadPeer.load()->state == STANDINGDOWN) {
+    if(_leadPeer->state == STANDINGDOWN) {
         SINFO("Asked to escalate command but leader standing down, letting server retry.");
         _server.acceptCommand(move(command), false);
         return;
     }
 
-    SASSERTEQUALS(_leadPeer.load()->state, LEADING);
+    // Send this to the leader
+    SASSERT(_leadPeer);
+    SASSERTEQUALS(_leadPeer->state, LEADING);
     uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer.load()->name
+    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer->name
           << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our leader.
@@ -701,7 +551,6 @@ bool SQLiteNode::update() {
         if (currentLeader && _priority < highestPriorityPeer->calc("Priority") && currentLeader->state == LEADING) {
             // Subscribe to the leader
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
             _leaderVersion = (*_leadPeer)["Version"];
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
@@ -927,12 +776,12 @@ bool SQLiteNode::update() {
             if (numFullDenied || (everybodyResponded && !consistentEnough)) {
                 SINFO("Rolling back transaction because everybody currently connected responded "
                       "but not consistent enough. Num denied: " << numFullDenied << ". Follower write failure?");
+                _db.rollback();
 
                 // Notify everybody to rollback
                 SData rollback("ROLLBACK_TRANSACTION");
                 rollback.set("ID", _lastSentTransactionID + 1);
                 _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
-                _db.rollback();
 
                 // Finished, but failed.
                 _commitState = CommitState::FAILED;
@@ -945,6 +794,8 @@ bool SQLiteNode::update() {
 
                 // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
+                    _db.rollback();
+
                     // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
                     // roll back.
                     SINFO("[performance] Conflict committing " << consistencyLevelNames[_commitConsistency]
@@ -952,7 +803,6 @@ bool SQLiteNode::update() {
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
-                    _db.rollback();
 
                     // Finished, but failed.
                     _commitState = CommitState::FAILED;
@@ -1015,6 +865,10 @@ bool SQLiteNode::update() {
             // We'll send the commit count to peers.
             uint64_t commitCount = _db.getCommitCount();
 
+            // If there was nothing changed, then we shouldn't have anything to commit.
+            // Except that this is allowed right now.
+            // SASSERT(!_db.getUncommittedQuery().empty());
+
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
             SASSERT(_db.prepare());
@@ -1026,9 +880,8 @@ bool SQLiteNode::update() {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
-            transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
             if (_commitConsistency == ASYNC) {
-                transaction.set("ID", "ASYNC_" + to_string(_lastSentTransactionID + 1));
+                transaction["ID"] = "ASYNC_" + to_string(_lastSentTransactionID + 1);
             } else {
                 transaction.set("ID", _lastSentTransactionID + 1);
             }
@@ -1125,7 +978,6 @@ bool SQLiteNode::update() {
         if (STimeNow() > _stateTimeout) {
             // Give up
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to leader and re-SEARCHING.");
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _reconnectPeer(_leadPeer);
             _leadPeer = nullptr;
             _changeState(SEARCHING);
@@ -1143,6 +995,7 @@ bool SQLiteNode::update() {
     ///
     case FOLLOWING:
         SASSERTWARN(!_syncPeer);
+        SASSERT(_leadPeer);
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
@@ -1156,8 +1009,7 @@ bool SQLiteNode::update() {
         // If the leader stops leading (or standing down), we'll go SEARCHING, which allows us to look for a new
         // leader. We don't want to go searching before that, because we won't know when leader is done sending its
         // final transactions.
-        SASSERT(_leadPeer);
-        if (_leadPeer.load()->state != LEADING && _leadPeer.load()->state != STANDINGDOWN) {
+        if (_leadPeer->state != LEADING && _leadPeer->state != STANDINGDOWN) {
             // Leader stepping down
             SHMMM("Leader stepping down, re-queueing commands.");
 
@@ -1547,7 +1399,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             transaction.set("NewCount", commitCount + 1);
             transaction.set("NewHash", _db.getUncommittedHash());
             transaction.set("leaderSendTime", to_string(STimeNow()));
-            transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
             transaction.set("ID", _lastSentTransactionID + 1);
             transaction.content = _db.getUncommittedQuery();
             _sendToPeer(peer, transaction);
@@ -1575,26 +1426,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _changeState(SEARCHING);
             throw e;
         }
-    } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-        if (_useParallelReplication) {
-            if (_replicationThreadsShouldExit) {
-                SINFO("Discarding replication message, stopping FOLLOWING");
-            } else {
-                auto threadID = _replicationThreadCount.fetch_add(1);
-                SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                thread(replicate, ref(*this), peer, message, ref(_dbPool.get())).detach();
-                SINFO("Done spawning concurrent replicate thread: " << threadID);
-            }
-        } else {
-            if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
-                handleSerialBeginTransaction(peer, message);
-            } else if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
-                handleSerialCommitTransaction(peer, message);
-            } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-                handleSerialRollbackTransaction(peer, message);
-            }
-        }
-    } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
+    } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
+        handleBeginTransaction(peer, message);
+    } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
+               SIEquals(message.methodLine, "DENY_TRANSACTION")) {
         // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
         // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
         // update loop.
@@ -1644,6 +1479,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                   << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
                   << e.what() << "', ignoring.");
         }
+    } else if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
+        handleCommitTransaction(peer, message);
+    } else if (SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+        handleRollbackTransaction(peer, message);
     } else if (SIEquals(message.methodLine, "ESCALATE")) {
         // ESCALATE: Sent to the leader by a follower. Is processed like a normal command, except when complete an
         // ESCALATE_RESPONSE is sent to the follower that initiated the escalation.
@@ -1815,10 +1654,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // transaction response and re-SEARCH
         PHMMM("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SUBSCRIBING || _state == FOLLOWING);
-        {
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
-            _leadPeer = nullptr;
-        }
+        _leadPeer = nullptr;
         if (!_db.getUncommittedHash().empty()) {
             // We're in the middle of a transaction and waiting for it to
             // approve or deny, but we'll never get its response.  Roll it
@@ -1832,6 +1668,13 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         // If there were escalated commands, give them back to the server to retry, unless it looks like they were in
         // progress when the leader died, in which case we say they completed with a 500 Error.
         for (auto& cmd : _escalatedCommandMap) {
+            // If this isn't set, the leader hadn't actually started processing this, and we can re-queue it.
+            if (!cmd.second->transaction.methodLine.empty()) {
+                PWARN("Aborting escalated command '" << cmd.second->request.methodLine << "' (" << cmd.second->id
+                      << ") in transaction state '" << cmd.second->transaction.methodLine << "'");
+                cmd.second->complete = true;
+                cmd.second->response.methodLine = "500 Aborted";
+            }
             _server.acceptCommand(move(cmd.second), false);
         }
         _escalatedCommandMap.clear();
@@ -1936,36 +1779,14 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
     unique_lock<decltype(stateMutex)> lock(stateMutex);
 
+    // We send any unsent transactions here before we finish switching states. Normally, this does nothing, unless
+    // we're switching down from LEADING or STANDINGDOWN, but we need to make sure these are all sent to the new
+    // leader before we complete the transition.
+    _sendOutstandingTransactions();
+
     // Did we actually change _state?
     State oldState = _state;
-
-    // Not sure if this is entirely adequate.
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
     if (newState != oldState) {
-        // If we were following, and now we're not, we give up an any replications.
-        if (oldState == FOLLOWING) {
-            _replicationThreadsShouldExit = true;
-            SINFO("[NOTIFY] _replicationThreadsShouldExit");
-            _localCommitNotifier.cancel();
-            _leaderCommitNotifier.cancel();
-
-            // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
-            // which would probably be "better" but introduces yet more state variables for a state that we're rarely
-            // in, and so I've left it out for the time being.
-            while (_replicationThreadCount) {
-                usleep(10'000);
-            }
-
-            // Done exiting. Reset so that we can resume FOLLOWING in the future.
-            _replicationThreadsShouldExit = false;
-
-            // Guaranteed to be done right now.
-            _localCommitNotifier.reset();
-            _leaderCommitNotifier.reset();
-        }
-
         // Depending on the state, set a timeout
         SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
         uint64_t timeout = 0;
@@ -1998,16 +1819,11 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _commitState = CommitState::FAILED;
                 _db.rollback();
             }
-
-            // We send any unsent transactions here before we finish switching states, we need to make sure these are
-            // all sent to the new leader before we complete the transition.
-            _sendOutstandingTransactions();
         }
 
         // Clear some state if we can
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = nullptr;
         }
 
@@ -2190,11 +2006,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         // Transaction succeeded, commit and go to the next
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit();
-
-        // Should work here.
-        SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-        _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
         if (_db.getCommittedHash() != commit["Hash"])
             STHROW("potential hash mismatch");
         --commitsRemaining;
@@ -2348,208 +2159,7 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
     return false;
 }
 
-void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
-    // **FIXME**: What happens if LEADER steps down before sending BEGIN?
-    // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
-    if (_state != FOLLOWING) {
-        STHROW("not following");
-    }
-    if (!db.getUncommittedHash().empty()) {
-        STHROW("already in a transaction");
-    }
-
-    // This block repeats until we successfully commit, or error out of it.
-    // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-    // because the second try will be blocked on the checkpoint.
-    while (true) {
-        try {
-            SINFO("Waiting for checkpoint");
-            db.waitForCheckpoint();
-            SINFO("Done waiting for checkpoint");
-            if (!db.beginTransaction()) {
-                STHROW("failed to begin transaction");
-            }
-
-            // Inside transaction; get ready to back out on error
-            if (!db.writeUnmodified(message.content)) {
-                STHROW("failed to write transaction");
-            }
-
-            // Done, break out of `while (true)`.
-            break;
-        } catch (const SException& e) {
-            // Something caused a write failure.
-            db.rollback();
-
-            // This is a fatal error case.
-            break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
-        }
-    }
-}
-
-void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
-    // **FIXME**: What happens if LEADER steps down before sending BEGIN?
-    // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
-    bool success = true;
-    uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
-    uint64_t followerDequeueTimestamp = STimeNow();
-    if (!message.isSet("ID")) {
-        STHROW("missing ID");
-    }
-    if (!message.isSet("NewCount")) {
-        STHROW("missing NewCount");
-    }
-    if (!message.isSet("NewHash")) {
-        STHROW("missing NewHash");
-    }
-    if (_state != FOLLOWING) {
-        STHROW("not following");
-    }
-
-    // This block repeats until we successfully commit, or error out of it.
-    // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-    // because the second try will be blocked on the checkpoint.
-    while (true) {
-        try {
-            // This will grab the commit lock and hold it until we commit or rollback.
-            if (!db.prepare()) {
-                STHROW("failed to prepare transaction");
-            }
-
-            // Done, break out of `while (true)`.
-            break;
-        } catch (const SException& e) {
-            // Something caused a write failure.
-            success = false;
-            db.rollback();
-
-            // This is a fatal error case.
-            break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
-        }
-    }
-
-    // Are we participating in quorum?
-    if (_priority) {
-        // If the ID is /ASYNC_\d+/, no need to respond, leader will ignore it anyway.
-        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-        if (!SStartsWith(message["ID"], "ASYNC_")) {
-            // Not a permafollower, approve the transaction
-            PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << message["NewHash"] << ").");
-            SData response(verb);
-            response["NewCount"] = SToStr(db.getCommitCount() + 1);
-            response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
-            response["ID"] = message["ID"];
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
-            if (!_leadPeer) {
-                STHROW("no leader?");
-            }
-            _sendToPeer(_leadPeer, response);
-        } else {
-            PINFO("Skipping " << verb << " for ASYNC command.");
-        }
-    } else {
-        PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
-              << ") for command '" << message["Command"] << "', but a permafollower -- keeping quiet.");
-    }
-    uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
-    uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
-    float transitTimeMS = (float)transitTimeUS / 1000.0;
-    float applyTimeMS = (float)applyTimeUS / 1000.0;
-    PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
-          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
-}
-
-int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
-    // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be committed to the database. This completes a given distributed transaction.
-    if (_state != FOLLOWING) {
-        STHROW("not following");
-    }
-    if (db.getUncommittedHash().empty()) {
-        STHROW("no outstanding transaction");
-    }
-    if (commandCommitCount != db.getCommitCount() + 1) {
-        STHROW("commit count mismatch. Expected: " + to_string(commandCommitCount) + ", but would actually be: "
-              + to_string(db.getCommitCount() + 1));
-    }
-    if (commandCommitHash != db.getUncommittedHash()) {
-        STHROW("hash mismatch:" + commandCommitHash + "!=" + db.getUncommittedHash() + ";");
-    }
-
-    SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-    int result = db.commit();
-    if (result == SQLITE_BUSY_SNAPSHOT) {
-        // conflict, bail out early.
-        return result;
-    }
-
-    // Clear the list of committed transactions. We're following, so we don't need to send these.
-    db.getCommittedTransactions();
-
-    // Log timing info.
-    // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
-    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-    uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
-                                                         commitElapsed, rollbackElapsed);
-    SINFO("Committed follower transaction #" << to_string(commandCommitCount) << " (" << commandCommitHash << ") in "
-          << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
-          << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
-          << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
-          << rollbackElapsed / 1000 << "ms)");
-    _handledCommitCount++;
-    if (_handledCommitCount % 5000 == 0) {
-        // Log how much time we've spent handling 5000 commits.
-        auto timingInfo = _syncTimer.getStatsAndReset();
-        SINFO("Over the last 5000 commits, (total: " << _handledCommitCount << ") " << timingInfo.second.count() << "/" << timingInfo.first.count() << "ms spent in replication");
-    }
-
-    return result;
-}
-
-void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-    // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be rolled back. This completes a given distributed transaction.
-    if (!message.isSet("ID")) {
-        STHROW("missing ID");
-    }
-    if (_state != FOLLOWING) {
-        STHROW("not following");
-    }
-    if (db.getUncommittedHash().empty()) {
-        SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
-    }
-    db.rollback();
-}
-
-SQLiteNode::State SQLiteNode::leaderState() const {
-    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
-    if (_leadPeer) {
-        return _leadPeer.load()->state;
-    }
-    return State::UNKNOWN;
-}
-
-
-void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) {
+void SQLiteNode::handleBeginTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
@@ -2645,6 +2255,16 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
               << ") for command '" << message["Command"] << "', but a permafollower -- keeping quiet.");
     }
 
+    // Check our escalated commands and see if it's one being processed
+    auto commandIt = _escalatedCommandMap.find(message["ID"]);
+    if (commandIt != _escalatedCommandMap.end()) {
+        // We're starting the transaction for a given command; note this
+        // so we know that this command might be corrupted if the leader
+        // crashes.
+        SINFO("Leader is processing our command " << message["ID"] << " (" << message["Command"] << ")");
+        commandIt->second->transaction = message;
+    }
+
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
     float transitTimeMS = (float)transitTimeUS / 1000.0;
@@ -2653,7 +2273,7 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 }
 
-void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message) {
+void SQLiteNode::handleCommitTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
     // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
@@ -2689,6 +2309,15 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
           << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
           << rollbackElapsed / 1000 << "ms)");
 
+    // Look up in our escalated commands and see if it's one being processed
+    auto commandIt = _escalatedCommandMap.find(message["ID"]);
+    if (commandIt != _escalatedCommandMap.end()) {
+        // We're starting the transaction for a given command; note this so we know that this command might be
+        // corrupted if the leader crashes.
+        SINFO("Leader has committed in response to our command " << message["ID"]);
+        commandIt->second->transaction = message;
+    }
+
     _handledCommitCount++;
     if (_handledCommitCount % 5000 == 0) {
         // Log how much time we've spent handling 5000 commits.
@@ -2697,7 +2326,7 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
     }
 }
 
-void SQLiteNode::handleSerialRollbackTransaction(Peer* peer, const SData& message) {
+void SQLiteNode::handleRollbackTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);
     // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be rolled back. This completes a given distributed transaction.
@@ -2711,5 +2340,20 @@ void SQLiteNode::handleSerialRollbackTransaction(Peer* peer, const SData& messag
         SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
     }
     _db.rollback();
+
+    // Look through our escalated commands and see if it's one being processed
+    auto commandIt = _escalatedCommandMap.find(message["ID"]);
+    if (commandIt != _escalatedCommandMap.end()) {
+        // We're starting the transaction for a given command; note this so we know that this command might be
+        // corrupted if the leader crashes.
+        SINFO("Leader has rolled back in response to our command " << message["ID"]);
+        commandIt->second->transaction = message;
+    }
 }
 
+SQLiteNode::State SQLiteNode::leaderState() const {
+    if (_leadPeer) {
+        return _leadPeer->state;
+    }
+    return State::UNKNOWN;
+}

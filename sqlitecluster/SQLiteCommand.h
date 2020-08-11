@@ -28,6 +28,9 @@ class SQLiteCommand {
     // need to  respond to them.
     string id;
 
+    // Used inside SQLiteNode
+    SData transaction;
+
     // Original request, immutable.
     const SData request;
 
