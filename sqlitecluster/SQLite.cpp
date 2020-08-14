@@ -42,6 +42,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
+    _logQueries(false),
     _isDeterministicQuery(false),
     _pageLoggingEnabled(pageLoggingEnabled),
     _currentTransactionAttemptCount(-1),
@@ -248,6 +249,7 @@ SQLite::SQLite(const SQLite& from) :
     _queryCount(0),
     _cacheHits(0),
     _useCache(false),
+    _logQueries(false),
     _isDeterministicQuery(false),
     _pageLoggingEnabled(from._pageLoggingEnabled),
     _currentTransactionAttemptCount(-1),
@@ -492,7 +494,7 @@ void SQLite::waitForCheckpoint() {
     lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
+bool SQLite::beginTransaction(bool useCache, bool logQueries, const string& transactionName) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -518,8 +520,10 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
+    _queryLog.clear();
     _transactionName = transactionName;
     _useCache = useCache;
+    _logQueries = logQueries;
     _queryCount = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
@@ -622,6 +626,9 @@ bool SQLite::read(const string& query, SQResult& result) {
             return true;
         }
     }
+    if (_logQueries) {
+        _queryLog.push_back(query);
+    }
     _isDeterministicQuery = true;
     bool queryResult = !SQuery(_db, "read only query", query, result);
     if (_useCache && _isDeterministicQuery && queryResult) {
@@ -698,6 +705,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;
+    if (_logQueries) {
+        _queryLog.push_back(query);
+    }
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
 
@@ -871,6 +881,7 @@ int SQLite::commit() {
         _sharedData->blockNewTransactionsCV.notify_one();
         g_commitLock.unlock();
         _queryCache.clear();
+        _queryLog.clear();
         if (_useCache) {
             SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
         }
@@ -879,6 +890,15 @@ int SQLite::commit() {
         _cacheHits = 0;
         _dbCountAtStart = 0;
     } else {
+        // Log queries only on conflict.
+        if (_logQueries) {
+            int i = 0;
+            for (auto& q : _queryLog) {
+                i++;
+                SINFO("CONFLICT query " << i << " of " << _queryLog.size() << ": " << q);
+            }
+        }
+        _queryLog.clear();
         if (_currentTransactionAttemptCount != -1) {
             string logLine = SWHEREAMI  + "[row-level-locking] transaction attempt:" +
                              to_string(_currentTransactionAttemptCount) + " conflict, will roll back.";
@@ -966,10 +986,12 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
+    _queryLog.clear();
     if (_useCache) {
         SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
     }
     _useCache = false;
+    _logQueries = false;
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;

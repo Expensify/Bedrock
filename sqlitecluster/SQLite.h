@@ -74,7 +74,7 @@ class SQLite {
 
     // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false, const string& transactionName = "");
+    bool beginTransaction(bool useCache = false, bool logQueries = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -443,6 +443,7 @@ class SQLite {
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
     map<string, SQResult> _queryCache;
+    list<string> _queryLog;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
     int64_t _queryCount;
@@ -452,6 +453,9 @@ class SQLite {
 
     // Set to true if the cache is in use for this transaction.
     bool _useCache;
+
+    // Enable logging all of the queries that happened during a transaction when a conflict occurs.
+    bool _logQueries;
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;
