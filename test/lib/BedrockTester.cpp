@@ -103,6 +103,7 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
+        {"-logConflictingQueriesInCommands", "idcollision"},
     };
 
     // Set defaults.

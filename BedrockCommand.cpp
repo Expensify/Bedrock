@@ -6,13 +6,14 @@ atomic<size_t> BedrockCommand::_commandCount(0);
 
 const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 
-BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin) :
+BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_) :
     SQLiteCommand(move(baseCommand)),
     priority(PRIORITY_NORMAL),
     peekCount(0),
     processCount(0),
     repeek(false),
     crashIdentifyingValues(*this),
+    escalateImmediately(escalateImmediately_),
     _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))

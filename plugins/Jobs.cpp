@@ -25,6 +25,13 @@ const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "RequeueJobs",
 };
 
+bool BedrockJobsCommand::canEscalateImmediately(SQLiteCommand& baseCommand) {
+    // This is a set of commands that we will escalate to leader without waiting. It's not intended to be complete but
+    // to solve the biggest issues we have with slow escalation times (i.e., this is usually a problem for `FinishJob`).
+    static const set<string> commands = {"CreateJob", "CreateJobs", "FinishJob"};
+    return commands.count(baseCommand.request.methodLine);
+}
+
 // Disable noop mode for the lifetime of this object.
 class scopedDisableNoopMode {
   public:
@@ -45,7 +52,7 @@ class scopedDisableNoopMode {
 };
 
 BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin) :
-  BedrockCommand(move(baseCommand), plugin)
+  BedrockCommand(move(baseCommand), plugin, canEscalateImmediately(baseCommand))
 {
 }
 
@@ -103,6 +110,74 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsParentJobIDState", "jobs", "( parentJobID, state ) WHERE parentJobID != 0", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsStatePriorityNextRunName", "jobs", "( state, priority, nextRun, name )", false, !BedrockPlugin_Jobs::isLive));
+
+    // The above is out-of-date. Currently we have:
+    // jobsName
+    // jobsStatePriorityNextRunName
+    // jobsParentJobIDState
+    // jobsPriorityNextRunManualSmartScanMerchantAndCategory
+    // jobsPriorityNextRunManualSmartScanAmountAndCurrency
+    // jobsPriorityNextRunManualSmartScanCreated
+    // jobsPriorityNextRunManualSmartScanIsCash
+    // jobsPriorityNextRunManualSmartScan
+    // jobsManualSmartscanReceiptID
+    // jobsPriorityNextRunWWWProd
+    //
+    // The most problematic two, from a conflict perspective, seem to be:
+    // 44527 (read/write page; part of db index jobs.jobsPriorityNextRunWWWProd;
+    // 17672 (read/write page; part of db index jobs.jobsStatePriorityNextRunName;
+    // 6070 (read-only page; part of db index jobs.jobsPriorityNextRunWWWProd;
+    // 4932 (read-only page; part of db index jobs.jobsStatePriorityNextRunName;
+    // 4117 (read/write page; part of db table jobs;
+    //  440 (read/write page; part of db index jobs.jobsName;
+    //  402 (read-only page; part of db index jobs.jobsName;
+    //  288 (read-only page; part of db index jobs.jobsParentJobIDState;
+    //  259 (read/write page; part of db index jobs.jobsParentJobIDState;
+
+    // Potential sharded indexes:
+    //CREATE INDEX jobsPriorityNextRunWWWProd0 ON jobs (priority, nextRun) WHERE jobID%4=0 AND state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*';
+    //CREATE INDEX jobsPriorityNextRunWWWProd1 ON jobs (priority, nextRun) WHERE jobID%4=1 AND state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*';
+    //CREATE INDEX jobsPriorityNextRunWWWProd2 ON jobs (priority, nextRun) WHERE jobID%4=2 AND state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*';
+    //CREATE INDEX jobsPriorityNextRunWWWProd3 ON jobs (priority, nextRun) WHERE jobID%4=3 AND state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*';
+    //
+    // Production indexes
+    // name,sql
+    // sqlite_autoindex_cache_1,
+    // sqlite_autoindex_smartScanAgents_1,
+    // jobsName,"CREATE INDEX jobsName    ON jobs ( name    )"
+    // chatsAccountID,"CREATE INDEX chatsAccountID ON chats (accountID)"
+    // chatsStateID,"CREATE INDEX chatsStateID ON chats (stateID)"
+    // chatEventsStateID,"CREATE INDEX chatEventsStateID ON chatEvents (stateID)"
+    // chatInputChatID,"CREATE INDEX chatInputChatID ON chatInputs (chatID)"
+    // chatInputStateID,"CREATE INDEX chatInputStateID ON chatInputs (stateID)"
+    // chatInputToStateID,"CREATE INDEX chatInputToStateID ON chatInputs (toStateID)"
+    // jobsStatePriorityNextRunName,"CREATE INDEX jobsStatePriorityNextRunName ON jobs ( state, priority, nextRun, name )"
+    // chatsChannel,"CREATE INDEX chatsChannel ON chats (channel)"
+    // merchantsToMccMerchantOccurrences,"CREATE INDEX merchantsToMccMerchantOccurrences ON merchantsToMcc( merchant, occurrences )"
+    // merchantsToMccMerchantMcc,"CREATE INDEX merchantsToMccMerchantMcc         ON merchantsToMcc( merchant, mcc )"
+    // chatFragmentInputID,"CREATE INDEX chatFragmentInputID ON chatFragments ( inputID )"
+    // chatFragmentEventID,"CREATE INDEX chatFragmentEventID ON chatFragments ( eventID )"
+    // chatFragmentFragment,"CREATE INDEX chatFragmentFragment ON chatFragments ( fragment )"
+    // chatInputHistoryCreated,"CREATE INDEX chatInputHistoryCreated ON chatInputs(JSON_type(message, '$.history'), created, JSON_EXTRACT(message, '$.history'))"
+    // chatInputEventIDCreated,"CREATE INDEX chatInputEventIDCreated ON chatInputs (eventID, created)"
+    // jobsParentJobIDState,"CREATE INDEX jobsParentJobIDState ON jobs ( parentJobID, state ) WHERE parentJobID != 0"
+    // chatFragmentID,"CREATE INDEX chatFragmentID ON chatFragments2 ( fragmentID )"
+    // chatFragmentString,"CREATE INDEX chatFragmentString ON chatFragments2 ( fragmentString )"
+    // chatFragmentMapFragmentID,"CREATE INDEX chatFragmentMapFragmentID ON chatFragmentMap (fragmentID)"
+    // jobsPriorityNextRunManualSmartScanMerchantAndCategory,"CREATE INDEX jobsPriorityNextRunManualSmartScanMerchantAndCategory ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanMerchantAndCategory*'"
+    // jobsPriorityNextRunManualSmartScanAmountAndCurrency,"CREATE INDEX jobsPriorityNextRunManualSmartScanAmountAndCurrency ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanAmountAndCurrency*'"
+    // jobsPriorityNextRunManualSmartScanCreated,"CREATE INDEX jobsPriorityNextRunManualSmartScanCreated ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanCreated*'"
+    // jobsPriorityNextRunManualSmartScanIsCash,"CREATE INDEX jobsPriorityNextRunManualSmartScanIsCash ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanIsCash*'"
+    // jobsPriorityNextRunManualSmartScan,"CREATE INDEX jobsPriorityNextRunManualSmartScan ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScan*'"
+    // jobsManualSmartscanReceiptID,"CREATE INDEX jobsManualSmartscanReceiptID ON jobs ( JSON_EXTRACT(data, '$.receiptID') ) WHERE JSON_VALID(data) AND name GLOB 'manual/SmartScan*'"
+    // jobsPriorityNextRunWWWProd,"CREATE INDEX jobsPriorityNextRunWWWProd ON jobs (priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*'"
+    // chatInputEventID,"CREATE INDEX chatInputEventID ON chatInputs (eventID)"
+    // agentActivityTimestamp,"CREATE INDEX agentActivityTimestamp ON agentActivity ( timestamp )"
+    // chatInputParticipantCreated,"CREATE INDEX chatInputParticipantCreated ON chatInputs (JSON_TYPE(message, '$.participants'), created, JSON_EXTRACT(message, '$.participants'))"
+    //
+    // Notes:
+    // It seems almost certain that it's the "priority" portion of the index that's conflicting, as it's re-used
+    // everywhere with only a few valid values, so almost everything will hit it. But let me look at nextRun.
 }
 
 // ==========================================================================

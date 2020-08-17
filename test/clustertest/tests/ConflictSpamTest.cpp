@@ -48,7 +48,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
-                SData query("idcollision b");
+                SData query("idcollision");
                 // What if we throw in a few sync commands?
                 query["writeConsistency"] = "ASYNC";
                 int cmdNum = cmdID.fetch_add(1);
@@ -98,7 +98,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 vector<SData> requests;
                 int numCommands = 200;
                 for (int j = 0; j < numCommands; j++) {
-                    SData query("idcollision b2");
+                    SData query("idcollision");
                     query["writeConsistency"] = "ASYNC";
                     int cmdNum = cmdID.fetch_add(1);
                     query["value"] = "sent-" + to_string(cmdNum);

@@ -39,4 +39,6 @@ class BedrockJobsCommand : public BedrockCommand {
     void _validatePriority(const int64_t priority);
 
     bool mockRequest;
+
+    bool canEscalateImmediately(SQLiteCommand& baseCommand);
 };

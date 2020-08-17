@@ -80,6 +80,7 @@ TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path "test/main.cpp")
+CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
