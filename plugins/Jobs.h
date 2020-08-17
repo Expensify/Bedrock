@@ -40,5 +40,6 @@ class BedrockJobsCommand : public BedrockCommand {
 
     bool mockRequest;
 
+    // Returns true if this command can skip straight to leader for process.
     bool canEscalateImmediately(SQLiteCommand& baseCommand);
 };
