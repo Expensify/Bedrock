@@ -224,6 +224,11 @@ void BedrockServer::sync(const SData& args,
     unique_ptr<BedrockCommand> command(nullptr);
     bool committingCommand = false;
 
+    // Timer for S_poll performance logging. Created outside the loop because it's cumulative.
+    chrono::steady_clock::time_point start = chrono::steady_clock::now();
+    chrono::steady_clock::duration pollTime(0);
+    size_t pollCount = 0;
+
     // We hold a lock here around all operations on `syncNode`, because `SQLiteNode` isn't thread-safe, but we need
     // `BedrockServer` to be able to introspect it in `Status` requests. We hold this lock at all times until exiting
     // our main loop, aside from when we're waiting on `poll`. Strictly, we could hold this lock less often, but there
@@ -337,7 +342,27 @@ void BedrockServer::sync(const SData& args,
 
         // Unlock our mutex, poll, and re-lock when finished.
         server._syncMutex.unlock();
+        auto timeBeforePoll = chrono::steady_clock::now();
         S_poll(fdm, max(nextActivity, now) - now);
+        auto timeAfterPoll = chrono::steady_clock::now();
+        pollTime += timeAfterPoll - timeBeforePoll;
+        pollCount++;
+
+        // Every 10s, log and reset.
+        if (timeAfterPoll > (start + 10s)) {
+            auto totalTime = timeAfterPoll - start;
+
+            char buffer[10] = {0};
+            snprintf(buffer, 10, "%.2f", (static_cast<double>(pollTime.count()) / static_cast<double>(totalTime.count()) * 100.0));
+
+            SINFO("[performance] sync poll loop timing: "
+                  << chrono::duration_cast<chrono::milliseconds>(totalTime).count() << " ms elapsed. "
+                  << chrono::duration_cast<chrono::milliseconds>(pollTime).count() << " ms in poll. "
+                  << buffer << "% in poll, called " << pollCount << " times.");
+            pollTime = chrono::microseconds::zero();
+            start = timeAfterPoll;
+            pollCount = 0;
+        }
         server._syncMutex.lock();
 
         // And set our next timeout for 1 second from now.
