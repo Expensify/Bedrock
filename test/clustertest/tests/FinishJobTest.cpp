@@ -35,7 +35,7 @@ struct FinishJobTest : tpunit::TestFixture {
     void tearDown() {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
     }
 
     void tearDownClass() {
@@ -93,7 +93,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "Query";
         command["query"] = "UPDATE jobs SET state = 'RUNNING' WHERE jobID = " + childID + ";";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Finish the child
         command.clear();
@@ -154,7 +154,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "Query";
         command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Finish a child
         command.clear();
@@ -245,7 +245,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "Query";
         command["Query"] = "DELETE FROM jobs WHERE parentJobID = " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NOT NULL;";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Finish the parent
         command.clear();
