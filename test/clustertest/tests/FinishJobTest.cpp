@@ -107,27 +107,27 @@ struct FinishJobTest : tpunit::TestFixture {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
-        STable response = tester->executeWaitVerifyContentTable(command);
+        STable response = clusterTester->getTester(0).executeWaitVerifyContentTable(command);
         string parentID = response["jobID"];
 
         // Get the parent
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Create the children
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child_finished";
         command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
+        response = clusterTester->getTester(0).executeWaitVerifyContentTable(command);
         string finishedChildID = response["jobID"];
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "child_cancelled";
         command["parentJobID"] = parentID;
-        response = tester->executeWaitVerifyContentTable(command);
+        response = clusterTester->getTester(0).executeWaitVerifyContentTable(command);
         string cancelledChildID = response["jobID"];
         command.clear();
 
@@ -135,20 +135,20 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Get the child job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Cancel a child
         // if this goes 2nd this doesn't requeue the parent job
         command.clear();
         command.methodLine = "CancelJob";
         command["jobID"] = cancelledChildID;
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // The parent may have other children from mock requests, delete them.
         command.clear();
@@ -160,7 +160,7 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishedChildID;
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Confirm the parent is set to QUEUED
         SQResult result;
@@ -171,11 +171,11 @@ struct FinishJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "parent";
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
-        tester->executeWaitVerifyContent(command);
+        clusterTester->getTester(0).executeWaitVerifyContent(command);
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         clusterTester->getTester(0).readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
