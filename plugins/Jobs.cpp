@@ -25,6 +25,13 @@ const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "RequeueJobs",
 };
 
+bool BedrockJobsCommand::canEscalateImmediately(SQLiteCommand& baseCommand) {
+    // This is a set of commands that we will escalate to leader without waiting. It's not intended to be complete but
+    // to solve the biggest issues we have with slow escalation times (i.e., this is usually a problem for `FinishJob`).
+    static const set<string> commands = {"CreateJob", "CreateJobs", "FinishJob"};
+    return commands.count(baseCommand.request.methodLine);
+}
+
 // Disable noop mode for the lifetime of this object.
 class scopedDisableNoopMode {
   public:
@@ -45,7 +52,7 @@ class scopedDisableNoopMode {
 };
 
 BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin) :
-  BedrockCommand(move(baseCommand), plugin)
+  BedrockCommand(move(baseCommand), plugin, canEscalateImmediately(baseCommand))
 {
 }
 

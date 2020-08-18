@@ -34,7 +34,7 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
     // Constructor to initialize via a request object (by move).
-    BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
+    BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_ = false);
 
     // Destructor.
     virtual ~BedrockCommand();
@@ -145,6 +145,10 @@ class BedrockCommand : public SQLiteCommand {
 
     // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
+
+    // True if this command should be escalated immediately. This can be true for any command that does all of its work
+    // in `process` instead of peek, as it will always be escalated to leader 
+    const bool escalateImmediately;
 
   protected:
     // The plugin that owns this command.
