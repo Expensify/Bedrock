@@ -873,6 +873,38 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 usleep(10000);
             }
 
+            // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
+            // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
+            // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
+            // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
+            // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
+            // our state right before we commit.
+            SQLiteNode::State state = replicationState.load();
+
+            // If we're following, any incomplete commands can be immediately escalated to leader. This saves the work
+            // of a `peek` operation, but more importantly, it skips any delays that might be introduced by waiting in
+            // the `_futureCommitCommands` queue.
+            if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
+                SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
+                syncNodeQueuedCommands.push(move(command));
+                continue;
+            }
+
+            // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
+            // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
+            // original caller will need to re-send the request. This can happen if we're leading, and receive a
+            // request from a peer, but then we stand down from leading. The SQLiteNode should have already told its
+            // peers that their outstanding requests were being canceled at this point.
+            if (command->initiatingPeerID && !(state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN)) {
+                SWARN("Found " << (command->complete ? "" : "in") << "complete " << "command "
+                      << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
+
+                // If the command was processed, tell the plugin we couldn't send the response.
+                command->handleFailedReply();
+
+                continue;
+            }
+
             // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
             // command that was escalated to leader), we'll set it aside for later processing. When the sync node
             // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
@@ -891,29 +923,6 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 if (newQueueSize > 100) {
                     SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
                 }
-                continue;
-            }
-
-            // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
-            // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
-            // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
-            // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
-            // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
-            // our state right before we commit.
-            SQLiteNode::State state = replicationState.load();
-
-            // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
-            // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
-            // original caller will need to re-send the request. This can happen if we're leading, and receive a
-            // request from a peer, but then we stand down from leading. The SQLiteNode should have already told its
-            // peers that their outstanding requests were being canceled at this point.
-            if (command->initiatingPeerID && !(state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN)) {
-                SWARN("Found " << (command->complete ? "" : "in") << "complete " << "command "
-                      << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
-
-                // If the command was processed, tell the plugin we couldn't send the response.
-                command->handleFailedReply();
-
                 continue;
             }
 
