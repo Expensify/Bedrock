@@ -6,6 +6,41 @@
 class SQLiteCommand;
 class SQLiteServer;
 
+// Diagnostic class for timing what fraction of time happens in certain blocks.
+class AutoTimer {
+  public:
+    AutoTimer(string name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) { }
+    void start() { _instanceStart = chrono::steady_clock::now(); };
+    void stop() {
+        auto stopped = chrono::steady_clock::now();
+        _countedTime += stopped - _instanceStart;
+        if (stopped > (_intervalStart + 10s)) {
+            auto counted = chrono::duration_cast<chrono::milliseconds>(_countedTime).count();
+            auto elapsed = chrono::duration_cast<chrono::milliseconds>(stopped - _intervalStart).count();
+            static char percent[10] = {0};
+            snprintf(percent, 10, "%.2f", static_cast<double>(counted) / static_cast<double>(elapsed) * 100.0);
+            SINFO("[performance] AutoTimer (" << _name << "): " << counted << "/" << elapsed << " ms timed, " << percent << "%");
+            _intervalStart = stopped;
+            _countedTime = chrono::microseconds::zero();
+        }
+    };
+
+  private:
+    string _name;
+    chrono::steady_clock::time_point _intervalStart;
+    chrono::steady_clock::time_point _instanceStart;
+    chrono::steady_clock::duration _countedTime;
+};
+
+class AutoTimerTime {
+  public:
+    AutoTimerTime(AutoTimer& t) : _t(t) { _t.start(); }
+    ~AutoTimerTime() { _t.stop(); }
+
+  private:
+    AutoTimer& _t;
+};
+
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPNode {
     // This exists to expose internal state to a test harness. It is not used otherwise.
@@ -275,4 +310,8 @@ class SQLiteNode : public STCPNode {
       private:
         CounterType& _counter;
     };
+
+    AutoTimer _multiReplicationThreadSpawn;
+    AutoTimer _legacyReplication;
+    AutoTimer _onMessageTimer;
 };
