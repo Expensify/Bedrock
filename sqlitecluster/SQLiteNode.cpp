@@ -49,7 +49,10 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
       _handledCommitCount(0),
       _replicationThreadsShouldExit(false),
       _replicationThreadCount(0),
-      _useParallelReplication(useParallelReplication)
+      _useParallelReplication(useParallelReplication),
+      _multiReplicationThreadSpawn("multi-replication"),
+      _legacyReplication("legacy-replication"),
+      _onMessageTimer("_onMESSAGE")
     {
 
     SASSERT(priority >= 0);
@@ -1190,6 +1193,7 @@ bool SQLiteNode::update() {
 // Messages
 // Here are the messages that can be received, and how a cluster node will respond to each based on its state:
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
+    AutoTimerTime time(_onMessageTimer);
     SASSERT(peer);
     SASSERTWARN(!message.empty());
     SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
@@ -1582,10 +1586,12 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+                AutoTimerTime time(_multiReplicationThreadSpawn);
                 thread(replicate, ref(*this), peer, message, ref(_dbPool.get())).detach();
                 SINFO("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {
+            AutoTimerTime time(_legacyReplication);
             if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
                 handleSerialBeginTransaction(peer, message);
             } else if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
