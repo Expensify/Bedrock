@@ -226,6 +226,8 @@ void BedrockServer::sync(const SData& args,
 
     // Timer for S_poll performance logging. Created outside the loop because it's cumulative.
     AutoTimer pollTimer("sync thread poll");
+    AutoTimer postPollTimer("sync thread PostPoll");
+    AutoTimer escalateLoopTimer("sync thread escalate loop");
 
     // We hold a lock here around all operations on `syncNode`, because `SQLiteNode` isn't thread-safe, but we need
     // `BedrockServer` to be able to introspect it in `Status` requests. We hold this lock at all times until exiting
@@ -356,6 +358,7 @@ void BedrockServer::sync(const SData& args,
             SAUTOPREFIX(SData());
 
             // Process any activity in our plugins.
+            AutoTimerTime postPollTime(postPollTimer);
             server._postPollPlugins(fdm, nextActivity);
             server._syncNode->postPoll(fdm, nextActivity);
             syncNodeQueuedCommands.postPoll(fdm);
@@ -566,6 +569,7 @@ void BedrockServer::sync(const SData& args,
             // part of this issue as well.
             size_t escalateCount = 0;
             while (++escalateCount < 1000) {
+                AutoTimerTime escalateTime(escalateLoopTimer);
 
                 // Reset this to blank. This releases the existing command and allows it to get cleaned up.
                 command = unique_ptr<BedrockCommand>(nullptr);
