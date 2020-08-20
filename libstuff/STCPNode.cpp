@@ -4,7 +4,7 @@
 #define SLOGPREFIX "{" << name << "} "
 
 STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_) {
+    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"), _sConsumeFrontTimer("STCPNode::SConsumeFront") {
 }
 
 STCPNode::~STCPNode() {
@@ -205,9 +205,12 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     }
 
                     // Process all messages
-                    while ((messageSize = message.deserialize(peer->s->recvBuffer))) {
+                    while (AutoTimerTime(_deserializeTimer), (messageSize = message.deserialize(peer->s->recvBuffer))) {
                         // Which message?
-                        SConsumeFront(peer->s->recvBuffer, messageSize);
+                        {
+                            AutoTimerTime consumeTime(_sConsumeFrontTimer);
+                            SConsumeFront(peer->s->recvBuffer, messageSize);
+                        }
                         if (peer->s->recvBuffer.size() > 10'000) {
                             // Make in known if this buffer ever gets big.
                             PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 
