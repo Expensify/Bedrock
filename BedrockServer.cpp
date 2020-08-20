@@ -637,6 +637,8 @@ void BedrockServer::sync(const SData& args,
                             // This is sort of the "default" case after checking if this command was complete above. If so,
                             // we'll fall through to calling processCommand below.
                         } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                            // Finished with this.
+                            server._syncThreadCommitMutex.unlock();
                             SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
                             server._commandQueue.push(move(command));
                             break;
