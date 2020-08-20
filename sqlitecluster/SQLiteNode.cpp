@@ -52,7 +52,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
       _useParallelReplication(useParallelReplication),
       _multiReplicationThreadSpawn("multi-replication"),
       _legacyReplication("legacy-replication"),
-      _onMessageTimer("_onMESSAGE")
+      _onMessageTimer("_onMESSAGE"),
+      _escalateTimer("escalateCommand")
     {
 
     SASSERT(priority >= 0);
@@ -381,6 +382,7 @@ void SQLiteNode::_sendOutstandingTransactions() {
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
+    AutoTimerTime time(_escalateTimer);
     lock_guard<mutex> leadPeerLock(_leadPeerMutex);
     // Send this to the leader
     SASSERT(_leadPeer);
