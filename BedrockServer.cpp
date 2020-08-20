@@ -686,6 +686,8 @@ void BedrockServer::sync(const SData& args,
                             server._reply(command);
                         }
                     } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        // Finished with this.
+                        server._syncThreadCommitMutex.unlock();
                         SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
                         server._commandQueue.push(move(command));
                         break;
