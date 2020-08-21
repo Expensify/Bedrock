@@ -136,27 +136,9 @@ class SString : public string {
 
 typedef map<string, SString, STableComp> STable;
 
-class SFastBuffer {
-  public:
-    SFastBuffer();
-    SFastBuffer(const string& str);
-    bool empty() const;
-    size_t size() const;
-    const char* c_str() const;
-    void clear();
-    void consumeFront(size_t bytes);
-    void append(const char* buffer, size_t bytes);
-    SFastBuffer& operator+=(const string& rhs);
-    SFastBuffer& operator=(const string& rhs);
-
-  private:
-    size_t front;
-    string data;
-};
-ostream& operator<<(ostream& os, const SFastBuffer& buf);
-
 // Libstuff items that must be included here so they are available in the rest of the file
 // However it must be included AFTER the STable definition because SData uses this type.
+#include "SFastBuffer.h"
 #include "SData.h"
 
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a

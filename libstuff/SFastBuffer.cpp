@@ -20,7 +20,7 @@ const char* SFastBuffer::c_str() const {
 
 void SFastBuffer::clear() {
     front = 0;
-    data = "";
+    data.clear();
 }
 
 void SFastBuffer::consumeFront(size_t bytes) {

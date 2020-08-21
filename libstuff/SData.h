@@ -1,7 +1,5 @@
 #pragma once
 
-#include "libstuff.h"
-
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
 // and a content body.
