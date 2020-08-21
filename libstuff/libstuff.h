@@ -413,6 +413,7 @@ bool SIsValidSQLiteDateModifier(const string& modifier);
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
 bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(const string& haystack, const string& needle);
+bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
 inline bool SEndsWith(const string& haystack, const string& needle) {
     if (needle.size() > haystack.size())
         return false;

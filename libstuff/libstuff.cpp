@@ -251,13 +251,15 @@ bool SIContains(const string& lhs, const string& rhs) {
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
-bool SStartsWith(const string& haystack, const string& needle)
-{
-    if (needle.size() > haystack.size()) {
+bool SStartsWith(const string& haystack, const string& needle) {
+    return SStartsWith(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+}
+
+bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize) {
+    if (haystackSize < needleSize) {
         return false;
     }
-
-    return strncmp(haystack.c_str(), needle.c_str(), needle.size()) == 0;
+    return strncmp(haystack, needle, needleSize) == 0;
 }
 
 // --------------------------------------------------------------------------
@@ -1901,8 +1903,8 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
         return true; // Assume no error, still alive
     }
 
-    // TODO: This copies.
-    if (SStartsWith(sendBuffer.c_str(), "ESCALATE_RESPONSE")) {
+    // 17 is size of "ESCALATE_RESPONSE".
+    if (SStartsWith(sendBuffer.c_str(), sendBuffer.size(), "ESCALATE_RESPONSE", 17)) {
         SData tempData;
         tempData.deserialize(sendBuffer);
         string id = tempData["id"];
