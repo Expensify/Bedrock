@@ -251,13 +251,15 @@ bool SIContains(const string& lhs, const string& rhs) {
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
-bool SStartsWith(const string& haystack, const string& needle)
-{
-    if (needle.size() > haystack.size()) {
+bool SStartsWith(const string& haystack, const string& needle) {
+    return SStartsWith(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+}
+
+bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize) {
+    if (haystackSize < needleSize) {
         return false;
     }
-
-    return strncmp(haystack.c_str(), needle.c_str(), needle.size()) == 0;
+    return strncmp(haystack, needle, needleSize) == 0;
 }
 
 // --------------------------------------------------------------------------
@@ -577,27 +579,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 
     // Return if we were able to find anything
     return (!component.empty());
-}
-
-// --------------------------------------------------------------------------
-void SConsumeFront(string& lhs, ssize_t num) {
-    ssize_t lhsSize = lhs.size();
-    SASSERT(lhsSize >= num);
-    // If nothing, early out
-    if (!num){
-        return;
-    }
-
-    // If we're clearing the whole thing, early out
-    if (lhsSize == num) {
-        // Clear and done
-        lhs.clear();
-        return;
-    }
-
-    // Otherwise, move the end forward and resize
-    memmove(&lhs[0], &lhs[num], lhsSize - num);
-    lhs.resize(lhsSize - num);
 }
 
 // --------------------------------------------------------------------------
@@ -1105,7 +1086,7 @@ string SComposePOST(const STable& nameValueMap) {
         }
     }
     string outStr = out.str();
-    SConsumeBack(outStr, 1); // Trim off trailing '&'
+    outStr.resize(outStr.size() - 1); // Trim off trailing '&'
     return outStr;
 }
 
@@ -1870,7 +1851,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
-bool S_recvappend(int s, string& recvBuffer) {
+bool S_recvappend(int s, SFastBuffer& recvBuffer) {
     SASSERT(s);
     // Figure out if this socket is blocking or non-blocking
     int flags = fcntl(s, F_GETFL);
@@ -1915,14 +1896,15 @@ bool S_recvappend(int s, string& recvBuffer) {
 }
 
 // --------------------------------------------------------------------------
-bool S_sendconsume(int s, string& sendBuffer) {
+bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty()) {
         return true; // Assume no error, still alive
     }
 
-    if (SStartsWith(sendBuffer, "ESCALATE_RESPONSE")) {
+    // 17 is size of "ESCALATE_RESPONSE".
+    if (SStartsWith(sendBuffer.c_str(), sendBuffer.size(), "ESCALATE_RESPONSE", 17)) {
         SData tempData;
         tempData.deserialize(sendBuffer);
         string id = tempData["id"];
@@ -1942,7 +1924,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
-        SConsumeFront(sendBuffer, numSent);
+        sendBuffer.consumeFront(numSent);
     }
 
     // Exit if no error

@@ -637,6 +637,8 @@ void BedrockServer::sync(const SData& args,
                             // This is sort of the "default" case after checking if this command was complete above. If so,
                             // we'll fall through to calling processCommand below.
                         } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                            // Finished with this.
+                            server._syncThreadCommitMutex.unlock();
                             SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
                             server._commandQueue.push(move(command));
                             break;
@@ -684,6 +686,8 @@ void BedrockServer::sync(const SData& args,
                             server._reply(command);
                         }
                     } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        // Finished with this.
+                        server._syncThreadCommitMutex.unlock();
                         SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
                         server._commandQueue.push(move(command));
                         break;
@@ -1618,7 +1622,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } else {
                     // Otherwise, handle any default request.
                     int requestSize = request.deserialize(s->recvBuffer);
-                    SConsumeFront(s->recvBuffer, requestSize);
+                    s->recvBuffer.consumeFront(requestSize);
                     deserializationAttempts++;
                 }
 
