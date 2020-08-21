@@ -24,11 +24,19 @@ void SFastBuffer::clear() {
 }
 
 void SFastBuffer::consumeFront(size_t bytes) {
-    // TODO
+    front += bytes;
 }
 
 void SFastBuffer::append(const char* buffer, size_t bytes) {
-    // TODO
+    // If we're going to need to realloc anyway, because we're running out of space in our string, condense everything
+    // to the front.
+    if (data.capacity() > 50000 && data.capacity() - data.size() > bytes) {
+        data = string(data, front);
+        front = 0;
+    }
+
+    // And do the append.
+    data.append(buffer, bytes);
 }
 
 SFastBuffer& SFastBuffer::operator+=(const string& rhs) {

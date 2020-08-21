@@ -155,9 +155,6 @@ class SFastBuffer {
 };
 ostream& operator<<(ostream& os, const SFastBuffer& buf);
 
-// Stream management
-//void SConsumeFront(SFastBuffer& lhs, ssize_t num);
-
 // Libstuff items that must be included here so they are available in the rest of the file
 // However it must be included AFTER the STable definition because SData uses this type.
 #include "SData.h"
@@ -496,14 +493,6 @@ string SReplace(const string& value, const string& find, const string& replace);
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
 int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
-
-inline void SConsumeBack(string& lhs, int num) {
-    if ((int)lhs.size() <= num) {
-        lhs.clear();
-    } else {
-        lhs = lhs.substr(0, lhs.size() - num);
-    }
-}
 inline void SAppend(string& lhs, const void* rhs, int num) {
     size_t oldSize = lhs.size();
     lhs.resize(oldSize + num);

@@ -580,29 +580,6 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-/*
-void SConsumeFront(SFastBuffer& lhs, ssize_t num) {
-    ssize_t lhsSize = lhs.size();
-    SASSERT(lhsSize >= num);
-    // If nothing, early out
-    if (!num){
-        return;
-    }
-
-    // If we're clearing the whole thing, early out
-    if (lhsSize == num) {
-        // Clear and done
-        lhs.clear();
-        return;
-    }
-
-    // Otherwise, move the end forward and resize
-    memmove(&lhs[0], &lhs[num], lhsSize - num);
-    lhs.resize(lhsSize - num);
-}
-*/
-
-// --------------------------------------------------------------------------
 SData SParseCommandLine(int argc, char* argv[]) {
     // Just walk across and find the pairs, then put the remainder on a list in the method
     SData results;
@@ -1107,7 +1084,7 @@ string SComposePOST(const STable& nameValueMap) {
         }
     }
     string outStr = out.str();
-    SConsumeBack(outStr, 1); // Trim off trailing '&'
+    outStr.resize(outStr.size() - 1); // Trim off trailing '&'
     return outStr;
 }
 
