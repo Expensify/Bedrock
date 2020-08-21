@@ -4,7 +4,8 @@
 #define SLOGPREFIX "{" << name << "} "
 
 STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"), _sConsumeFrontTimer("STCPNode::SConsumeFront") {
+    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"),
+      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append") {
 }
 
 STCPNode::~STCPNode() {
@@ -103,7 +104,10 @@ void STCPNode::prePoll(fd_map& fdm) {
 
 void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
-    STCPServer::postPoll(fdm);
+    {
+        AutoTimerTime appendTime(_sAppendTimer);
+        STCPServer::postPoll(fdm);
+    }
 
     // Accept any new peers
     Socket* socket = nullptr;

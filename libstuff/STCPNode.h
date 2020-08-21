@@ -139,4 +139,5 @@ struct STCPNode : public STCPServer {
 
     AutoTimer _deserializeTimer;
     AutoTimer _sConsumeFrontTimer;
+    AutoTimer _sAppendTimer;
 };
