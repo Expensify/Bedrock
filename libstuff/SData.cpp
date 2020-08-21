@@ -96,7 +96,7 @@ int SData::deserialize(const string& fromString) {
     return (SParseHTTP(fromString, methodLine, nameValueMap, content));
 }
 
-int SData::deserialize(const char* buffer, int length) {
+int SData::deserialize(const char* buffer, size_t length) {
     return (SParseHTTP(buffer, length, methodLine, nameValueMap, content));
 }
 
