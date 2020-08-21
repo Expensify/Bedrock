@@ -33,14 +33,19 @@ void SFastBuffer::consumeFront(size_t bytes) {
 }
 
 void SFastBuffer::append(const char* buffer, size_t bytes) {
-    // If we're going to need to realloc anyway, because we're running out of space in our string, condense everything
-    // to the front.
-    if (data.capacity() - data.size() > bytes) {
-        data = string(data, front);
+    // When will we condense everything to the front of the buffer?
+    // When:
+    // 1. We're not already at the front of the buffer (this implies there's data in the buffer).
+    // 2. We'd have to do a realloc anyway because our buffer's not big enough for the new string (including the
+    //    existing consumed buffer).
+    if (front && (data.capacity() - data.size() < bytes)) {
+        memmove(&data[0], data.data() + front, size());
+        data.resize(size());
         front = 0;
     }
 
-    // And do the append.
+    // After the resize, we may or may not need to actually reallocate. We can append now and let the string
+    // implementation decide if it needs more room.
     data.append(buffer, bytes);
 }
 
