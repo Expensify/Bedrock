@@ -25,12 +25,17 @@ void SFastBuffer::clear() {
 
 void SFastBuffer::consumeFront(size_t bytes) {
     front += bytes;
+
+    // If we're all caught up, reset.
+    if (front == data.size()) {
+        clear();
+    }
 }
 
 void SFastBuffer::append(const char* buffer, size_t bytes) {
     // If we're going to need to realloc anyway, because we're running out of space in our string, condense everything
     // to the front.
-    if (data.capacity() > 50000 && data.capacity() - data.size() > bytes) {
+    if (data.capacity() - data.size() > bytes) {
         data = string(data, front);
         front = 0;
     }
