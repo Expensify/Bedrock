@@ -42,6 +42,11 @@ void SFastBuffer::append(const char* buffer, size_t bytes) {
         memmove(&data[0], data.data() + front, size());
         data.resize(size());
         front = 0;
+
+        // If the capacity is more than 4x the size we need, let's give some memory back.
+        if (data.capacity() > (data.size() + bytes) * 4) {
+            data.shrink_to_fit();
+        }
     }
 
     // After the resize, we may or may not need to actually reallocate. We can append now and let the string
