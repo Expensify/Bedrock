@@ -306,7 +306,7 @@ bool STCPManager::Socket::sendBufferEmpty() {
 
 string STCPManager::Socket::sendBufferCopy() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    return sendBuffer;
+    return string(sendBuffer.c_str(), sendBuffer.size());
 }
 
 void STCPManager::Socket::setSendBuffer(const string& buffer) {

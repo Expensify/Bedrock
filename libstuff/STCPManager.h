@@ -12,7 +12,7 @@ struct STCPManager {
         // Attributes
         int s;
         sockaddr_in addr;
-        string recvBuffer;
+        SBuffer recvBuffer;
         atomic<State> state;
         bool connectFailure;
         uint64_t openTime;
@@ -41,7 +41,7 @@ struct STCPManager {
         // This is private because it's used by our synchronized send() functions. This requires it to only
         // be accessed through the (also synchronized) wrapper functions above.
         // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
-        string sendBuffer;
+        SBuffer sendBuffer;
 
         // Each socket owns it's own SX509 object to avoid thread-safety issues reading/writing the same certificate in
         // the underlying ssl code. Once assigned, the socket owns this object for it's lifetime and will delete it

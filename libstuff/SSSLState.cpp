@@ -146,13 +146,13 @@ void SSSLClose(SSSLState* ssl) {
 }
 
 // --------------------------------------------------------------------------
-int SSSLSend(SSSLState* ssl, const string& buffer) {
+int SSSLSend(SSSLState* ssl, const SBuffer& buffer) {
     // Unwind the buffer
     return SSSLSend(ssl, buffer.c_str(), (int)buffer.size());
 }
 
 // --------------------------------------------------------------------------
-bool SSSLSendConsume(SSSLState* ssl, string& sendBuffer) {
+bool SSSLSendConsume(SSSLState* ssl, SBuffer& sendBuffer) {
     // Send as much as we can and return whether the socket is still alive
     if (sendBuffer.empty()) {
         return true;
@@ -161,7 +161,7 @@ bool SSSLSendConsume(SSSLState* ssl, string& sendBuffer) {
     // Nothing to send, assume we're alive
     int numSent = SSSLSend(ssl, sendBuffer);
     if (numSent > 0) {
-        SConsumeFront(sendBuffer, numSent);
+        sendBuffer.consumeFront(numSent);
     }
 
     // Done!
@@ -184,7 +184,7 @@ bool SSSLSendAll(SSSLState* ssl, const string& buffer) {
 }
 
 // --------------------------------------------------------------------------
-bool SSSLRecvAppend(SSSLState* ssl, string& recvBuffer) {
+bool SSSLRecvAppend(SSSLState* ssl, SBuffer& recvBuffer) {
     // Keep trying to receive as long as we can
     SASSERT(ssl);
     char buffer[1024 * 16];

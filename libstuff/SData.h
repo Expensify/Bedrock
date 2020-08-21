@@ -96,6 +96,11 @@ struct SData {
     // Deserializes from a buffer
     int deserialize(const char* buffer, int length);
 
+    // Deserializes from an SBuffer.
+    int deserialize(const SBuffer& buf) {
+        return deserialize(buf.c_str(), buf.size());
+    }
+
     // Initializes a new SData from a string. If there is no content provided,
     // then use whatever data remains in the string as the content
     // **DEPRECATED** Use the constructor that handles this instead.

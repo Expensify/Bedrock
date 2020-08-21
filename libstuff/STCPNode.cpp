@@ -127,7 +127,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 // What is it?
-                SConsumeFront(socket->recvBuffer, messageSize);
+                socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we asssociate with a peer?
                     bool foundIt = false;
@@ -209,7 +209,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         // Which message?
                         {
                             AutoTimerTime consumeTime(_sConsumeFrontTimer);
-                            SConsumeFront(peer->s->recvBuffer, messageSize);
+                            peer->s->recvBuffer.consumeFront(messageSize);
                         }
                         if (peer->s->recvBuffer.size() > 10'000) {
                             // Make in known if this buffer ever gets big.

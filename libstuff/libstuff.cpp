@@ -580,7 +580,8 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-void SConsumeFront(string& lhs, ssize_t num) {
+/*
+void SConsumeFront(SBuffer& lhs, ssize_t num) {
     ssize_t lhsSize = lhs.size();
     SASSERT(lhsSize >= num);
     // If nothing, early out
@@ -599,6 +600,7 @@ void SConsumeFront(string& lhs, ssize_t num) {
     memmove(&lhs[0], &lhs[num], lhsSize - num);
     lhs.resize(lhsSize - num);
 }
+*/
 
 // --------------------------------------------------------------------------
 SData SParseCommandLine(int argc, char* argv[]) {
@@ -1870,7 +1872,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
-bool S_recvappend(int s, string& recvBuffer) {
+bool S_recvappend(int s, SBuffer& recvBuffer) {
     SASSERT(s);
     // Figure out if this socket is blocking or non-blocking
     int flags = fcntl(s, F_GETFL);
@@ -1915,14 +1917,15 @@ bool S_recvappend(int s, string& recvBuffer) {
 }
 
 // --------------------------------------------------------------------------
-bool S_sendconsume(int s, string& sendBuffer) {
+bool S_sendconsume(int s, SBuffer& sendBuffer) {
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty()) {
         return true; // Assume no error, still alive
     }
 
-    if (SStartsWith(sendBuffer, "ESCALATE_RESPONSE")) {
+    // TODO: This copies.
+    if (SStartsWith(sendBuffer.c_str(), "ESCALATE_RESPONSE")) {
         SData tempData;
         tempData.deserialize(sendBuffer);
         string id = tempData["id"];
@@ -1942,7 +1945,7 @@ bool S_sendconsume(int s, string& sendBuffer) {
         << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
-        SConsumeFront(sendBuffer, numSent);
+        sendBuffer.consumeFront(numSent);
     }
 
     // Exit if no error

@@ -136,6 +136,33 @@ class SString : public string {
 
 typedef map<string, SString, STableComp> STable;
 
+class SBuffer {
+  public:
+    SBuffer();
+    SBuffer(const string& str);
+    bool empty() const;
+    size_t size() const;
+    const char* c_str() const;
+    void clear();
+    void consumeFront(size_t bytes);
+    void append(const char* buffer, size_t bytes);
+    SBuffer& operator+=(const string& rhs);
+    SBuffer& operator=(const string& rhs);
+
+  private:
+    char* front;
+    string data;
+};
+
+ostream& operator<<(ostream& os, const SBuffer& buf)
+{
+    os << buf.c_str();
+    return os;
+}
+
+// Stream management
+//void SConsumeFront(SBuffer& lhs, ssize_t num);
+
 // Libstuff items that must be included here so they are available in the rest of the file
 // However it must be included AFTER the STable definition because SData uses this type.
 #include "SData.h"
@@ -475,8 +502,6 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
 int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
 
-// Stream management
-void SConsumeFront(string& lhs, ssize_t num);
 inline void SConsumeBack(string& lhs, int num) {
     if ((int)lhs.size() <= num) {
         lhs.clear();
@@ -617,13 +642,13 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts);
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
-bool S_recvappend(int s, string& recvBuffer);
-inline string S_recv(int s) {
-    string buf;
+bool S_recvappend(int s, SBuffer& recvBuffer);
+inline SBuffer S_recv(int s) {
+    SBuffer buf;
     S_recvappend(s, buf);
     return buf;
 }
-bool S_sendconsume(int s, string& sendBuffer);
+bool S_sendconsume(int s, SBuffer& sendBuffer);
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
