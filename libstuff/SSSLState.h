@@ -19,11 +19,11 @@ struct SSSLState {
 // SSL helpers
 extern SSSLState* SSSLOpen(int s, SX509* x509);
 extern int SSSLSend(SSSLState* ssl, const char* buffer, int length);
-extern int SSSLSend(SSSLState* ssl, const SBuffer& buffer);
-extern bool SSSLSendConsume(SSSLState* ssl, SBuffer& sendBuffer);
+extern int SSSLSend(SSSLState* ssl, const SFastBuffer& buffer);
+extern bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer);
 extern bool SSSLSendAll(SSSLState* ssl, const string& buffer);
 extern int SSSLRecv(SSSLState* ssl, char* buffer, int length);
-extern bool SSSLRecvAppend(SSSLState* ssl, SBuffer& recvBuffer);
+extern bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer);
 extern string SSSLGetState(SSSLState* ssl);
 extern void SSSLShutdown(SSSLState* ssl);
 extern void SSSLClose(SSSLState* ssl);

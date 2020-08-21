@@ -96,8 +96,8 @@ struct SData {
     // Deserializes from a buffer
     int deserialize(const char* buffer, int length);
 
-    // Deserializes from an SBuffer.
-    int deserialize(const SBuffer& buf) {
+    // Deserializes from an SFastBuffer.
+    int deserialize(const SFastBuffer& buf) {
         return deserialize(buf.c_str(), buf.size());
     }
 

@@ -581,7 +581,7 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 
 // --------------------------------------------------------------------------
 /*
-void SConsumeFront(SBuffer& lhs, ssize_t num) {
+void SConsumeFront(SFastBuffer& lhs, ssize_t num) {
     ssize_t lhsSize = lhs.size();
     SASSERT(lhsSize >= num);
     // If nothing, early out
@@ -1872,7 +1872,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
-bool S_recvappend(int s, SBuffer& recvBuffer) {
+bool S_recvappend(int s, SFastBuffer& recvBuffer) {
     SASSERT(s);
     // Figure out if this socket is blocking or non-blocking
     int flags = fcntl(s, F_GETFL);
@@ -1917,7 +1917,7 @@ bool S_recvappend(int s, SBuffer& recvBuffer) {
 }
 
 // --------------------------------------------------------------------------
-bool S_sendconsume(int s, SBuffer& sendBuffer) {
+bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty()) {

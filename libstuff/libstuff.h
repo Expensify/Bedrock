@@ -136,32 +136,27 @@ class SString : public string {
 
 typedef map<string, SString, STableComp> STable;
 
-class SBuffer {
+class SFastBuffer {
   public:
-    SBuffer();
-    SBuffer(const string& str);
+    SFastBuffer();
+    SFastBuffer(const string& str);
     bool empty() const;
     size_t size() const;
     const char* c_str() const;
     void clear();
     void consumeFront(size_t bytes);
     void append(const char* buffer, size_t bytes);
-    SBuffer& operator+=(const string& rhs);
-    SBuffer& operator=(const string& rhs);
+    SFastBuffer& operator+=(const string& rhs);
+    SFastBuffer& operator=(const string& rhs);
 
   private:
-    char* front;
+    size_t front;
     string data;
 };
-
-ostream& operator<<(ostream& os, const SBuffer& buf)
-{
-    os << buf.c_str();
-    return os;
-}
+ostream& operator<<(ostream& os, const SFastBuffer& buf);
 
 // Stream management
-//void SConsumeFront(SBuffer& lhs, ssize_t num);
+//void SConsumeFront(SFastBuffer& lhs, ssize_t num);
 
 // Libstuff items that must be included here so they are available in the rest of the file
 // However it must be included AFTER the STable definition because SData uses this type.
@@ -642,13 +637,13 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts);
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
-bool S_recvappend(int s, SBuffer& recvBuffer);
-inline SBuffer S_recv(int s) {
-    SBuffer buf;
+bool S_recvappend(int s, SFastBuffer& recvBuffer);
+inline SFastBuffer S_recv(int s) {
+    SFastBuffer buf;
     S_recvappend(s, buf);
     return buf;
 }
-bool S_sendconsume(int s, SBuffer& sendBuffer);
+bool S_sendconsume(int s, SFastBuffer& sendBuffer);
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
