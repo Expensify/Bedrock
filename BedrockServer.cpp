@@ -1622,7 +1622,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } else {
                     // Otherwise, handle any default request.
                     int requestSize = request.deserialize(s->recvBuffer);
-                    SConsumeFront(s->recvBuffer, requestSize);
+                    s->recvBuffer.consumeFront(requestSize);
                     deserializationAttempts++;
                 }
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "libstuff.h"
-
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
 // and a content body.
@@ -94,7 +92,12 @@ struct SData {
     int deserialize(const string& rhs);
 
     // Deserializes from a buffer
-    int deserialize(const char* buffer, int length);
+    int deserialize(const char* buffer, size_t length);
+
+    // Deserializes from an SFastBuffer.
+    int deserialize(const SFastBuffer& buf) {
+        return deserialize(buf.c_str(), buf.size());
+    }
 
     // Initializes a new SData from a string. If there is no content provided,
     // then use whatever data remains in the string as the content

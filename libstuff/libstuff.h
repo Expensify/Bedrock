@@ -138,6 +138,7 @@ typedef map<string, SString, STableComp> STable;
 
 // Libstuff items that must be included here so they are available in the rest of the file
 // However it must be included AFTER the STable definition because SData uses this type.
+#include "SFastBuffer.h"
 #include "SData.h"
 
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
@@ -412,6 +413,7 @@ bool SIsValidSQLiteDateModifier(const string& modifier);
 inline bool SIEquals(const string& lhs, const string& rhs) { return !strcasecmp(lhs.c_str(), rhs.c_str()); }
 bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(const string& haystack, const string& needle);
+bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
 inline bool SEndsWith(const string& haystack, const string& needle) {
     if (needle.size() > haystack.size())
         return false;
@@ -474,16 +476,6 @@ string SReplace(const string& value, const string& find, const string& replace);
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
 int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
-
-// Stream management
-void SConsumeFront(string& lhs, ssize_t num);
-inline void SConsumeBack(string& lhs, int num) {
-    if ((int)lhs.size() <= num) {
-        lhs.clear();
-    } else {
-        lhs = lhs.substr(0, lhs.size() - num);
-    }
-}
 inline void SAppend(string& lhs, const void* rhs, int num) {
     size_t oldSize = lhs.size();
     lhs.resize(oldSize + num);
@@ -617,13 +609,13 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts);
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
-bool S_recvappend(int s, string& recvBuffer);
-inline string S_recv(int s) {
-    string buf;
+bool S_recvappend(int s, SFastBuffer& recvBuffer);
+inline SFastBuffer S_recv(int s) {
+    SFastBuffer buf;
     S_recvappend(s, buf);
     return buf;
 }
-bool S_sendconsume(int s, string& sendBuffer);
+bool S_sendconsume(int s, SFastBuffer& sendBuffer);
 int S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers

@@ -385,7 +385,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
 
                     // Send until there's nothing left in the buffer.
-                    string sendBuffer = myRequest.serialize();
+                    SFastBuffer sendBuffer(myRequest.serialize());
                     while (sendBuffer.size()) {
                         bool result = S_sendconsume(socket, sendBuffer);
                         if (!result) {
@@ -405,7 +405,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     }
 
                     // Now we wait for the response.
-                    string recvBuffer = "";
+                    SFastBuffer recvBuffer("");
                     string methodLine, content;
                     STable headers;
                     int count = 0;

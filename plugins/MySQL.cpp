@@ -24,9 +24,9 @@ string MySQLPacket::serialize() {
     return header + payload;
 }
 
-int MySQLPacket::deserialize(const string& packet) {
+int MySQLPacket::deserialize(const char* packet, const size_t size) {
     // Does it have a header?
-    if (packet.size() < 4) {
+    if (size < 4) {
         return 0;
     }
 
@@ -35,12 +35,12 @@ int MySQLPacket::deserialize(const string& packet) {
     sequenceID = (uint8_t)packet[3];
 
     // Do we have enough data for the full payload?
-    if (packet.size() < (4 + payloadLength)) {
+    if (size < (4 + payloadLength)) {
         return 0;
     }
 
     // Have the full payload, parse it out
-    payload = packet.substr(4, payloadLength);
+    payload = string(packet + 4, payloadLength);
 
     // Indicate that we've consumed this full packet
     return 4 + payloadLength;
@@ -239,10 +239,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     // Get any new MySQL requests
     int packetSize = 0;
     MySQLPacket packet;
-    while ((packetSize = packet.deserialize(s->recvBuffer))) {
+    while ((packetSize = packet.deserialize(s->recvBuffer.c_str(), s->recvBuffer.size()))) {
         // Got a packet, process it
         SDEBUG("Received command #" << (int)packet.sequenceID << ": '" << SToHex(packet.serialize()) << "'");
-        SConsumeFront(s->recvBuffer, packetSize);
+        s->recvBuffer.consumeFront(packetSize);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query

@@ -4,7 +4,8 @@
 #define SLOGPREFIX "{" << name << "} "
 
 STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"), _sConsumeFrontTimer("STCPNode::SConsumeFront") {
+    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"),
+      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append") {
 }
 
 STCPNode::~STCPNode() {
@@ -103,7 +104,10 @@ void STCPNode::prePoll(fd_map& fdm) {
 
 void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
-    STCPServer::postPoll(fdm);
+    {
+        AutoTimerTime appendTime(_sAppendTimer);
+        STCPServer::postPoll(fdm);
+    }
 
     // Accept any new peers
     Socket* socket = nullptr;
@@ -127,7 +131,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 // What is it?
-                SConsumeFront(socket->recvBuffer, messageSize);
+                socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we asssociate with a peer?
                     bool foundIt = false;
@@ -209,7 +213,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         // Which message?
                         {
                             AutoTimerTime consumeTime(_sConsumeFrontTimer);
-                            SConsumeFront(peer->s->recvBuffer, messageSize);
+                            peer->s->recvBuffer.consumeFront(messageSize);
                         }
                         if (peer->s->recvBuffer.size() > 10'000) {
                             // Make in known if this buffer ever gets big.

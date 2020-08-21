@@ -131,7 +131,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list
         bool specificallyTimedOut = timeoutIt != transactionTimeouts.end() && timeoutIt->second < now;
         if (size) {
             // Consume how much we read.
-            SConsumeFront(active->s->recvBuffer, size);
+            active->s->recvBuffer.consumeFront(size);
 
             // 200OK or any content?
             active->finished = now;
