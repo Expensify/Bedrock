@@ -34,6 +34,11 @@ struct STCPManager {
         uint64_t getRecvBytes();
         uint64_t getSentBytes();
 
+        void enableLogging(bool enable, const string& pfx = "") {
+            sendBuffer.enableLogging(enable, pfx + " send");
+            recvBuffer.enableLogging(enable, pfx + " recv");
+        }
+
       private:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;

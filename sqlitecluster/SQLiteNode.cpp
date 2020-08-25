@@ -708,6 +708,10 @@ bool SQLiteNode::update() {
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
+
+            // Enable logging for the buffer to leader.
+            (*_leadPeer).s->enableLogging(true, "leader");
+
             _leaderVersion = (*_leadPeer)["Version"];
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
             _changeState(SUBSCRIBING);
@@ -1943,6 +1947,13 @@ void SQLiteNode::broadcast(const SData& message, Peer* peer) {
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
     // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
     unique_lock<decltype(stateMutex)> lock(stateMutex);
+
+    // We only want buffer logging on followers to leader.
+    for (auto peer : peerList) {
+        if (peer->s && peer != _leadPeer) {
+            peer->s->enableLogging(false, "leader");
+        }
+    }
 
     // Did we actually change _state?
     State oldState = _state;
