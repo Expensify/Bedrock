@@ -100,12 +100,13 @@ SQLiteNode::~SQLiteNode() {
     _dbPool.getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
-void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db) {
+void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
 
     // Allow the DB handle to be returned regardless of how this function exits.
-    SQLiteScopedHandle dbScope(node._dbPool, db);
+    SQLiteScopedHandle dbScope(node._dbPool, sqlitePoolIndex);
+    SQLite& db = dbScope.db();
 
     bool goSearchingOnExit = false;
     {
@@ -1592,7 +1593,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 AutoTimerTime time(_multiReplicationThreadSpawn);
-                thread(replicate, ref(*this), peer, message, ref(_dbPool.get())).detach();
+                thread(replicate, ref(*this), peer, message, _dbPool.getIndex(false)).detach();
                 SINFO("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {

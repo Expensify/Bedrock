@@ -13,11 +13,19 @@ class SQLitePool {
     // threads, both threads may hold the same DB handle.
     SQLite& getBase();
 
-    // Get any object except the base. Will wait for an available handle if there are already maxDBs.
-    SQLite& get();
+    // Gets an index into the internal data structure for a handle that is marked as "inUse". If there are too many
+    // "inUse" handles (maxDBs), this will wait until one is available.
+    // If `createHandle` is true, and all existent handles are in use, but there is space for more handles, this will
+    // create a new one and return it's index.
+    // However, if `creteHandle` is false, this will *not* create the handle, but just reserve the index, and allow the
+    // handle to be created later with `initializeIndex` on this slot.
+    size_t getIndex(bool createHandle = true);
+
+    // Takes an allocated index and creates the appropriate DB handle if required.
+    SQLite& initializeIndex(size_t index);
 
     // Return an object to the pool.
-    void returnToPool(SQLite& object);
+    void returnToPool(size_t index);
 
   private:
     // Synchronization variables.
@@ -31,18 +39,21 @@ class SQLitePool {
     // Our base object that all others are based upon.
     SQLite _baseDB;
 
-    // Pointers to every other object we create.
-    set<SQLite*> _availableHandles;
-    set<SQLite*> _inUseHandles;
+    // These are indexes into `_objects`.
+    set<size_t> _availableHandles;
+    set<size_t> _inUseHandles;
+
+    // This is a vector of pointers to all possibly allocated objects.
+    vector<SQLite*> _objects;
 };
 
 class SQLiteScopedHandle {
   public:
-    SQLiteScopedHandle(SQLitePool& pool, SQLite& db);
+    SQLiteScopedHandle(SQLitePool& pool, size_t index);
     ~SQLiteScopedHandle();
     SQLite& db();
 
   private:
     SQLitePool& _pool;
-    SQLite& _db;
+    size_t _index;
 };

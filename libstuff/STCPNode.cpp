@@ -133,7 +133,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // What is it?
                 socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-                    // Got it -- can we asssociate with a peer?
+                    // Got it -- can we associate with a peer?
                     bool foundIt = false;
                     for (Peer* peer : peerList) {
                         // Just match any unconnected peer
