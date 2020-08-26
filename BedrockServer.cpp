@@ -789,8 +789,8 @@ void BedrockServer::worker(SQLitePool& dbPool,
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-    SQLite& db = dbPool.get();
-    SQLiteScopedHandle dbScope(dbPool, db);
+    SQLiteScopedHandle dbScope(dbPool, dbPool.getIndex());
+    SQLite& db = dbScope.db();
     BedrockCore core(db, server);
 
     // Command to work on. This default command is replaced when we find work to do.
