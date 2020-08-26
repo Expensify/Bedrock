@@ -252,7 +252,7 @@ class SQLiteNode : public STCPNode {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    static void replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& db);
+    static void replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
 
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
