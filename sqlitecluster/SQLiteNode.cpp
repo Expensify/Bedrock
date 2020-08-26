@@ -138,7 +138,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                     SINFO("_localCommitNotifier.waitFor canceled early, returning.");
                     return;
                 } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Just waiting again.");
+                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Waiting for checkpoint.");
+                    db.waitForCheckpoint();
                     continue;
                 } else {
                     SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
@@ -173,7 +174,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, SQLite& 
                             db.rollback();
                             break;
                         } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                            SINFO("Checkpoint required in replication, restarting transaction.");
+                            SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
+                            db.waitForCheckpoint();
                             db.rollback();
                             continue;
                         }
