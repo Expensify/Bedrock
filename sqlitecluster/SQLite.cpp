@@ -383,7 +383,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             uint64_t start = STimeNow();
 
             // Lock the mutex that keeps anyone from starting a new transaction.
-            lock_guard<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
+            unique_lock<decltype(object->_sharedData->blockNewTransactionsMutex)> transactionLock(object->_sharedData->blockNewTransactionsMutex);
 
             while (1) {
                 // Lock first, this prevents anyone from updating the count while we're operating here.
@@ -489,7 +489,7 @@ SQLite::~SQLite() {
 }
 
 void SQLite::waitForCheckpoint() {
-    lock_guard<mutex> lock(_sharedData->blockNewTransactionsMutex);
+    shared_lock<decltype(_sharedData->blockNewTransactionsMutex)> lock(_sharedData->blockNewTransactionsMutex);
 }
 
 bool SQLite::beginTransaction(bool useCache, const string& transactionName) {

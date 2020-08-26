@@ -298,7 +298,7 @@ class SQLite {
 
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
         // when required to make sure it can get exclusive use of the DB.
-        mutex blockNewTransactionsMutex;
+        shared_timed_mutex blockNewTransactionsMutex;
 
         // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
         // have blocked any new ones from starting by locking blockNewTransactionsMutex).
