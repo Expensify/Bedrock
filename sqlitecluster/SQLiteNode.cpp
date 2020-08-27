@@ -176,8 +176,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                             break;
                         } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
                             SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                            db.waitForCheckpoint();
                             db.rollback();
+                            db.waitForCheckpoint();
                             continue;
                         }
                     }
@@ -196,8 +196,8 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         break;
                     } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
                         SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                        db.waitForCheckpoint();
                         db.rollback();
+                        db.waitForCheckpoint();
                         continue;
                     }
 
