@@ -49,6 +49,8 @@ class SQLite {
     //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
+
+    // TODO: enableFullCheckpoints is obsolete and can be removed.
     SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
            int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
 
@@ -203,13 +205,14 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist;
 
-    // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
+    // Blocks until checkpointing is done.
     void waitForCheckpoint();
 
     // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
     static atomic<int> fullCheckpointPageMin;
+    static atomic<int> restartCheckpointPageMin;
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
@@ -296,22 +299,12 @@ class SQLite {
         // called to generate a journal row, but have not yet been sent to peers.
         map<uint64_t, tuple<string, string, uint64_t>> _inFlightTransactions;
 
-        // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
-        // when required to make sure it can get exclusive use of the DB.
-        shared_timed_mutex blockNewTransactionsMutex;
+        // This is locked while we do blocking checkpoints. This allows threads to wait on a pending checkpoint without
+        // just spinning.
+        shared_timed_mutex _checkpointMutex;
 
-        // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
-        // have blocked any new ones from starting by locking blockNewTransactionsMutex).
-        mutex notifyWaitMutex;
-        condition_variable blockNewTransactionsCV;
-        atomic<int> currentTransactionCount;
-
-        // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
-        // we need to store it across callbacks so we can check if the full check point thread still needs to run.
-        atomic<int> _currentPageCount;
-
-        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
-        atomic<int> _checkpointThreadBusy;
+        // Set this when we start a FULL or RESTART checkpoint to cause readers to get interrupted and start over.
+        atomic<int> _currentlyCheckpointing;
 
         // set of objects listening for checkpoints.
         mutex _checkpointListenerMutex;
@@ -436,8 +429,6 @@ class SQLite {
 
     bool _noopUpdateMode;
 
-    bool _enableFullCheckpoints;
-
     // This section enables caching of query results.
 
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
@@ -468,9 +459,4 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
-
-    // This is a bit of a weird construct. We lock this in the destructor for an SQLite object because we spawn a
-    // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
-    // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
-    mutex _destructorMutex;
 };

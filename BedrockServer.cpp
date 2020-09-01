@@ -2127,11 +2127,15 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "SetCheckpointIntervals")) {
         response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
         response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
+        response["restartCheckpointPageMin"] = to_string(SQLite::restartCheckpointPageMin.load());
         if (command->request.isSet("passiveCheckpointPageMin")) {
             SQLite::passiveCheckpointPageMin.store(command->request.calc("passiveCheckpointPageMin"));
         }
         if (command->request.isSet("fullCheckpointPageMin")) {
             SQLite::fullCheckpointPageMin.store(command->request.calc("fullCheckpointPageMin"));
+        }
+        if (command->request.isSet("restartCheckpointPageMin")) {
+            SQLite::restartCheckpointPageMin.store(command->request.calc("restartCheckpointPageMin"));
         }
         if (command->request.isSet("MaxConflictRetries")) {
             int retries = command->request.calc("MaxConflictRetries");
