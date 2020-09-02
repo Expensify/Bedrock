@@ -2426,29 +2426,14 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 // --------------------------------------------------------------------------
 // Executes a SQLite query
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
-#define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
     int error = 0;
     int extErr = 0;
-    for (int tries = 0; tries < MAX_TRIES; tries++) {
-        result.clear();
-        SDEBUG(sql);
-        error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
-        extErr = sqlite3_extended_errcode(db);
-        if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
-            break;
-        }
-        SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
-              << (tries + 1) << " of " << MAX_TRIES << ". "
-              << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
-              << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
-
-        // Avoid the sleep after the last try.
-        if ((tries + 1) < MAX_TRIES) {
-            sleep(1);
-        }
-    }
+    result.clear();
+    SDEBUG(sql);
+    error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
+    extErr = sqlite3_extended_errcode(db);
     uint64_t elapsed = STimeNow() - startTime;
 
     // Warn if it took longer than the specified threshold

@@ -65,7 +65,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool conflictFree) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -85,7 +85,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (request.test("disableCheckpointInterrupt")) {
                 _db.disableCheckpointInterruptForNextTransaction();
             }
-            if (!_db.beginTransaction(true, command->request.methodLine)) {
+            if (!_db.beginTransaction(true, command->request.methodLine, conflictFree)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
 
@@ -170,7 +170,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     return returnValue;
 }
 
-BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool conflictFree) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.
@@ -195,7 +195,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
             // case we need to open a new transaction.
-            if (!_db.beginTransaction(true, command->request.methodLine)) {
+            if (!_db.beginTransaction(true, command->request.methodLine, conflictFree)) {
                 STHROW("501 Failed to begin concurrent transaction");
             }
         }

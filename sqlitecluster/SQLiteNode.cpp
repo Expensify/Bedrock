@@ -347,7 +347,7 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    SQLITE_COMMIT_AUTOLOCK;
+    lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
 
     // Make sure we have something to do.
     if (!unsentTransactions.load()) {
@@ -1001,19 +1001,12 @@ bool SQLiteNode::update() {
                 // We're going to need to read from the network to finish this.
                 return false;
             }
-
-            // We were committing, but now we're not. The only code path through here that doesn't lead to the point
-            // is the 'return false' immediately above here, everything else completes the transaction (even if it was
-            // a failed transaction), so we can safely unlock now.
-            SQLite::g_commitLock.unlock();
         }
 
         // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
         // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
         // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
         if (_commitState == CommitState::WAITING) {
-            // Lock the database. We'll unlock it when we complete in a future update cycle.
-            SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
@@ -2027,7 +2020,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState == LEADING) {
             // Seed our last sent transaction.
             {
-                SQLITE_COMMIT_AUTOLOCK;
+                lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
                 unsentTransactions.store(false);
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
@@ -2172,7 +2165,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         // because the second try will be blocked on the checkpoint.
         while (true) {
             try {
-                _db.waitForCheckpoint();
                 if (!_db.beginTransaction()) {
                     STHROW("failed to begin transaction");
                 }
@@ -2380,9 +2372,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            SINFO("Waiting for checkpoint");
-            db.waitForCheckpoint();
-            SINFO("Done waiting for checkpoint");
             if (!db.beginTransaction()) {
                 STHROW("failed to begin transaction");
             }
@@ -2599,7 +2588,6 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            _db.waitForCheckpoint();
             if (!_db.beginTransaction()) {
                 STHROW("failed to begin transaction");
             }

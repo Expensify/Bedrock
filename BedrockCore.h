@@ -43,7 +43,7 @@ class BedrockCore : public SQLiteCore {
     // should be considered an error to modify the DB from inside `peek`.
     // Returns a boolean value of `true` if the command is complete and its `response` field can be returned to the
     // caller. Returns `false` if the command will need to be passed to `process` to complete handling the command.
-    RESULT peekCommand(unique_ptr<BedrockCommand>& command);
+    RESULT peekCommand(unique_ptr<BedrockCommand>& command, bool conflictFree = false);
 
     // Process is the follow-up to `peek` if `peek` was insufficient to handle the command. It will only ever be called
     // on the leader node, and should always be able to resolve the command completely. When a command is passed to
@@ -55,7 +55,7 @@ class BedrockCore : public SQLiteCore {
     // replicate the transaction to follower nodes. Upon being returned `true`, the caller will attempt to perform a
     // `COMMIT` and replicate the transaction to follower nodes. It's allowable for this `COMMIT` to fail, in which case
     // this command *will be passed to process again in the future to retry*.
-    RESULT processCommand(unique_ptr<BedrockCommand>& command);
+    RESULT processCommand(unique_ptr<BedrockCommand>& command, bool conflictFree = false);
 
   private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.

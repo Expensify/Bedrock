@@ -7,9 +7,6 @@ SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
 bool SQLiteCore::commit() {
-    // Grab the global SQLite lock.
-    SQLITE_COMMIT_AUTOLOCK;
-
     // This should always succeed.
     SASSERT(_db.prepare());
 
@@ -23,6 +20,10 @@ bool SQLiteCore::commit() {
     int errorCode = _db.commit();
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
         SINFO("Commit conflict, rolling back.");
+        _db.rollback();
+        return false;
+    } else if (errorCode == SQLITE_BUSY) {
+        SINFO("[checkpoint] Someone else is either committing or checkpointing (it's not clear if I can differentiate).");
         _db.rollback();
         return false;
     }

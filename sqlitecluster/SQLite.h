@@ -1,10 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
 
-// Convenience macro for locking our static commit lock.
-#define SQLITE_COMMIT_AUTOLOCK lock_guard<decltype(SQLite::g_commitLock)> \
-        __SSQLITEAUTOLOCK_##__LINE__(SQLite::g_commitLock)
-
 class SQLite {
   public:
 
@@ -76,7 +72,7 @@ class SQLite {
 
     // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false, const string& transactionName = "");
+    bool beginTransaction(bool useCache = false, const string& transactionName = "", bool soleCommitter = false);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -305,10 +301,17 @@ class SQLite {
 
         // Set this when we start a FULL or RESTART checkpoint to cause readers to get interrupted and start over.
         atomic<int> _currentlyCheckpointing;
+        atomic<bool> _currentlyBlockingCheckpointing;
 
         // set of objects listening for checkpoints.
         mutex _checkpointListenerMutex;
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
+
+        mutex _currentTransactionCountMutex;
+        set<int64_t> _currentTransactionCounts;
+        atomic<int> _currentlyCommitting;
+
+        shared_timed_mutex sole_commit_lock;
     };
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
@@ -318,6 +321,8 @@ class SQLite {
     // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
     // to access this memory.
     SharedData* _sharedData;
+
+    int64_t _currentTransactionCount;
 
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
@@ -403,6 +408,7 @@ class SQLite {
 
     // Handles running checkpointing operations.
     static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
+    static int _sqliteBusyCallback(void* data, int busyCount);
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
@@ -459,4 +465,9 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
+
+    bool _thisHandlecurrentlyCheckpointing;
+    bool _tryingToCommit;
+
+    bool _soleCommitter;
 };

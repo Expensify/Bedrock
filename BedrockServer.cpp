@@ -603,8 +603,6 @@ void BedrockServer::sync(const SData& args,
                     // happen with no other commits to ensure that we can't get a conflict.
                     uint64_t beforeLock = STimeNow();
 
-                    // This needs to be done before we acquire _syncThreadCommitMutex or we can deadlock.
-                    db.waitForCheckpoint();
                     server._syncThreadCommitMutex.lock();
 
                     // It appears that this might be taking significantly longer with multi-write enabled, so we're adding
@@ -618,7 +616,7 @@ void BedrockServer::sync(const SData& args,
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
-                        BedrockCore::RESULT result = core.peekCommand(command);
+                        BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
 
                             // Finished with this.
@@ -657,7 +655,7 @@ void BedrockServer::sync(const SData& args,
                         }
                     }
 
-                    BedrockCore::RESULT result = core.processCommand(command);
+                    BedrockCore::RESULT result = core.processCommand(command, true);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // The processor says we need to commit this, so let's start that process.
                         committingCommand = true;
@@ -1001,9 +999,6 @@ void BedrockServer::worker(SQLitePool& dbPool,
             // We'll retry on conflict up to this many times.
             int retry = server._maxConflictRetries.load();
             while (retry) {
-                // Block if a checkpoint is happening so we don't interrupt it.
-                db.waitForCheckpoint();
-
                 // If we're going to force a blocking commit, we lock now.
                 unique_lock<decltype(server._syncThreadCommitMutex)> blockingLock(server._syncThreadCommitMutex, defer_lock);
                 if (threadId == 0) {
@@ -1019,7 +1014,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 bool calledPeek = false;
                 BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
                 if (command->repeek || !command->httpsRequests.size()) {
-                    peekResult = core.peekCommand(command);
+                    peekResult = core.peekCommand(command, threadId == 0);
                     calledPeek = true;
                 }
 
@@ -1087,7 +1082,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                     }
 
                     // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    BedrockCore::RESULT result = core.processCommand(command);
+                    BedrockCore::RESULT result = core.processCommand(command, threadId == 0);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                         // done, and we just need to respond. Before we commit, we need to grab the sync thread
@@ -1129,6 +1124,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                                 core.rollback();
                             } else {
                                 BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
+                                SINFO("About to commit");
                                 commitSuccess = core.commit();
                             }
                         }
