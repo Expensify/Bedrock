@@ -47,7 +47,8 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _currentTransactionAttemptCount(-1),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
-    _mmapSizeGB(mmapSizeGB)
+    _mmapSizeGB(mmapSizeGB),
+    _conflictFreeTransaction(false)
 {
     // Perform sanity checks.
     SASSERT(!filename.empty());
@@ -253,7 +254,8 @@ SQLite::SQLite(const SQLite& from) :
     _currentTransactionAttemptCount(-1),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
-    _mmapSizeGB(from._mmapSizeGB)
+    _mmapSizeGB(from._mmapSizeGB),
+    _conflictFreeTransaction(false)
 {
     SINFO("Opening sqlite database: " << _filename);
 
@@ -492,7 +494,7 @@ void SQLite::waitForCheckpoint() {
     shared_lock<decltype(_sharedData->blockNewTransactionsMutex)> lock(_sharedData->blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
+bool SQLite::beginTransaction(bool useCache, const string& transactionName, bool conflictFree) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -502,6 +504,8 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     }
     _sharedData->blockNewTransactionsCV.notify_one();
 
+    _conflictFreeTransaction = conflictFree;
+
     // Reset before the query, as it's possible the query sets these.
     _abandonForCheckpoint = false;
     _autoRolledBack = false;
@@ -509,6 +513,10 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _currentTransactionAttemptCount = -1;
+    if (_conflictFreeTransaction) {
+        // This lock is exclusive. Nobody else will be able to commit while we hold it.
+        _sharedData->_conflictPreventionMutex.lock();
+    }
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
@@ -820,6 +828,10 @@ int SQLite::commit() {
 
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
+    if (!_conflictFreeTransaction) {
+        // If someone has a unique lock on this, then this will block.
+        _sharedData->_conflictPreventionMutex.lock_shared();
+    }
     if (_pageLoggingEnabled) {
         {
             lock_guard<mutex> lock(_pageLogMutex);
@@ -828,6 +840,11 @@ int SQLite::commit() {
         }
     } else {
         result = SQuery(_db, "committing db transaction", "COMMIT");
+    }
+    if (_conflictFreeTransaction) {
+        _sharedData->_conflictPreventionMutex.unlock();
+    } else {
+        _sharedData->_conflictPreventionMutex.unlock_shared();
     }
     SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
@@ -933,6 +950,10 @@ void SQLite::rollback() {
             uint64_t before = STimeNow();
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
+        }
+
+        if (_conflictFreeTransaction) {
+            _sharedData->_conflictPreventionMutex.unlock();
         }
 
         if (_currentTransactionAttemptCount != -1) {

@@ -74,7 +74,7 @@ class SQLite {
 
     // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false, const string& transactionName = "");
+    bool beginTransaction(bool useCache = false, const string& transactionName = "", bool conflictFree = false);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -316,6 +316,10 @@ class SQLite {
         // set of objects listening for checkpoints.
         mutex _checkpointListenerMutex;
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
+
+        // This can be locked for the length of a transaction that needs to be guaranteed not to result in a commit
+        // conflict. Once locked, it prevents any new transactions from committing.
+        shared_timed_mutex _conflictPreventionMutex;
     };
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
@@ -473,4 +477,6 @@ class SQLite {
     // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
     // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
     mutex _destructorMutex;
+
+    bool _conflictFreeTransaction;
 };

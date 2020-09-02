@@ -65,7 +65,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool conflictFree) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -170,7 +170,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     return returnValue;
 }
 
-BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command) {
+BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool conflictFree) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
 
     // Convenience references to commonly used properties.

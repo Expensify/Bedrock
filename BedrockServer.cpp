@@ -618,7 +618,7 @@ void BedrockServer::sync(const SData& args,
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
-                        BedrockCore::RESULT result = core.peekCommand(command);
+                        BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
 
                             // Finished with this.
@@ -657,7 +657,7 @@ void BedrockServer::sync(const SData& args,
                         }
                     }
 
-                    BedrockCore::RESULT result = core.processCommand(command);
+                    BedrockCore::RESULT result = core.processCommand(command, true);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // The processor says we need to commit this, so let's start that process.
                         committingCommand = true;
@@ -1019,7 +1019,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 bool calledPeek = false;
                 BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
                 if (command->repeek || !command->httpsRequests.size()) {
-                    peekResult = core.peekCommand(command);
+                    peekResult = core.peekCommand(command, threadId == 0);
                     calledPeek = true;
                 }
 
@@ -1087,7 +1087,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                     }
 
                     // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    BedrockCore::RESULT result = core.processCommand(command);
+                    BedrockCore::RESULT result = core.processCommand(command, threadId == 0);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                         // done, and we just need to respond. Before we commit, we need to grab the sync thread
