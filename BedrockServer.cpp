@@ -2107,7 +2107,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
     // These all get conglomerated into one big query.
-    db.beginTransaction();
+    db.beginTransaction(false, "", true);
     for (auto plugin : plugins) {
         plugin.second->upgradeDatabase(db);
     }
