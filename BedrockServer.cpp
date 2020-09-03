@@ -919,27 +919,6 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 continue;
             }
 
-            // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
-            // command that was escalated to leader), we'll set it aside for later processing. When the sync node
-            // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
-            // updated commit count.
-            uint64_t commitCount = db.getCommitCount();
-            uint64_t commandCommitCount = command->request.calcU64("commitCount");
-            if (commandCommitCount > commitCount) {
-                SAUTOLOCK(server._futureCommitCommandMutex);
-                auto newQueueSize = server._futureCommitCommands.size() + 1;
-                SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
-                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
-                server._futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
-                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
-
-                // Don't count this as `in progress`, it's just sitting there.
-                if (newQueueSize > 100) {
-                    SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
-                }
-                continue;
-            }
-
             // If this command is already complete, then we should be a follower, and the sync node got a response back
             // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
             // that response now.
@@ -964,6 +943,27 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 }
 
                 // This command is done, move on to the next one.
+                continue;
+            }
+
+            // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
+            // command that was escalated to leader), we'll set it aside for later processing. When the sync node
+            // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
+            // updated commit count.
+            uint64_t commitCount = db.getCommitCount();
+            uint64_t commandCommitCount = command->request.calcU64("commitCount");
+            if (commandCommitCount > commitCount) {
+                SAUTOLOCK(server._futureCommitCommandMutex);
+                auto newQueueSize = server._futureCommitCommands.size() + 1;
+                SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
+                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+                server._futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
+                server._futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+
+                // Don't count this as `in progress`, it's just sitting there.
+                if (newQueueSize > 100) {
+                    SHMMM("server._futureCommitCommands.size() == " << newQueueSize);
+                }
                 continue;
             }
 
