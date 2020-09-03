@@ -712,6 +712,7 @@ bool SQLiteNode::update() {
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
+            SINFO("TYLER set _leadPeer to " << currentLeader->name);
             _leaderVersion = (*_leadPeer)["Version"];
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
             _changeState(SUBSCRIBING);
@@ -1165,7 +1166,12 @@ bool SQLiteNode::update() {
         // If the leader stops leading (or standing down), we'll go SEARCHING, which allows us to look for a new
         // leader. We don't want to go searching before that, because we won't know when leader is done sending its
         // final transactions.
+        // Hmm, this is failing, just after:
+        // 2020-09-03T00:24:55.576895+00:00 expensidev bedrock10013: xxxxxx (SQLiteNode.cpp:1982) _changeState [sync] [info] {cluster_node_4/SEARCHING} Switching from 'SEARCHING' to 'FOLLOWING'
+        // 
         SASSERT(_leadPeer);
+        // We should probably audit how we use `_leadPeer`, we may have removed mutex protection against two places
+        // that change it. But, it should only ever be changed in the sync thread, so that's weird.
         if (_leadPeer.load()->state != LEADING && _leadPeer.load()->state != STANDINGDOWN) {
             // Leader stepping down
             SHMMM("Leader stepping down, re-queueing commands.");
@@ -2020,6 +2026,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            // This looks like the only place this could happen.
             _leadPeer = nullptr;
         }
 

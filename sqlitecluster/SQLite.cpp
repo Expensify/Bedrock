@@ -509,6 +509,12 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _currentTransactionAttemptCount = -1;
+    if (_conflictFreeTransaction) {
+        // This lock is exclusive. Nobody else will be able to commit while we hold it.
+        SINFO("TYLER LOCKING");
+        _sharedData->_conflictPreventionMutex.lock();
+        SINFO("TYLER LOCKED");
+    }
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
@@ -820,6 +826,12 @@ int SQLite::commit() {
 
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
+    if (!_conflictFreeTransaction) {
+        // If someone has a unique lock on this, then this will block.
+        SINFO("TYLER LOCKING SHARED");
+        _sharedData->_conflictPreventionMutex.lock_shared();
+        SINFO("TYLER LOCKED");
+    }
     if (_pageLoggingEnabled) {
         {
             lock_guard<mutex> lock(_pageLogMutex);
@@ -828,6 +840,13 @@ int SQLite::commit() {
         }
     } else {
         result = SQuery(_db, "committing db transaction", "COMMIT");
+    }
+    if (_conflictFreeTransaction) {
+        SINFO("TYLER UNLOCKING");
+        _sharedData->_conflictPreventionMutex.unlock();
+    } else {
+        SINFO("TYLER UNLOCKING SHARED");
+        _sharedData->_conflictPreventionMutex.unlock_shared();
     }
     SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
@@ -933,6 +952,11 @@ void SQLite::rollback() {
             uint64_t before = STimeNow();
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
+        }
+
+        if (_conflictFreeTransaction) {
+            SINFO("TYLER UNLOCKING");
+            _sharedData->_conflictPreventionMutex.unlock();
         }
 
         if (_currentTransactionAttemptCount != -1) {

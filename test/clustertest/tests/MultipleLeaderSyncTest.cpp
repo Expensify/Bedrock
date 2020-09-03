@@ -29,12 +29,14 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         BedrockClusterTester tester = BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
 
         // get convenience handles for the cluster members
+        cout << "A" << endl;
         BedrockTester& node0 = tester.getTester(0);
         BedrockTester& node1 = tester.getTester(1);
         BedrockTester& node2 = tester.getTester(2);
         BedrockTester& node3 = tester.getTester(3);
         BedrockTester& node4 = tester.getTester(4);
 
+        cout << "B" << endl;
         // make sure the whole cluster is up
         ASSERT_TRUE(node0.waitForStates({"LEADING", "MASTERING"}));
         ASSERT_TRUE(node1.waitForStates({"FOLLOWING", "SLAVING"}));
@@ -42,31 +44,43 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node3.waitForStates({"FOLLOWING", "SLAVING"}));
         ASSERT_TRUE(node4.waitForStates({"FOLLOWING", "SLAVING"}));
 
+        cout << "C" << endl;
         // shut down primary leader, make sure secondary takes over
         tester.stopNode(0);
         ASSERT_TRUE(node1.waitForStates({"LEADING", "MASTERING"}));
 
+        cout << "D" << endl;
         // move secondary leader enough commits ahead that primary leader can't catch up before our status tests
         runTrivialWrites(4000, node4);
+        cout << "D.1" << endl;
         ASSERT_TRUE(node2.waitForCommit(4000, 100));
+        cout << "D.2" << endl;
         ASSERT_TRUE(node3.waitForCommit(4000, 100));
+        cout << "D.3" << endl;
         ASSERT_TRUE(node4.waitForCommit(4000, 100));
 
+        cout << "E" << endl;
         // shut down secondary leader, make sure tertiary takes over
         tester.stopNode(1);
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}));
 
+        cout << "F" << endl;
         // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING before our status tests
         runTrivialWrites(4000, node4);
+        cout << "F.1" << endl;
         ASSERT_TRUE(node2.waitForCommit(8000, 100));
+        cout << "F.2" << endl;
         ASSERT_TRUE(node3.waitForCommit(8000, 100));
+        cout << "F.3" << endl;
         ASSERT_TRUE(node4.waitForCommit(8000, 100));
 
+        cout << "G" << endl;
         // just a check for the ready state
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}));
         ASSERT_TRUE(node3.waitForStates({"FOLLOWING", "SLAVING"}));
         ASSERT_TRUE(node4.waitForStates({"FOLLOWING", "SLAVING"}));
 
+        cout << "H" << endl;
         // Bring leaders back up in reverse order, confirm priority, should go quickly to SYNCHRONIZING
         // There's a race in the below flow, to confirm primary master is up and syncing before secondary master gets synced up.
         tester.startNodeDontWait(1);
@@ -76,12 +90,15 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node0.waitForStatusTerm("Priority", "-1", 5'000'000, true));
         ASSERT_TRUE(node0.waitForStates({"SYNCHRONIZING"}, 10'000'000, true));
 
+        cout << "I" << endl;
         // tertiary leader should still be MASTERING for a little while
         ASSERT_TRUE(node2.waitForStates({"LEADING", "MASTERING"}, 5'000'000, true));
 
+        cout << "J" << endl;
         // secondary leader should catch up first and go MASTERING, wait up to 30s
         ASSERT_TRUE(node1.waitForStates({"LEADING", "MASTERING"}, 30'000'000, true));
 
+        cout << "K" << endl;
         // when primary leader catches up it should go MASTERING, wait up to 30s
         ASSERT_TRUE(node0.waitForStates({"LEADING", "MASTERING"}, 30'000'000, true));
 
