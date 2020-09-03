@@ -829,7 +829,9 @@ int SQLite::commit() {
     } else {
         result = SQuery(_db, "committing db transaction", "COMMIT");
     }
-    SINFO("SQuery 'COMMIT' took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
+    char time[16];
+    snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
+    SINFO("SQuery 'COMMIT' took " << time << ".");
 
     // And record pages after the commit.
     int endPages;
