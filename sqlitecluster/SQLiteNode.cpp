@@ -2396,6 +2396,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             break;
         } catch (const SException& e) {
             // Something caused a write failure.
+            SALERT(e.what());
             db.rollback();
 
             // This is a fatal error case.

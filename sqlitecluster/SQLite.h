@@ -227,19 +227,46 @@ class SQLite {
 
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
-    struct SharedData {
+    class SharedData {
+      public:
         // Constructor.
         SharedData();
 
-        // This is the last committed hash by *any* thread for this file.
-        atomic<string> _lastCommittedHash;
+        // atomic accessors for _checkpointListeners.
+        void addCheckpointListener(CheckpointRequiredListener& listener);
+        void removeCheckpointListener(CheckpointRequiredListener& listener);
 
-        // An identifier used to choose the next journal table to use with this set of DB handles.
-        atomic<int64_t> _nextJournalCount;
+        // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
+        // after completing a commit and before releasing the commit lock.
+        void incrementCommit(const string& commitHash);
+
+        // This is the last committed hash by *any* thread for this file.
+        atomic<string> lastCommittedHash;
+
+        // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
+        // initialize new objects.
+        atomic<int64_t> nextJournalCount;
+
+        // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
+        // transaction is ultimately committed. This should be cleared out if the transaction is rolled back.
+        void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart);
+
+        // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
+        // list.
+        void commitTransactionInfo(uint64_t commitID);
+
+      private:
+      public: // TODO: Remove
 
         // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
-        // peers.
+        // peers. Calling `SQLite::getCommittedTransactions` will clear this list, assuming the caller will handle
+        // transmitting these transactions wherever they need to go.
         set<uint64_t> _committedTransactionIDs;
+
+        // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
+        // or if it's been committed.
+        map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
+        map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
         // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
         // though this atomic integer. getCommitCount() returns the value of this variable.
@@ -313,8 +340,11 @@ class SQLite {
         atomic<int> _checkpointThreadBusy;
 
         // set of objects listening for checkpoints.
-        mutex _checkpointListenerMutex;
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
+        
+        // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
+        // variety of operations (i.e., inserting cehckpoint listeners, updating _inFlightTransactions, etc.
+        recursive_mutex _internalStateMutex;
     };
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same

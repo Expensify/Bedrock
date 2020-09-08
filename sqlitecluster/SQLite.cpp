@@ -176,7 +176,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     }
 
     // Set our journal table name for this DB handle.
-    _journalName = _getJournalTableName(_sharedData->_nextJournalCount.fetch_add(1));
+    _journalName = _getJournalTableName(_sharedData->nextJournalCount.fetch_add(1));
 
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
     // limit.
@@ -207,7 +207,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         // And then read the hash for that transaction.
         string lastCommittedHash, ignore;
         getCommit(commitCount, ignore, lastCommittedHash);
-        _sharedData->_lastCommittedHash.store(lastCommittedHash);
+        _sharedData->lastCommittedHash.store(lastCommittedHash);
 
         // If we have a commit count, we should have a hash as well.
         if (commitCount && lastCommittedHash.empty()) {
@@ -258,7 +258,7 @@ SQLite::SQLite(const SQLite& from) :
     SINFO("Opening sqlite database: " << _filename);
 
     // Set our journal table name for this DB handle.
-    _journalName = _getJournalTableName(_sharedData->_nextJournalCount.fetch_add(1));
+    _journalName = _getJournalTableName(_sharedData->nextJournalCount.fetch_add(1));
 
     // Open the DB in read-write mode.
     DBINFO("Opening database '" << _filename << "'.");
@@ -774,7 +774,7 @@ bool SQLite::prepare() {
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData->_inFlightTransactions[commitCount + 1] = make_tuple(_uncommittedQuery, _uncommittedHash, _dbCountAtStart);
+    _sharedData->prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
 
     int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
@@ -837,26 +837,27 @@ int SQLite::commit() {
     } else {
         result = SQuery(_db, "committing db transaction", "COMMIT");
     }
-    char time[16];
-    snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
-    SINFO("SQuery 'COMMIT' took " << time << ".");
-
-    // And record pages after the commit.
-    int endPages;
-    sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &endPages, &dummy, 0);
-
-    // Similarly, record WAL file size.
-    sqlite3_file *pWal = 0;
-    sqlite3_int64 sz;
-    sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
-    pWal->pMethods->xFileSize(pWal, &sz);
-
-    // And log both these statistics.
-    SINFO("COMMIT operation wrote " << (endPages - startPages) << " pages. WAL file size is " << sz << " bytes.");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
+        char time[16];
+        snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
+        SINFO("SQuery 'COMMIT' took " << time << ".");
+
+        // And record pages after the commit.
+        int endPages;
+        sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &endPages, &dummy, 0);
+
+        // Similarly, record WAL file size.
+        sqlite3_file *pWal = 0;
+        sqlite3_int64 sz;
+        sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
+        pWal->pMethods->xFileSize(pWal, &sz);
+
+        // And log both these statistics.
+        SINFO("COMMIT operation wrote " << (endPages - startPages) << " pages. WAL file size is " << sz << " bytes.");
+
         if (_currentTransactionAttemptCount != -1) {
             const char* report = sqlite3_begin_concurrent_report(_db);
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
@@ -866,9 +867,7 @@ int SQLite::commit() {
         }
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
-        _sharedData->_commitCount++;
-        _sharedData->_committedTransactionIDs.insert(_sharedData->_commitCount.load());
-        _sharedData->_lastCommittedHash.store(_uncommittedHash);
+        _sharedData->incrementCommit(_uncommittedHash);
         SDEBUG("Commit successful (" << _sharedData->_commitCount.load() << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
@@ -878,6 +877,7 @@ int SQLite::commit() {
             _sharedData->currentTransactionCount--;
         }
         _sharedData->blockNewTransactionsCV.notify_one();
+        // Can we unlock before we do the above block?
         g_commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
@@ -906,26 +906,10 @@ int SQLite::commit() {
 }
 
 map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions() {
-    lock_guard<decltype(g_commitLock)> lock(g_commitLock);
+    lock_guard<decltype(_sharedData->_internalStateMutex)> lock(_sharedData->_internalStateMutex);
 
-    // Maps a committed transaction ID to the correct query and hash, and starting commit count for that transaction.
-    map<uint64_t, tuple<string, string, uint64_t>> result;
-
-    // If nothing's been committed, nothing to return.
-    if (_sharedData->_committedTransactionIDs.empty()) {
-        return result;
-    }
-
-    // For each transaction that we've committed, we'll remove the that transaction from the "in flight" list, and
-    // return that to the caller. This lets SQLiteNode get a list of transactions that have been committed since the
-    // last time it called this function, so that it can replicate them to peers.
-    for (uint64_t key : _sharedData->_committedTransactionIDs) {
-        result[key] = move(_sharedData->_inFlightTransactions.at(key));
-        _sharedData->_inFlightTransactions.erase(key);
-    }
-
-    // There are no longer any outstanding transactions, so we can clear this.
-    _sharedData->_committedTransactionIDs.clear();
+    auto result = _sharedData->_committedTransactions;
+    _sharedData->_committedTransactions.clear();
     return result;
 }
 
@@ -955,11 +939,16 @@ void SQLite::rollback() {
 
         // Finally done with this.
         _insideTransaction = false;
+        // TODO: remove from prepared list.
+        if (!_uncommittedHash.empty()) {
+            SWARN("Need to remove uncommitted hash!");
+        }
         _uncommittedHash.clear();
         if (_uncommittedQuery.size()) {
             SINFO("Rollback successful.");
         }
         _uncommittedQuery.clear();
+
 
         // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
         // ever having called `prepare`, which would have locked our mutex.
@@ -1024,7 +1013,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
 }
 
 string SQLite::getCommittedHash() {
-    return _sharedData->_lastCommittedHash.load();
+    return _sharedData->lastCommittedHash.load();
 }
 
 bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
@@ -1222,18 +1211,43 @@ uint64_t SQLite::getDBCountAtStart() const {
 }
 
 void SQLite::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    lock_guard<mutex> lock(_sharedData->_checkpointListenerMutex);
-    _sharedData->_checkpointListeners.insert(&listener);
+    _sharedData->addCheckpointListener(listener);
 }
 
 void SQLite::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    lock_guard<mutex> lock(_sharedData->_checkpointListenerMutex);
-    _sharedData->_checkpointListeners.erase(&listener);
+    _sharedData->removeCheckpointListener(listener);
 }
 
 SQLite::SharedData::SharedData() :
-_nextJournalCount(-1),
+nextJournalCount(-1),
 currentTransactionCount(0),
 _currentPageCount(0),
 _checkpointThreadBusy(0)
 { }
+
+void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _checkpointListeners.insert(&listener);
+}
+
+void SQLite::SharedData::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _checkpointListeners.erase(&listener);
+}
+
+void SQLite::SharedData::incrementCommit(const string& commitHash) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _commitCount++;
+    commitTransactionInfo(_commitCount);
+    lastCommittedHash.store(commitHash);
+}
+
+void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _preparedTransactions.insert_or_assign(commitID, make_tuple(query, hash, dbCountAtTransactionStart));
+}
+
+void SQLite::SharedData::commitTransactionInfo(uint64_t commitID) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    _committedTransactions.insert(_preparedTransactions.extract(commitID));
+}
