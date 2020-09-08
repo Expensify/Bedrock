@@ -27,7 +27,6 @@
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
 const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
-atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
 const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
@@ -347,13 +346,11 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
-
-    // Make sure we have something to do.
-    if (!unsentTransactions.load()) {
+    auto transactions = _db.getCommittedTransactions();
+    if (transactions.empty()) {
+        // Nothing to do.
         return;
     }
-    auto transactions = _db.getCommittedTransactions();
     string sendTime = to_string(STimeNow());
     for (auto& i : transactions) {
         uint64_t id = i.first;
@@ -382,7 +379,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
-    unsentTransactions.store(false);
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
@@ -1457,7 +1453,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             request["peerCommitCount"] = (*peer)["CommitCount"];
             request["peerHash"] = (*peer)["Hash"];
             request["peerID"] = to_string(getIDByPeer(peer));
-            request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
             // The following properties are only used to expand out our log macros.
             request["name"] = name;
@@ -2027,11 +2022,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState == LEADING) {
             // Seed our last sent transaction.
             {
-                lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
-                unsentTransactions.store(false);
-                _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
                 _db.getCommittedTransactions();
+                _lastSentTransactionID = _db.getCommitCount();
             }
         } else if (newState == STANDINGDOWN) {
             // start the timeout countdown.
@@ -2069,10 +2062,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 }
 
 void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
-    _queueSynchronizeStateless(peer->nameValueMap, name, peer->name, _state, (unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount()), _db, response, sendAll);
+    _queueSynchronizeStateless(peer->nameValueMap, name, peer->name, _state, _db, response, sendAll);
 }
 
-void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll) {
+void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll) {
     // This is a hack to make the PXXXX macros works, since they expect `peer->name` to be defined.
     struct {string name;} peerBase;
     auto peer = &peerBase;
@@ -2108,6 +2101,7 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
 
     // We agree on what we share, do we need to give it more?
     SQResult result;
+    uint64_t targetCommit = db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
@@ -2335,7 +2329,6 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
                                        command.request["name"],
                                        command.request["peerName"],
                                        node->_state,
-                                       SToUInt64(command.request["targetCommit"]),
                                        db,
                                        command.response,
                                        false);

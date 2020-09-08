@@ -91,11 +91,6 @@ class SQLiteNode : public STCPNode {
     // Returns false if the node can't peek the command.
     static bool peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command);
 
-    // This is a static and thus *global* indicator of whether or not we have transactions that need replicating to
-    // peers. It's global because it can be set by any thread. Because SQLite can run in parallel, we can have multiple
-    // threads making commits to the database, and they communicate that to the node via this flag.
-    static atomic<bool> unsentTransactions;
-
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
 
@@ -189,7 +184,7 @@ class SQLiteNode : public STCPNode {
     void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
 
     // Queue a SYNCHRONIZE message based on pre-computed state of the node. This version is thread-safe.
-    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll);
+    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();

@@ -24,8 +24,6 @@ bool SQLiteCore::commit() {
         return false;
     }
 
-    // Success! Let the node know something's been committed, and return.
-    SQLiteNode::unsentTransactions.store(true);
     return true;
 }
 
