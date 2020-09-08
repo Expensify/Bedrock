@@ -7,9 +7,6 @@ SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
 bool SQLiteCore::commit() {
-    // Grab the global SQLite lock.
-    SQLITE_COMMIT_AUTOLOCK;
-
     // This should always succeed.
     SASSERT(_db.prepare());
 

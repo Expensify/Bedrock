@@ -347,7 +347,7 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    SQLITE_COMMIT_AUTOLOCK;
+    lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
 
     // Make sure we have something to do.
     if (!unsentTransactions.load()) {
@@ -2027,7 +2027,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState == LEADING) {
             // Seed our last sent transaction.
             {
-                SQLITE_COMMIT_AUTOLOCK;
+                lock_guard<decltype(SQLite::g_commitLock)> lock(SQLite::g_commitLock);
                 unsentTransactions.store(false);
                 _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.

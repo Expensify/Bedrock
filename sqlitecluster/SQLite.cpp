@@ -73,7 +73,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // We lock here to initialize the database. Because there's a global map of currently opened DB files, we lock
     // whenever we might need to insert a new one. These are only ever added or changed in the constructor and
     // destructor.
-    SQLITE_COMMIT_AUTOLOCK;
+    lock_guard<decltype(g_commitLock)> lock(g_commitLock);
 
     // sqlite3_config can't run concurrently with *anything* else, so we make sure it's set not only on creating
     // an entry, but on creating the *first* entry.
@@ -531,6 +531,12 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     return _insideTransaction;
 }
 
+bool SQLite::beginExclusiveTransaction(bool useCache, const string& transactionName) {
+    g_commitLock.lock();
+    _mutexLocked = true;
+    return beginTransaction(useCache, transactionName);
+}
+
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
     // sqlite trims semicolon, so let's not supply it else we get confused later
     SASSERT(!SEndsWith(sql, ";"));
@@ -750,15 +756,17 @@ bool SQLite::prepare() {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
-    g_commitLock.lock();
-    _mutexLocked = true;
+    if (!_mutexLocked) {
+        g_commitLock.lock();
+        _mutexLocked = true;
+    }
 
     // Now that we've locked anybody else from committing, look up the state of the database.
     string committedQuery, committedHash;
     uint64_t commitCount = _sharedData->_commitCount.load();
 
     // Queue up the journal entry
-    string lastCommittedHash = getCommittedHash();
+    string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
     _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
     uint64_t before = STimeNow();
 
@@ -865,13 +873,13 @@ int SQLite::commit() {
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        _mutexLocked = false;
         {
             unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
             _sharedData->currentTransactionCount--;
         }
         _sharedData->blockNewTransactionsCV.notify_one();
         g_commitLock.unlock();
+        _mutexLocked = false;
         _queryCache.clear();
         if (_useCache) {
             SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
@@ -898,7 +906,7 @@ int SQLite::commit() {
 }
 
 map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions() {
-    SQLITE_COMMIT_AUTOLOCK;
+    lock_guard<decltype(g_commitLock)> lock(g_commitLock);
 
     // Maps a committed transaction ID to the correct query and hash, and starting commit count for that transaction.
     map<uint64_t, tuple<string, string, uint64_t>> result;

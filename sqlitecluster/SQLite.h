@@ -1,10 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
 
-// Convenience macro for locking our static commit lock.
-#define SQLITE_COMMIT_AUTOLOCK lock_guard<decltype(SQLite::g_commitLock)> \
-        __SSQLITEAUTOLOCK_##__LINE__(SQLite::g_commitLock)
-
 class SQLite {
   public:
 
@@ -75,6 +71,9 @@ class SQLite {
     // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
     bool beginTransaction(bool useCache = false, const string& transactionName = "");
+
+    // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
+    bool beginExclusiveTransaction(bool useCache = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -358,7 +357,8 @@ class SQLite {
     uint64_t _rollbackElapsed;
 
     // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
-    // we call `rollback`.
+    // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
+    // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked;
 
     // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
