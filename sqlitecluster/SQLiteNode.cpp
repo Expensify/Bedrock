@@ -237,6 +237,9 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
             _commitState == CommitState::FAILED);
     _commitState = CommitState::WAITING;
     _commitConsistency = consistency;
+    if (_commitConsistency != QUORUM) {
+        SHMMM("Non-quorum transaction running in the sync thread.");
+    }
 }
 
 void SQLiteNode::sendResponse(const SQLiteCommand& command)
@@ -981,11 +984,12 @@ bool SQLiteNode::update() {
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
 
-                    // clear the unsent transactions, we've sent them all (including this one);
-                    _db.getCommittedTransactions();
-
                     // Update the last sent transaction ID to reflect that this is finished.
-                    _lastSentTransactionID = _db.getCommitCount();
+                    // This works because we only change this value in the sync thread.
+                    _lastSentTransactionID++;
+
+                    // Remove the newly sent transaction from the sent list, as we have already sent it.
+                    _db.getCommittedTransactions(_lastSentTransactionID);
 
                     // Done!
                     _commitState = CommitState::SUCCESS;
@@ -997,19 +1001,12 @@ bool SQLiteNode::update() {
                 // We're going to need to read from the network to finish this.
                 return false;
             }
-
-            // We were committing, but now we're not. The only code path through here that doesn't lead to the point
-            // is the 'return false' immediately above here, everything else completes the transaction (even if it was
-            // a failed transaction), so we can safely unlock now.
-            SQLite::g_commitLock.unlock();
         }
 
         // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
         // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
         // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
         if (_commitState == CommitState::WAITING) {
-            // Lock the database. We'll unlock it when we complete in a future update cycle.
-            SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
@@ -2101,7 +2098,12 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
 
     // We agree on what we share, do we need to give it more?
     SQResult result;
-    uint64_t targetCommit = db.getCommitCount();
+
+    // Because this is used for both SYNCHRONIZE_RESPONSE and SUBSCRIPTION_APPROVED messages, we need to be careful.
+    // The commitCount can change at any time, and on LEADER, we need to make sure we don't sent the same transaction
+    // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
+    // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
+    uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");

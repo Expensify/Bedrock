@@ -193,8 +193,8 @@ class SQLite {
 
     // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
-    // out to peers.
-    map<uint64_t, tuple<string,string, uint64_t>> getCommittedTransactions();
+    // out to peers. You can limit the number of transactions to a certain number.
+    map<uint64_t, tuple<string,string, uint64_t>> getCommittedTransactions(uint64_t maxCommitID = 0);
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -240,6 +240,10 @@ class SQLite {
         // after completing a commit and before releasing the commit lock.
         void incrementCommit(const string& commitHash);
 
+        // This removes and returns any committed transactions up through the given commit ID, or all of them if
+        // maxCommitID is 0.
+        map<uint64_t, tuple<string, string, uint64_t>> getCommittedTransactions(uint64_t maxCommitID = 0);
+
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
 
@@ -257,11 +261,6 @@ class SQLite {
 
       private:
       public: // TODO: Remove
-
-        // This is a set of transactions IDs that have been successfully committed to the database, but not yet sent to
-        // peers. Calling `SQLite::getCommittedTransactions` will clear this list, assuming the caller will handle
-        // transmitting these transactions wherever they need to go.
-        set<uint64_t> _committedTransactionIDs;
 
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.

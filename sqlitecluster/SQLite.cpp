@@ -905,12 +905,8 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions() {
-    lock_guard<decltype(_sharedData->_internalStateMutex)> lock(_sharedData->_internalStateMutex);
-
-    auto result = _sharedData->_committedTransactions;
-    _sharedData->_committedTransactions.clear();
-    return result;
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions(uint64_t maxCommitID) {
+    return _sharedData->getCommittedTransactions(maxCommitID);
 }
 
 void SQLite::rollback() {
@@ -1250,4 +1246,20 @@ void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string&
 void SQLite::SharedData::commitTransactionInfo(uint64_t commitID) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _committedTransactions.insert(_preparedTransactions.extract(commitID));
+}
+
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::getCommittedTransactions(uint64_t maxCommitID) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    decltype(_committedTransactions) result;
+    if (maxCommitID == 0) {
+        // If no maximum is specified, remove and return them all.
+        result = _committedTransactions;
+        _committedTransactions.clear();
+    } else {
+        // Otherwise, extract the relevant transactions from the front of the commit list.
+        while (_committedTransactions.size() && _committedTransactions.begin()->first <= maxCommitID) {
+            result.insert(_committedTransactions.extract(_committedTransactions.begin()));
+        }
+    }
+    return result;
 }
