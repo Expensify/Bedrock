@@ -935,16 +935,11 @@ void SQLite::rollback() {
 
         // Finally done with this.
         _insideTransaction = false;
-        // TODO: remove from prepared list.
-        if (!_uncommittedHash.empty()) {
-            SWARN("Need to remove uncommitted hash!");
-        }
         _uncommittedHash.clear();
         if (_uncommittedQuery.size()) {
             SINFO("Rollback successful.");
         }
         _uncommittedQuery.clear();
-
 
         // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
         // ever having called `prepare`, which would have locked our mutex.
