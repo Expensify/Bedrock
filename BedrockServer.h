@@ -300,7 +300,6 @@ class BedrockServer : public SQLiteServer {
     // start the worker threads.
     static void sync(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
-                     atomic<bool>& upgradeInProgress,
                      atomic<string>& leaderVersion,
                      BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
@@ -308,7 +307,6 @@ class BedrockServer : public SQLiteServer {
     // Wraps the sync thread main function to make it easy to add exception handling.
     static void syncWrapper(const SData& args,
                      atomic<SQLiteNode::State>& replicationState,
-                     atomic<bool>& upgradeInProgress,
                      atomic<string>& leaderVersion,
                      BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                      BedrockServer& server);
@@ -316,7 +314,6 @@ class BedrockServer : public SQLiteServer {
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     static void worker(SQLitePool& dbPool,
                        atomic<SQLiteNode::State>& _replicationState,
-                       atomic<bool>& upgradeInProgress,
                        atomic<string>& leaderVersion,
                        BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                        BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
@@ -374,9 +371,6 @@ class BedrockServer : public SQLiteServer {
     // unlocked afterward. Workers do the same, so that they won't try to start a new transaction while the sync thread
     // is committing. This mutex is *not* recursive.
     shared_timed_mutex _syncThreadCommitMutex;
-
-    // Set this when we switch leading.
-    atomic<bool> _suppressMultiWrite;
 
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.

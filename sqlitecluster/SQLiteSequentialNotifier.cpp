@@ -59,6 +59,7 @@ void SQLiteSequentialNotifier::cancel() {
     _globalResult = RESULT::CANCELED;
     for (auto& p : _valueToPendingThreadMap) {
         lock_guard<mutex> lock(p.second->waitingThreadMutex);
+        p.second->result = RESULT::CANCELED;
         p.second->waitingThreadConditionVariable.notify_all();
     }
     _valueToPendingThreadMap.clear();
@@ -70,6 +71,7 @@ void SQLiteSequentialNotifier::checkpointRequired(SQLite& db) {
     _globalResult = RESULT::CHECKPOINT_REQUIRED;
     for (auto& p : _valueToPendingThreadMap) {
         lock_guard<mutex> lock(p.second->waitingThreadMutex);
+        p.second->result = RESULT::CHECKPOINT_REQUIRED;
         p.second->waitingThreadConditionVariable.notify_all();
     }
     _valueToPendingThreadMap.clear();
