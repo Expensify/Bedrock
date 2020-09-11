@@ -438,6 +438,14 @@ void BedrockServer::sync(const SData& args,
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             server._upgradeInProgress.store(true);
+            if (!server._syncNode->hasQuorum()) {
+                // We are now "upgrading" but we won't actually start the commit until the cluster is sufficiently
+                // connected. This is because if we need to roll back the commit, it disconnects the entire cluster,
+                // which is more likely to trigger the same thing to happen again, making cluster startup take
+                // significantly longer. In this case we'll just loop again, like if the upgrade failed.
+                SINFO("Waiting for quorum availability before running UpgradeDB.");
+                continue;
+            }
             if (server._upgradeDB(db)) {
                 server._syncThreadCommitMutex.lock(); // This should be above here but is going away anyway.
                 committingCommand = true;
@@ -451,6 +459,7 @@ void BedrockServer::sync(const SData& args,
                 // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
                 // the upgradeInProgress flag.
                 server._upgradeInProgress.store(false);
+                SINFO("UpgradeDB skipped, done.");
             }
         }
 
@@ -470,8 +479,9 @@ void BedrockServer::sync(const SData& args,
             if (server._upgradeInProgress.load()) {
                 if (server._syncNode->commitSucceeded()) {
                     server._upgradeInProgress.store(false);
+                    SINFO("UpgradeDB succeeded, done.");
                 } else {
-                    SWARN("Failed to commit DB Upgrade. Trying again from the top.");
+                    SINFO("UpgradeDB failed, trying again.");
                 }
                 continue;
             }

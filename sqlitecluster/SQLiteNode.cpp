@@ -2721,3 +2721,19 @@ void SQLiteNode::handleSerialRollbackTransaction(Peer* peer, const SData& messag
     _db.rollback();
 }
 
+bool SQLiteNode::hasQuorum() {
+    if (_state != LEADING && _state != STANDINGDOWN) {
+        return false;
+    }
+    int numFullPeers = 0;
+    int numFullFollowers = 0;
+    for (auto peer : peerList) {
+        if (peer->params["Permafollower"] != "true") {
+            ++numFullPeers;
+            if ((*peer)["Subscribed"] == "true") {
+                numFullFollowers++;
+            }
+        }
+    }
+    return (numFullFollowers * 2 >= numFullPeers);
+}

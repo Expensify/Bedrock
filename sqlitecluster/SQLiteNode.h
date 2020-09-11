@@ -59,6 +59,10 @@ class SQLiteNode : public STCPNode {
     // false.
     bool commitSucceeded() { return _commitState == CommitState::SUCCESS; }
 
+    // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction. Not thread-safe to call
+    // outside the sync thread.
+    bool hasQuorum();
+
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
