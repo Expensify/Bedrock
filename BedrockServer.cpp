@@ -391,10 +391,12 @@ void BedrockServer::sync(const SData& args,
 
             // If we bailed out while doing a upgradeDB, clear state
             if (server._upgradeInProgress) {
-                db.rollback();
                 server._upgradeInProgress = false;
-                server._syncThreadCommitMutex.unlock();
-                committingCommand = false;
+                if (committingCommand) {
+                    db.rollback();
+                    server._syncThreadCommitMutex.unlock();
+                    committingCommand = false;
+                }
             }
 
             // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
@@ -437,7 +439,7 @@ void BedrockServer::sync(const SData& args,
             (nodeState == SQLiteNode::LEADING && server._upgradeInProgress && !committingCommand)) {
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
-            server._upgradeInProgress.store(true);
+            server._upgradeInProgress = true;
             if (!server._syncNode->hasQuorum()) {
                 // We are now "upgrading" but we won't actually start the commit until the cluster is sufficiently
                 // connected. This is because if we need to roll back the commit, it disconnects the entire cluster,
@@ -458,7 +460,7 @@ void BedrockServer::sync(const SData& args,
             } else {
                 // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
                 // the upgradeInProgress flag.
-                server._upgradeInProgress.store(false);
+                server._upgradeInProgress = false;
                 SINFO("UpgradeDB skipped, done.");
             }
         }
@@ -476,9 +478,9 @@ void BedrockServer::sync(const SData& args,
             committingCommand = false;
 
             // If we were upgrading, there's no response to send, we're just done.
-            if (server._upgradeInProgress.load()) {
+            if (server._upgradeInProgress) {
                 if (server._syncNode->commitSucceeded()) {
-                    server._upgradeInProgress.store(false);
+                    server._upgradeInProgress = false;
                     SINFO("UpgradeDB succeeded, done.");
                 } else {
                     SINFO("UpgradeDB failed, trying again.");
@@ -863,7 +865,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
             }
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
-            while (server._upgradeInProgress.load() ||
+            while (server._upgradeInProgress ||
                    (replicationState.load() != SQLiteNode::LEADING &&
                     replicationState.load() != SQLiteNode::FOLLOWING &&
                     replicationState.load() != SQLiteNode::STANDINGDOWN)
