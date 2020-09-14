@@ -46,7 +46,7 @@ class SQLite {
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int enableFullCheckpoints, int maxJournalSize, int minJournalTables, int synchronous) :
         SQLite(filename, cacheSize, (bool)enableFullCheckpoints, maxJournalSize, minJournalTables, "") {}
-
+    
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
@@ -54,7 +54,7 @@ class SQLite {
     ~SQLite();
 
     // Returns the canonicalized filename for this database
-    string getFilename() { return _filename; }
+    const string& getFilename() { return _filename; }
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
@@ -132,7 +132,7 @@ class SQLite {
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     int commit();
 
-    // Cancels the current transaction and rolls it back
+    // Cancels the current transaction and rolls it back.
     void rollback();
 
     // Returns the total number of changes on this database
@@ -172,7 +172,10 @@ class SQLite {
     // immediately following tha commit.
     bool getCommit(uint64_t index, string& query, string& hash);
 
-    // Looks up a range of commits
+    // A static version of the above that can be used in initializers.
+    static bool getCommit(sqlite3* db, const vector<string> journalNames, uint64_t index, string& query, string& hash);
+
+    // Looks up a range of commits.
     bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
 
     // Start a timing operation, that will time out after the given number of microseconds.
@@ -186,16 +189,16 @@ class SQLite {
     void addCheckpointListener(CheckpointRequiredListener& listener);
     void removeCheckpointListener(CheckpointRequiredListener& listener);
 
-    // This atomically removes and returns committed transactions from our inflight list. SQLiteNode can call this, and
+    // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
-    // out to peers. You can limit the number of transactions to a certain number.
+    // out to peers. You can limit the number of transactions to a certain commit ID.
     map<uint64_t, tuple<string,string, uint64_t>> getCommittedTransactions(uint64_t maxCommitID = 0);
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
     // restrictive access mode that will deny access for write operations and other potentially risky operations, even
     // in the case that a specific table/column are not being directly requested.
-    map<string, set<string>>* whitelist;
+    map<string, set<string>>* whitelist = nullptr;
 
     // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
     void waitForCheckpoint();
@@ -219,13 +222,6 @@ class SQLite {
     uint64_t getDBCountAtStart() const;
 
   private:
-
-    // SQLite instances can't be instantiated simultaneously for the first handle for each DB file, as there's global
-    // setup work that needs to be done for the sqlite3 library. This lock prevents two different DB files from being
-    // instantiated at the same moment and causing weird race conditions here. Currently, this is a bit of overkill and
-    // could probably be done without, as we only use a single DB file in Bedrock.
-    static mutex _instantiationLock;
-
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     class SharedData {
@@ -299,60 +295,70 @@ class SQLite {
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
         
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
-        // variety of operations (i.e., inserting cehckpoint listeners, updating _inFlightTransactions, etc.
+        // variety of operations (i.e., inserting checkpoint listeners, updating _committedTransactions, etc.
         recursive_mutex _internalStateMutex;
     };
 
-    // Names of journal tables for this database.
-    vector<string> _journalNames;
+    // Initializers to support RAII-style allocation in constructors.
+    static string initializeFilename(const string& filename);
+    static SharedData& initializeSharedData(sqlite3* db, int64_t mmapSizeGB, const string& filename, const vector<string>& journalNames);
+    static sqlite3* initializeDB(const string& filename);
+    static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
+    static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
+    void commonConstructorInitialization();
 
-    // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
-    // database file. It's a map of canonicalized filename to a sharedData object.
-    static map<string, SharedData*> _sharedDataLookupMap;
+    // The filename of this DB, canonicalized to its full path on disk.
+    const string _filename;
 
-    // Pointer to our SharedData object. Having a pointer directly to the object avoids having to lock the lookup map
-    // to access this memory.
-    SharedData* _sharedData;
+    // The maximum number of rows to store in the journal before we start truncating old ones.
+    uint64_t _maxJournalSize;
+
+    // The underlying sqlite3 DB handle.
+    sqlite3* _db;
+
+    // Names of ALL journal tables for this database.
+    const vector<string> _journalNames;
+
+    // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
+    SharedData& _sharedData;
+
+    // The name of the journal table that this particular DB handle with write to.
+    const string _journalName;
+
+    // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
+    uint64_t _journalSize;
+
+    // True when we have a transaction in progress.
+    bool _insideTransaction = false;
+
+    // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
+    // it.
+    string _uncommittedQuery;
+    string _uncommittedHash;
 
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
     // Returns the name of a journal table based on it's index.
-    string _getJournalTableName(int64_t journalTableID, bool create = false);
-
-    // Attributes
-    sqlite3* _db;
-    string _filename;
-    uint64_t _journalSize;
-    uint64_t _maxJournalSize;
-    bool _insideTransaction;
-    string _uncommittedQuery;
-    string _uncommittedHash;
+    static string getJournalTableName(vector<string>& journalNames, int64_t journalTableID, bool create = false);
 
     // The latest transaction ID at the start of the current transaction (note: it is allowed for this to be *higher*
     // than the state inside the transaction, if another thread committed to the DB while we were in
     // `beginTransaction`).
-    uint64_t _dbCountAtStart;
-
-    // The name of the journal table
-    string _journalName;
+    uint64_t _dbCountAtStart = 0;
 
     // Timing information.
-    uint64_t _beginElapsed;
-    uint64_t _readElapsed;
-    uint64_t _writeElapsed;
-    uint64_t _prepareElapsed;
-    uint64_t _commitElapsed;
-    uint64_t _rollbackElapsed;
+    uint64_t _beginElapsed = 0;
+    uint64_t _readElapsed = 0;
+    uint64_t _writeElapsed = 0;
+    uint64_t _prepareElapsed = 0;
+    uint64_t _commitElapsed = 0;
+    uint64_t _rollbackElapsed = 0;
 
     // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
-    bool _mutexLocked;
-
-    // Like getCommitCount(), but only callable internally, when we know for certain that we're not in the middle of
-    // any transactions. Instead of reading from an atomic var, reads directly from the database.
-    uint64_t _getCommitCount();
+    bool _mutexLocked = false;
 
     bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
@@ -377,13 +383,16 @@ class SQLite {
     //  this limitation.
     string _getJournalQuery(const list<string>& queryParts, bool append = false);
 
+    // Static version for initializers.
+    static string _getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append = false);
+
     // Callback function that we'll register for authorizing queries in sqlite.
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
 
     // The following variables maintain the state required around automatically re-writing queries.
 
     // If true, we'll attempt query re-writing.
-    bool _enableRewrite;
+    bool _enableRewrite = false;
 
     // Pointer to the current handler to determine if a query needs to be rewritten.
     bool (*_rewriteHandler)(int, const char*, string&);
@@ -392,7 +401,7 @@ class SQLite {
     string _rewrittenQuery;
 
     // Causes the current query to skip re-write checking if it's already a re-written query.
-    bool _currentlyRunningRewritten;
+    bool _currentlyRunningRewritten = false;
 
     // Callback to trace internal sqlite state (used for logging normalized queries).
     static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
@@ -402,11 +411,11 @@ class SQLite {
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
-    uint64_t _timeoutLimit;
+    uint64_t _timeoutLimit = 0;
     uint64_t _timeoutStart;
     uint64_t _timeoutError;
-    bool _abandonForCheckpoint;
-    bool _enableCheckpointInterrupt;
+    bool _abandonForCheckpoint = false;
+    bool _enableCheckpointInterrupt = true;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
@@ -421,37 +430,37 @@ class SQLite {
     // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
     // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
     // failed query, regardless of whether or not it was already rolled back internally.
-    bool _autoRolledBack;
+    bool _autoRolledBack = false;
 
-    bool _noopUpdateMode;
+    bool _noopUpdateMode = false;
 
+    // Flag for enabling full checkpoints, though it's effectively impossible to turn this off, so it should be removed
+    // and replaced with `true`.
     bool _enableFullCheckpoints;
-
-    // This section enables caching of query results.
 
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
     map<string, SQResult> _queryCache;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
-    int64_t _queryCount;
+    int64_t _queryCount = 0;
 
     // Number of queries found in cache in this transaction (for metrics only).
-    int64_t _cacheHits;
+    int64_t _cacheHits = 0;
 
     // Set to true if the cache is in use for this transaction.
-    bool _useCache;
+    bool _useCache = false;
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
-    bool _isDeterministicQuery;
+    bool _isDeterministicQuery = false;
 
     bool _pageLoggingEnabled;
     static atomic<int64_t> _transactionAttemptCount;
     static mutex _pageLogMutex;
-    int64_t _currentTransactionAttemptCount;
+    int64_t _currentTransactionAttemptCount = -1;
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
