@@ -443,9 +443,11 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     return _insideTransaction;
 }
 
-bool SQLite::beginExclusiveTransaction(bool useCache, const string& transactionName) {
-    _sharedData.commitLock.lock();
-    _mutexLocked = true;
+bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache, const string& transactionName) {
+    if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+        _sharedData.commitLock.lock();
+        _mutexLocked = true;
+    }
     return beginTransaction(useCache, transactionName);
 }
 

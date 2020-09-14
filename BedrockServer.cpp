@@ -2090,7 +2090,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
     // These all get conglomerated into one big query.
-    db.beginExclusiveTransaction();
+    db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
     for (auto plugin : plugins) {
         plugin.second->upgradeDatabase(db);
     }

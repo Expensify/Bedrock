@@ -68,7 +68,11 @@ class SQLite {
     bool beginTransaction(bool useCache = false, const string& transactionName = "");
 
     // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
-    bool beginExclusiveTransaction(bool useCache = false, const string& transactionName = "");
+    enum class TRANSACTION_TYPE {
+        SHARED,
+        EXCLUSIVE
+    };
+    bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
