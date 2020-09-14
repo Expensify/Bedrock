@@ -278,9 +278,6 @@ class SQLite {
         // though this atomic integer. getCommitCount() returns the value of this variable.
         atomic<uint64_t> _commitCount;
 
-        // Names of journal tables for this database.
-        vector<string> _journalNames;
-
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
         // when required to make sure it can get exclusive use of the DB.
         shared_timed_mutex blockNewTransactionsMutex;
@@ -305,6 +302,9 @@ class SQLite {
         // variety of operations (i.e., inserting cehckpoint listeners, updating _inFlightTransactions, etc.
         recursive_mutex _internalStateMutex;
     };
+
+    // Names of journal tables for this database.
+    vector<string> _journalNames;
 
     // This map is how a new SQLite object can look up the existing state for the other SQLite objects sharing the same
     // database file. It's a map of canonicalized filename to a sharedData object.

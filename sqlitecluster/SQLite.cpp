@@ -167,7 +167,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
         while(true) {
             string name = _getJournalTableName(currentJounalTable, true);
             if (SQVerifyTableExists(_db, name)) {
-                _sharedData->_journalNames.push_back(name);
+                _journalNames.push_back(name);
                 currentJounalTable++;
             } else {
                 break;
@@ -202,7 +202,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     if (initializer) {
         // Read the highest commit count from the database, and store it in _commitCount.
         uint64_t commitCount = _getCommitCount();
-        _sharedData->_commitCount.store(commitCount);
+        _sharedData->_commitCount = commitCount;
 
         // And then read the hash for that transaction.
         string lastCommittedHash, ignore;
@@ -225,6 +225,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
 
 SQLite::SQLite(const SQLite& from) :
     whitelist(nullptr),
+    _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _filename(from._filename),
     _journalSize(from._journalSize),
@@ -440,7 +441,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
     list<string> queries;
-    for (const string& name : _sharedData->_journalNames) {
+    for (const string& name : _journalNames) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
     }
     string query = SComposeList(queries, " UNION ");
@@ -457,13 +458,13 @@ string SQLite::_getJournalTableName(int64_t journalTableID, bool create) {
         sprintf(buff, "journal%04li", journalTableID);
         return buff;
     } else {
-        if (_sharedData->_journalNames.empty()) {
+        if (_journalNames.empty()) {
             STHROW("Attempting to get a journal table name for existing journals, but there are none!");
         }
 
         // This deliberately skips `journal` itself, assuming that's in position 1.
-        size_t journalTableIndex = (journalTableID % _sharedData->_journalNames.size() - 1) + 1 ;
-        return _sharedData->_journalNames[journalTableIndex];
+        size_t journalTableIndex = (journalTableID % _journalNames.size() - 1) + 1 ;
+        return _journalNames[journalTableIndex];
     }
 }
 
@@ -757,9 +758,10 @@ bool SQLite::prepare() {
         _mutexLocked = true;
     }
 
-    // Now that we've locked anybody else from committing, look up the state of the database.
+    // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
+    // SharedData object to get these values as we know it can't currently change.
     string committedQuery, committedHash;
-    uint64_t commitCount = _sharedData->_commitCount.load();
+    uint64_t commitCount = _sharedData->_commitCount;
 
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
@@ -864,7 +866,7 @@ int SQLite::commit() {
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
         _sharedData->incrementCommit(_uncommittedHash);
-        SDEBUG("Commit successful (" << _sharedData->_commitCount.load() << "), releasing commitLock.");
+        SDEBUG("Commit successful (" << _sharedData->_commitCount << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
@@ -1022,7 +1024,7 @@ int64_t SQLite::getLastInsertRowID() {
 }
 
 uint64_t SQLite::getCommitCount() {
-    return _sharedData->_commitCount.load();
+    return _sharedData->_commitCount;
 }
 
 uint64_t SQLite::_getCommitCount() {
@@ -1258,7 +1260,7 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::getCommittedT
     decltype(_committedTransactions) result;
     if (maxCommitID == 0) {
         // If no maximum is specified, remove and return them all.
-        result = _committedTransactions;
+        result = move(_committedTransactions);
         _committedTransactions.clear();
     } else {
         // Otherwise, extract the relevant transactions from the front of the commit list.
