@@ -4,7 +4,7 @@
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
 // Globally shared mutex for locking around commits and creating/destroying instances.
-recursive_mutex SQLite::g_commitLock;
+mutex SQLite::_instantiationLock;
 
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
@@ -73,7 +73,7 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     // We lock here to initialize the database. Because there's a global map of currently opened DB files, we lock
     // whenever we might need to insert a new one. These are only ever added or changed in the constructor and
     // destructor.
-    lock_guard<decltype(g_commitLock)> lock(g_commitLock);
+    lock_guard<decltype(_instantiationLock)> lock(_instantiationLock);
 
     // sqlite3_config can't run concurrently with *anything* else, so we make sure it's set not only on creating
     // an entry, but on creating the *first* entry.
@@ -405,9 +405,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
-                    for (auto listener : object->_sharedData->_checkpointListeners) {
-                        listener->checkpointRequired(*object);
-                    }
+                    object->_sharedData->checkpointRequired(*object);
                 }
 
                 if (count == 0) {
@@ -424,9 +422,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
                     // We're done. Anyone can start a new transaction.
-                    for (auto listener : object->_sharedData->_checkpointListeners) {
-                        listener->checkpointComplete(*object);
-                    }
+                    object->_sharedData->checkpointComplete(*object);
                     break;
                 }
 
@@ -532,7 +528,7 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
 }
 
 bool SQLite::beginExclusiveTransaction(bool useCache, const string& transactionName) {
-    g_commitLock.lock();
+    _sharedData->commitLock.lock();
     _mutexLocked = true;
     return beginTransaction(useCache, transactionName);
 }
@@ -757,7 +753,7 @@ bool SQLite::prepare() {
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
-        g_commitLock.lock();
+        _sharedData->commitLock.lock();
         _mutexLocked = true;
     }
 
@@ -878,7 +874,7 @@ int SQLite::commit() {
         }
         _sharedData->blockNewTransactionsCV.notify_one();
         // Can we unlock before we do the above block?
-        g_commitLock.unlock();
+        _sharedData->commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
         if (_useCache) {
@@ -945,7 +941,7 @@ void SQLite::rollback() {
         // ever having called `prepare`, which would have locked our mutex.
         if (_mutexLocked) {
             _mutexLocked = false;
-            g_commitLock.unlock();
+            _sharedData->commitLock.unlock();
         }
         {
             unique_lock<mutex> lock(_sharedData->notifyWaitMutex);
@@ -1224,6 +1220,20 @@ void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListene
 void SQLite::SharedData::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _checkpointListeners.erase(&listener);
+}
+
+void SQLite::SharedData::checkpointRequired(SQLite& db) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    for (auto listener : _checkpointListeners) {
+        listener->checkpointRequired(db);
+    }
+}
+
+void SQLite::SharedData::checkpointComplete(SQLite& db) {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    for (auto listener : _checkpointListeners) {
+        listener->checkpointComplete(db);
+    }
 }
 
 void SQLite::SharedData::incrementCommit(const string& commitHash) {

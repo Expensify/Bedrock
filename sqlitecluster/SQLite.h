@@ -34,11 +34,6 @@ class SQLite {
         virtual void checkpointComplete(SQLite& db) = 0;
     };
 
-    // This publicly exposes our core mutex, allowing other classes to perform extra operations around commits and
-    // such, when they determine that those operations must be made atomically with operations happening in SQLite.
-    // This can be locked with the SQLITE_COMMIT_AUTOLOCK macro, as well.
-    static recursive_mutex g_commitLock;
-
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
     //                   created. If some value larger than -1 is passed, then journals `journal0000 through
     //                   journalNNNN` are created (or left alone if such tables already exist). If -2 or less is
@@ -225,6 +220,12 @@ class SQLite {
 
   private:
 
+    // SQLite instances can't be instantiated simultaneously for the first handle for each DB file, as there's global
+    // setup work that needs to be done for the sqlite3 library. This lock prevents two different DB files from being
+    // instantiated at the same moment and causing weird race conditions here. Currently, this is a bit of overkill and
+    // could probably be done without, as we only use a single DB file in Bedrock.
+    static mutex _instantiationLock;
+
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     class SharedData {
@@ -232,9 +233,11 @@ class SQLite {
         // Constructor.
         SharedData();
 
-        // atomic accessors for _checkpointListeners.
+        // Add and remove and call checkpoint listeners in a thread-safe way.
         void addCheckpointListener(CheckpointRequiredListener& listener);
         void removeCheckpointListener(CheckpointRequiredListener& listener);
+        void checkpointRequired(SQLite& db);
+        void checkpointComplete(SQLite& db);
 
         // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
         // after completing a commit and before releasing the commit lock.
@@ -259,67 +262,24 @@ class SQLite {
         // list.
         void commitTransactionInfo(uint64_t commitID);
 
+        // The lock for all commits made to this DB. This should be locked any time another writer can't affect the
+        // state of the DB.
+        recursive_mutex commitLock;
+
       private:
-      public: // TODO: Remove
 
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
         map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
         map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
+      public: // TODO: Remove
         // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
         // though this atomic integer. getCommitCount() returns the value of this variable.
         atomic<uint64_t> _commitCount;
 
         // Names of journal tables for this database.
         vector<string> _journalNames;
-
-        // Explanation: Why do we keep a list of outstanding transactions, instead of just looking them up when we need
-        // them (i.e., look up all transaction with an ID greater than the last one sent to peers when we need to send them
-        // to peers)?
-        // Originally, that had been the idea, but we ran into a problem with the way we send transactions to peers. When
-        // doing parallel writes, we'll always write commits to the database in order. We particularly construct locks
-        // around both `prepare()` and `commit()` in SQLiteNode to handle this (and yes, the fact that I'm discussing
-        // SQLiteNode in SQlite.h is not a sign of great encapsulation). In general then, since rows are always added to
-        // the DB and then committed in order, we could just keep a pointer to the last-sent transaction, and send all
-        // transactions following that one to peers.
-        //
-        // However, this breaks down when we need to do a quorum command. In this case, we perform the following actions
-        // from the sync thread:
-        //
-        // 1) processCommand()
-        // 2) mutex.lock()
-        // 3) sendOutstandingTransactions()
-        // 4) prepare()
-        // 5) commit() <- this is a distributed commit.
-        //
-        // We need to sendOutstandingTransactions() before calling commit(), because this is a distributed commit and if we
-        // don't send any outstanding transactions to peers before sending the current one, then transactions will arrive
-        // at peers out of order. We also need to lock our mutex before calling sendOutstandingTransactions() to prevent
-        // any other threads from making new commits while we're sending them, which would result in the same out-of-order
-        // sending when we completed sendOutstandingTransactions(), but still had (newly committed) transactions to send.
-        //
-        // The problem that requires us to keep lists of outstanding transactions is that when we call processCommand() in
-        // the current thread, sqlite will use a snapshot of the database taken at that point (the point at which we do
-        // `BEGIN CONCURRENT`) until we either commit or rollback the transaction.
-        // That means that if any other thread makes a new commit to the database after we've started process(), but before
-        // we call sendOutstandingTransactions(), we won't see it from the current thread, because we're operating on on
-        // old database snpashot until we either rollback(), which defeats the purpose of committing a new transaction, or
-        // we commit(), which we can't do yet because we need to send outstanding transactions first.
-        //
-        // We could grab out mutex earlier, before calling processCommand(), which would avoid this situation, but it would
-        // cause all other threads to wait for the entire duration of processCommand() in this thread, which is the sort of
-        // performance problem we're trying to avoid in the first place with parallel writes. Instead, when each thread
-        // adds new commits, it makes them available in the following lists, so that we'll have access to them in
-        // sendOutstandingTransactions(), even if the current thread is operating on an old DB snapshot.
-        //
-        // NOTE: Both of the following collections (_inFlightTransactions and _committedtransactionIDs) are shared between
-        // all threads and need to be accessed in a synchronized fashion. They do *NOT* implement their own synchronization
-        // and must be protected by locking `g_commitLock`.
-        //
-        // This is a map of all currently "in flight" transactions. These are transactions for which a `prepare()` has been
-        // called to generate a journal row, but have not yet been sent to peers.
-        map<uint64_t, tuple<string, string, uint64_t>> _inFlightTransactions;
 
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
         // when required to make sure it can get exclusive use of the DB.
