@@ -258,21 +258,13 @@ class SQLite {
         // list.
         void commitTransactionInfo(uint64_t commitID);
 
+        // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
+        // though this atomic integer. getCommitCount() returns the value of this variable.
+        atomic<uint64_t> commitCount;
+
         // The lock for all commits made to this DB. This should be locked any time another writer can't affect the
         // state of the DB.
         recursive_mutex commitLock;
-
-      private:
-
-        // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
-        // or if it's been committed.
-        map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
-        map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
-
-      public: // TODO: Remove
-        // The current commit count, loaded at initialization from the highest commit ID in the DB, and then accessed
-        // though this atomic integer. getCommitCount() returns the value of this variable.
-        atomic<uint64_t> _commitCount;
 
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
         // when required to make sure it can get exclusive use of the DB.
@@ -284,12 +276,20 @@ class SQLite {
         condition_variable blockNewTransactionsCV;
         atomic<int> currentTransactionCount;
 
+        // TODO: These should be private or renamed.
         // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
         atomic<int> _currentPageCount;
 
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
+
+      private:
+
+        // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
+        // or if it's been committed.
+        map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
+        map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
         // set of objects listening for checkpoints.
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;

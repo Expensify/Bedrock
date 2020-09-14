@@ -59,15 +59,14 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, int64_t mmapSizeGB
 
     auto sharedDataIterator = sharedDataLookupMap.find(filename);
     if (sharedDataIterator == sharedDataLookupMap.end()) {
-        // TODO: We could make _commitCount and lastCommittedHash constructor params.
         SharedData* sharedData = new SharedData();
 
-        // Read the highest commit count from the database, and store it in _commitCount.
+        // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
         SQResult result;
         SASSERT(!SQuery(db, "getting commit count", query, result));
         uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
-        sharedData->_commitCount = commitCount;
+        sharedData->commitCount = commitCount;
 
         // And then read the hash for that transaction.
         string lastCommittedHash, ignore;
@@ -677,7 +676,7 @@ bool SQLite::prepare() {
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
     string committedQuery, committedHash;
-    uint64_t commitCount = _sharedData._commitCount;
+    uint64_t commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
@@ -782,18 +781,17 @@ int SQLite::commit() {
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
-        SDEBUG("Commit successful (" << _sharedData._commitCount << "), releasing commitLock.");
+        SDEBUG("Commit successful (" << _sharedData.commitCount << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        _sharedData.commitLock.unlock();
+        _mutexLocked = false;
         {
             unique_lock<mutex> lock(_sharedData.notifyWaitMutex);
             _sharedData.currentTransactionCount--;
         }
         _sharedData.blockNewTransactionsCV.notify_one();
-        // Can we unlock before we do the above block?
-        _sharedData.commitLock.unlock();
-        _mutexLocked = false;
         _queryCache.clear();
         if (_useCache) {
             SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
@@ -944,7 +942,7 @@ int64_t SQLite::getLastInsertRowID() {
 }
 
 uint64_t SQLite::getCommitCount() {
-    return _sharedData._commitCount;
+    return _sharedData.commitCount;
 }
 
 size_t SQLite::getLastWriteChangeCount() {
@@ -1149,8 +1147,8 @@ void SQLite::SharedData::checkpointComplete(SQLite& db) {
 
 void SQLite::SharedData::incrementCommit(const string& commitHash) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _commitCount++;
-    commitTransactionInfo(_commitCount);
+    commitCount++;
+    commitTransactionInfo(commitCount);
     lastCommittedHash.store(commitHash);
 }
 
