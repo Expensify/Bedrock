@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <libstuff/SPerformanceTimer.h>
 
 class SQLite {
   public:
@@ -288,6 +289,7 @@ class SQLite {
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
 
+        SPerformanceTimer _commitLockTimer;
       private:
 
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared

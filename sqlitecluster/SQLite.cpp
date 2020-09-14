@@ -276,21 +276,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     object->_sharedData._currentPageCount.store(pageCount);
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
-    if (!object->_enableFullCheckpoints || pageCount < fullCheckpointPageMin.load()) {
-        int passive = passiveCheckpointPageMin.load();
-        if (!passive || pageCount < passive) {
-            SINFO("[checkpoint] skipping checkpoint with " << pageCount
-                  << " pages in WAL file (checkpoint every " << passive << " pages).");
-        } else {
-            int walSizeFrames = 0;
-            int framesCheckpointed = 0;
-            uint64_t start = STimeNow();
-            int result = sqlite3_wal_checkpoint_v2(db, dbName, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
-            SINFO("[checkpoint] passive checkpoint complete with " << pageCount
-                  << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
-                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
-        }
-    } else {
+    if (object->_enableFullCheckpoints && pageCount >= fullCheckpointPageMin.load()) {
         // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
         SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
 
@@ -446,6 +432,7 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
 bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache, const string& transactionName) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         _sharedData.commitLock.lock();
+        _sharedData._commitLockTimer.start();
         _mutexLocked = true;
     }
     return beginTransaction(useCache, transactionName);
@@ -672,6 +659,7 @@ bool SQLite::prepare() {
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         _sharedData.commitLock.lock();
+        _sharedData._commitLockTimer.start();
         _mutexLocked = true;
     }
 
@@ -787,14 +775,28 @@ int SQLite::commit() {
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+        _sharedData._commitLockTimer.stop();
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
+        _queryCache.clear();
+
+        // Notify the checkpoint thread (if there is one) that it might be able to run now.
         {
             unique_lock<mutex> lock(_sharedData.notifyWaitMutex);
             _sharedData.currentTransactionCount--;
         }
         _sharedData.blockNewTransactionsCV.notify_one();
-        _queryCache.clear();
+
+        // See if we can checkpoint without holding the commit lock.
+        if (!_sharedData._checkpointThreadBusy) {
+            int walSizeFrames = 0;
+            int framesCheckpointed = 0;
+            uint64_t start = STimeNow();
+            int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
+            SINFO("[checkpoint] passive checkpoint complete with " << _sharedData._currentPageCount
+                  << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
+                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+        }
         if (_useCache) {
             SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
         }
@@ -859,6 +861,7 @@ void SQLite::rollback() {
         // ever having called `prepare`, which would have locked our mutex.
         if (_mutexLocked) {
             _mutexLocked = false;
+            _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
         {
@@ -1120,7 +1123,8 @@ SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 currentTransactionCount(0),
 _currentPageCount(0),
-_checkpointThreadBusy(0)
+_checkpointThreadBusy(0),
+_commitLockTimer("commit lock timer")
 { }
 
 void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
