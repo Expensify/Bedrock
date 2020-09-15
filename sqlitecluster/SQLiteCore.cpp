@@ -7,9 +7,6 @@ SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
 bool SQLiteCore::commit() {
-    // Grab the global SQLite lock.
-    SQLITE_COMMIT_AUTOLOCK;
-
     // This should always succeed.
     SASSERT(_db.prepare());
 
@@ -27,8 +24,6 @@ bool SQLiteCore::commit() {
         return false;
     }
 
-    // Success! Let the node know something's been committed, and return.
-    SQLiteNode::unsentTransactions.store(true);
     return true;
 }
 

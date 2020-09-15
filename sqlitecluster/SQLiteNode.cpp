@@ -27,7 +27,6 @@
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
 const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
-atomic<bool> SQLiteNode::unsentTransactions(false);
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
 const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
@@ -238,6 +237,9 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
             _commitState == CommitState::FAILED);
     _commitState = CommitState::WAITING;
     _commitConsistency = consistency;
+    if (_commitConsistency != QUORUM) {
+        SHMMM("Non-quorum transaction running in the sync thread.");
+    }
 }
 
 void SQLiteNode::sendResponse(const SQLiteCommand& command)
@@ -347,13 +349,11 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    SQLITE_COMMIT_AUTOLOCK;
-
-    // Make sure we have something to do.
-    if (!unsentTransactions.load()) {
+    auto transactions = _db.popCommittedTransactions();
+    if (transactions.empty()) {
+        // Nothing to do.
         return;
     }
-    auto transactions = _db.getCommittedTransactions();
     string sendTime = to_string(STimeNow());
     for (auto& i : transactions) {
         uint64_t id = i.first;
@@ -382,7 +382,6 @@ void SQLiteNode::_sendOutstandingTransactions() {
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
-    unsentTransactions.store(false);
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
@@ -985,11 +984,12 @@ bool SQLiteNode::update() {
                     commit.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(commit, true); // true: Only to subscribed peers.
 
-                    // clear the unsent transactions, we've sent them all (including this one);
-                    _db.getCommittedTransactions();
-
                     // Update the last sent transaction ID to reflect that this is finished.
-                    _lastSentTransactionID = _db.getCommitCount();
+                    // This works because we only change this value in the sync thread.
+                    _lastSentTransactionID++;
+
+                    // Remove the newly sent transaction from the sent list, as we have already sent it.
+                    _db.popCommittedTransactions(_lastSentTransactionID);
 
                     // Done!
                     _commitState = CommitState::SUCCESS;
@@ -1001,19 +1001,12 @@ bool SQLiteNode::update() {
                 // We're going to need to read from the network to finish this.
                 return false;
             }
-
-            // We were committing, but now we're not. The only code path through here that doesn't lead to the point
-            // is the 'return false' immediately above here, everything else completes the transaction (even if it was
-            // a failed transaction), so we can safely unlock now.
-            SQLite::g_commitLock.unlock();
         }
 
         // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
         // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
         // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
         if (_commitState == CommitState::WAITING) {
-            // Lock the database. We'll unlock it when we complete in a future update cycle.
-            SQLite::g_commitLock.lock();
             _commitState = CommitState::COMMITTING;
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
@@ -1457,7 +1450,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             request["peerCommitCount"] = (*peer)["CommitCount"];
             request["peerHash"] = (*peer)["Hash"];
             request["peerID"] = to_string(getIDByPeer(peer));
-            request["targetCommit"] = to_string(unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount());
 
             // The following properties are only used to expand out our log macros.
             request["name"] = name;
@@ -2027,11 +2019,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState == LEADING) {
             // Seed our last sent transaction.
             {
-                SQLITE_COMMIT_AUTOLOCK;
-                unsentTransactions.store(false);
-                _lastSentTransactionID = _db.getCommitCount();
                 // Clear these.
-                _db.getCommittedTransactions();
+                _db.popCommittedTransactions();
+                _lastSentTransactionID = _db.getCommitCount();
             }
         } else if (newState == STANDINGDOWN) {
             // start the timeout countdown.
@@ -2069,10 +2059,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 }
 
 void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
-    _queueSynchronizeStateless(peer->nameValueMap, name, peer->name, _state, (unsentTransactions.load() ? _lastSentTransactionID : _db.getCommitCount()), _db, response, sendAll);
+    _queueSynchronizeStateless(peer->nameValueMap, name, peer->name, _state, _db, response, sendAll);
 }
 
-void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, uint64_t targetCommit, SQLite& db, SData& response, bool sendAll) {
+void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll) {
     // This is a hack to make the PXXXX macros works, since they expect `peer->name` to be defined.
     struct {string name;} peerBase;
     auto peer = &peerBase;
@@ -2108,6 +2098,12 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
 
     // We agree on what we share, do we need to give it more?
     SQResult result;
+
+    // Because this is used for both SYNCHRONIZE_RESPONSE and SUBSCRIPTION_APPROVED messages, we need to be careful.
+    // The commitCount can change at any time, and on LEADER, we need to make sure we don't send the same transaction
+    // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
+    // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
+    uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
@@ -2335,7 +2331,6 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
                                        command.request["name"],
                                        command.request["peerName"],
                                        node->_state,
-                                       SToUInt64(command.request["targetCommit"]),
                                        db,
                                        command.response,
                                        false);
@@ -2396,6 +2391,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             break;
         } catch (const SException& e) {
             // Something caused a write failure.
+            SALERT(e.what());
             db.rollback();
 
             // This is a fatal error case.
@@ -2514,7 +2510,7 @@ int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t c
     }
 
     // Clear the list of committed transactions. We're following, so we don't need to send these.
-    db.getCommittedTransactions();
+    db.popCommittedTransactions();
 
     // Log timing info.
     // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
@@ -2688,7 +2684,7 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
     _db.commit();
 
     // Clear the list of committed transactions. We're following, so we don't need to send these.
-    _db.getCommittedTransactions();
+    _db.popCommittedTransactions();
 
     // Log timing info.
     // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
@@ -2725,3 +2721,19 @@ void SQLiteNode::handleSerialRollbackTransaction(Peer* peer, const SData& messag
     _db.rollback();
 }
 
+bool SQLiteNode::hasQuorum() {
+    if (_state != LEADING && _state != STANDINGDOWN) {
+        return false;
+    }
+    int numFullPeers = 0;
+    int numFullFollowers = 0;
+    for (auto peer : peerList) {
+        if (peer->params["Permafollower"] != "true") {
+            ++numFullPeers;
+            if ((*peer)["Subscribed"] == "true") {
+                numFullFollowers++;
+            }
+        }
+    }
+    return (numFullFollowers * 2 >= numFullPeers);
+}
