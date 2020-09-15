@@ -1062,7 +1062,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                             // not allow the state of the node to change while we're committing. If it turns out
                             // we've changed states, we'll roll this command back, so we lock the node's state
                             // until we complete.
-                            shared_lock<decltype(server._syncNode->stateMutex)> lock2(server._syncNode->stateMutex);
+                            shared_lock<decltype(server._syncNode->stateMutex)> stateLock(server._syncNode->stateMutex);
                             if (replicationState.load() != SQLiteNode::LEADING &&
                                 replicationState.load() != SQLiteNode::STANDINGDOWN) {
                                 SALERT("Node State changed from LEADING to "

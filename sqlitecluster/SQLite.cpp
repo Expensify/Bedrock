@@ -75,7 +75,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, int64_t mmapSizeGB
 
         // If we have a commit count, we should have a hash as well.
         if (commitCount && lastCommittedHash.empty()) {
-            SWARN("Loaded commit count " << commitCount << " with empty hash.");
+            SERROR("Loaded commit count " << commitCount << " with empty hash.");
         }
 
         // Insert our SharedData object into the global map.
@@ -101,6 +101,9 @@ sqlite3* SQLite::initializeDB(const string& filename) {
 }
 
 vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
+    // Make sure we don't try and create more journals than we can name.
+    SASSERT(minJournalTables < 10'000);
+
     // First, we create all of the tables through `minJournalTables` if they don't exist.
     for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
         char tableName[27] = {0};
@@ -821,8 +824,8 @@ int SQLite::commit() {
     return result;
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::getCommittedTransactions(uint64_t maxCommitID) {
-    return _sharedData.getCommittedTransactions(maxCommitID);
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(uint64_t maxCommitID) {
+    return _sharedData.popCommittedTransactions(maxCommitID);
 }
 
 void SQLite::rollback() {
@@ -1172,7 +1175,7 @@ void SQLite::SharedData::commitTransactionInfo(uint64_t commitID) {
     _committedTransactions.insert(_preparedTransactions.extract(commitID));
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::getCommittedTransactions(uint64_t maxCommitID) {
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedTransactions(uint64_t maxCommitID) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     decltype(_committedTransactions) result;
     if (maxCommitID == 0) {
