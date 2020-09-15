@@ -123,12 +123,12 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 # where for the object file rule, the reverse is true.
 $(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
 	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MMD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(GXX) $(CXXFLAGS) -MD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
+	$(GXX) $(CXXFLAGS) -MD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
 
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
