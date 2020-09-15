@@ -206,7 +206,7 @@ void SQLite::commonConstructorInitialization() {
     }
 }
 
-SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
+SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
                int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
@@ -215,7 +215,6 @@ SQLite::SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints
     _sharedData(initializeSharedData(_db, mmapSizeGB, _filename, _journalNames)),
     _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
-    _enableFullCheckpoints(enableFullCheckpoints),
     _pageLoggingEnabled(pageLoggingEnabled),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
@@ -232,7 +231,6 @@ SQLite::SQLite(const SQLite& from) :
     _sharedData(from._sharedData),
     _journalName(_journalNames[(_sharedData.nextJournalCount++ % _journalNames.size() - 1) + 1]),
     _journalSize(from._journalSize),
-    _enableFullCheckpoints(from._enableFullCheckpoints),
     _pageLoggingEnabled(from._pageLoggingEnabled),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
@@ -279,7 +277,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     object->_sharedData._currentPageCount.store(pageCount);
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
-    if (object->_enableFullCheckpoints && pageCount >= fullCheckpointPageMin.load()) {
+    if (pageCount >= fullCheckpointPageMin.load()) {
         // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
         SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
 

@@ -41,12 +41,12 @@ class SQLite {
     //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
-           int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int enableFullCheckpoints, int maxJournalSize, int minJournalTables, int synchronous) :
-        SQLite(filename, cacheSize, (bool)enableFullCheckpoints, maxJournalSize, minJournalTables, "") {}
+    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
+        SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
     
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -440,10 +440,6 @@ class SQLite {
     bool _autoRolledBack = false;
 
     bool _noopUpdateMode = false;
-
-    // Flag for enabling full checkpoints, though it's effectively impossible to turn this off, so it should be removed
-    // and replaced with `true`.
-    bool _enableFullCheckpoints;
 
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
