@@ -349,7 +349,7 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 void SQLiteNode::_sendOutstandingTransactions() {
-    auto transactions = _db.getCommittedTransactions();
+    auto transactions = _db.popCommittedTransactions();
     if (transactions.empty()) {
         // Nothing to do.
         return;
@@ -989,7 +989,7 @@ bool SQLiteNode::update() {
                     _lastSentTransactionID++;
 
                     // Remove the newly sent transaction from the sent list, as we have already sent it.
-                    _db.getCommittedTransactions(_lastSentTransactionID);
+                    _db.popCommittedTransactions(_lastSentTransactionID);
 
                     // Done!
                     _commitState = CommitState::SUCCESS;
@@ -2020,7 +2020,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Seed our last sent transaction.
             {
                 // Clear these.
-                _db.getCommittedTransactions();
+                _db.popCommittedTransactions();
                 _lastSentTransactionID = _db.getCommitCount();
             }
         } else if (newState == STANDINGDOWN) {
@@ -2100,7 +2100,7 @@ void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& 
     SQResult result;
 
     // Because this is used for both SYNCHRONIZE_RESPONSE and SUBSCRIPTION_APPROVED messages, we need to be careful.
-    // The commitCount can change at any time, and on LEADER, we need to make sure we don't sent the same transaction
+    // The commitCount can change at any time, and on LEADER, we need to make sure we don't send the same transaction
     // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
     // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
     uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : db.getCommitCount();
@@ -2510,7 +2510,7 @@ int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t c
     }
 
     // Clear the list of committed transactions. We're following, so we don't need to send these.
-    db.getCommittedTransactions();
+    db.popCommittedTransactions();
 
     // Log timing info.
     // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.
@@ -2684,7 +2684,7 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
     _db.commit();
 
     // Clear the list of committed transactions. We're following, so we don't need to send these.
-    _db.getCommittedTransactions();
+    _db.popCommittedTransactions();
 
     // Log timing info.
     // TODO: This is obsolete and replaced by timing info in BedrockCommand. This should be removed.

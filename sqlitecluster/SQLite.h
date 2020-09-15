@@ -67,11 +67,12 @@ class SQLite {
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
     bool beginTransaction(bool useCache = false, const string& transactionName = "");
 
-    // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
     enum class TRANSACTION_TYPE {
         SHARED,
         EXCLUSIVE
     };
+
+    // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
     bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false, const string& transactionName = "");
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
@@ -196,7 +197,7 @@ class SQLite {
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
     // out to peers. You can limit the number of transactions to a certain commit ID.
-    map<uint64_t, tuple<string,string, uint64_t>> getCommittedTransactions(uint64_t maxCommitID = 0);
+    map<uint64_t, tuple<string,string, uint64_t>> popCommittedTransactions(uint64_t maxCommitID = 0);
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -245,7 +246,7 @@ class SQLite {
 
         // This removes and returns any committed transactions up through the given commit ID, or all of them if
         // maxCommitID is 0.
-        map<uint64_t, tuple<string, string, uint64_t>> getCommittedTransactions(uint64_t maxCommitID = 0);
+        map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions(uint64_t maxCommitID = 0);
 
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
@@ -266,8 +267,9 @@ class SQLite {
         // though this atomic integer. getCommitCount() returns the value of this variable.
         atomic<uint64_t> commitCount;
 
-        // The lock for all commits made to this DB. This should be locked any time another writer can't affect the
-        // state of the DB.
+        // Mutex to serialize commits to this DB. This should be locked anytime a thread needs to commit to the DB, or
+        // needs to prevent other threads from committing to the DB (such as to guarantee there are no commit conflicts
+        // during a transaction).
         recursive_mutex commitLock;
 
         // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
@@ -289,7 +291,6 @@ class SQLite {
         atomic<int> _checkpointThreadBusy;
 
       private:
-
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
         map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
