@@ -84,16 +84,6 @@ CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-# Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
-# they'll just get deleted anyway.
-ifneq ($(MAKECMDGOALS),clean)
--include $(STUFFDEP)
--include $(LIBBEDROCKDEP)
--include $(BEDROCKDEP)
-#-include $(TESTDEP)
-#-include $(CLUSTERTESTDEP)
-endif
-
 # Our static libraries just depend on their object files.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
@@ -135,3 +125,13 @@ $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
+
+# Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
+# they'll just get deleted anyway.
+ifneq ($(MAKECMDGOALS),clean)
+-include $(STUFFDEP)
+-include $(LIBBEDROCKDEP)
+-include $(BEDROCKDEP)
+#-include $(TESTDEP)
+#-include $(CLUSTERTESTDEP)
+endif
