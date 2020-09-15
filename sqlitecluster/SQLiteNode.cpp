@@ -154,7 +154,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
                     }
                     SINFO("BEGIN for commit " << newCount);
-                    node.handleBeginTransaction(db, peer, command);
+                    node.handleBeginTransaction(db, peer, command, attemptCount > 1);
 
                     // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
                     // skip this, we did it above) to enforce that commits are in the same order on followers as on
@@ -2355,7 +2355,7 @@ bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& co
     return false;
 }
 
-void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message) {
+void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict) {
     AutoScopedWallClockTimer timer(_syncTimer);
 
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
@@ -2378,7 +2378,11 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             SINFO("Waiting for checkpoint");
             db.waitForCheckpoint();
             SINFO("Done waiting for checkpoint");
-            if (!db.beginTransaction()) {
+            // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
+            // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
+            // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
+            // than SHARED mode.
+            if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("failed to begin transaction");
             }
 

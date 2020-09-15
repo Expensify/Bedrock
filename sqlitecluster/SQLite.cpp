@@ -432,7 +432,7 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
 bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache, const string& transactionName) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         _sharedData.commitLock.lock();
-        _sharedData._commitLockTimer.start();
+        _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
     return beginTransaction(useCache, transactionName);
@@ -659,7 +659,7 @@ bool SQLite::prepare() {
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         _sharedData.commitLock.lock();
-        _sharedData._commitLockTimer.start();
+        _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
     }
 

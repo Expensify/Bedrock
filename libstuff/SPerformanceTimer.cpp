@@ -1,73 +1,51 @@
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"
 
-SPerformanceTimer::SPerformanceTimer(string description, bool reverse, uint64_t logIntervalSeconds)
-  : _reverse(reverse), _logPeriod(logIntervalSeconds * STIME_US_PER_S), _lastStart(0), _lastStop(0),
-    _lastLogStart(0), _timeLogged(0), _timeNotLogged(0), _description(description)
+SPerformanceTimer::SPerformanceTimer(string description)
+  : _description(description),
+  _lastLogStart(chrono::steady_clock::now())
 {}
 
-void SPerformanceTimer::start() {
-    uint64_t timestamp = STimeNow();
-
-    // We're about to enter poll(), so if we've exited poll() before, then increment the time spent not polling. This
-    // should always be true except the first time this is called.
-    if (_lastStop) {
-        _timeNotLogged += timestamp - _lastStop;
-    }
-
-    // Record the last time startPoll was called (i.e., right now).
-    _lastStart = timestamp;
-
-    // This records the time that we first start running this timer, if it's never been set before. From here forward,
-    // we'll record a log line every "_logPeriod" microseconds.
-    if (!_lastLogStart) {
-        _lastLogStart = timestamp;
-    }
+void SPerformanceTimer::start(const string& type) {
+    _lastType = type;
+    _lastStart = chrono::steady_clock::now();
 }
 
 void SPerformanceTimer::stop() {
-    uint64_t timestamp = STimeNow();
+    // Get the time, and the time since last start.
+    auto now = chrono::steady_clock::now();
+    auto duration = now - _lastStart;
 
-    // We just exited poll(), so if we've recorded the time when we entered poll(), we'll increment the time spent
-    // polling. Note that if `_lastStart` isn't set at this point, this class is being used incorrectly (i.e, you
-    // called stopPoll() without calling startPoll().
-    if (_lastStart) {
-        _timeLogged += timestamp - _lastStart;
+    // Record this time.
+    auto it = _totals.find(_lastType);
+    if (it != _totals.end()) {
+        it->second += now - _lastStart;
+    } else {
+        _totals.emplace(_lastType, duration);
     }
 
-    // Record the last time stopPoll was called (i.e., right now).
-    _lastStop = timestamp;
+    // Now log, if required.
+    if (now - _lastLogStart > 10s) {
+        log(now - _lastLogStart);
 
-    // If it's been longer than our log period, log our current statistics and start over on the next iteration.
-    if (_lastLogStart + _logPeriod < timestamp) {
-        log();
-        _lastLogStart = timestamp;
-        _timeLogged = 0;
-        _timeNotLogged = 0;
+        // Reset.
+        _lastLogStart = now;
+        _totals.clear();
     }
 }
 
-void SPerformanceTimer::log() {
-    // Don't log if we didn't record anything.
-    if (_timeLogged + _timeNotLogged == 0) {
-        return;
+void SPerformanceTimer::log(chrono::steady_clock::duration elapsed) {
+    auto elapsedUS = chrono::duration_cast<chrono::microseconds>(elapsed).count();
+    chrono::steady_clock::duration accounted(chrono::steady_clock::duration::zero());
+    list<string> results;
+    char buffer[100];
+    for (auto& p : _totals) {
+        double microsecs = chrono::duration_cast<chrono::microseconds>(p.second).count();
+        double percentage = (microsecs / elapsedUS) * 100.0;
+        snprintf(buffer, 100, "%s %.2fms (%.2f%%)", p.first.c_str(), (microsecs / 1000), percentage);
+        results.emplace_back(buffer);
+        accounted += p.second;
     }
-
-    // Compute the percentage of time we've been busy since the last log period started, as a friendly floating point
-    // number with two decimal places.
-    string adj;
-    double percentage;
-    if (_reverse) {
-        percentage = 100.0 * ((double)_timeNotLogged / (_timeLogged + _timeNotLogged));
-        adj = "active";
-    } else {
-        percentage = 100.0 * ((double)_timeLogged / (_timeLogged + _timeNotLogged));
-        adj = "other";
-    }
-    char buffer[7];
-    snprintf(buffer, 7, "%.2f", percentage);
-
-    // Log both raw numbers and our friendly percentage.
-    SINFO("[performance] " << (_timeLogged + _timeNotLogged)/1000 << "ms elapsed, " << _timeLogged/1000 << "ms in "
-          << _description << ", " << _timeNotLogged/1000 << "ms " << adj << ". " << buffer << "% " << "usage.");
+    SINFO(_description << ": " << SComposeList(results) << " in "
+          << chrono::duration_cast<chrono::milliseconds>(elapsed).count() << "ms total.");
 }
