@@ -391,7 +391,7 @@ void SQLite::waitForCheckpoint() {
     shared_lock<decltype(_sharedData.blockNewTransactionsMutex)> lock(_sharedData.blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
+bool SQLite::beginTransaction(bool useCache) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -417,7 +417,6 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
-    _transactionName = transactionName;
     _useCache = useCache;
     _queryCount = 0;
     _cacheHits = 0;
@@ -430,13 +429,13 @@ bool SQLite::beginTransaction(bool useCache, const string& transactionName) {
     return _insideTransaction;
 }
 
-bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache, const string& transactionName) {
+bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         _sharedData.commitLock.lock();
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
-    return beginTransaction(useCache, transactionName);
+    return beginTransaction(useCache);
 }
 
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
@@ -799,7 +798,7 @@ int SQLite::commit() {
                   << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         }
         if (_useCache) {
-            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
+            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
         }
         _useCache = false;
         _queryCount = 0;
@@ -875,7 +874,7 @@ void SQLite::rollback() {
     }
     _queryCache.clear();
     if (_useCache) {
-        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache for '" << _transactionName << "'.");
+        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
     }
     _useCache = false;
     _queryCount = 0;

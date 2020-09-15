@@ -66,7 +66,7 @@ class SQLite {
 
     // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
     // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false, const string& transactionName = "");
+    bool beginTransaction(bool useCache = false);
 
     enum class TRANSACTION_TYPE {
         SHARED,
@@ -74,7 +74,7 @@ class SQLite {
     };
 
     // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
-    bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false, const string& transactionName = "");
+    bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
