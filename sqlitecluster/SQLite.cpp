@@ -1124,7 +1124,11 @@ nextJournalCount(0),
 currentTransactionCount(0),
 _currentPageCount(0),
 _checkpointThreadBusy(0),
-_commitLockTimer("commit lock timer")
+_commitLockTimer("commit lock timer", {
+    {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
+    {"SHARED", chrono::steady_clock::duration::zero()},
+    //{"BLOCKED", chrono::steady_clock::duration::zero()}, // For when we can't do anything cause of a checkpoint.
+})
 { }
 
 void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {

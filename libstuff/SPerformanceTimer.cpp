@@ -1,9 +1,11 @@
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"
 
-SPerformanceTimer::SPerformanceTimer(string description)
+SPerformanceTimer::SPerformanceTimer(string description, map<string, chrono::steady_clock::duration> defaults)
   : _description(description),
-  _lastLogStart(chrono::steady_clock::now())
+  _lastLogStart(chrono::steady_clock::now()),
+  _defaults(defaults),
+  _totals(_defaults)
 {}
 
 void SPerformanceTimer::start(const string& type) {
@@ -30,7 +32,7 @@ void SPerformanceTimer::stop() {
 
         // Reset.
         _lastLogStart = now;
-        _totals.clear();
+        _totals = _defaults;
     }
 }
 
