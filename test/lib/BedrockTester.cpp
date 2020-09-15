@@ -519,12 +519,16 @@ SQLite& BedrockTester::getSQLiteDB()
 
 string BedrockTester::readDB(const string& query)
 {
-    return getSQLiteDB().read(query);
+    string result = getSQLiteDB().read(query);
+    getSQLiteDB().rollback();
+    return result;
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
-    return getSQLiteDB().read(query, result);
+    bool success = getSQLiteDB().read(query, result);
+    getSQLiteDB().rollback();
+    return success;
 }
 
 int BedrockTester::getServerPort() {

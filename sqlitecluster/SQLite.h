@@ -64,17 +64,15 @@ class SQLite {
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
-    // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
-    // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false);
-
+    // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE {
         SHARED,
         EXCLUSIVE
     };
 
-    // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
-    bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false);
+    // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
+    // that this transaction cannot conflict with any others.
+    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -450,9 +448,6 @@ class SQLite {
 
     // Number of queries found in cache in this transaction (for metrics only).
     int64_t _cacheHits = 0;
-
-    // Set to true if the cache is in use for this transaction.
-    bool _useCache = false;
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;

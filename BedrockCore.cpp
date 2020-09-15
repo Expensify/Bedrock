@@ -85,7 +85,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (request.test("disableCheckpointInterrupt")) {
                 _db.disableCheckpointInterruptForNextTransaction();
             }
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED, true)) {
+            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
@@ -195,7 +195,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
             // case we need to open a new transaction.
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED, true)) {
+            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
         }

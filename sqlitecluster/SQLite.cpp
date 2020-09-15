@@ -391,7 +391,12 @@ void SQLite::waitForCheckpoint() {
     shared_lock<decltype(_sharedData.blockNewTransactionsMutex)> lock(_sharedData.blockNewTransactionsMutex);
 }
 
-bool SQLite::beginTransaction(bool useCache) {
+bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
+    if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+        _sharedData.commitLock.lock();
+        _sharedData._commitLockTimer.start("EXCLUSIVE");
+        _mutexLocked = true;
+    }
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
@@ -417,7 +422,6 @@ bool SQLite::beginTransaction(bool useCache) {
     // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
-    _useCache = useCache;
     _queryCount = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
@@ -427,15 +431,6 @@ bool SQLite::beginTransaction(bool useCache) {
     _commitElapsed = 0;
     _rollbackElapsed = 0;
     return _insideTransaction;
-}
-
-bool SQLite::beginTransaction(TRANSACTION_TYPE type, bool useCache) {
-    if (type == TRANSACTION_TYPE::EXCLUSIVE) {
-        _sharedData.commitLock.lock();
-        _sharedData._commitLockTimer.start("EXCLUSIVE");
-        _mutexLocked = true;
-    }
-    return beginTransaction(useCache);
 }
 
 bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
@@ -521,17 +516,15 @@ string SQLite::read(const string& query) {
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
     _queryCount++;
-    if (_useCache) {
-        auto foundQuery = _queryCache.find(query);
-        if (foundQuery != _queryCache.end()) {
-            result = foundQuery->second;
-            _cacheHits++;
-            return true;
-        }
+    auto foundQuery = _queryCache.find(query);
+    if (foundQuery != _queryCache.end()) {
+        result = foundQuery->second;
+        _cacheHits++;
+        return true;
     }
     _isDeterministicQuery = true;
     bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_useCache && _isDeterministicQuery && queryResult) {
+    if (_isDeterministicQuery && queryResult) {
         _queryCache.emplace(make_pair(query, result));
     }
     _checkInterruptErrors("SQLite::read"s);
@@ -797,10 +790,7 @@ int SQLite::commit() {
                   << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
                   << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         }
-        if (_useCache) {
-            SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
-        }
-        _useCache = false;
+        SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
@@ -873,10 +863,7 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    if (_useCache) {
-        SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
-    }
-    _useCache = false;
+    SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
