@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <libstuff/SPerformanceTimer.h>
 
 class SQLite {
   public:
@@ -40,12 +41,12 @@ class SQLite {
     //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, bool enableFullCheckpoints, int maxJournalSize,
-           int minJournalTables, const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int enableFullCheckpoints, int maxJournalSize, int minJournalTables, int synchronous) :
-        SQLite(filename, cacheSize, (bool)enableFullCheckpoints, maxJournalSize, minJournalTables, "") {}
+    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
+        SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
     
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -63,17 +64,15 @@ class SQLite {
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query);
 
-    // Begins a new transaction. Returns true on success. Can optionally be instructed to use the query cache, if so
-    // the transaction can be named so that log lines about cache success can be associated to the transaction.
-    bool beginTransaction(bool useCache = false, const string& transactionName = "");
-
+    // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE {
         SHARED,
         EXCLUSIVE
     };
 
-    // Same as above, but locks the commit mutex to guarantee that this transaction cannot conflict with any others.
-    bool beginTransaction(TRANSACTION_TYPE type, bool useCache = false, const string& transactionName = "");
+    // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
+    // that this transaction cannot conflict with any others.
+    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -290,6 +289,7 @@ class SQLite {
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
 
+        SPerformanceTimer _commitLockTimer;
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -439,10 +439,6 @@ class SQLite {
 
     bool _noopUpdateMode = false;
 
-    // Flag for enabling full checkpoints, though it's effectively impossible to turn this off, so it should be removed
-    // and replaced with `true`.
-    bool _enableFullCheckpoints;
-
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
     map<string, SQResult> _queryCache;
@@ -452,9 +448,6 @@ class SQLite {
 
     // Number of queries found in cache in this transaction (for metrics only).
     int64_t _cacheHits = 0;
-
-    // Set to true if the cache is in use for this transaction.
-    bool _useCache = false;
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;

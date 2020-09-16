@@ -1,19 +1,18 @@
 #pragma once
+#include <libstuff/libstuff.h>
 
 class SPerformanceTimer {
   public:
-    SPerformanceTimer(string description, bool reverse = false, uint64_t logIntervalSeconds = 10);
-    void start();
+    SPerformanceTimer(string description, map<string, chrono::steady_clock::duration> defaults = {});
+    void start(const string& type);
     void stop();
-    virtual void log();
+    void log(chrono::steady_clock::duration elapsed);
 
   protected:
-    bool _reverse;
-    uint64_t _logPeriod;
-    uint64_t _lastStart;
-    uint64_t _lastStop;
-    uint64_t _lastLogStart;
-    uint64_t _timeLogged;
-    uint64_t _timeNotLogged;
     string _description;
+    chrono::steady_clock::time_point _lastStart;
+    chrono::steady_clock::time_point _lastLogStart;
+    string _lastType;
+    map <string, chrono::steady_clock::duration> _defaults;
+    map <string, chrono::steady_clock::duration> _totals;
 };

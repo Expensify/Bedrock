@@ -77,6 +77,22 @@ class BedrockTester {
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
     SQLite& getSQLiteDB();
+    bool autoRollbackEveryDBCall = true;
+
+    // This allows callers to run an entire transaction easily.
+    class ScopedTransaction {
+      public:
+        ScopedTransaction(BedrockTester* tester) : _tester(tester) {
+            _tester->autoRollbackEveryDBCall = false;
+            _tester->getSQLiteDB().beginTransaction();
+        }
+        ~ScopedTransaction() {
+            _tester->getSQLiteDB().rollback();
+            _tester->autoRollbackEveryDBCall = true;
+        }
+      private:
+        BedrockTester* _tester;
+    };
 
     int getServerPID() { return _serverPID; }
 
