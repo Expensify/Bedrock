@@ -514,7 +514,9 @@ SQLite& BedrockTester::getSQLiteDB()
     if (!_db) {
         _db = new SQLite(_dbName, 1000000, 3000000, -1);
     }
-    _db->rollback();
+    if (autoRollbackEveryDBCall) {
+        _db->rollback();
+    }
     return *_db;
 }
 
