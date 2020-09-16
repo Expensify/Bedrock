@@ -1114,7 +1114,6 @@ _checkpointThreadBusy(0),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
-    //{"BLOCKED", chrono::steady_clock::duration::zero()}, // For when we can't do anything cause of a checkpoint.
 })
 { }
 
