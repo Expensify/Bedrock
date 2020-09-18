@@ -201,7 +201,7 @@ class SQLiteNode : public STCPNode {
     map<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
     // Replicates any transactions that have been made on our database by other threads to peers.
-    void _sendOutstandingTransactions();
+    void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;

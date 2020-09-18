@@ -21,6 +21,34 @@
 //        have been committed to the database without notifying whoever initiated it. Perhaps have the caller identify
 //        each command with a unique command id, and verify inside the query that the command hasn't been executed yet?
 
+// *** DOCUMENTATION OF MESSAGE FIELDS ***
+// Note: Yes, two of these fields start with lowercase chars.
+// CommitCount:      The highest committed transaction ID in the DB currently. This can be higher than any transaction
+//                   currently being handled. This exists to answer the question "how much data does this peer have?"
+//                   and not to communicate any information about a specific transaction in progress.
+// Hash:             The hash corresponding to the value in CommitCount.
+// ID:               The ID of the transaction currently being operated on. It is the same type of information as
+//                   "CommitCount", but not necessarily for the most recent transaction in the DB. It can be prefixed
+//                   with "ASYNC_" for asynchronous transactions.
+// NewHash:          Hash, but for "ID" instead of "CommitCount".
+//                   Proposal: rename to "currentTransactionHash".
+// NewCount:         Same as "ID" except without the "ASYNC_" prefix.
+// State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
+// Version:          The version string of the node sending the message.
+// Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
+//                   permafollower.
+// Priority:         The priority of the node. 0 for permafollowers.
+// StateChangeCount: The number of state changes that this node has performed since startup. This is useful because
+//                   it's sent at STANDINGUP, and parroted back by followers with an "approve" or "deny". This allows
+//                   the leader to confirm that these responses were in fact sent in response to the correct message,
+//                   and not some old out-of-date message from the past.
+// Response:         Sent in STANDUP_RESPONSE, either "approve" or "deny".
+// Reason:           The reason for a failure case (typically, a "deny" Response). Explanatory string.
+// NumCommits:       With a "SYNCHRONIZE_RESPONSE" message, indicates the number of commits returned.
+// leaderSendTime:   Timestamp in microseconds that leader sent a message, for performance analysis.
+// dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
+//                   optimizing replication.
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateName(_state) << "} "
 
@@ -348,7 +376,7 @@ bool SQLiteNode::shutdownComplete() {
     }
 }
 
-void SQLiteNode::_sendOutstandingTransactions() {
+void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs) {
     auto transactions = _db.popCommittedTransactions();
     if (transactions.empty()) {
         // Nothing to do.
@@ -358,27 +386,37 @@ void SQLiteNode::_sendOutstandingTransactions() {
     for (auto& i : transactions) {
         uint64_t id = i.first;
         if (id <= _lastSentTransactionID) {
+            SALERT("Already sent a transaction in committed transaction list");
             continue;
         }
         string& query = get<0>(i.second);
         string& hash = get<1>(i.second);
         uint64_t dbCountAtStart = get<2>(i.second);
-        SData transaction("BEGIN_TRANSACTION");
-        transaction["NewCount"] = to_string(id);
-        transaction["NewHash"] = hash;
-        transaction["leaderSendTime"] = sendTime;
-        transaction["dbCountAtStart"] = to_string(dbCountAtStart);
-        transaction["ID"] = "ASYNC_" + to_string(id);
-        transaction.content = query;
-        _sendToAllPeers(transaction, true); // subscribed only
-        for (auto peer : peerList) {
-            // Clear the response flag from the last transaction
-            (*peer)["TransactionResponse"].clear();
+        string idHeader = to_string(id);
+
+        // If this is marked as "commitOnly", we won't send the BEGIN for it.
+        if (commitOnlyIDs.find(id) == commitOnlyIDs.end()) {
+            // Any commit where we can send a BEGIN and a COMMIT without waiting for acknowledgement is ASYNC.
+            idHeader = "ASYNC_" + idHeader;
+            SData transaction("BEGIN_TRANSACTION");
+            transaction["NewCount"] = to_string(id);
+            transaction["NewHash"] = hash;
+            transaction["leaderSendTime"] = sendTime;
+            transaction["dbCountAtStart"] = to_string(dbCountAtStart);
+            transaction["ID"] = idHeader;
+            transaction.content = query;
+            for (auto peer : peerList) {
+                // Clear the response flag from the last transaction
+                (*peer)["TransactionResponse"].clear();
+            }
+            _sendToAllPeers(transaction, true); // subscribed only
+        } else {
+            SINFO("Sending COMMIT for QUORUM transaction " << idHeader << " to followers");
         }
         SData commit("COMMIT_TRANSACTION");
-        commit["ID"] = transaction["ID"];
-        commit["CommitCount"] = transaction["NewCount"];
-        commit["Hash"] = hash;
+        commit["ID"] = idHeader;
+        transaction["NewCount"] = to_string(id);
+        commit["NewHash"] = hash;
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
@@ -847,7 +885,9 @@ bool SQLiteNode::update() {
         // because that could cause a deadlock when called by an outside caller!
 
         // If there's no commit in progress, we'll send any outstanding transactions that exist. We won't send them
-        // mid-commit, as they'd end up as nested transactions interleaved with the one in progress.
+        // mid-commit, as they'd end up as nested transactions interleaved with the one in progress. However, there
+        // should never be any commits in here while a commit is in progress anyway, since all commits except the one
+        // running are blocked until that one finishes.
         if (!commitInProgress()) {
             _sendOutstandingTransactions();
         }
@@ -970,7 +1010,7 @@ bool SQLiteNode::update() {
                     uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed leader transaction for '"
-                          << _db.getCommitCount() << " (" << _db.getCommittedHash() << "). "
+                          << (_lastSentTransactionID + 1) << " (" << _db.getCommittedHash() << "). "
                           << " (consistencyRequired=" << consistencyLevelNames[_commitConsistency] << "), "
                           << numFullApproved << " of " << numFullPeers << " approved (" << peerList.size() << " total) in "
                           << totalElapsed / 1000 << " ms ("
@@ -980,16 +1020,11 @@ bool SQLiteNode::update() {
 
                     SINFO("[performance] Successfully committed " << consistencyLevelNames[_commitConsistency]
                           << " transaction. Sending COMMIT_TRANSACTION to peers.");
-                    SData commit("COMMIT_TRANSACTION");
-                    commit.set("ID", _lastSentTransactionID + 1);
-                    _sendToAllPeers(commit, true); // true: Only to subscribed peers.
 
-                    // Update the last sent transaction ID to reflect that this is finished.
-                    // This works because we only change this value in the sync thread.
-                    _lastSentTransactionID++;
-
-                    // Remove the newly sent transaction from the sent list, as we have already sent it.
-                    _db.popCommittedTransactions(_lastSentTransactionID);
+                    // Send our outstanding transactions. Note that this particular transaction will send a COMMIT
+                    // only, although if any other transactions have completed since we released a commit lock, we will
+                    // send those ass well.
+                    _sendOutstandingTransactions({_lastSentTransactionID + 1});
 
                     // Done!
                     _commitState = CommitState::SUCCESS;
@@ -1010,8 +1045,8 @@ bool SQLiteNode::update() {
             _commitState = CommitState::COMMITTING;
             SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
 
-            // Now that we've grabbed the commit lock, we can safely clear out any outstanding transactions, no new
-            // ones can be added until we release the lock.
+            // We should already have locked the DB before getting here, we can safely clear out any outstanding
+            // transactions, no new ones can be added until we release the lock.
             _sendOutstandingTransactions();
 
             // We'll send the commit count to peers.
@@ -2477,7 +2512,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
         }
     } else {
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
-              << ") for command '" << message["Command"] << "', but a permafollower -- keeping quiet.");
+              << "), but a permafollower -- keeping quiet.");
     }
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
     uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
@@ -2615,7 +2650,7 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
             // Successful commit; we in the right state?
             if (_db.getUncommittedHash() != message["NewHash"]) {
                 // Something is screwed up
-                PWARN("New hash mismatch: command='" << message["Command"] << "', commitCount=#" << _db.getCommitCount()
+                PWARN("New hash mismatch: commitCount=#" << _db.getCommitCount()
                       << "', committedHash='" << _db.getCommittedHash() << "', uncommittedHash='"
                       << _db.getUncommittedHash() << "', messageHash='" << message["NewHash"] << "', uncommittedQuery='"
                       << _db.getUncommittedQuery() << "'");
@@ -2654,7 +2689,7 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
         }
     } else {
         PINFO("Would approve/deny transaction #" << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-              << ") for command '" << message["Command"] << "', but a permafollower -- keeping quiet.");
+              << "), but a permafollower -- keeping quiet.");
     }
 
     uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
@@ -2676,11 +2711,29 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
     if (_db.getUncommittedHash().empty()) {
         STHROW("no outstanding transaction");
     }
-    if (message.calcU64("CommitCount") != _db.getCommitCount() + 1) {
+    // Get the ID for the transaction we're operating on.
+    uint64_t transactionID = 0;
+    if (message.isSet("NewCount")) {
+        transactionID = message.calcU64("NewCount");
+    } else {
+        // If we don't have NewCount (because LEADER is on an old version), parse from ID. We can drop this entire
+        // "else" block once we always send NewCount.
+        transactionID = strtoul(message["ID"].c_str(), 0, 10);
+
+        // If we still don't have a transaction ID, parse without ASYNC_
+        if (!transactionID) {
+            transactionID = strtoul(message["ID"].c_str() + 6, 0, 10);
+        }
+    }
+
+    if (transactionID != _db.getCommitCount() + 1) {
         STHROW("commit count mismatch. Expected: " + message["CommitCount"] + ", but would actually be: "
               + to_string(_db.getCommitCount() + 1));
     }
-    if (message["Hash"] != _db.getUncommittedHash()) {
+
+    // TODO: Remove support for "Hash" as soon as all servers are upgraded and send "NewHash".
+    const string& hashToCheck = message.isSet("NewHash") ? message["NewHash"] : message["Hash"];
+    if (hashToCheck != _db.getUncommittedHash()) {
         STHROW("hash mismatch");
     }
 
