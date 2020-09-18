@@ -415,7 +415,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
         }
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = idHeader;
-        transaction["NewCount"] = to_string(id);
+        commit["NewCount"] = to_string(id);
         commit["NewHash"] = hash;
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
