@@ -102,7 +102,7 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
-        {"-parallelReplication", "true"},
+        //{"-parallelReplication", "true"}, // Disabled to test single rep.
     };
 
     // Set defaults.

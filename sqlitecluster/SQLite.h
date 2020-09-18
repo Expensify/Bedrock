@@ -194,9 +194,9 @@ class SQLite {
     void removeCheckpointListener(CheckpointRequiredListener& listener);
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
-    // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
-    // out to peers. You can limit the number of transactions to a certain commit ID.
-    map<uint64_t, tuple<string,string, uint64_t>> popCommittedTransactions(uint64_t maxCommitID = 0);
+    // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
+    // transactions can be replicated out to peers.
+    map<uint64_t, tuple<string,string, uint64_t>> popCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -243,9 +243,8 @@ class SQLite {
         // after completing a commit and before releasing the commit lock.
         void incrementCommit(const string& commitHash);
 
-        // This removes and returns any committed transactions up through the given commit ID, or all of them if
-        // maxCommitID is 0.
-        map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions(uint64_t maxCommitID = 0);
+        // This removes and returns all committed transactions.
+        map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
 
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
