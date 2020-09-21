@@ -178,7 +178,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     BedrockServer::ScopedStateSnapshot snapshot(_server);
 
     // We need to be leading (including standing down) and we need to have peeked this command in the same set of
-    // states, or we can't complete this command (we can't commit the command of we're not leading, and if we're
+    // states, or we can't complete this command (we can't commit the command if we're not leading, and if we're
     // leading but were following when we peeked, we may try to read HTTPS requests we never made).
     if ((command->lastPeekedOrProcessedInState != SQLiteNode::LEADING && command->lastPeekedOrProcessedInState != SQLiteNode::STANDINGDOWN) ||
         (_server.getState() != SQLiteNode::LEADING && _server.getState() != SQLiteNode::STANDINGDOWN)) {
