@@ -67,6 +67,8 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, BedrockCommand::PEEK);
+    BedrockServer::ScopedStateSnapshot snapshot(_server);
+
     // Convenience references to commonly used properties.
     const SData& request = command->request;
     SData& response = command->response;
@@ -172,6 +174,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
 BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
+    BedrockServer::ScopedStateSnapshot snapshot(_server);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;

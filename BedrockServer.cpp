@@ -11,6 +11,7 @@
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
+thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLiteNode::UNKNOWN;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
     acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
@@ -2298,4 +2299,8 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         _outstandingHTTPSRequests.erase(transactionIt);
     }
     return commandsCompleted;
+}
+
+const atomic<SQLiteNode::State>& BedrockServer::getState() const {
+    return _nodeStateSnapshot == SQLiteNode::UNKNOWN ? _replicationState : _nodeStateSnapshot;
 }

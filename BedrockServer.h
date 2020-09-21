@@ -158,6 +158,21 @@ class BedrockServer : public SQLiteServer {
     // Destructor
     virtual ~BedrockServer();
 
+    // Create a ScopedStateSnapshot to force `getState` to return a snapshot at the current node state for the current
+    // thread until the object goes out of scope.
+    class ScopedStateSnapshot {
+      public:
+        ScopedStateSnapshot(const BedrockServer& owner) : _owner(owner) {
+            _nodeStateSnapshot.store(owner._replicationState);
+        }
+        ~ScopedStateSnapshot() {
+            _nodeStateSnapshot.store(SQLiteNode::UNKNOWN);
+        }
+
+      private:
+        const BedrockServer& _owner;
+    };
+
     // Accept an incoming command from an SQLiteNode.
     // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
     // being returned to the command queue (such as one that was previously escalated).
@@ -182,8 +197,10 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
-    // Exposes the replication state to plugins.
-    atomic<SQLiteNode::State>& getState() { return _replicationState; }
+    // Exposes the replication state to plugins. Note that this is guaranteed not to change inside a call to
+    // `peekCommand` or `processCommand`, but this is only from the command's point-of-view - the underlying value can
+    // change at any time.
+    const atomic<SQLiteNode::State>& getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
@@ -462,4 +479,8 @@ class BedrockServer : public SQLiteServer {
 
     // Whether or not all plugins are detached
     bool _pluginsDetached;
+
+    // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
+    // so that the state can't change for the lifetime of that call, from the view of that function.
+    static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 };
