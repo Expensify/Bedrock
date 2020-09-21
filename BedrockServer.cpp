@@ -11,6 +11,7 @@
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
+thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLiteNode::UNKNOWN;
 
 void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
     acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
@@ -1092,6 +1093,22 @@ void BedrockServer::worker(SQLitePool& dbPool,
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                         // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                         // of this block.
+                    } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
+                        // We won't write regardless.
+                        core.rollback();
+
+                        // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
+                        // potentially run the same HTTPS requests twice.
+                        if (command->httpsRequests.size()) {
+                            SALERT("Server stopped leading while running command with HTTPS requests!");
+                            command->response.methodLine = "500 Leader stopped leading";
+                            server._reply(command);
+                            break;
+                        } else {
+                            // Allow for an extra retry and start from the top, like with ABANDONED_FOR_CHECKPOINT.
+                            SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
+                            ++retry;
+                        }
                     } else {
                         SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
@@ -2298,4 +2315,8 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         _outstandingHTTPSRequests.erase(transactionIt);
     }
     return commandsCompleted;
+}
+
+const atomic<SQLiteNode::State>& BedrockServer::getState() const {
+    return _nodeStateSnapshot == SQLiteNode::UNKNOWN ? _replicationState : _nodeStateSnapshot;
 }
