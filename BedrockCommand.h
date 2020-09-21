@@ -150,6 +150,9 @@ class BedrockCommand : public SQLiteCommand {
     // in `process` instead of peek, as it will always be escalated to leader 
     const bool escalateImmediately;
 
+    // Record the state we were acting under in the last call to `peek` or `process`.
+    SQLiteNode::State lastPeekedOrProcessedInState = SQLiteNode::UNKNOWN;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;
