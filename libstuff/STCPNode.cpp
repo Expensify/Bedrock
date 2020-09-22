@@ -280,7 +280,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 peer->closeSocket(this);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
-                nextActivity = min(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect.load());
                 break;
             }
 
@@ -312,7 +312,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 }
             } else {
                 // Waiting to reconnect -- notify the caller
-                nextActivity = min(nextActivity, peer->nextReconnect);
+                nextActivity = min(nextActivity, peer->nextReconnect.load());
             }
         }
     }
@@ -327,7 +327,7 @@ void STCPNode::_sendPING(Peer* peer) {
 }
 
 void STCPNode::Peer::sendMessage(const SData& message) {
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     if (s) {
         s->send(message.serialize());
     } else {
@@ -336,7 +336,7 @@ void STCPNode::Peer::sendMessage(const SData& message) {
 }
 
 void STCPNode::Peer::closeSocket(STCPManager* manager) {
-    lock_guard<decltype(socketMutex)> lock(socketMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     if (s) {
         manager->closeSocket(s);
         s = nullptr;

@@ -101,6 +101,10 @@ class STableComp : binary_function<string, string, bool> {
 // types.
 class SString : public string {
   public:
+    SString() {
+    }
+    SString(const string& s) : string(s) {
+    }
     // Templated assignment operator for arithmetic types.
     template <typename T>
     typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from) {

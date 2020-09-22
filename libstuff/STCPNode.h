@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/libstuff.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -67,26 +68,28 @@ struct STCPNode : public STCPServer {
 
     // Represents a single peer in the database cluster
     struct Peer : public SData {
-        friend class STCPNode;
-        friend class SQLiteNode;
-
-        // Attributes
-        string name;
-        string host;
-        STable params;
-        State state;
-        uint64_t latency;
-        uint64_t nextReconnect;
-        uint64_t id;
-        int failedConnections;
-
-        // Helper methods
+      public:
+        // Constructor.
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), state(SEARCHING), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), s(nullptr)
+          : name(name_), host(host_), state(SEARCHING), latency(0), nextReconnect(0), id(id_),
+            failedConnections(0), params(params_), s(nullptr)
         { }
-        bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
+
+        bool isPermafollower() const {
+            auto it = params.find("Permafollower");
+            if (it != params.end() && it->second == "true") {
+                return true;
+            }
+            return false;
+        }
+
+        bool connected() const {
+            lock_guard<decltype(_stateMutex)> l(_stateMutex);
+            return (s && s->state.load() == STCPManager::Socket::CONNECTED);
+        }
+
         void reset() {
+            lock_guard<decltype(_stateMutex)> l(_stateMutex);
             clear();
             state = SEARCHING;
             s = nullptr;
@@ -100,9 +103,26 @@ struct STCPNode : public STCPServer {
         // Send a message to this peer.
         void sendMessage(const SData& message);
 
+        // Attributes
+        const string name;
+        const string host;
+        atomic<State> state;
+        atomic<uint64_t> latency;
+        atomic<uint64_t> nextReconnect;
+        const uint64_t id;
+        atomic<int> failedConnections;
+        const STable params;
+
       private:
+        // This allows direct access to the socket from the node object that should actually be managing peer
+        // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
+        // but for the time being, the amount of refactoring required to fix that is too high.
+        friend class STCPNode;
+        friend class SQLiteNode;
         Socket* s;
-        recursive_mutex socketMutex;
+
+        // These are not meant to be accessible from STCPNode (but have to be)
+        mutable recursive_mutex _stateMutex;
     };
 
     // Connects to a peer in the database cluster
