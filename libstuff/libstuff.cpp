@@ -2555,13 +2555,3 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     // Matched all parts, valid syntax
     return true;
 }
-
-// Extra operator overloads for atomic strings.
-string operator+(const string& lhs, const atomic<string>& rhs) {
-    return lhs + rhs.load();
-}
-ostream& operator<<(ostream& os, const atomic<string>& as)
-{
-    os << as.load();
-    return os;
-}

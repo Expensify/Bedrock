@@ -101,10 +101,6 @@ class STableComp : binary_function<string, string, bool> {
 // types.
 class SString : public string {
   public:
-    SString() {
-    }
-    SString(const string& s) : string(s) {
-    }
     // Templated assignment operator for arithmetic types.
     template <typename T>
     typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
@@ -332,32 +328,8 @@ struct SAutoThreadPrefix {
 namespace std {
     template<>
     struct atomic<string> {
-        atomic<string>() {
-        }
-        atomic<string>(const string& s) : _string(s) {
-        }
-        string operator+(const char* rhs) {
-            lock_guard<decltype(m)> l(m);
-            return _string + rhs;
-        }
-        string operator+(const string& rhs) {
-            lock_guard<decltype(m)> l(m);
-            return _string + rhs;
-        }
-        bool operator==(const char* rhs) {
-            lock_guard<decltype(m)> l(m);
-            return _string == rhs;
-        }
-        bool operator==(const string& rhs) {
-            lock_guard<decltype(m)> l(m);
-            return _string == rhs;
-        }
-        char operator[](size_t i) {
-            lock_guard<decltype(m)> l(m);
-            return _string[i];
-        }
         string operator=(string desired) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             _string = desired;
             return _string;
         }
@@ -365,19 +337,16 @@ namespace std {
             return false;
         }
         void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             _string = desired;
         };
         string load(std::memory_order order = std::memory_order_seq_cst) const {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             return _string;
         }
-        operator string() const {
-            lock_guard<decltype(m)> l(m);
-            return _string;
-        }
+        operator string() const;
         string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             string existing = _string;
             _string = desired;
             return existing;
@@ -388,8 +357,6 @@ namespace std {
         mutable recursive_mutex m;
     };
 };
-string operator+(const string& lhs, const atomic<string>& rhs);
-ostream& operator<<(ostream& os, const atomic<string>& as);
 
 // --------------------------------------------------------------------------
 // Math stuff

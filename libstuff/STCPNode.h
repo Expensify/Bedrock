@@ -121,7 +121,7 @@ struct STCPNode : public STCPServer {
         friend class SQLiteNode;
         Socket* s;
 
-        // These are not meant to be accessible from STCPNode (but have to be)
+        // This is not meant to be accessible from STCPNode (but has to be with the way `friend` works).
         mutable recursive_mutex _stateMutex;
     };
 
