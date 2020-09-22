@@ -1846,6 +1846,7 @@ bool BedrockServer::getPeerInfo(list<STable>& peerData) {
                 peerData.back()["host"] = peer->host;
                 peerData.back()["name"] = peer->name;
                 peerData.back()["State"] = SQLiteNode::stateName(peer->state);
+                peerData.back()["Connected"] = peer->connected() ? "true" : "false";
             }
         }
     } else {
@@ -1974,7 +1975,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         list<string> peerList;
         list<STable> peerData;
         if (getPeerInfo(peerData)) {
-            for (const STable& peerTable : peerData) {
+            for (STable& peerTable : peerData) {
+                if (peerTable["Connected"] == "false") {
+                    peerTable["State"] += " (DISCONNECTED)";
+                }
+                peerTable.erase("Connected");
                 peerList.push_back(SComposeJSONObject(peerTable));
             }
         } else {
