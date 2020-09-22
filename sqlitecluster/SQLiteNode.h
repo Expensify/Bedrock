@@ -41,6 +41,8 @@ class SQLiteNode : public STCPNode {
                const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
     ~SQLiteNode();
 
+    const vector<Peer*> initPeers(const string& peerList);
+
     // Simple Getters. See property definitions for details.
     State         getState()         { return _state; }
     int           getPriority()      { return _priority; }
@@ -93,16 +95,10 @@ class SQLiteNode : public STCPNode {
     // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
     // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
     // Returns false if the node can't peek the command.
-    static bool peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command);
+    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
 
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
-
-    // This mutex is exposed publicly so that others (particularly, the _server) can atomically act on the current
-    // state of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
-    // 1. stateMutex
-    // 2. SQLite::g_commitLock
-    shared_timed_mutex stateMutex;
 
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
@@ -184,11 +180,10 @@ class SQLiteNode : public STCPNode {
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _changeState(State newState);
 
-    // Queue a SYNCHRONIZE message based on the current state of the node.
-    void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
-
-    // Queue a SYNCHRONIZE message based on pre-computed state of the node. This version is thread-safe.
-    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll);
+    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
+    // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
+    // thread with a different DB object) - which is why this is static.
+    static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
