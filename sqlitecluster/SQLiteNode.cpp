@@ -1514,7 +1514,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
             // stood up.
             SData response("SYNCHRONIZE_RESPONSE");
-            _queueSynchronize(peer, response, false);
+            _queueSynchronize(this, peer, _db, response, false);
             _sendToPeer(peer, response);
         }
     } else if (SIEquals(message.methodLine, "SYNCHRONIZE_RESPONSE")) {
@@ -1582,7 +1582,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         }
         PINFO("Received SUBSCRIBE, accepting new follower");
         SData response("SUBSCRIPTION_APPROVED");
-        _queueSynchronize(peer, response, true); // Send everything it's missing
+        _queueSynchronize(this, peer, _db, response, true); // Send everything it's missing
         _sendToPeer(peer, response);
         SASSERTWARN(!peer->subscribed);
         peer->subscribed = true;
@@ -2106,20 +2106,23 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     }
 }
 
-void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
-    // Peer is requesting synchronization. First, does it have any data?
+void SQLiteNode::_queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll) {
+    // We need this to check the state of the node, and we also need `name` to make the logging macros work in a static
+    // function. However, if you pass a null pointer here, we can't set these, so we'll fail. We also can't log that,
+    // so we are just going to rely on the signal handling for sigsegv to log that for you. Don't do that.
+    auto _state = node->_state.load();
+    auto name = node->name;
 
     uint64_t peerCommitCount = 0;
     string peerHash;
     peer->getCommit(peerCommitCount, peerHash);
-
-    if (peerCommitCount > _db.getCommitCount())
+    if (peerCommitCount > db.getCommitCount())
         STHROW("you have more data than me");
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
         string myHash, ignore;
-        if (!_db.getCommit(peerCommitCount, ignore, myHash)) {
-            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << _db.getCommitCount());
+        if (!db.getCommit(peerCommitCount, ignore, myHash)) {
+            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
         }
         if (myHash != peerHash) {
@@ -2139,7 +2142,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     // The commitCount can change at any time, and on LEADER, we need to make sure we don't send the same transaction
     // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
     // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
-    uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : _db.getCommitCount();
+    uint64_t targetCommit = (_state == LEADING || _state == STANDINGDOWN) ? _lastSentTransactionID : db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
@@ -2150,7 +2153,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t toIndex = targetCommit;
         if (!sendAll)
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
-        if (!_db.getCommits(fromIndex, toIndex, result))
+        if (!db.getCommits(fromIndex, toIndex, result))
             STHROW("error getting commits");
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)
             STHROW("mismatched commit count");
@@ -2371,7 +2374,7 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
 
             // Because we hold a sharedPtr to the node, it can't delete any peers (because it only does at
             // destruction), and since our peers our thread-safe, we can run this just fine.
-            node->_queueSynchronize(peer, command.response, false);
+            _queueSynchronize(node.get(), peer, db, command.response, false);
 
             // The following two lines are copied from `_sendToPeer`.
             command.response["CommitCount"] = to_string(db.getCommitCount());

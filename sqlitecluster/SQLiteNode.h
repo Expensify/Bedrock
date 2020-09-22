@@ -180,8 +180,10 @@ class SQLiteNode : public STCPNode {
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _changeState(State newState);
 
-    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe.
-    void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
+    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
+    // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
+    // thread with a different DB object) - which is why this is static.
+    static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
