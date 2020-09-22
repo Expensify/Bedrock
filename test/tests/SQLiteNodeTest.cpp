@@ -54,7 +54,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
 
         // Do a base test, with one peer with no latency.
         SQLiteNode::Peer* fastest = nullptr;
-        for (auto peer : testNode.peerList) {
+        for (auto peer : testNode.peerList.atomic()) {
             int peerNum = peer->name[4] - 48;
             (*peer)["LoggedIn"] = "true";
             (*peer)["CommitCount"] = to_string(10000000 + peerNum);
@@ -71,7 +71,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // See what happens when another peer becomes faster.
-        for (auto peer : testNode.peerList) {
+        for (auto peer : testNode.peerList.atomic()) {
             // New fastest is peer 3.
             if (peer->name == "peer3") {
                 peer->latency = 50;
@@ -82,7 +82,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And see what happens if our fastest peer logs out.
-        for (auto peer : testNode.peerList) {
+        for (auto peer : testNode.peerList.atomic()) {
             if (peer->name == "peer3") {
                 (*peer)["LoggedIn"] = "false";
                 peer->latency = 50;
@@ -97,7 +97,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And then if our previously 0 latency peer gets (fast) latency data.
-        for (auto peer : testNode.peerList) {
+        for (auto peer : testNode.peerList.atomic()) {
             // New fastest is peer 3.
             if (peer->name == "peer1") {
                 peer->latency = 75;
@@ -108,7 +108,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // Now none of our peers have latency data, but one has more commits.
-        for (auto peer : testNode.peerList) {
+        for (auto peer : testNode.peerList.atomic()) {
             peer->latency = 0;
 
             // 4 had highest commit count.

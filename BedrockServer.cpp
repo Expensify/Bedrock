@@ -830,7 +830,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
 
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-            if (SQLiteNode::peekPeerCommand(server._syncNode.get(), db, *command)) {
+            if (SQLiteNode::peekPeerCommand(server._syncNode, db, *command)) {
                 // Move on to the next command.
                 continue;
             }
@@ -1842,7 +1842,7 @@ bool BedrockServer::getPeerInfo(list<STable>& peerData) {
         lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
         auto _syncNodeCopy = _syncNode;
         if (_syncNodeCopy) {
-            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
+            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList.atomic()) {
                 peerData.emplace_back(peer->nameValueMap);
                 for (auto it : peer->params) {
                     peerData.back()[it.first] = it.second;

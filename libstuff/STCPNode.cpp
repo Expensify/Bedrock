@@ -14,7 +14,7 @@ STCPNode::~STCPNode() {
         closeSocket(socket);
     }
     acceptedSocketList.clear();
-    for (Peer* peer : peerList) {
+    for (Peer* peer : peerList.atomic()) {
         // Shut down the peer
         peer->closeSocket(this);
         delete peer;
@@ -80,15 +80,19 @@ void STCPNode::addPeer(const string& peerName, const string& host, const STable&
 }
 
 STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
-    if (id && id <= peerList.size()) {
-        return peerList[id - 1];
+    if (id <= 0) {
+        return nullptr;
     }
-    return nullptr;
+    try {
+        return peerList[id - 1];
+    } catch (const out_of_range& e) {
+        return nullptr;
+    }
 }
 
 uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
     uint64_t id = 1;
-    for (auto p : peerList) {
+    for (auto p : peerList.atomic()) {
         if (p == peer) {
             return id;
         }
@@ -135,7 +139,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we associate with a peer?
                     bool foundIt = false;
-                    for (Peer* peer : peerList) {
+                    for (Peer* peer : peerList.atomic()) {
                         // Just match any unconnected peer
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
@@ -182,7 +186,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Try to establish connections with peers and process messages
-    for (Peer* peer : peerList) {
+    for (Peer* peer : peerList.atomic()) {
         // See if we're connected
         if (peer->s) {
             // We have a socket; process based on its state

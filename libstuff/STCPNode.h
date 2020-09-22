@@ -108,10 +108,84 @@ struct STCPNode : public STCPServer {
     // Connects to a peer in the database cluster
     void addPeer(const string& name, const string& host, const STable& params);
 
+    // A PeerList is just a vector<Peer*> that exposes certain methods behind a mutex such that the entire data
+    // structure is synchronized. It has special handing for `begin()` and `end()` so that we can iterate over the list
+    // and guarantee it's not changed in the process. See LockedPeerList below.
+    class LockedPeerList;
+    class PeerList {
+        friend class LockedPeerList;
+      public:
+        template <typename T>
+        auto push_back(const T& i) {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.push_back(i); }
+        template <typename T>
+        auto operator[](T i) {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            if (i >= _peerList.size()) {
+                throw out_of_range("Attempted to access out-of-range Peer in PeerList");
+            }
+            return _peerList[i];
+        }
+        auto size() {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.size();
+        }
+        auto empty() {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.empty();
+        }
+        auto clear() {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.clear();
+        }
+        auto atomic() {
+            return LockedPeerList(*this);
+        }
+      private:
+        auto begin() {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.begin();
+        }
+        auto end() {
+            lock_guard<decltype(_mutex)> l(_mutex);
+            return _peerList.end();
+        }
+
+        vector<Peer*> _peerList;
+        recursive_mutex _mutex;
+    };
+
+    // Because range-based for loops extend the life of the range expression to last the entire loop, we can use a
+    // RAII-style wrapper around a peer list to lock the object for the life of the loop.
+    // Instead of doing: for (auto& item : myPeerList) {
+    // We can do: for (auto& item : myPeerList.atomic()) {
+    // And instead of operating on a bare PeerList, we'll create a temporary LockedPeerList that calls `lock` in the
+    // constructor and `unlock` in the destructor, and lasts the lifetime of the for loop.
+    // Because the constructor is private, the only way to get a LockedPeerList is to call `atomic()` on a PeerList,
+    // and because `begin()` and `end()` are private in `PeerList`, the only way to get those iterators is on a
+    // LockedPeerList.
+    // This prevents most synchronization problems, but doesn't prevent someone from using indexes into the array
+    // directly.
+    class LockedPeerList {
+        friend class PeerList;
+      public:
+        auto begin() { return _peerList.begin(); }
+        auto end() { return _peerList.end(); }
+        ~LockedPeerList() {
+            _peerList._mutex.unlock();
+        }
+      private:
+        LockedPeerList(PeerList& peerList) : _peerList(peerList) {
+            _peerList._mutex.lock();
+        }
+        PeerList& _peerList;
+    };
+
     // Attributes
     string name;
     uint64_t recvTimeout;
-    vector<Peer*> peerList;
+    PeerList peerList;
     list<Socket*> acceptedSocketList;
 
     // Called when we first establish a connection with a new peer

@@ -93,7 +93,7 @@ class SQLiteNode : public STCPNode {
     // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
     // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
     // Returns false if the node can't peek the command.
-    static bool peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command);
+    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
 
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
