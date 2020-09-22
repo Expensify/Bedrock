@@ -1058,12 +1058,16 @@ void BedrockServer::worker(SQLitePool& dbPool,
                         // to the minimum time required.
                         bool commitSuccess = false;
                         {
-                            // This is the first place we get really particular with the state of the node from a
-                            // worker thread. We only want to do this commit if we're *SURE* we're leading, and
-                            // not allow the state of the node to change while we're committing. If it turns out
-                            // we've changed states, we'll roll this command back, so we lock the node's state
-                            // until we complete.
-                            shared_lock<decltype(server._syncNode->stateMutex)> stateLock(server._syncNode->stateMutex);
+                            // There used to be a mutex protecting this state change, with the idea that if we
+                            // prevented state changes, we couldn't fall out of leading in the middle of processing a
+                            // command. However, for "normal" graceful state changes, these changes are prevented by
+                            // checking canStandDown(), and we can't fall out of STANDINGDOWN until there are no
+                            // commands left. In the case of non-graceful state changes, i.e., we are spontaneously
+                            // disconnected from the cluster, all this really does is prevent the sync thread from
+                            // telling us about that until after we've already committed this transaction, which
+                            // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
+                            // possible with or without a mutex for this, so we've removed it for the sake of
+                            // simplicity.
                             if (replicationState.load() != SQLiteNode::LEADING &&
                                 replicationState.load() != SQLiteNode::STANDINGDOWN) {
                                 SALERT("Node State changed from LEADING to "

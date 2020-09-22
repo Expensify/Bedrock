@@ -98,12 +98,6 @@ class SQLiteNode : public STCPNode {
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
 
-    // This mutex is exposed publicly so that others (particularly, the _server) can atomically act on the current
-    // state of the node. When working with this and SQLite::g_commitLock, the correct order of acquisition is always:
-    // 1. stateMutex
-    // 2. SQLite::g_commitLock
-    shared_timed_mutex stateMutex;
-
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 

@@ -1972,9 +1972,6 @@ void SQLiteNode::broadcast(const SData& message, Peer* peer) {
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
-    // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
-    unique_lock<decltype(stateMutex)> lock(stateMutex);
-
     // Did we actually change _state?
     State oldState = _state;
 
