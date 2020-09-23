@@ -1920,7 +1920,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
             if (!otherPeer->isPermafollower()) {
                 // Verify we're logged in
                 ++numFullPeers;
-                if (peer->loggedIn) {
+                if (otherPeer->loggedIn) {
                     // Verify we're still fresh
                     ++numLoggedInFullPeers;
                 }
