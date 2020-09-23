@@ -422,7 +422,7 @@ STable STCPNode::Peer::getData() const {
     return result;
 }
 
-bool STCPNode::Peer::isPermafollower(const STable params) {
+bool STCPNode::Peer::isPermafollower(const STable& params) {
     auto it = params.find("Permafollower");
     if (it != params.end() && it->second == "true") {
         return true;

@@ -141,7 +141,7 @@ struct STCPNode : public STCPServer {
         mutable recursive_mutex _stateMutex;
 
         // For initializing the permafollower value from the params list.
-        static bool isPermafollower(const STable params);
+        static bool isPermafollower(const STable& params);
     };
 
     // Begins listening for connections on a given port
