@@ -145,7 +145,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             list<string> peers = SParseJSONArray(peerList);
             for (auto& peer : peers) {
                 STable peerInfo = SParseJSONObject(peer);
-                if (peerInfo["name"] == "cluster_node_2" && (peerInfo["State"] == "" || peerInfo["State"] == "SEARCHING")) {
+                if (peerInfo["name"] == "cluster_node_2" && (peerInfo["State"] == "" || SStartsWith(peerInfo["State"], "SEARCHING"))) {
                     success = true;
                     break;
                 }
