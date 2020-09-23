@@ -126,8 +126,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     // Make sure we get notified when the DB needs to checkpoint.
     _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
     _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
-
-
 }
 
 SQLiteNode::~SQLiteNode() {
@@ -1250,8 +1248,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     if (!message.isSet("Hash")) {
         STHROW("missing Hash");
     }
-    peer->commitCount = message.calcU64("CommitCount");
-    peer->hash = message["Hash"];
+
+    peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
     // Classify and process the message
     if (SIEquals(message.methodLine, "LOGIN")) {
@@ -1281,10 +1279,6 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
-        //peer->set("Priority", message["Priority"]);
-        //peer->set("LoggedIn", "true");
-        //peer->set("Version",  message["Version"]);
-
         peer->priority = message.calc("Priority");
         peer->loggedIn = true;
         peer->version = message["Version"];
@@ -1502,8 +1496,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
             SData request = message;
-            request["peerCommitCount"] = to_string(peer->commitCount);
-            request["peerHash"] = peer->hash;
+            uint64_t count = 0;
+            string hash;
+            peer->getCommit(count, hash);
+            request["peerCommitCount"] = to_string(count);
+            request["peerHash"] = hash;
             request["peerID"] = to_string(getIDByPeer(peer));
 
             // The following properties are only used to expand out our log macros.
@@ -2113,9 +2110,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     // Peer is requesting synchronization. First, does it have any data?
 
-    //TODO: These need to be retrieved (and thus updated) atomically.
-    uint64_t peerCommitCount = peer->commitCount;
-    string peerHash = peer->hash;
+    uint64_t peerCommitCount;
+    string peerHash;
+    peer->getCommit(peerCommitCount, peerHash);
 
     if (peerCommitCount > _db.getCommitCount())
         STHROW("you have more data than me");

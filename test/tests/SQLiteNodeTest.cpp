@@ -52,7 +52,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         for (auto peer : testNode.peerList) {
             int peerNum = peer->name[4] - 48;
             peer->loggedIn = true;
-            peer->commitCount = 10000000 + peerNum;
+            peer->setCommit(10000000 + peerNum, "");
 
             // 0, 100, 200, 300.
             peer->latency = (peerNum - 1) * 100;

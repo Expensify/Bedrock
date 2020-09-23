@@ -70,7 +70,6 @@ struct STCPNode : public STCPServer {
           : name(name_), host(host_), id(id_), params(params_),
             commitCount(0),
             failedConnections(0),
-            hash(),
             latency(0),
             loggedIn(false),
             nextReconnect(0),
@@ -79,7 +78,8 @@ struct STCPNode : public STCPServer {
             standupResponse(Response::NONE),
             subscribed(false),
             transactionResponse(Response::NONE),
-            version()
+            version(),
+            hash()
         { }
 
         bool isPermafollower() const {
@@ -97,10 +97,16 @@ struct STCPNode : public STCPServer {
 
         void reset() {
             lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            //clear();
-            state = SEARCHING;
-            s = nullptr;
             latency = 0;
+            loggedIn = false;
+            priority = 0;
+            s = nullptr;
+            state = SEARCHING;
+            standupResponse = Response::NONE;
+            subscribed = false;
+            transactionResponse = Response::NONE;
+            version = "";
+            setCommit(0, "");
         }
 
         // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
@@ -136,9 +142,13 @@ struct STCPNode : public STCPServer {
         const string host;
         const uint64_t id;
         const STable params;
-        atomic<uint64_t> commitCount;
+
+        // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
+        // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
+        // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
+        // `getCommit`, thus reducing the risk of anyone getting out-of-sync commitCount and hash.
+        const atomic<uint64_t> commitCount;
         atomic<int> failedConnections;
-        atomic<string> hash;
         atomic<uint64_t> latency;
         atomic<bool> loggedIn;
         atomic<uint64_t> nextReconnect;
@@ -148,6 +158,20 @@ struct STCPNode : public STCPServer {
         atomic<bool> subscribed;
         atomic<Response> transactionResponse;
         atomic<string> version;
+
+        // Atomically set commit and hash.
+        void setCommit(uint64_t count, const string& hashString) {
+            lock_guard<decltype(_stateMutex)> l(_stateMutex);
+            const_cast<atomic<uint64_t>&>(commitCount) = count;
+            hash = hashString;
+        }
+
+        // Atomically get commit and hash.
+        void getCommit(uint64_t& count, string& hashString) {
+            lock_guard<decltype(_stateMutex)> l(_stateMutex);
+            count = commitCount.load();
+            hashString = hash.load();
+        }
 
         STable getData() const {
             // Add all of our standard stuff.
@@ -177,6 +201,8 @@ struct STCPNode : public STCPServer {
         }
 
       private:
+        atomic<string> hash;
+
         // This allows direct access to the socket from the node object that should actually be managing peer
         // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
         // but for the time being, the amount of refactoring required to fix that is too high.
@@ -195,7 +221,6 @@ struct STCPNode : public STCPServer {
     // Attributes
     string name;
     uint64_t recvTimeout;
-    //PeerList peerList;
     const vector<Peer*> peerList;
     list<Socket*> acceptedSocketList;
 
