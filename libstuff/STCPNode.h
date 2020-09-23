@@ -43,10 +43,6 @@ class AutoTimerTime {
 };
 
 struct STCPNode : public STCPServer {
-    // Begins listening for connections on a given port
-    STCPNode(const string& name, const string& host, const uint64_t recvTimeout_ = STIME_US_PER_M);
-    virtual ~STCPNode();
-
     // Possible states of a node in a DB cluster
     enum State {
         UNKNOWN,
@@ -67,12 +63,23 @@ struct STCPNode : public STCPServer {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
-    struct Peer : public SData {
+    class Peer {
       public:
         // Constructor.
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), state(SEARCHING), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), params(params_), s(nullptr)
+          : name(name_), host(host_), id(id_), params(params_),
+            commitCount(0),
+            failedConnections(0),
+            hash(),
+            latency(0),
+            loggedIn(false),
+            nextReconnect(0),
+            priority(0),
+            state(SEARCHING),
+            standupResponse(Response::NONE),
+            subscribed(false),
+            transactionResponse(Response::NONE),
+            version()
         { }
 
         bool isPermafollower() const {
@@ -90,7 +97,7 @@ struct STCPNode : public STCPServer {
 
         void reset() {
             lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            clear();
+            //clear();
             state = SEARCHING;
             s = nullptr;
             latency = 0;
@@ -103,15 +110,71 @@ struct STCPNode : public STCPServer {
         // Send a message to this peer.
         void sendMessage(const SData& message);
 
+        enum class Response {
+            NONE,
+            APPROVE,
+            DENY
+        };
+
+        static string responseName(Response response) {
+            switch (response) {
+                case STCPNode::Peer::Response::NONE:
+                return "NONE";
+                break;
+                case STCPNode::Peer::Response::APPROVE:
+                return "APPROVE";
+                break;
+                case STCPNode::Peer::Response::DENY:
+                return "DENY";
+                break;
+            }
+            return "";
+        }
+
         // Attributes
         const string name;
         const string host;
-        atomic<State> state;
-        atomic<uint64_t> latency;
-        atomic<uint64_t> nextReconnect;
         const uint64_t id;
-        atomic<int> failedConnections;
         const STable params;
+        atomic<uint64_t> commitCount;
+        atomic<int> failedConnections;
+        atomic<string> hash;
+        atomic<uint64_t> latency;
+        atomic<bool> loggedIn;
+        atomic<uint64_t> nextReconnect;
+        atomic<int> priority;
+        atomic<State> state;
+        atomic<Response> standupResponse;
+        atomic<bool> subscribed;
+        atomic<Response> transactionResponse;
+        atomic<string> version;
+
+        STable getData() const {
+            // Add all of our standard stuff.
+            STable result({
+                {"name", name},
+                {"host", host},
+                {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
+                {"latency", to_string(latency)},
+                {"nextReconnect", to_string(nextReconnect)},
+                {"id", to_string(id)},
+                {"failedConnections", to_string(failedConnections)},
+                {"loggedIn", (loggedIn ? "true" : "false")},
+                {"priority", to_string(priority)},
+                {"version", version},
+                {"hash", hash},
+                {"commitCount", to_string(commitCount)},
+                {"standupResponse", responseName(standupResponse)},
+                {"transactionResponse", responseName(transactionResponse)},
+                {"subscribed", (subscribed ? "true" : "false")},
+            });
+
+            // And anything from the params (note: doesn't overwrite our standard stuff).
+            for (auto& p : params) {
+                result.emplace(p);
+            }
+            return result;
+        }
 
       private:
         // This allows direct access to the socket from the node object that should actually be managing peer
@@ -119,93 +182,21 @@ struct STCPNode : public STCPServer {
         // but for the time being, the amount of refactoring required to fix that is too high.
         friend class STCPNode;
         friend class SQLiteNode;
-        Socket* s;
+        Socket* s = nullptr;
 
         // This is not meant to be accessible from STCPNode (but has to be with the way `friend` works).
         mutable recursive_mutex _stateMutex;
     };
 
-    // Connects to a peer in the database cluster
-    void addPeer(const string& name, const string& host, const STable& params);
-
-    // A PeerList is just a vector<Peer*> that exposes certain methods behind a mutex such that the entire data
-    // structure is synchronized. It has special handing for `begin()` and `end()` so that we can iterate over the list
-    // and guarantee it's not changed in the process. See LockedPeerList below.
-    class LockedPeerList;
-    class PeerList {
-        friend class LockedPeerList;
-      public:
-        template <typename T>
-        auto push_back(const T& i) {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.push_back(i); }
-        template <typename T>
-        auto operator[](T i) {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            if (i >= _peerList.size()) {
-                throw out_of_range("Attempted to access out-of-range Peer in PeerList");
-            }
-            return _peerList[i];
-        }
-        auto size() {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.size();
-        }
-        auto empty() {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.empty();
-        }
-        auto clear() {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.clear();
-        }
-        auto atomic() {
-            return LockedPeerList(*this);
-        }
-      private:
-        auto begin() {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.begin();
-        }
-        auto end() {
-            lock_guard<decltype(_mutex)> l(_mutex);
-            return _peerList.end();
-        }
-
-        vector<Peer*> _peerList;
-        recursive_mutex _mutex;
-    };
-
-    // Because range-based for loops extend the life of the range expression to last the entire loop, we can use a
-    // RAII-style wrapper around a peer list to lock the object for the life of the loop.
-    // Instead of doing: for (auto& item : myPeerList) {
-    // We can do: for (auto& item : myPeerList.atomic()) {
-    // And instead of operating on a bare PeerList, we'll create a temporary LockedPeerList that calls `lock` in the
-    // constructor and `unlock` in the destructor, and lasts the lifetime of the for loop.
-    // Because the constructor is private, the only way to get a LockedPeerList is to call `atomic()` on a PeerList,
-    // and because `begin()` and `end()` are private in `PeerList`, the only way to get those iterators is on a
-    // LockedPeerList.
-    // This prevents most synchronization problems, but doesn't prevent someone from using indexes into the array
-    // directly.
-    class LockedPeerList {
-        friend class PeerList;
-      public:
-        auto begin() { return _peerList.begin(); }
-        auto end() { return _peerList.end(); }
-        ~LockedPeerList() {
-            _peerList._mutex.unlock();
-        }
-      private:
-        LockedPeerList(PeerList& peerList) : _peerList(peerList) {
-            _peerList._mutex.lock();
-        }
-        PeerList& _peerList;
-    };
+    // Begins listening for connections on a given port
+    STCPNode(const string& name, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_ = STIME_US_PER_M);
+    virtual ~STCPNode();
 
     // Attributes
     string name;
     uint64_t recvTimeout;
-    PeerList peerList;
+    //PeerList peerList;
+    const vector<Peer*> peerList;
     list<Socket*> acceptedSocketList;
 
     // Called when we first establish a connection with a new peer
@@ -235,3 +226,6 @@ struct STCPNode : public STCPServer {
     AutoTimer _sConsumeFrontTimer;
     AutoTimer _sAppendTimer;
 };
+
+// serialization for Responses.
+ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& response);

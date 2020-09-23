@@ -41,6 +41,8 @@ class SQLiteNode : public STCPNode {
                const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
     ~SQLiteNode();
 
+    const vector<Peer*> initPeers(const string& peerList);
+
     // Simple Getters. See property definitions for details.
     State         getState()         { return _state; }
     int           getPriority()      { return _priority; }
@@ -178,11 +180,8 @@ class SQLiteNode : public STCPNode {
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _changeState(State newState);
 
-    // Queue a SYNCHRONIZE message based on the current state of the node.
+    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe.
     void _queueSynchronize(Peer* peer, SData& response, bool sendAll);
-
-    // Queue a SYNCHRONIZE message based on pre-computed state of the node. This version is thread-safe.
-    static void _queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll);
     void _recvSynchronize(Peer* peer, const SData& message);
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();

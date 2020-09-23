@@ -1842,14 +1842,8 @@ bool BedrockServer::getPeerInfo(list<STable>& peerData) {
         lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
         auto _syncNodeCopy = _syncNode;
         if (_syncNodeCopy) {
-            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList.atomic()) {
-                peerData.emplace_back(peer->nameValueMap);
-                for (auto it : peer->params) {
-                    peerData.back()[it.first] = it.second;
-                }
-                peerData.back()["host"] = peer->host;
-                peerData.back()["name"] = peer->name;
-                peerData.back()["State"] = SQLiteNode::stateName(peer->state);
+            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
+                peerData.emplace_back(peer->getData());
             }
         }
     } else {

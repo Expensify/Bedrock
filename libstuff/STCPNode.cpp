@@ -3,8 +3,8 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
-STCPNode::STCPNode(const string& name_, const string& host, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), _deserializeTimer("STCPNode::deserialize"),
+STCPNode::STCPNode(const string& name_, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_)
+    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), peerList(_peerList), _deserializeTimer("STCPNode::deserialize"),
       _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append") {
 }
 
@@ -14,12 +14,11 @@ STCPNode::~STCPNode() {
         closeSocket(socket);
     }
     acceptedSocketList.clear();
-    for (Peer* peer : peerList.atomic()) {
+    for (Peer* peer : peerList) {
         // Shut down the peer
         peer->closeSocket(this);
         delete peer;
     }
-    peerList.clear();
 }
 
 const string& STCPNode::stateName(STCPNode::State state) {
@@ -68,17 +67,6 @@ STCPNode::State STCPNode::stateFromName(const string& name) {
     }
 }
 
-void STCPNode::addPeer(const string& peerName, const string& host, const STable& params) {
-    // Create a new peer and ready it for connection
-    SASSERT(SHostIsValid(host));
-    SINFO("Adding peer #" << peerList.size() << ": " << peerName << " (" << host << "), " << SComposeJSONObject(params));
-    Peer* peer = new Peer(peerName, host, params, peerList.size() + 1);
-
-    // Wait up to 2s before trying the first time
-    peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
-    peerList.push_back(peer);
-}
-
 STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
     if (id <= 0) {
         return nullptr;
@@ -92,7 +80,7 @@ STCPNode::Peer* STCPNode::getPeerByID(uint64_t id) {
 
 uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
     uint64_t id = 1;
-    for (auto p : peerList.atomic()) {
+    for (auto p : peerList) {
         if (p == peer) {
             return id;
         }
@@ -139,7 +127,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we associate with a peer?
                     bool foundIt = false;
-                    for (Peer* peer : peerList.atomic()) {
+                    for (Peer* peer : peerList) {
                         // Just match any unconnected peer
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
@@ -186,7 +174,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Try to establish connections with peers and process messages
-    for (Peer* peer : peerList.atomic()) {
+    for (Peer* peer : peerList) {
         // See if we're connected
         if (peer->s) {
             // We have a socket; process based on its state
@@ -343,4 +331,10 @@ void STCPNode::Peer::closeSocket(STCPManager* manager) {
     } else {
         SWARN("Peer " << name << " has no socket.");
     }
+}
+
+ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& response)
+{
+    os << STCPNode::Peer::responseName(response.load());
+    return os;
 }
