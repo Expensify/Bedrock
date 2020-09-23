@@ -314,7 +314,7 @@ void STCPNode::_sendPING(Peer* peer) {
     peer->s->send(ping.serialize());
 }
 
-Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
+STCPNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
   : name(name_), host(host_), id(id_), params(params_), permaFollower(isPermafollower(params)),
     commitCount(0),
     failedConnections(0),
@@ -368,20 +368,20 @@ void STCPNode::Peer::closeSocket(STCPManager* manager) {
     }
 }
 
-        string STCPNode::Peer::responseName(Response response) {
-            switch (response) {
-                case STCPNode::Peer::Response::NONE:
-                return "NONE";
-                break;
-                case STCPNode::Peer::Response::APPROVE:
-                return "APPROVE";
-                break;
-                case STCPNode::Peer::Response::DENY:
-                return "DENY";
-                break;
-            }
-            return "";
-        }
+string STCPNode::Peer::responseName(Response response) {
+    switch (response) {
+        case STCPNode::Peer::Response::NONE:
+        return "NONE";
+        break;
+        case STCPNode::Peer::Response::APPROVE:
+        return "APPROVE";
+        break;
+        case STCPNode::Peer::Response::DENY:
+        return "DENY";
+        break;
+    }
+    return "";
+}
 
 void STCPNode::Peer::setCommit(uint64_t count, const string& hashString) {
     lock_guard<decltype(_stateMutex)> l(_stateMutex);
@@ -422,16 +422,13 @@ STable STCPNode::Peer::getData() const {
     return result;
 }
 
-        // For initializing the permafollower value from the params list.
-        static bool STCPNode::Peer::isPermafollower(const STable params) {
-            auto it = params.find("Permafollower");
-            if (it != params.end() && it->second == "true") {
-                return true;
-            }
-            return false;
-        }
-
-    };
+bool STCPNode::Peer::isPermafollower(const STable params) {
+    auto it = params.find("Permafollower");
+    if (it != params.end() && it->second == "true") {
+        return true;
+    }
+    return false;
+}
 
 ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& response)
 {

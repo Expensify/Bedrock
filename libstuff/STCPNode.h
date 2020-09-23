@@ -65,42 +65,15 @@ struct STCPNode : public STCPServer {
     // Represents a single peer in the database cluster
     class Peer {
       public:
-        // Constructor.
-        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
 
-        bool connected() const;
-
-        void reset();
-
-        // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
-        // different threads.
-        void closeSocket(STCPManager* manager);
-
-        // Send a message to this peer.
-        void sendMessage(const SData& message);
-
+        // Possible responses from a peer.
         enum class Response {
             NONE,
             APPROVE,
             DENY
         };
 
-        static string responseName(Response response) {
-            switch (response) {
-                case STCPNode::Peer::Response::NONE:
-                return "NONE";
-                break;
-                case STCPNode::Peer::Response::APPROVE:
-                return "APPROVE";
-                break;
-                case STCPNode::Peer::Response::DENY:
-                return "DENY";
-                break;
-            }
-            return "";
-        }
-
-        // Attributes
+        // Const (and thus implicitly thread-safe) attributes of this Peer.
         const string name;
         const string host;
         const uint64_t id;
@@ -112,6 +85,9 @@ struct STCPNode : public STCPServer {
         // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
         // `getCommit`, thus reducing the risk of anyone getting out-of-sync commitCount and hash.
         const atomic<uint64_t> commitCount;
+
+        // The rest of these are atomic so they can be read by multiple threads, but there's no special synchronization
+        // required between them.
         atomic<int> failedConnections;
         atomic<uint64_t> latency;
         atomic<bool> loggedIn;
@@ -123,48 +99,35 @@ struct STCPNode : public STCPServer {
         atomic<Response> transactionResponse;
         atomic<string> version;
 
+        // Constructor.
+        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+
         // Atomically set commit and hash.
-        void setCommit(uint64_t count, const string& hashString) {
-            lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            const_cast<atomic<uint64_t>&>(commitCount) = count;
-            hash = hashString;
-        }
+        void setCommit(uint64_t count, const string& hashString);
 
         // Atomically get commit and hash.
-        void getCommit(uint64_t& count, string& hashString) {
-            lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            count = commitCount.load();
-            hashString = hash.load();
-        }
+        void getCommit(uint64_t& count, string& hashString);
 
-        STable getData() const {
-            // Add all of our standard stuff.
-            STable result({
-                {"name", name},
-                {"host", host},
-                {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
-                {"latency", to_string(latency)},
-                {"nextReconnect", to_string(nextReconnect)},
-                {"id", to_string(id)},
-                {"failedConnections", to_string(failedConnections)},
-                {"loggedIn", (loggedIn ? "true" : "false")},
-                {"priority", to_string(priority)},
-                {"version", version},
-                {"hash", hash},
-                {"commitCount", to_string(commitCount)},
-                {"standupResponse", responseName(standupResponse)},
-                {"transactionResponse", responseName(transactionResponse)},
-                {"subscribed", (subscribed ? "true" : "false")},
-            });
+        // Gets an STable representation of this peer's current state in order to display status info.
+        STable getData() const;
 
-            // And anything from the params (note: doesn't overwrite our standard stuff).
-            for (auto& p : params) {
-                result.emplace(p);
-            }
-            return result;
-        }
+        // Returns true if there's an active connection to this Peer.
+        bool connected() const;
+
+        // Reset a peer, as if disconnected and starting the connection over.
+        void reset();
+
+        // Close the peer's socket. Thread-safe.
+        void closeSocket(STCPManager* manager);
+
+        // Send a message to this peer. Thread-safe.
+        void sendMessage(const SData& message);
+
+        // Get a string name for a Response object.
+        static string responseName(Response response);
 
       private:
+        // The hash corresponding to commitCount.
         atomic<string> hash;
 
         // This allows direct access to the socket from the node object that should actually be managing peer
@@ -174,18 +137,11 @@ struct STCPNode : public STCPServer {
         friend class SQLiteNode;
         Socket* s = nullptr;
 
-        // This is not meant to be accessible from STCPNode (but has to be with the way `friend` works).
+        // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
         mutable recursive_mutex _stateMutex;
 
         // For initializing the permafollower value from the params list.
-        static bool isPermafollower(const STable params) {
-            auto it = params.find("Permafollower");
-            if (it != params.end() && it->second == "true") {
-                return true;
-            }
-            return false;
-        }
-
+        static bool isPermafollower(const STable params);
     };
 
     // Begins listening for connections on a given port
