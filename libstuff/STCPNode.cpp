@@ -314,6 +314,41 @@ void STCPNode::_sendPING(Peer* peer) {
     peer->s->send(ping.serialize());
 }
 
+Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
+  : name(name_), host(host_), id(id_), params(params_), permaFollower(isPermafollower(params)),
+    commitCount(0),
+    failedConnections(0),
+    latency(0),
+    loggedIn(false),
+    nextReconnect(0),
+    priority(0),
+    state(SEARCHING),
+    standupResponse(Response::NONE),
+    subscribed(false),
+    transactionResponse(Response::NONE),
+    version(),
+    hash()
+{ }
+
+bool STCPNode::Peer::connected() const {
+    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    return (s && s->state.load() == STCPManager::Socket::CONNECTED);
+}
+
+void STCPNode::Peer::reset() {
+    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    latency = 0;
+    loggedIn = false;
+    priority = 0;
+    s = nullptr;
+    state = SEARCHING;
+    standupResponse = Response::NONE;
+    subscribed = false;
+    transactionResponse = Response::NONE;
+    version = "";
+    setCommit(0, "");
+}
+
 void STCPNode::Peer::sendMessage(const SData& message) {
     lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     if (s) {
@@ -333,8 +368,76 @@ void STCPNode::Peer::closeSocket(STCPManager* manager) {
     }
 }
 
+        string STCPNode::Peer::responseName(Response response) {
+            switch (response) {
+                case STCPNode::Peer::Response::NONE:
+                return "NONE";
+                break;
+                case STCPNode::Peer::Response::APPROVE:
+                return "APPROVE";
+                break;
+                case STCPNode::Peer::Response::DENY:
+                return "DENY";
+                break;
+            }
+            return "";
+        }
+
+void STCPNode::Peer::setCommit(uint64_t count, const string& hashString) {
+    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    const_cast<atomic<uint64_t>&>(commitCount) = count;
+    hash = hashString;
+}
+
+void STCPNode::Peer::getCommit(uint64_t& count, string& hashString) {
+    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    count = commitCount.load();
+    hashString = hash.load();
+}
+
+STable STCPNode::Peer::getData() const {
+    // Add all of our standard stuff.
+    STable result({
+        {"name", name},
+        {"host", host},
+        {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
+        {"latency", to_string(latency)},
+        {"nextReconnect", to_string(nextReconnect)},
+        {"id", to_string(id)},
+        {"failedConnections", to_string(failedConnections)},
+        {"loggedIn", (loggedIn ? "true" : "false")},
+        {"priority", to_string(priority)},
+        {"version", version},
+        {"hash", hash},
+        {"commitCount", to_string(commitCount)},
+        {"standupResponse", responseName(standupResponse)},
+        {"transactionResponse", responseName(transactionResponse)},
+        {"subscribed", (subscribed ? "true" : "false")},
+    });
+
+    // And anything from the params (note: doesn't overwrite our standard stuff).
+    for (auto& p : params) {
+        result.emplace(p);
+    }
+    return result;
+}
+
+        // For initializing the permafollower value from the params list.
+        static bool STCPNode::Peer::isPermafollower(const STable params) {
+            auto it = params.find("Permafollower");
+            if (it != params.end() && it->second == "true") {
+                return true;
+            }
+            return false;
+        }
+
+    };
+
 ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& response)
 {
     os << STCPNode::Peer::responseName(response.load());
     return os;
 }
+
+
+

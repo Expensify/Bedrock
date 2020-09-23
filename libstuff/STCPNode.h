@@ -66,48 +66,11 @@ struct STCPNode : public STCPServer {
     class Peer {
       public:
         // Constructor.
-        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), id(id_), params(params_),
-            commitCount(0),
-            failedConnections(0),
-            latency(0),
-            loggedIn(false),
-            nextReconnect(0),
-            priority(0),
-            state(SEARCHING),
-            standupResponse(Response::NONE),
-            subscribed(false),
-            transactionResponse(Response::NONE),
-            version(),
-            hash()
-        { }
+        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
 
-        bool isPermafollower() const {
-            auto it = params.find("Permafollower");
-            if (it != params.end() && it->second == "true") {
-                return true;
-            }
-            return false;
-        }
+        bool connected() const;
 
-        bool connected() const {
-            lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            return (s && s->state.load() == STCPManager::Socket::CONNECTED);
-        }
-
-        void reset() {
-            lock_guard<decltype(_stateMutex)> l(_stateMutex);
-            latency = 0;
-            loggedIn = false;
-            priority = 0;
-            s = nullptr;
-            state = SEARCHING;
-            standupResponse = Response::NONE;
-            subscribed = false;
-            transactionResponse = Response::NONE;
-            version = "";
-            setCommit(0, "");
-        }
+        void reset();
 
         // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
         // different threads.
@@ -142,6 +105,7 @@ struct STCPNode : public STCPServer {
         const string host;
         const uint64_t id;
         const STable params;
+        const bool permaFollower;
 
         // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
         // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
@@ -212,6 +176,16 @@ struct STCPNode : public STCPServer {
 
         // This is not meant to be accessible from STCPNode (but has to be with the way `friend` works).
         mutable recursive_mutex _stateMutex;
+
+        // For initializing the permafollower value from the params list.
+        static bool isPermafollower(const STable params) {
+            auto it = params.find("Permafollower");
+            if (it != params.end() && it->second == "true") {
+                return true;
+            }
+            return false;
+        }
+
     };
 
     // Begins listening for connections on a given port
