@@ -435,6 +435,3 @@ ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& respons
     os << STCPNode::Peer::responseName(response.load());
     return os;
 }
-
-
-
