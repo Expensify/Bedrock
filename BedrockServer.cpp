@@ -227,12 +227,6 @@ void BedrockServer::sync(const SData& args,
     AutoTimer postPollTimer("sync thread PostPoll");
     AutoTimer escalateLoopTimer("sync thread escalate loop");
 
-    // We hold a lock here around all operations on `syncNode`, because `SQLiteNode` isn't thread-safe, but we need
-    // `BedrockServer` to be able to introspect it in `Status` requests. We hold this lock at all times until exiting
-    // our main loop, aside from when we're waiting on `poll`. Strictly, we could hold this lock less often, but there
-    // are not that many status commands coming in, and they can wait for a fraction of a second, which lets us keep
-    // the logic of this loop simpler.
-    server._syncMutex.lock();
     do {
         // Make sure the existing command prefix is still valid since they're reset when SAUTOPREFIX goes out of scope.
         if (command) {
@@ -337,14 +331,8 @@ void BedrockServer::sync(const SData& args,
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
-
-        // Unlock our mutex, poll, and re-lock when finished.
-        server._syncMutex.unlock();
-        {
-            AutoTimerTime pollTime(pollTimer);
-            S_poll(fdm, max(nextActivity, now) - now);
-        }
-        server._syncMutex.lock();
+        AutoTimerTime pollTime(pollTimer);
+        S_poll(fdm, max(nextActivity, now) - now);
 
         // And set our next timeout for 1 second from now.
         nextActivity = STimeNow() + STIME_US_PER_S;
@@ -693,9 +681,6 @@ void BedrockServer::sync(const SData& args,
         SWARN("Shutting down mid-commit. Rolling back.");
         db.rollback();
     }
-
-    // Done with the global lock.
-    server._syncMutex.unlock();
 
     // We've finished shutting down the sync node, tell the workers that it's finished.
     server._shutdownState.store(DONE);
@@ -1837,24 +1822,14 @@ bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) 
     return false;
 }
 
-bool BedrockServer::getPeerInfo(list<STable>& peerData) {
-    if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
-        lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
-        auto _syncNodeCopy = _syncNode;
-        if (_syncNodeCopy) {
-            for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-                peerData.emplace_back(peer->getData());
-            }
-        }
-    } else {
-        return false;
-    }
-    return true;
-}
-
 list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
-    getPeerInfo(peerData);
+    auto _syncNodeCopy = _syncNode;
+    if (_syncNodeCopy) {
+        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
+            peerData.emplace_back(peer->getData());
+        }
+    }
     return peerData;
 }
 
@@ -1945,40 +1920,26 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
         // thread.
         list<string> escalated;
-        {
-            if (_syncMutex.try_lock_for(chrono::milliseconds(10))) {
-                lock_guard<decltype(_syncMutex)> lock(_syncMutex, adopt_lock_t());
+        auto _syncNodeCopy = _syncNode;
+        if (_syncNodeCopy) {
+            content["syncNodeAvailable"] = "true";
+            // Set some information about this node.
+            content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
+            content["priority"] = to_string(_syncNodeCopy->getPriority());
 
-                // There's no syncNode when the server is detached, so we can't get this data.
-                auto _syncNodeCopy = _syncNode;
-                if (_syncNodeCopy) {
-                    content["syncNodeAvailable"] = "true";
-                    // Set some information about this node.
-                    content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
-                    content["priority"] = to_string(_syncNodeCopy->getPriority());
-
-                    // Get any escalated commands that are waiting to be processed.
-                    escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
-                } else {
-                    content["syncNodeAvailable"] = "false";
-                }
-            } else {
-                content["syncNodeBlocked"] = "true";
-            }
+            // Get any escalated commands that are waiting to be processed.
+            escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
+            _syncNodeCopy = nullptr;
+        } else {
+            content["syncNodeAvailable"] = "false";
         }
 
         // Coalesce all of the peer data into one value to return or return
         // an error message if we timed out getting the peerList data.
         list<string> peerList;
-        list<STable> peerData;
-        if (getPeerInfo(peerData)) {
-            for (const STable& peerTable : peerData) {
-                peerList.push_back(SComposeJSONObject(peerTable));
-            }
-        } else {
-            STable peerListResponse;
-            peerListResponse["peerListBlocked"] = "true";
-            peerList.push_back(SComposeJSONObject(peerListResponse));
+        list<STable> peerData = getPeerInfo();
+        for (const STable& peerTable : peerData) {
+            peerList.push_back(SComposeJSONObject(peerTable));
         }
 
         // We can use the `each` functionality to pass a lambda that will grab each method line in
@@ -2207,7 +2168,6 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 void BedrockServer::broadcastCommand(const SData& cmd) {
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
-    lock_guard<decltype(_syncMutex)> lock(_syncMutex);
     auto _syncNodeCopy = _syncNode;
     if (_syncNodeCopy) {
         _syncNodeCopy->broadcast(message);
