@@ -331,8 +331,10 @@ void BedrockServer::sync(const SData& args,
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
-        AutoTimerTime pollTime(pollTimer);
-        S_poll(fdm, max(nextActivity, now) - now);
+        {
+            AutoTimerTime pollTime(pollTimer);
+            S_poll(fdm, max(nextActivity, now) - now);
+        }
 
         // And set our next timeout for 1 second from now.
         nextActivity = STimeNow() + STIME_US_PER_S;

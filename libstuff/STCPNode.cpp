@@ -331,12 +331,12 @@ STCPNode::Peer::Peer(const string& name_, const string& host_, const STable& par
 { }
 
 bool STCPNode::Peer::connected() const {
-    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     return (s && s->state.load() == STCPManager::Socket::CONNECTED);
 }
 
 void STCPNode::Peer::reset() {
-    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     latency = 0;
     loggedIn = false;
     priority = 0;
@@ -371,26 +371,27 @@ void STCPNode::Peer::closeSocket(STCPManager* manager) {
 string STCPNode::Peer::responseName(Response response) {
     switch (response) {
         case STCPNode::Peer::Response::NONE:
-        return "NONE";
-        break;
+            return "NONE";
+            break;
         case STCPNode::Peer::Response::APPROVE:
-        return "APPROVE";
-        break;
+            return "APPROVE";
+            break;
         case STCPNode::Peer::Response::DENY:
-        return "DENY";
-        break;
+            return "DENY";
+            break;
+        default:
+            return "";
     }
-    return "";
 }
 
 void STCPNode::Peer::setCommit(uint64_t count, const string& hashString) {
-    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
 }
 
 void STCPNode::Peer::getCommit(uint64_t& count, string& hashString) {
-    lock_guard<decltype(_stateMutex)> l(_stateMutex);
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     count = commitCount.load();
     hashString = hash.load();
 }

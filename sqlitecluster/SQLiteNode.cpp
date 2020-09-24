@@ -63,8 +63,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
 
 const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
-     vector<Peer*> peerList;
-    // Add any peers.
+    vector<Peer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
     for (const string& peerString : parsedPeerList) {
         // Get the params from this peer, if any
@@ -2110,7 +2109,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     // Peer is requesting synchronization. First, does it have any data?
 
-    uint64_t peerCommitCount;
+    uint64_t peerCommitCount = 0;
     string peerHash;
     peer->getCommit(peerCommitCount, peerHash);
 
