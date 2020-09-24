@@ -216,9 +216,8 @@ class BedrockServer : public SQLiteServer {
     // Returns whether or not this server was configured to backup.
     bool shouldBackup();
 
-    // Returns a copy of the internal state of the sync node's peers. This can be empty if there are no peers, or no
-    // sync node.
-    bool getPeerInfo(list<STable>& peerData);
+    // Returns a representation of the internal state of the sync node's peers. This can be empty if there are no
+    // peers, or no sync node.
     list<STable> getPeerInfo();
 
     // Send a command to all of our peers. It will be wrapped appropriately.
@@ -355,9 +354,6 @@ class BedrockServer : public SQLiteServer {
     // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
     shared_ptr<SQLiteNode> _syncNode;
-
-    // Because status will access internal sync node data, we lock in both places that will access the pointer above.
-    recursive_timed_mutex _syncMutex;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
