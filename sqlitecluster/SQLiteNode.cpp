@@ -366,7 +366,7 @@ bool SQLiteNode::shutdownComplete() {
 
     // If we have unsent data, not done
     for (auto peer : peerList) {
-        if (peer->s && !peer->s->sendBufferEmpty()) {
+        if (peer->socket && !peer->socket->sendBufferEmpty()) {
             // Still sending data
             SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
@@ -523,9 +523,9 @@ bool SQLiteNode::update() {
                         to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
                         " ms elapsed. ";
         for (auto& p : peerList) {
-            if (p->s) {
-                logMsg += p->name + " sent " + to_string(p->s->getSentBytes()) + " bytes, recv " + to_string(p->s->getRecvBytes()) + " bytes. ";
-                p->s->resetCounters();
+            if (p->socket) {
+                logMsg += p->name + " sent " + to_string(p->socket->getSentBytes()) + " bytes, recv " + to_string(p->socket->getRecvBytes()) + " bytes. ";
+                p->socket->resetCounters();
             } else {
                 logMsg += p->name + " has no socket. ";
             }
@@ -1858,8 +1858,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   is out of touch with reality: we processed a command and reality doesn't
     ///   know it.  Not cool!
     ///
-    if (peer->s && peer->s->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating follower died before receiving response to escalation: " << peer->s->sendBufferCopy());
+    if (peer->socket && peer->socket->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
+        PWARN("Initiating follower died before receiving response to escalation: " << peer->socket->sendBufferCopy());
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
@@ -1945,7 +1945,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SASSERT(!message.empty());
 
     // If a peer is currently disconnected, we can't send it a message.
-    if (!peer->s) {
+    if (!peer->socket) {
         PWARN("Can't send message to peer, no socket. Message '" << message.methodLine << "' will be discarded.");
         return;
     }
@@ -1953,7 +1953,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
-    peer->s->send(messageCopy.serialize());
+    peer->socket->send(messageCopy.serialize());
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
@@ -1970,9 +1970,9 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Loop across all connected peers and send the message
     for (auto peer : peerList) {
         // Send either to everybody, or just subscribed peers.
-        if (peer->s && (!subscribedOnly || peer->subscribed)) {
+        if (peer->socket && (!subscribedOnly || peer->subscribed)) {
             // Send it now, without waiting for the outer event loop
-            peer->s->send(serializedMessage);
+            peer->socket->send(serializedMessage);
         }
     }
 }
@@ -2320,10 +2320,10 @@ void SQLiteNode::_updateSyncPeer()
 
 void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
-    if (peer->s) {
+    if (peer->socket) {
         // Reset
         SHMMM("Reconnecting to '" << peer->name << "'");
-        shutdownSocket(peer->s);
+        shutdownSocket(peer->socket);
         peer->loggedIn = false;
     }
 }

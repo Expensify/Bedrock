@@ -135,7 +135,7 @@ struct STCPNode : public STCPServer {
         // but for the time being, the amount of refactoring required to fix that is too high.
         friend class STCPNode;
         friend class SQLiteNode;
-        Socket* s = nullptr;
+        Socket* socket = nullptr;
 
         // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
         mutable recursive_mutex _stateMutex;
