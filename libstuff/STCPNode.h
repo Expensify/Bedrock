@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/libstuff.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -42,10 +43,6 @@ class AutoTimerTime {
 };
 
 struct STCPNode : public STCPServer {
-    // Begins listening for connections on a given port
-    STCPNode(const string& name, const string& host, const uint64_t recvTimeout_ = STIME_US_PER_M);
-    virtual ~STCPNode();
-
     // Possible states of a node in a DB cluster
     enum State {
         UNKNOWN,
@@ -66,52 +63,95 @@ struct STCPNode : public STCPServer {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Represents a single peer in the database cluster
-    struct Peer : public SData {
-        friend class STCPNode;
-        friend class SQLiteNode;
+    class Peer {
+      public:
 
-        // Attributes
-        string name;
-        string host;
-        STable params;
-        State state;
-        uint64_t latency;
-        uint64_t nextReconnect;
-        uint64_t id;
-        int failedConnections;
+        // Possible responses from a peer.
+        enum class Response {
+            NONE,
+            APPROVE,
+            DENY
+        };
 
-        // Helper methods
-        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-          : name(name_), host(host_), params(params_), state(SEARCHING), latency(0), nextReconnect(0), id(id_),
-            failedConnections(0), s(nullptr)
-        { }
-        bool connected() { return (s && s->state.load() == STCPManager::Socket::CONNECTED); }
-        void reset() {
-            clear();
-            state = SEARCHING;
-            s = nullptr;
-            latency = 0;
-        }
+        // Const (and thus implicitly thread-safe) attributes of this Peer.
+        const string name;
+        const string host;
+        const uint64_t id;
+        const STable params;
+        const bool permaFollower;
 
-        // Close the peer's socket. This is synchronized so that you can safely call closeSocket and sendMessage on
-        // different threads.
+        // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
+        // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
+        // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
+        // `getCommit`, thus reducing the risk of anyone getting out-of-sync commitCount and hash.
+        const atomic<uint64_t> commitCount;
+
+        // The rest of these are atomic so they can be read by multiple threads, but there's no special synchronization
+        // required between them.
+        atomic<int> failedConnections;
+        atomic<uint64_t> latency;
+        atomic<bool> loggedIn;
+        atomic<uint64_t> nextReconnect;
+        atomic<int> priority;
+        atomic<State> state;
+        atomic<Response> standupResponse;
+        atomic<bool> subscribed;
+        atomic<Response> transactionResponse;
+        atomic<string> version;
+
+        // Constructor.
+        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+
+        // Atomically set commit and hash.
+        void setCommit(uint64_t count, const string& hashString);
+
+        // Atomically get commit and hash.
+        void getCommit(uint64_t& count, string& hashString);
+
+        // Gets an STable representation of this peer's current state in order to display status info.
+        STable getData() const;
+
+        // Returns true if there's an active connection to this Peer.
+        bool connected() const;
+
+        // Reset a peer, as if disconnected and starting the connection over.
+        void reset();
+
+        // Close the peer's socket. Thread-safe.
         void closeSocket(STCPManager* manager);
 
-        // Send a message to this peer.
+        // Send a message to this peer. Thread-safe.
         void sendMessage(const SData& message);
 
+        // Get a string name for a Response object.
+        static string responseName(Response response);
+
       private:
-        Socket* s;
-        recursive_mutex socketMutex;
+        // The hash corresponding to commitCount.
+        atomic<string> hash;
+
+        // This allows direct access to the socket from the node object that should actually be managing peer
+        // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
+        // but for the time being, the amount of refactoring required to fix that is too high.
+        friend class STCPNode;
+        friend class SQLiteNode;
+        Socket* socket = nullptr;
+
+        // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
+        mutable recursive_mutex _stateMutex;
+
+        // For initializing the permafollower value from the params list.
+        static bool isPermafollower(const STable& params);
     };
 
-    // Connects to a peer in the database cluster
-    void addPeer(const string& name, const string& host, const STable& params);
+    // Begins listening for connections on a given port
+    STCPNode(const string& name, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_ = STIME_US_PER_M);
+    virtual ~STCPNode();
 
     // Attributes
     string name;
     uint64_t recvTimeout;
-    vector<Peer*> peerList;
+    const vector<Peer*> peerList;
     list<Socket*> acceptedSocketList;
 
     // Called when we first establish a connection with a new peer
@@ -141,3 +181,6 @@ struct STCPNode : public STCPServer {
     AutoTimer _sConsumeFrontTimer;
     AutoTimer _sAppendTimer;
 };
+
+// serialization for Responses.
+ostream& operator<<(ostream& os, const atomic<STCPNode::Peer::Response>& response);
