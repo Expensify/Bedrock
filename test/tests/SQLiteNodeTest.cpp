@@ -44,15 +44,20 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         close(fd);
         SQLitePool dbPool(10, filename, 1000000, 5000, 0);
         TestServer server("");
-        string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
-        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
+        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", "", 1, 1000000000, "1.0");
+
+        STable dummyParams;
+        testNode.addPeer("peer1", "host1.fake:15555", dummyParams);
+        testNode.addPeer("peer2", "host2.fake:16666", dummyParams);
+        testNode.addPeer("peer3", "host3.fake:17777", dummyParams);
+        testNode.addPeer("peer4", "host4.fake:18888", dummyParams);
 
         // Do a base test, with one peer with no latency.
         SQLiteNode::Peer* fastest = nullptr;
         for (auto peer : testNode.peerList) {
             int peerNum = peer->name[4] - 48;
-            peer->loggedIn = true;
-            peer->setCommit(10000000 + peerNum, "");
+            (*peer)["LoggedIn"] = "true";
+            (*peer)["CommitCount"] = to_string(10000000 + peerNum);
 
             // 0, 100, 200, 300.
             peer->latency = (peerNum - 1) * 100;
@@ -79,7 +84,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         // And see what happens if our fastest peer logs out.
         for (auto peer : testNode.peerList) {
             if (peer->name == "peer3") {
-                peer->loggedIn = false;
+                (*peer)["LoggedIn"] = "false";
                 peer->latency = 50;
             }
 

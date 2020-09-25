@@ -108,10 +108,6 @@ class SString : public string {
         return *this;
     }
 
-    template <typename T>
-    SString(const T& from) : string(from) {}
-    SString() {}
-
     // Templated assignment operator for non-arithmetic types.
     template <typename T>
     typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
@@ -333,7 +329,7 @@ namespace std {
     template<>
     struct atomic<string> {
         string operator=(string desired) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             _string = desired;
             return _string;
         }
@@ -341,19 +337,16 @@ namespace std {
             return false;
         }
         void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             _string = desired;
         };
         string load(std::memory_order order = std::memory_order_seq_cst) const {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             return _string;
         }
-        operator string() const {
-            lock_guard<decltype(m)> l(m);
-            return _string;
-        }
+        operator string() const;
         string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            SAUTOLOCK(m);
             string existing = _string;
             _string = desired;
             return existing;

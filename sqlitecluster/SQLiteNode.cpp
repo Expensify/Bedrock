@@ -43,6 +43,7 @@
 //                   the leader to confirm that these responses were in fact sent in response to the correct message,
 //                   and not some old out-of-date message from the past.
 // Response:         Sent in STANDUP_RESPONSE, either "approve" or "deny".
+// Reason:           The reason for a failure case (typically, a "deny" Response). Explanatory string.
 // NumCommits:       With a "SYNCHRONIZE_RESPONSE" message, indicates the number of commits returned.
 // leaderSendTime:   Timestamp in microseconds that leader sent a message, for performance analysis.
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
@@ -62,35 +63,10 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
 
-const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
-    vector<Peer*> peerList;
-    list<string> parsedPeerList = SParseList(peerListString);
-    for (const string& peerString : parsedPeerList) {
-        // Get the params from this peer, if any
-        string host;
-        STable params;
-        SASSERT(SParseURIPath(peerString, host, params));
-        string name = SGetDomain(host);
-        if (params.find("nodeName") != params.end()) {
-            name = params["nodeName"];
-        }
-
-        // Create a new peer and ready it for connection
-        SASSERT(SHostIsValid(host));
-        SINFO("Adding peer #" << peerList.size() << ": " << name << " (" << host << "), " << SComposeJSONObject(params));
-        Peer* peer = new Peer(name, host, params, peerList.size() + 1);
-
-        // Wait up to 2s before trying the first time
-        peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
-        peerList.push_back(peer);
-    }
-    return peerList;
-}
-
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const bool useParallelReplication)
-    : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+    : STCPNode(name, host, max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
       _db(_dbPool.getBase()),
       _commitState(CommitState::UNINITIALIZED),
@@ -125,6 +101,20 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     // Make sure we get notified when the DB needs to checkpoint.
     _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
     _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
+
+    // Add any peers.
+    list<string> parsedPeerList = SParseList(peerList);
+    for (const string& peer : parsedPeerList) {
+        // Get the params from this peer, if any
+        string host;
+        STable params;
+        SASSERT(SParseURIPath(peer, host, params));
+        string name = SGetDomain(host);
+        if (params.find("nodeName") != params.end()) {
+            name = params["nodeName"];
+        }
+        addPeer(name, host, params);
+    }
 }
 
 SQLiteNode::~SQLiteNode() {
@@ -366,7 +356,7 @@ bool SQLiteNode::shutdownComplete() {
 
     // If we have unsent data, not done
     for (auto peer : peerList) {
-        if (peer->socket && !peer->socket->sendBufferEmpty()) {
+        if (peer->s && !peer->s->sendBufferEmpty()) {
             // Still sending data
             SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
@@ -417,7 +407,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
             transaction.content = query;
             for (auto peer : peerList) {
                 // Clear the response flag from the last transaction
-                peer->transactionResponse = Peer::Response::NONE;
+                (*peer)["TransactionResponse"].clear();
             }
             _sendToAllPeers(transaction, true); // subscribed only
         } else {
@@ -523,9 +513,9 @@ bool SQLiteNode::update() {
                         to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
                         " ms elapsed. ";
         for (auto& p : peerList) {
-            if (p->socket) {
-                logMsg += p->name + " sent " + to_string(p->socket->getSentBytes()) + " bytes, recv " + to_string(p->socket->getRecvBytes()) + " bytes. ";
-                p->socket->resetCounters();
+            if (p->s) {
+                logMsg += p->name + " sent " + to_string(p->s->getSentBytes()) + " bytes, recv " + to_string(p->s->getRecvBytes()) + " bytes. ";
+                p->s->resetCounters();
             } else {
                 logMsg += p->name + " has no socket. ";
             }
@@ -569,8 +559,8 @@ bool SQLiteNode::update() {
         Peer* freshestPeer = nullptr;
         for (auto peer : peerList) {
             // Wait until all connected (or failed) and logged in
-            bool permaFollower = peer->permaFollower;
-            bool loggedIn = peer->loggedIn;
+            bool permaFollower = peer->params["Permafollower"] == "true";
+            bool loggedIn = peer->test("LoggedIn");
 
             // Count how many full peers (non-permafollowers) we have
             numFullPeers += !permaFollower;
@@ -581,7 +571,7 @@ bool SQLiteNode::update() {
             // Find the freshest peer
             if (loggedIn) {
                 // The freshest peer is the one that has the most commits.
-                if (!freshestPeer || peer->commitCount > freshestPeer->commitCount) {
+                if (!freshestPeer || peer->calcU64("CommitCount") > freshestPeer->calcU64("CommitCount")) {
                     freshestPeer = peer;
                 }
             }
@@ -608,7 +598,7 @@ bool SQLiteNode::update() {
 
         // How does our state compare with the freshest peer?
         SASSERT(freshestPeer);
-        uint64_t freshestPeerCommitCount = freshestPeer->commitCount;
+        uint64_t freshestPeerCommitCount = freshestPeer->calcU64("CommitCount");
         if (freshestPeerCommitCount == _db.getCommitCount()) {
             // We're up to date
             SINFO("Synchronized with the freshest peer '" << freshestPeer->name << "', WAITING.");
@@ -714,17 +704,17 @@ bool SQLiteNode::update() {
         Peer* currentLeader = nullptr;
         for (auto peer : peerList) {
             // Make sure we're a full peer
-            if (!peer->permaFollower) {
+            if (peer->params["Permafollower"] != "true") {
                 // Verify we're logged in
                 ++numFullPeers;
-                if (peer->loggedIn) {
+                if (SIEquals((*peer)["LoggedIn"], "true")) {
                     // Verify we're still fresh
                     ++numLoggedInFullPeers;
-                    if (!freshestPeer || peer->commitCount > freshestPeer->commitCount)
+                    if (!freshestPeer || peer->calcU64("CommitCount") > freshestPeer->calcU64("CommitCount"))
                         freshestPeer = peer;
 
                     // See if it's the highest priority
-                    if (!highestPriorityPeer || peer->priority > highestPriorityPeer->priority)
+                    if (!highestPriorityPeer || peer->calc("Priority") > highestPriorityPeer->calc("Priority"))
                         highestPriorityPeer = peer;
 
                     // See if it is currently the leader (or standing up/down)
@@ -754,12 +744,12 @@ bool SQLiteNode::update() {
         // If there is already a leader that is higher priority than us,
         // subscribe -- even if we're not in sync with it.  (It'll bring
         // us back up to speed while subscribing.)
-        if (currentLeader && _priority < highestPriorityPeer->priority && currentLeader->state == LEADING) {
+        if (currentLeader && _priority < highestPriorityPeer->calc("Priority") && currentLeader->state == LEADING) {
             // Subscribe to the leader
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
-            _leaderVersion = _leadPeer.load()->version;
+            _leaderVersion = (*_leadPeer)["Version"];
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
             _changeState(SUBSCRIBING);
             return true; // Re-update
@@ -768,7 +758,7 @@ bool SQLiteNode::update() {
         // No leader to subscribe to, let's see if there's anybody else
         // out there with commits we don't have.  Might as well synchronize
         // while waiting.
-        if (freshestPeer->commitCount > _db.getCommitCount()) {
+        if (freshestPeer->calcU64("CommitCount") > _db.getCommitCount()) {
             // Out of sync with a peer -- resynchronize
             SHMMM("Lost synchronization while waiting; re-SEARCHING.");
             _changeState(SEARCHING);
@@ -780,12 +770,12 @@ bool SQLiteNode::update() {
         // a real priority and are not a permafollower, and are connected to 
         // enough full peers to achieve quorum, we should be leader.
         if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > 0 && _priority > highestPriorityPeer->priority) {
+            _priority > 0 && _priority > highestPriorityPeer->calc("Priority")) {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
             for (auto peer : peerList) {
-                peer->standupResponse = Peer::Response::NONE;
+                peer->erase("StandupResponse");
             }
             _changeState(STANDINGUP);
             return true; // Re-update
@@ -822,19 +812,19 @@ bool SQLiteNode::update() {
         }
         for (auto peer : peerList) {
             // Check this peer; if not logged in, tacit approval
-            if (!peer->permaFollower) {
+            if (peer->params["Permafollower"] != "true") {
                 ++numFullPeers;
-                if (peer->loggedIn) {
+                if (SIEquals((*peer)["LoggedIn"], "true")) {
                     // Connected and logged in.
                     numLoggedInFullPeers++;
 
                     // Has it responded yet?
-                    if (peer->standupResponse == Peer::Response::NONE) {
+                    if (!peer->isSet("StandupResponse")) {
                         // At least one logged in full peer hasn't responded
                         allResponded = false;
-                    } else if (peer->standupResponse != Peer::Response::APPROVE) {
+                    } else if (!SIEquals((*peer)["StandupResponse"], "approve")) {
                         // It responeded, but didn't approve -- abort
-                        PHMMM("Refused our STANDUP, cancel and RESEARCH");
+                        PHMMM("Refused our STANDUP (" << (*peer)["Reason"] << "), cancel and RESEARCH");
                         _changeState(SEARCHING);
                         return true; // Re-update
                     }
@@ -881,7 +871,7 @@ bool SQLiteNode::update() {
     ///             if( there is a higher priority peer ) goto STANDINGDOWN
     ///             if( a command is queued )
     ///                 if( processing the command affects the database )
-    ///                    clear the transactionResponse of all peers
+    ///                    clear the TransactionResponse of all peers
     ///                    broadcast BEGIN_TRANSACTION to subscribed followers
     ///         if( we're standing down and all followers have unsubscribed )
     ///             goto SEARCHING
@@ -913,22 +903,23 @@ bool SQLiteNode::update() {
             int numFullDenied = 0;    // Num full peers that have denied
             for (auto peer : peerList) {
                 // Check this peer to see if it's full or a permafollower
-                if (!peer->permaFollower) {
+                if (peer->params["Permafollower"] != "true") {
                     // It's a full peer -- is it subscribed, and if so, how did it respond?
                     ++numFullPeers;
-                    if (peer->subscribed) {
+                    if ((*peer)["Subscribed"] == "true") {
                         // Subscribed, did it respond?
                         numFullFollowers++;
-                        if (peer->transactionResponse == Peer::Response::NONE) {
+                        const string& response = (*peer)["TransactionResponse"];
+                        if (response.empty()) {
                             continue;
                         }
                         numFullResponded++;
-                        if (peer->transactionResponse == Peer::Response::APPROVE) {
-                            SDEBUG("Peer '" << peer->name << "' has approved transaction.");
-                            ++numFullApproved;
-                        } else {
+                        numFullApproved += SIEquals(response, "approve");
+                        if (!SIEquals(response, "approve")) {
                             SWARN("Peer '" << peer->name << "' denied transaction.");
                             ++numFullDenied;
+                        } else {
+                            SDEBUG("Peer '" << peer->name << "' has approved transaction.");
                         }
                     }
                 }
@@ -1082,7 +1073,7 @@ bool SQLiteNode::update() {
 
             for (auto peer : peerList) {
                 // Clear the response flag from the last transaction
-                peer->transactionResponse = Peer::Response::NONE;
+                (*peer)["TransactionResponse"].clear();
             }
 
             // And send it to everyone who's subscribed.
@@ -1113,16 +1104,16 @@ bool SQLiteNode::update() {
                         standDownReason = "Found another LEADER (" + peer->name + "), STANDINGDOWN to clean it up.";
                     } else if (peer->state == WAITING) {
                         // We have a WAITING peer; is it waiting to STANDUP?
-                        if (peer->priority > _priority) {
+                        if (peer->calc("Priority") > _priority) {
                             // We've got a higher priority peer in the works; stand down so it can stand up.
                             standDownReason = "Found higher priority WAITING peer (" + peer->name
                                               + ") while LEADING, STANDINGDOWN";
-                        } else if (peer->commitCount > _db.getCommitCount()) {
+                        } else if (peer->calcU64("CommitCount") > _db.getCommitCount()) {
                             // It's got data that we don't, stand down so we can get it.
                             standDownReason = "Found WAITING peer (" + peer->name +
                                               ") with more data than us (we have " + SToStr(_db.getCommitCount()) +
-                                              "/" + _db.getCommittedHash() + ", it has " + to_string(peer->commitCount) +
-                                              "/" + peer->hash.load() + ") while LEADING, STANDINGDOWN";
+                                              "/" + _db.getCommittedHash() + ", it has " + (*peer)["CommitCount"] +
+                                              "/" + (*peer)["Hash"] + ") while LEADING, STANDINGDOWN";
                         }
                     }
                 }
@@ -1247,15 +1238,15 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     if (!message.isSet("Hash")) {
         STHROW("missing Hash");
     }
-
-    peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
+    (*peer)["CommitCount"] = message["CommitCount"];
+    (*peer)["Hash"] = message["Hash"];
 
     // Classify and process the message
     if (SIEquals(message.methodLine, "LOGIN")) {
         // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
         // the peer (hash and commit count), as well as the peer's priority. Peers can connect in any state, so this
         // message can be sent and received in any state.
-        if (peer->loggedIn) {
+        if ((*peer)["LoggedIn"] == "true") {
             STHROW("already logged in");
         }
         if (!message.isSet("Priority")) {
@@ -1267,10 +1258,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (!message.isSet("Version")) {
             STHROW("missing Version");
         }
-        if (peer->permaFollower && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
+        if (peer->params["Permafollower"] == "true" && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
             STHROW("you're supposed to be a 0-priority permafollower");
         }
-        if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
+        if (peer->params["Permafollower"] != "true" && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
             STHROW("you're *not* supposed to be a 0-priority permafollower");
         }
 
@@ -1278,14 +1269,14 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
         PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
               << message["CommitCount"] << " (" << message["Hash"] << ")");
-        peer->priority = message.calc("Priority");
-        peer->loggedIn = true;
-        peer->version = message["Version"];
+        peer->set("Priority", message["Priority"]);
+        peer->set("LoggedIn", "true");
+        peer->set("Version",  message["Version"]);
         peer->state = stateFromName(message["State"]);
 
         // Let the server know that a peer has logged in.
         _server.onNodeLogin(peer);
-    } else if (!peer->loggedIn) {
+    } else if (!SIEquals((*peer)["LoggedIn"], "true")) {
         STHROW("not logged in");
     }
     else if (SIEquals(message.methodLine, "STATE")) {
@@ -1298,7 +1289,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             STHROW("missing Priority");
         }
         const State from = peer->state;
-        peer->priority = message.calc("Priority");
+        peer->set("Priority", message["Priority"]);
         peer->state = stateFromName(message["State"]);
         const State to = peer->state;
         if (from == to) {
@@ -1355,8 +1346,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 // SEARCHING: If anything ever goes wrong, a node reverts to the SEARCHING state. Thus if we see a peer
                 // go SEARCHING, we reset its accumulated state.  Specifically, we mark it is no longer being
                 // "subscribed", and we clear its last transaction response.
-                peer->transactionResponse = Peer::Response::NONE;
-                peer->subscribed = false;
+                peer->erase("TransactionResponse");
+                peer->erase("Subscribed");
             } else if (to == STANDINGUP) {
                 // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
                 // denial. We determine this by checking to see if there is any  other peer who is already leader or
@@ -1366,20 +1357,17 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SData response("STANDUP_RESPONSE");
                 // Parrot back the node's attempt count so that it can differentiate stale responses.
                 response["StateChangeCount"] = message["StateChangeCount"];
-
-                // Reason we would deny, if we do.
-                string reason;
-                if (peer->permaFollower) {
+                if (peer->params["Permafollower"] == "true") {
                     // We think it's a permafollower, deny
                     PHMMM("Permafollower trying to stand up, denying.");
                     response["Response"] = "deny";
-                    reason = "You're a permafollower";
+                    response["Reason"] = "You're a permafollower";
                 }
 
                 // What's our state
                 if (SWITHIN(STANDINGUP, _state, STANDINGDOWN)) {
                     // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
-                    if (peer->priority > _priority) {
+                    if (peer->calc("Priority") > _priority) {
                         // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
                         // came up as leader, and now it's been brought back up). We'll want to stand down here, but we
                         // do it gracefully so that we won't lose any transactions in progress.
@@ -1395,7 +1383,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     } else {
                         // Deny because we're currently in the process of leading and we're higher priority.
                         response["Response"] = "deny";
-                        reason = "I am leading";
+                        response["Reason"] = "I am leading";
 
                         // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
                         // control of the cluster? Let's see how many nodes are subscribed.
@@ -1427,7 +1415,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                             if (otherPeer->state == STANDINGUP || otherPeer->state == LEADING || otherPeer->state == STANDINGDOWN) {
                                 // We need to contest this standup
                                 response["Response"] = "deny";
-                                reason = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
+                                response["Reason"] = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
                                 break;
                             }
                         }
@@ -1438,7 +1426,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 if (SIEquals(response["Response"], "approve")) {
                     PINFO("Approving standup request");
                 } else {
-                    PHMMM("Denying standup request because " << reason);
+                    PHMMM("Denying standup request because " << response["Reason"]);
                 }
                 _sendToPeer(peer, response);
             } else if (from == STANDINGDOWN) {
@@ -1472,17 +1460,16 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!message.isSet("Response")) {
                 STHROW("missing Response");
             }
-            if (peer->standupResponse != Peer::Response::NONE) {
-                PWARN("Already received standup response '" << peer->standupResponse << "', now receiving '"
+            if (peer->isSet("StandupResponse")) {
+                PWARN("Already received standup response '" << (*peer)["StandupResponse"] << "', now receiving '"
                       << message["Response"] << "', odd -- multiple leaders competing?");
             }
             if (SIEquals(message["Response"], "approve")) {
                 PINFO("Received standup approval");
-                peer->standupResponse = Peer::Response::APPROVE;
             } else {
                 PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
-                peer->standupResponse = Peer::Response::DENY;
             }
+            (*peer)["StandupResponse"] = message["Response"];
         } else {
             SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
         }
@@ -1495,11 +1482,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
             // processed synchronously.
             SData request = message;
-            uint64_t count = 0;
-            string hash;
-            peer->getCommit(count, hash);
-            request["peerCommitCount"] = to_string(count);
-            request["peerHash"] = hash;
+            request["peerCommitCount"] = (*peer)["CommitCount"];
+            request["peerHash"] = (*peer)["Hash"];
             request["peerID"] = to_string(getIDByPeer(peer));
 
             // The following properties are only used to expand out our log macros.
@@ -1533,7 +1517,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         try {
             // Received this synchronization response; are we done?
             _recvSynchronize(peer, message);
-            uint64_t peerCommitCount = _syncPeer->commitCount;
+            uint64_t peerCommitCount = _syncPeer->calcU64("CommitCount");
             if (_db.getCommitCount() == peerCommitCount) {
                 // All done
                 SINFO("Synchronization complete, at commitCount #" << _db.getCommitCount() << " ("
@@ -1584,8 +1568,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         SData response("SUBSCRIPTION_APPROVED");
         _queueSynchronize(peer, response, true); // Send everything it's missing
         _sendToPeer(peer, response);
-        SASSERTWARN(!peer->subscribed);
-        peer->subscribed = true;
+        SASSERTWARN(!SIEquals((*peer)["Subscribed"], "true"));
+        (*peer)["Subscribed"] = "true";
 
         // New follower; are we in the midst of a transaction?
         if (_commitState == CommitState::COMMITTING) {
@@ -1665,7 +1649,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         if (_state != LEADING && _state != STANDINGDOWN) {
             STHROW("not leading");
         }
-        Peer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? Peer::Response::APPROVE : Peer::Response::DENY;
+        string response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? "approve" : "deny";
         try {
             // We ignore late approvals of commits that have already been finalized. They could have been committed
             // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
@@ -1677,11 +1661,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                     STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
                           + to_string(_db.getCommitCount() + 1));
                 }
-                if (peer->permaFollower) {
+                if (peer->params["Permafollower"] == "true") {
                     STHROW("permafollowers shouldn't approve/deny");
                 }
                 PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
-                peer->transactionResponse = response;
+                (*peer)["TransactionResponse"] = response;
             } else {
                 // Old command.  Nothing to do.  We already sent a commit or rollback.
                 PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
@@ -1721,7 +1705,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!request.deserialize(message.content)) {
                 STHROW("malformed request");
             }
-            if (!peer->subscribed) {
+            if ((*peer)["Subscribed"] != "true") {
                 STHROW("not subscribed");
             }
             if (!message.isSet("ID")) {
@@ -1752,7 +1736,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!request.deserialize(message.content)) {
                 STHROW("malformed request");
             }
-            if (!peer->subscribed) {
+            if ((*peer)["Subscribed"] != "true") {
                 STHROW("not subscribed");
             }
             if (!message.isSet("ID")) {
@@ -1830,7 +1814,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
 void SQLiteNode::_onConnect(Peer* peer) {
     SASSERT(peer);
-    SASSERTWARN(!peer->loggedIn);
+    SASSERTWARN(!SIEquals((*peer)["LoggedIn"], "true"));
     // Send the LOGIN
     PINFO("Sending LOGIN");
     SData login("LOGIN");
@@ -1858,8 +1842,8 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   is out of touch with reality: we processed a command and reality doesn't
     ///   know it.  Not cool!
     ///
-    if (peer->socket && peer->socket->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating follower died before receiving response to escalation: " << peer->socket->sendBufferCopy());
+    if (peer->s && peer->s->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
+        PWARN("Initiating follower died before receiving response to escalation: " << peer->s->sendBufferCopy());
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
@@ -1916,10 +1900,10 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
                 continue;
             }
             // Make sure we're a full peer
-            if (!otherPeer->permaFollower) {
+            if (otherPeer->params["Permafollower"] != "true") {
                 // Verify we're logged in
                 ++numFullPeers;
-                if (otherPeer->loggedIn) {
+                if (SIEquals((*otherPeer)["LoggedIn"], "true")) {
                     // Verify we're still fresh
                     ++numLoggedInFullPeers;
                 }
@@ -1945,7 +1929,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SASSERT(!message.empty());
 
     // If a peer is currently disconnected, we can't send it a message.
-    if (!peer->socket) {
+    if (!peer->s) {
         PWARN("Can't send message to peer, no socket. Message '" << message.methodLine << "' will be discarded.");
         return;
     }
@@ -1953,7 +1937,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
-    peer->socket->send(messageCopy.serialize());
+    peer->s->send(messageCopy.serialize());
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
@@ -1970,9 +1954,9 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     // Loop across all connected peers and send the message
     for (auto peer : peerList) {
         // Send either to everybody, or just subscribed peers.
-        if (peer->socket && (!subscribedOnly || peer->subscribed)) {
+        if (peer->s && (!subscribedOnly || SIEquals((*peer)["Subscribed"], "true"))) {
             // Send it now, without waiting for the outer event loop
-            peer->socket->send(serializedMessage);
+            peer->s->send(serializedMessage);
         }
     }
 }
@@ -1988,6 +1972,9 @@ void SQLiteNode::broadcast(const SData& message, Peer* peer) {
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
+    // Exclusively lock the stateMutex, nobody else will be able to get a shared lock until this is released.
+    unique_lock<decltype(stateMutex)> lock(stateMutex);
+
     // Did we actually change _state?
     State oldState = _state;
 
@@ -2107,23 +2094,35 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 }
 
 void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
-    // Peer is requesting synchronization. First, does it have any data?
+    _queueSynchronizeStateless(peer->nameValueMap, name, peer->name, _state, _db, response, sendAll);
+}
 
+void SQLiteNode::_queueSynchronizeStateless(const STable& params, const string& name, const string& peerName, State _state, SQLite& db, SData& response, bool sendAll) {
+    // This is a hack to make the PXXXX macros works, since they expect `peer->name` to be defined.
+    struct {string name;} peerBase;
+    auto peer = &peerBase;
+    peerBase.name = peerName;
+
+    // Peer is requesting synchronization.  First, does it have any data?
     uint64_t peerCommitCount = 0;
-    string peerHash;
-    peer->getCommit(peerCommitCount, peerHash);
-
-    if (peerCommitCount > _db.getCommitCount())
+    if(params.find("CommitCount") != params.end()) {
+        peerCommitCount = SToUInt64(params.at("CommitCount"));
+    }
+    if (peerCommitCount > db.getCommitCount())
         STHROW("you have more data than me");
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
         string myHash, ignore;
-        if (!_db.getCommit(peerCommitCount, ignore, myHash)) {
-            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << _db.getCommitCount());
+        if (!db.getCommit(peerCommitCount, ignore, myHash)) {
+            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
         }
-        if (myHash != peerHash) {
-            SWARN("Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << peerHash
+        string compareHash;
+        if (params.find("Hash") != params.end()) {
+            compareHash = params.at("Hash");
+        }
+        if (myHash != compareHash) {
+            SWARN("Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << compareHash
                   << ", but we have hash: " << myHash << " for that commit.");
             STHROW("hash mismatch");
         }
@@ -2139,7 +2138,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
     // The commitCount can change at any time, and on LEADER, we need to make sure we don't send the same transaction
     // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
     // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
-    uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : _db.getCommitCount();
+    uint64_t targetCommit = (_state == LEADING) ? _lastSentTransactionID : db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
@@ -2150,7 +2149,7 @@ void SQLiteNode::_queueSynchronize(Peer* peer, SData& response, bool sendAll) {
         uint64_t toIndex = targetCommit;
         if (!sendAll)
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
-        if (!_db.getCommits(fromIndex, toIndex, result))
+        if (!db.getCommits(fromIndex, toIndex, result))
             STHROW("error getting commits");
         if ((uint64_t)result.size() != toIndex - fromIndex + 1)
             STHROW("mismatched commit count");
@@ -2255,7 +2254,7 @@ void SQLiteNode::_updateSyncPeer()
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : peerList) {
         // If either of these conditions are true, then we can't use this peer.
-        if (!peer->loggedIn || peer->commitCount <= commitCount) {
+        if (!peer->test("LoggedIn") || peer->calcU64("CommitCount") <= commitCount) {
             continue;
         }
 
@@ -2266,7 +2265,7 @@ void SQLiteNode::_updateSyncPeer()
         // If the previous best peer and this one have the same latency (meaning they're probably both 0), the best one
         // is the one with the highest commit count.
         else if (newSyncPeer->latency == peer->latency) {
-            if (peer->commitCount > newSyncPeer->commitCount) {
+            if (peer->calc64("CommitCount") > newSyncPeer->calc64("CommitCount")) {
                 newSyncPeer = peer;
             }
         }
@@ -2285,13 +2284,13 @@ void SQLiteNode::_updateSyncPeer()
     if (_syncPeer != newSyncPeer) {
         string from, to;
         if (_syncPeer) {
-            from = _syncPeer->name + " (commit count=" + to_string(_syncPeer->commitCount) + "), latency="
+            from = _syncPeer->name + " (commit count=" + (*_syncPeer)["CommitCount"] + "), latency="
                                    + to_string(_syncPeer->latency/1000) + "ms";
         } else {
             from = "(NONE)";
         }
         if (newSyncPeer) {
-            to = newSyncPeer->name + " (commit count=" + to_string(newSyncPeer->commitCount) + "), latency="
+            to = newSyncPeer->name + " (commit count=" + (*newSyncPeer)["CommitCount"] + "), latency="
                                    + to_string(newSyncPeer->latency/1000) + "ms";
         } else {
             to = "(NONE)";
@@ -2303,10 +2302,10 @@ void SQLiteNode::_updateSyncPeer()
         for (auto peer : peerList) {
             if (peer == newSyncPeer || peer == _syncPeer) {
                 continue; // These ones we're already logging.
-            } else if (!peer->loggedIn) {
+            } else if (!peer->test("LoggedIn")) {
                 nonChosenPeers.push_back(peer->name + ":!loggedIn");
-            } else if (peer->commitCount <= commitCount) {
-                nonChosenPeers.push_back(peer->name + ":commit=" + to_string(peer->commitCount));
+            } else if (peer->calcU64("CommitCount") <= commitCount) {
+                nonChosenPeers.push_back(peer->name + ":commit=" + (*peer)["CommitCount"]);
             } else {
                 nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/1000) + "ms");
             }
@@ -2320,11 +2319,11 @@ void SQLiteNode::_updateSyncPeer()
 
 void SQLiteNode::_reconnectPeer(Peer* peer) {
     // If we're connected, just kill the connection
-    if (peer->socket) {
+    if (peer->s) {
         // Reset
         SHMMM("Reconnecting to '" << peer->name << "'");
-        shutdownSocket(peer->socket);
-        peer->loggedIn = false;
+        shutdownSocket(peer->s);
+        (*peer)["LoggedIn"] = "false";
     }
 }
 
@@ -2340,9 +2339,9 @@ bool SQLiteNode::_majoritySubscribed() {
     int numFullPeers = 0;
     int numFullFollowers = 0;
     for (auto peer : peerList) {
-        if (!peer->permaFollower) {
+        if (peer->params["Permafollower"] != "true") {
             ++numFullPeers;
-            if (peer->subscribed) {
+            if (peer->test("Subscribed")) {
                 ++numFullFollowers;
             }
         }
@@ -2352,13 +2351,8 @@ bool SQLiteNode::_majoritySubscribed() {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLiteCommand& command)
+bool SQLiteNode::peekPeerCommand(SQLiteNode* node, SQLite& db, SQLiteCommand& command)
 {
-    if (!node) {
-        // Node deleted while trying to peek peer command, just pretend it worked.
-        return true;
-    }
-
     Peer* peer = nullptr;
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
@@ -2368,10 +2362,13 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
                 return true;
             }
             command.response.methodLine = "SYNCHRONIZE_RESPONSE";
-
-            // Because we hold a sharedPtr to the node, it can't delete any peers (because it only does at
-            // destruction), and since our peers our thread-safe, we can run this just fine.
-            node->_queueSynchronize(peer, command.response, false);
+            _queueSynchronizeStateless(command.request.nameValueMap,
+                                       command.request["name"],
+                                       command.request["peerName"],
+                                       node->_state,
+                                       db,
+                                       command.response,
+                                       false);
 
             // The following two lines are copied from `_sendToPeer`.
             command.response["CommitCount"] = to_string(db.getCommitCount());
@@ -2788,9 +2785,9 @@ bool SQLiteNode::hasQuorum() {
     int numFullPeers = 0;
     int numFullFollowers = 0;
     for (auto peer : peerList) {
-        if (!peer->permaFollower) {
+        if (peer->params["Permafollower"] != "true") {
             ++numFullPeers;
-            if (peer->subscribed) {
+            if ((*peer)["Subscribed"] == "true") {
                 numFullFollowers++;
             }
         }
