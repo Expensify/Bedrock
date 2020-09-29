@@ -68,7 +68,6 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
 
     // If we're the first to initialize *any* DB, we'll set the global values for sqlite3.
     if(!initializer.fetch_add(1)) {
-        SINFO("TYLER initializing globals");
         // Set the logging callback for sqlite errors.
         SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0) == SQLITE_OK);
 
@@ -88,8 +87,6 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
         // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
         // created in this thread.
         SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
-    } else {
-        SINFO("TYLER globals already initialized");
     }
 
     // Open the DB in read-write mode.
