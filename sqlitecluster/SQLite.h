@@ -305,8 +305,8 @@ class SQLite {
 
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);
-    static SharedData& initializeSharedData(sqlite3* db, int64_t mmapSizeGB, const string& filename, const vector<string>& journalNames);
-    static sqlite3* initializeDB(const string& filename);
+    static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames);
+    static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization();
