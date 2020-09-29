@@ -29,34 +29,10 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, int64_t mmapSizeGB, const string& filename, const vector<string>& journalNames) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
     static map<string, SharedData*> sharedDataLookupMap;
     static mutex instantiationMutex;
     lock_guard<mutex> lock(instantiationMutex);
-
-    // If we're the first to initialize *any* DB, we'll set the global values for sqlite3.
-    if(sharedDataLookupMap.empty()) {
-        // Set the logging callback for sqlite errors.
-        sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0);
-
-        // Enable memory-mapped files.
-        if (mmapSizeGB) {
-            SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
-            const int64_t GB = 1024 * 1024 * 1024;
-            sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB); // Max is 16TB
-        }
-
-        // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
-        // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
-        sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0);
-        sqlite3_initialize();
-        SASSERT(sqlite3_threadsafe());
-
-        // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
-        // created in this thread.
-        SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
-    }
-
     auto sharedDataIterator = sharedDataLookupMap.find(filename);
     if (sharedDataIterator == sharedDataLookupMap.end()) {
         SharedData* sharedData = new SharedData();
@@ -87,7 +63,32 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, int64_t mmapSizeGB
     }
 }
 
-sqlite3* SQLite::initializeDB(const string& filename) {
+sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
+    static atomic<uint64_t> initializer(0);
+
+    // If we're the first to initialize *any* DB, we'll set the global values for sqlite3.
+    if(!initializer.fetch_add(1)) {
+        // Set the logging callback for sqlite errors.
+        SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0) == SQLITE_OK);
+
+        // Enable memory-mapped files.
+        if (mmapSizeGB) {
+            SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
+            const int64_t GB = 1024 * 1024 * 1024;
+            SASSERT(sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB) == SQLITE_OK); // Max is 16TB
+        }
+
+        // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
+        // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
+        SASSERT(sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0) == SQLITE_OK);
+        sqlite3_initialize();
+        SASSERT(sqlite3_threadsafe());
+
+        // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
+        // created in this thread.
+        SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
+    }
+
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
@@ -210,9 +211,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
                int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
-    _db(initializeDB(_filename)),
+    _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, mmapSizeGB, _filename, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames)),
     _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _pageLoggingEnabled(pageLoggingEnabled),
@@ -226,7 +227,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
 SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
-    _db(initializeDB(_filename)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
+    _db(initializeDB(_filename, from._mmapSizeGB)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _journalName(_journalNames[(_sharedData.nextJournalCount++ % _journalNames.size() - 1) + 1]),
