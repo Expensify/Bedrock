@@ -64,31 +64,6 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
 }
 
 sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
-    static atomic<uint64_t> initializer(0);
-
-    // If we're the first to initialize *any* DB, we'll set the global values for sqlite3.
-    if(!initializer.fetch_add(1)) {
-        // Set the logging callback for sqlite errors.
-        SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, _sqliteLogCallback, 0) == SQLITE_OK);
-
-        // Enable memory-mapped files.
-        if (mmapSizeGB) {
-            SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
-            const int64_t GB = 1024 * 1024 * 1024;
-            SASSERT(sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB) == SQLITE_OK); // Max is 16TB
-        }
-
-        // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
-        // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
-        SASSERT(sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0) == SQLITE_OK);
-        sqlite3_initialize();
-        SASSERT(sqlite3_threadsafe());
-
-        // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
-        // created in this thread.
-        SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
-    }
-
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
