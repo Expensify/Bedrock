@@ -225,6 +225,9 @@ class SQLite {
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
+    // This is the callback function we use to log SQLite's internal errors.
+    static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
@@ -339,9 +342,6 @@ class SQLite {
     // it.
     string _uncommittedQuery;
     string _uncommittedHash;
-
-    // This is the callback function we use to log SQLite's internal errors.
-    static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
     // Returns the name of a journal table based on it's index.
     static string getJournalTableName(vector<string>& journalNames, int64_t journalTableID, bool create = false);

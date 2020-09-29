@@ -10,6 +10,7 @@
 #include "plugins/DB.h"
 #include "plugins/Jobs.h"
 #include "plugins/MySQL.h"
+#include "sqlitecluster/SQLite.h"
 #include <sys/stat.h> // for umask()
 #include <dlfcn.h>
 #include <sys/resource.h>
@@ -144,6 +145,28 @@ int main(int argc, char* argv[]) {
         // -- let's provide some help just in case
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
+
+    // Initialize the sqlite library before any other code has a chance to do anything with it.
+    // Set the logging callback for sqlite errors.
+    SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, SQLite::_sqliteLogCallback, 0) == SQLITE_OK);
+
+    // Enable memory-mapped files.
+    int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
+    if (mmapSizeGB) {
+        SINFO("Enabling Memory-Mapped I/O with " << mmapSizeGB << " GB.");
+        const int64_t GB = 1024 * 1024 * 1024;
+        SASSERT(sqlite3_config(SQLITE_CONFIG_MMAP_SIZE, mmapSizeGB * GB, 16 * 1024 * GB) == SQLITE_OK); // Max is 16TB
+    }
+
+    // Disable a mutex around `malloc`, which is *EXTREMELY IMPORTANT* for multi-threaded performance. Without this
+    // setting, all reads are essentially single-threaded as they'll all fight with each other for this mutex.
+    SASSERT(sqlite3_config(SQLITE_CONFIG_MEMSTATUS, 0) == SQLITE_OK);
+    sqlite3_initialize();
+    SASSERT(sqlite3_threadsafe());
+
+    // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
+    // created in this thread.
+    SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
 
     // Fork if requested
     if (args.isSet("-fork")) {
