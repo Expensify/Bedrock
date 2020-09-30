@@ -32,9 +32,9 @@ class SynchronizedMap {
 
     // Note: Key is copied, value is moved.
     template <typename V, typename W>
-    auto emplace(V& first, W&& second) {
+    auto emplace(V& key, W&& value) {
         lock_guard <decltype(_m)> lock(_m);
-        return _data.emplace(first, move(second));
+        return _data.emplace(key, move(value));
     }
     auto empty() {
         lock_guard <decltype(_m)> lock(_m);

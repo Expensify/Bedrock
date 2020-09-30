@@ -472,8 +472,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 }
 
 list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
-// Needs to lock around access to _escalatedCommandMap (and possibly "request.methodLine"? No, they're unique pointers,
-// if they're in this list, nobody else has access)
     list<string> returnList;
     auto lock = _escalatedCommandMap.scopedLock();
     for (auto& commandPair : _escalatedCommandMap) {
