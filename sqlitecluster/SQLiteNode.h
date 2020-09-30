@@ -3,6 +3,7 @@
 #include "SQLitePool.h"
 #include "SQLiteSequentialNotifier.h"
 #include "WallClockTimer.h"
+#include "../SynchronizedMap.h"
 class SQLiteCommand;
 class SQLiteServer;
 
@@ -193,7 +194,7 @@ class SQLiteNode : public STCPNode {
 
     // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
     // following map of commandID to Command until the follower responds.
-    map<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
+    SynchronizedMap<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
