@@ -330,6 +330,7 @@ bool SQLiteNode::shutdownComplete() {
         SWARN("Graceful shutdown timed out, killing non gracefully.");
         if (_escalatedCommandMap.size()) {
             SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
+            auto lock = _escalatedCommandMap.scopedLock();
             for (auto& commandPair : _escalatedCommandMap) {
                 commandPair.second->response.methodLine = "500 Abandoned";
                 commandPair.second->complete = true;
@@ -350,16 +351,15 @@ bool SQLiteNode::shutdownComplete() {
 
         // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
         // so we can try and diagnose what's happening.
-        if (!_escalatedCommandMap.empty()) {
-            for (auto& cmd : _escalatedCommandMap) {
-                string name = cmd.first;
-                unique_ptr<SQLiteCommand>& command = cmd.second;
-                int64_t created = command->request.calcU64("commandExecuteTime");
-                int64_t elapsed = STimeNow() - created;
-                double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
-                SINFO("Escalated command remaining at shutdown(" << name << "): " << command->request.methodLine
-                      << ". Created: " << command->request["commandExecuteTime"] << " (" << elapsedSeconds << "s ago)");
-            }
+        auto lock = _escalatedCommandMap.scopedLock();
+        for (auto& cmd : _escalatedCommandMap) {
+            string name = cmd.first;
+            unique_ptr<SQLiteCommand>& command = cmd.second;
+            int64_t created = command->request.calcU64("commandExecuteTime");
+            int64_t elapsed = STimeNow() - created;
+            double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
+            SINFO("Escalated command remaining at shutdown(" << name << "): " << command->request.methodLine
+                  << ". Created: " << command->request["commandExecuteTime"] << " (" << elapsedSeconds << "s ago)");
         }
         return false;
     }
@@ -472,7 +472,10 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 }
 
 list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
+// Needs to lock around access to _escalatedCommandMap (and possibly "request.methodLine"? No, they're unique pointers,
+// if they're in this list, nobody else has access)
     list<string> returnList;
+    auto lock = _escalatedCommandMap.scopedLock();
     for (auto& commandPair : _escalatedCommandMap) {
         returnList.push_back(commandPair.second->request.methodLine);
     }
@@ -1208,10 +1211,13 @@ bool SQLiteNode::update() {
             SHMMM("Leader stepping down, re-queueing commands.");
 
             // If there were escalated commands, give them back to the server to retry.
-            for (auto& cmd : _escalatedCommandMap) {
-                _server.acceptCommand(move(cmd.second), false);
+            {
+                auto lock = _escalatedCommandMap.scopedLock();
+                for (auto& cmd : _escalatedCommandMap) {
+                    _server.acceptCommand(move(cmd.second), false);
+                }
+                _escalatedCommandMap.clear();
             }
-            _escalatedCommandMap.clear();
 
             // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` without a
             // corresponding `COMMIT` or `ROLLBACK`, this isn't supposed to happen.
@@ -1886,10 +1892,13 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
 
         // If there were escalated commands, give them back to the server to retry, unless it looks like they were in
         // progress when the leader died, in which case we say they completed with a 500 Error.
-        for (auto& cmd : _escalatedCommandMap) {
-            _server.acceptCommand(move(cmd.second), false);
+        {
+            auto lock = _escalatedCommandMap.scopedLock();
+            for (auto& cmd : _escalatedCommandMap) {
+                _server.acceptCommand(move(cmd.second), false);
+            }
+            _escalatedCommandMap.clear();
         }
-        _escalatedCommandMap.clear();
         _changeState(SEARCHING);
     }
 
@@ -2079,14 +2088,14 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Abort all remote initiated commands if no longer LEADING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SEARCHING) {
+            auto lock = _escalatedCommandMap.scopedLock();
             if (!_escalatedCommandMap.empty()) {
                 // This isn't supposed to happen, though we've seen in logs where it can.
                 // So what we'll do is try and correct the problem and log the state we're coming from to see if that
                 // gives us any more useful info in the future.
                 _escalatedCommandMap.clear();
-                SWARN(
-                    "Switching from '" << stateName(_state) << "' to '" << stateName(newState)
-                                       << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
+                SWARN("Switching from '" << stateName(_state) << "' to '" << stateName(newState)
+                      << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
             }
         } else if (newState == WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
