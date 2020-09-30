@@ -1,5 +1,6 @@
 // This is a class that's just a std::map that's thread-safe. It does not implement every std::map function, please add
 // them as needed.
+#pragma once
 template <typename T, typename U>
 class SynchronizedMap {
   public:
