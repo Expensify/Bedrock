@@ -328,9 +328,9 @@ bool SQLiteNode::shutdownComplete() {
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_gracefulShutdownTimeout.ringing()) {
         SWARN("Graceful shutdown timed out, killing non gracefully.");
+        auto lock = _escalatedCommandMap.scopedLock();
         if (_escalatedCommandMap.size()) {
             SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
-            auto lock = _escalatedCommandMap.scopedLock();
             for (auto& commandPair : _escalatedCommandMap) {
                 commandPair.second->response.methodLine = "500 Abandoned";
                 commandPair.second->complete = true;
@@ -1785,6 +1785,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
 
         // Go find the escalated command
         PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
+        auto lock = _escalatedCommandMap.scopedLock();
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Process the escalated command response
@@ -1812,6 +1813,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         PINFO("Received ESCALATE_ABORTED for '" << message["ID"] << "' (" << message["Reason"] << ")");
 
         // Look for that command
+        auto lock = _escalatedCommandMap.scopedLock();
         auto commandIt = _escalatedCommandMap.find(message["ID"]);
         if (commandIt != _escalatedCommandMap.end()) {
             // Re-queue this

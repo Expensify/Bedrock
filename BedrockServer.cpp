@@ -192,9 +192,9 @@ void BedrockServer::sync(const SData& args,
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    server._syncNode = make_shared<SQLiteNode>(server, dbPool, args["-nodeName"], args["-nodeHost"],
-                                               args["-peerList"], args.calc("-priority"), firstTimeout,
-                                               server._version, args.test("-parallelReplication"));
+    atomic_store(&server._syncNode, make_shared<SQLiteNode>(server, dbPool, args["-nodeName"], args["-nodeHost"],
+                                                            args["-peerList"], args.calc("-priority"), firstTimeout,
+                                                            server._version, args.test("-parallelReplication")));
 
     // This should be empty anyway, but let's make sure.
     if (server._completedCommands.size()) {
@@ -725,7 +725,7 @@ void BedrockServer::sync(const SData& args,
 
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
-    server._syncNode = nullptr;
+    atomic_store(&server._syncNode, shared_ptr<SQLiteNode>(nullptr));
 
     // We're really done, store our flag so main() can be aware.
     server._syncThreadComplete.store(true);
@@ -1218,7 +1218,7 @@ void BedrockServer::_resetServer() {
     _suppressCommandPort = false;
     _suppressCommandPortManualOverride = false;
     _syncThreadComplete = false;
-    _syncNode = nullptr;
+    atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
     _shutdownState = RUNNING;
     _shouldBackup = false;
     _commandPort = nullptr;
@@ -1632,7 +1632,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                     // later processing.
                     if (!_handleIfStatusOrControlCommand(command)) {
-                        auto _syncNodeCopy = _syncNode;
+                        auto _syncNodeCopy = atomic_load(&_syncNode);
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
@@ -1826,7 +1826,7 @@ bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) 
 
 list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
-    auto _syncNodeCopy = _syncNode;
+    auto _syncNodeCopy = atomic_load(&_syncNode);
     if (_syncNodeCopy) {
         for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
             peerData.emplace_back(peer->getData());
@@ -1919,23 +1919,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
         }
 
-        // We read from syncNode internal state here, so we lock to make sure that this doesn't conflict with the sync
-        // thread.
-        list<string> escalated;
-        auto _syncNodeCopy = _syncNode;
-        if (_syncNodeCopy) {
-            content["syncNodeAvailable"] = "true";
-            // Set some information about this node.
-            content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
-            content["priority"] = to_string(_syncNodeCopy->getPriority());
-
-            // Get any escalated commands that are waiting to be processed.
-            escalated = _syncNodeCopy->getEscalatedCommandRequestMethodLines();
-            _syncNodeCopy = nullptr;
-        } else {
-            content["syncNodeAvailable"] = "false";
-        }
-
         // Coalesce all of the peer data into one value to return or return
         // an error message if we timed out getting the peerList data.
         list<string> peerList;
@@ -1953,7 +1936,20 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["peerList"]                    = SComposeJSONArray(peerList);
         content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
-        content["escalatedCommandList"]        = SComposeJSONArray(escalated);
+
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (_syncNodeCopy) {
+            content["syncNodeAvailable"] = "true";
+            // Set some information about this node.
+            content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
+            content["priority"] = to_string(_syncNodeCopy->getPriority());
+
+            // Get any escalated commands that are waiting to be processed.
+            content["escalatedCommandList"] = SComposeJSONArray(_syncNodeCopy->getEscalatedCommandRequestMethodLines());
+            _syncNodeCopy = nullptr;
+        } else {
+            content["syncNodeAvailable"] = "false";
+        }
 
         // Done, compose the response.
         response.methodLine = "200 OK";
@@ -2106,7 +2102,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     for (auto plugin : plugins) {
         for (auto manager : plugin.second->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
-            auto _syncNodeCopy = _syncNode;
+            auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
                 // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
@@ -2170,7 +2166,7 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 void BedrockServer::broadcastCommand(const SData& cmd) {
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
-    auto _syncNodeCopy = _syncNode;
+    auto _syncNodeCopy = atomic_load(&_syncNode);
     if (_syncNodeCopy) {
         _syncNodeCopy->broadcast(message);
     }
@@ -2188,7 +2184,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             for (const auto& fields : table) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
-            auto _syncNodeCopy = _syncNode;
+            auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_syncNodeCopy) {
                 _syncNodeCopy->broadcast(_generateCrashMessage(cmd), peer);
             }
@@ -2204,7 +2200,7 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
     if (forget) {
         SINFO("Not responding to 'forget' command '" << command->request.methodLine << "' from follower.");
     } else {
-        auto _syncNodeCopy = _syncNode;
+        auto _syncNodeCopy = atomic_load(&_syncNode);
         if (_syncNodeCopy) {
             _syncNodeCopy->sendResponse(*command);
         }
