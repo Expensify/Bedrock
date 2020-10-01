@@ -161,40 +161,12 @@ void BedrockServer::sync(const SData& args,
                          BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                          BedrockServer& server)
 {
-    // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
-    // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
-    int workerThreads = args.calc("-workerThreads");
+    // If -workerThreads is specified, then that's the value used. Otherwise, thread::hardware_concurrency() is used.
+    // The caveat being that this value must be at least 2.
+    int workerThreads = max(2u, args.calc("-workerThreads") ?: thread::hardware_concurrency());
 
-    // TODO: remove when nothing uses readThreads.
-    workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
-
-    // If still no value, use the number of cores on the machine, if available.
-    workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
-
-    // A minumum of *2* worker threads are required. One for blocking writes, one for other commands.
-    if (workerThreads < 2) {
-        workerThreads = 2;
-    }
-
-    // Initialize the DB.
-    int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
-
-    // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 25'000 : 250;
-    SINFO("Setting dbPool size to: " << fdLimit);
-    SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
-    SQLite& db = dbPool.getBase();
-
-    // Initialize the command processor.
-    BedrockCore core(db, server);
-
-    // And the sync node.
-    uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
-
-    // Initialize the shared pointer to our sync node object.
-    atomic_store(&server._syncNode, make_shared<SQLiteNode>(server, dbPool, args["-nodeName"], args["-nodeHost"],
-                                                            args["-peerList"], args.calc("-priority"), firstTimeout,
-                                                            server._version, args.test("-parallelReplication")));
+    // Bring the sync node up.
+    server._syncNode.setOnline(true);
 
     // This should be empty anyway, but let's make sure.
     if (server._completedCommands.size()) {
@@ -208,7 +180,6 @@ void BedrockServer::sync(const SData& args,
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
         workerThreadList.emplace_back(worker,
-                                      ref(dbPool),
                                       ref(replicationState),
                                       ref(leaderVersion),
                                       ref(syncNodeQueuedCommands),
@@ -216,6 +187,12 @@ void BedrockServer::sync(const SData& args,
                                       ref(server),
                                       threadId);
     }
+
+    // Get a DB handle.
+    SQLite& db = server._dbPool.getBase();
+
+    // Initialize the command processor.
+    BedrockCore core(db, server);
 
     // Now we jump into our main command processing loop.
     uint64_t nextActivity = STimeNow();
@@ -312,7 +289,7 @@ void BedrockServer::sync(const SData& args,
             // timeout, minus 5 seconds to allow to clean up afterward.
             int64_t timeAllowed = server._gracefulShutdownTimeout.alarmDuration.load() - server._gracefulShutdownTimeout.elapsed();
             timeAllowed -= 5'000'000;
-            server._syncNode->beginShutdown(max(timeAllowed, (int64_t)1));
+            server._syncNode.beginShutdown(max(timeAllowed, (int64_t)1));
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -323,7 +300,7 @@ void BedrockServer::sync(const SData& args,
         server._prePollPlugins(fdm);
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        server._syncNode->prePoll(fdm);
+        server._syncNode.prePoll(fdm);
 
         // Add our command queues to our fd_map.
         syncNodeQueuedCommands.prePoll(fdm);
@@ -348,18 +325,18 @@ void BedrockServer::sync(const SData& args,
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
             server._postPollPlugins(fdm, nextActivity);
-            server._syncNode->postPoll(fdm, nextActivity);
+            server._syncNode.postPoll(fdm, nextActivity);
             syncNodeQueuedCommands.postPoll(fdm);
             server._completedCommands.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
-        SQLiteNode::State preUpdateState = server._syncNode->getState();
-        while (server._syncNode->update()) {}
-        SQLiteNode::State nodeState = server._syncNode->getState();
+        SQLiteNode::State preUpdateState = server._syncNode.getState();
+        while (server._syncNode.update()) {}
+        SQLiteNode::State nodeState = server._syncNode.getState();
         replicationState.store(nodeState);
-        leaderVersion.store(server._syncNode->getLeaderVersion());
+        leaderVersion.store(server._syncNode.getLeaderVersion());
 
         // If anything was in the stand down queue, move it back to the main queue.
         if (nodeState != SQLiteNode::STANDINGDOWN) {
@@ -430,7 +407,7 @@ void BedrockServer::sync(const SData& args,
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             server._upgradeInProgress = true;
-            if (!server._syncNode->hasQuorum()) {
+            if (!server._syncNode.hasQuorum()) {
                 // We are now "upgrading" but we won't actually start the commit until the cluster is sufficiently
                 // connected. This is because if we need to roll back the commit, it disconnects the entire cluster,
                 // which is more likely to trigger the same thing to happen again, making cluster startup take
@@ -440,7 +417,7 @@ void BedrockServer::sync(const SData& args,
             }
             if (server._upgradeDB(db)) {
                 committingCommand = true;
-                server._syncNode->startCommit(SQLiteNode::QUORUM);
+                server._syncNode.startCommit(SQLiteNode::QUORUM);
                 server._lastQuorumCommandTime = STimeNow();
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
@@ -456,7 +433,7 @@ void BedrockServer::sync(const SData& args,
 
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
         // stick it back in the appropriate queue.
-        if (committingCommand && !server._syncNode->commitInProgress()) {
+        if (committingCommand && !server._syncNode.commitInProgress()) {
             // Record the time spent, unless we were upgrading, in which case, there's no command to write to.
             if (command) {
                 command->stopTiming(BedrockCommand::COMMIT_SYNC);
@@ -465,7 +442,7 @@ void BedrockServer::sync(const SData& args,
 
             // If we were upgrading, there's no response to send, we're just done.
             if (server._upgradeInProgress) {
-                if (server._syncNode->commitSucceeded()) {
+                if (server._syncNode.commitSucceeded()) {
                     server._upgradeInProgress = false;
                     SINFO("UpgradeDB succeeded, done.");
                 } else {
@@ -474,7 +451,7 @@ void BedrockServer::sync(const SData& args,
                 continue;
             }
 
-            if (server._syncNode->commitSucceeded()) {
+            if (server._syncNode.commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
 
@@ -536,7 +513,7 @@ void BedrockServer::sync(const SData& args,
             // until one of these states changes. This prevents an endless loop of escalating commands, having
             // SQLiteNode re-queue them because leader is standing down, and then escalating them again until leader
             // sorts itself out.
-            if (nodeState == SQLiteNode::FOLLOWING && server._syncNode->leaderState() == SQLiteNode::STANDINGDOWN) {
+            if (nodeState == SQLiteNode::FOLLOWING && server._syncNode.leaderState() == SQLiteNode::STANDINGDOWN) {
                 continue;
             }
 
@@ -575,7 +552,7 @@ void BedrockServer::sync(const SData& args,
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
-                    server._syncNode->broadcast(_generateCrashMessage(command));
+                    server._syncNode.broadcast(_generateCrashMessage(command));
                 });
 
                 // And now we'll decide how to handle it.
@@ -628,7 +605,7 @@ void BedrockServer::sync(const SData& args,
                         SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
                         // START TIMING.
                         command->startTiming(BedrockCommand::COMMIT_SYNC);
-                        server._syncNode->startCommit(command->writeConsistency);
+                        server._syncNode.startCommit(command->writeConsistency);
 
                         // And we'll start the next main loop.
                         // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
@@ -662,7 +639,7 @@ void BedrockServer::sync(const SData& args,
                     // bother peeking it again.
                     auto it = command->request.nameValueMap.find("Connection");
                     bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
-                    server._syncNode->escalateCommand(move(command), forget);
+                    server._syncNode.escalateCommand(move(command), forget);
                 }
             }
             if (escalateCount == 1000) {
@@ -672,14 +649,14 @@ void BedrockServer::sync(const SData& args,
             // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    } while (!server._syncNode->shutdownComplete() && !server._gracefulShutdownTimeout.ringing());
+    } while (!server._syncNode.shutdownComplete() && !server._gracefulShutdownTimeout.ringing());
 
     SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
     // release the lock.
-    if (server._syncNode->commitInProgress()) {
+    if (server._syncNode.commitInProgress()) {
         SWARN("Shutting down mid-commit. Rolling back.");
         db.rollback();
     }
@@ -690,7 +667,7 @@ void BedrockServer::sync(const SData& args,
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
-    replicationState.store(server._syncNode->getState());
+    replicationState.store(server._syncNode.getState());
     if (replicationState.load() > SQLiteNode::WAITING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
@@ -723,16 +700,11 @@ void BedrockServer::sync(const SData& args,
         server._blockingCommandQueue.clear();
     }
 
-    // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
-    // until they return.
-    atomic_store(&server._syncNode, shared_ptr<SQLiteNode>(nullptr));
-
     // We're really done, store our flag so main() can be aware.
     server._syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(SQLitePool& dbPool,
-                           atomic<SQLiteNode::State>& replicationState,
+void BedrockServer::worker(atomic<SQLiteNode::State>& replicationState,
                            atomic<string>& leaderVersion,
                            BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                            BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
@@ -743,7 +715,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-    SQLiteScopedHandle dbScope(dbPool, dbPool.getIndex());
+    SQLiteScopedHandle dbScope(server._dbPool, server._dbPool.getIndex());
     SQLite& db = dbScope.db();
     BedrockCore core(db, server);
 
@@ -776,7 +748,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
             // signals, like SIGSEGV, this function will be called.
             SSetSignalHandlerDieFunc([&](){
-                server._syncNode->broadcast(_generateCrashMessage(command));
+                server._syncNode.broadcast(_generateCrashMessage(command));
             });
 
             // If we dequeue a status or control command, handle it immediately.
@@ -1218,7 +1190,7 @@ void BedrockServer::_resetServer() {
     _suppressCommandPort = false;
     _suppressCommandPortManualOverride = false;
     _syncThreadComplete = false;
-    atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+    _syncNode.setOnline(false);
     _shutdownState = RUNNING;
     _shouldBackup = false;
     _commandPort = nullptr;
@@ -1231,23 +1203,15 @@ void BedrockServer::_resetServer() {
     }
 }
 
+/*
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
 {}
+*/
 
-BedrockServer::BedrockServer(const SData& args_)
-  : SQLiteServer(""), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
-    _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false)
-{
-    _version = VERSION;
-
-    // Enable the requested plugins, and update our version string if required.
+map<string, BedrockPlugin*> getBedrockPlugins(BedrockServer* server, const SData& args) {
+    map<string, BedrockPlugin*> plugins;
     list<string> pluginNameList = SParseList(args["-plugins"]);
     SINFO("Loading plugins: " << args["-plugins"]);
-    vector<string> versions = {_version};
     for (string& pluginName : pluginNameList) {
         auto it = BedrockPlugin::g_registeredPluginList.find(SToUpper(pluginName));
         if (it == BedrockPlugin::g_registeredPluginList.end()) {
@@ -1255,33 +1219,78 @@ BedrockServer::BedrockServer(const SData& args_)
         }
 
         // Create an instance of this plugin.
-        BedrockPlugin* plugin = it->second(*this);
+        BedrockPlugin* plugin = it->second(*server);
         plugins.emplace(make_pair(plugin->getName(), plugin));
-
-        // If the plugin has version info, add it to the list.
-        auto info = plugin->getInfo();
-        auto iterator = info.find("version");
-        if (iterator != info.end()) {
-            versions.push_back(plugin->getName() + "_" + iterator->second);
-        }
     }
-    sort(versions.begin(), versions.end());
-    _version = SComposeList(versions, ":");
+    return plugins;
+}
 
-    list<string> pluginString;
-    for (auto& p : plugins) {
-        pluginString.emplace_back(p.first);
-    }
-    SINFO("Creating BedrockServer with plugins: " << SComposeList(pluginString));
+string getBedrockVersion(map<string, BedrockPlugin*>& plugins, const SData& args) {
+    string version = VERSION;
 
-    // If `versionOverride` is set, we throw away what we just did and use the overridden value.
-    // We'll destruct, sort, and then reconstruct the version string passed in so we aren't relying
-    // on the operator to know that they must be sorted.
+    // If `versionOverride` is set, use the overridden value. We'll destruct, sort, and then reconstruct the version
+    // string passed in so we aren't relying on the operator to know that they must be sorted.
     if (args.isSet("-versionOverride")) {
         list<string> versionStrings = SParseList(args["-versionOverride"], ':');
         versionStrings.sort();
-        _version = SComposeList(versionStrings, ":");
+        version = SComposeList(versionStrings, ":");
+    } else {
+        vector<string> versions = {version};
+        for (auto& plugin : plugins) {
+
+            // If the plugin has version info, add it to the list.
+            auto info = plugin.second->getInfo();
+            auto iterator = info.find("version");
+            if (iterator != info.end()) {
+                versions.push_back(plugin.second->getName() + "_" + iterator->second);
+            }
+        }
+        sort(versions.begin(), versions.end());
+        version = SComposeList(versions, ":");
     }
+
+    return version;
+}
+
+BedrockServer::BedrockServer(const SData& args_)
+  : SQLiteServer(""),
+    shutdownWhileDetached(false),
+    args(args_),
+    plugins(getBedrockPlugins(this, args)),
+    _requestCount(0),
+    _replicationState(SQLiteNode::SEARCHING),
+    _upgradeInProgress(false),
+    _suppressCommandPort(false),
+    _suppressCommandPortManualOverride(false),
+    _syncThreadComplete(false),
+    _version(getBedrockVersion(plugins, args)),
+    _dbPool(args.isSet("-live") ? 25'000 : 250,
+            args["-db"],
+            args.calc("-cacheSize"),
+            args.calc("-maxJournalSize"),
+            max(2u, args.calc("-workerThreads") ?: thread::hardware_concurrency()),
+            args["-synchronous"],
+            args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0,
+            args.test("-pageLogging")),
+    _syncNode(*this,
+              _dbPool,
+              args["-nodeName"],
+              args["-nodeHost"],
+              args["-peerList"],
+              args.calc("-priority"),
+              this->_version,
+              args.test("-parallelReplication")),
+    _shutdownState(RUNNING),
+    _multiWriteEnabled(args.test("-enableMultiWrite")),
+    _shouldBackup(false),
+    _detach(args.isSet("-bootstrap")),
+    _controlPort(nullptr),
+    _commandPort(nullptr),
+    _maxConflictRetries(3),
+    _lastQuorumCommandTime(STimeNow()),
+    _pluginsDetached(false)
+{
+
 
     // Allow enabling tracing at startup.
     if (args.isSet("-enableSQLTracing")) {
@@ -1632,8 +1641,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                     // later processing.
                     if (!_handleIfStatusOrControlCommand(command)) {
-                        auto _syncNodeCopy = atomic_load(&_syncNode);
-                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                        if (_syncNode.getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
                             SINFO("Queued new '" << command->request.methodLine << "' command from local client, with "
@@ -1826,11 +1834,8 @@ bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command) 
 
 list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
-    auto _syncNodeCopy = atomic_load(&_syncNode);
-    if (_syncNodeCopy) {
-        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-            peerData.emplace_back(peer->getData());
-        }
+    for (SQLiteNode::Peer* peer : _syncNode.peerList) {
+        peerData.emplace_back(peer->getData());
     }
     return peerData;
 }
@@ -1937,19 +1942,13 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
 
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_syncNodeCopy) {
-            content["syncNodeAvailable"] = "true";
-            // Set some information about this node.
-            content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
-            content["priority"] = to_string(_syncNodeCopy->getPriority());
+        // Set some information about this node.
+        content["CommitCount"] = to_string(_syncNode.getCommitCount());
+        content["priority"] = to_string(_syncNode.getPriority());
 
-            // Get any escalated commands that are waiting to be processed.
-            content["escalatedCommandList"] = SComposeJSONArray(_syncNodeCopy->getEscalatedCommandRequestMethodLines());
-            _syncNodeCopy = nullptr;
-        } else {
-            content["syncNodeAvailable"] = "false";
-        }
+        // Get any escalated commands that are waiting to be processed.
+        content["escalatedCommandList"] = SComposeJSONArray(_syncNode.getEscalatedCommandRequestMethodLines());
+        content["syncNodeOnline"] = _syncNode.isOnline();
 
         // Done, compose the response.
         response.methodLine = "200 OK";
@@ -2102,8 +2101,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
     for (auto plugin : plugins) {
         for (auto manager : plugin.second->httpsManagers) {
             list<SHTTPSManager::Transaction*> completedHTTPSRequests;
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
+            if (_shutdownState.load() != RUNNING || (_syncNode.getState() == SQLiteNode::STANDINGDOWN)) {
                 // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
             } else {
@@ -2166,10 +2164,7 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 void BedrockServer::broadcastCommand(const SData& cmd) {
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
-    auto _syncNodeCopy = atomic_load(&_syncNode);
-    if (_syncNodeCopy) {
-        _syncNodeCopy->broadcast(message);
-    }
+    _syncNode.broadcast(message);
 }
 
 void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
@@ -2184,10 +2179,7 @@ void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
             for (const auto& fields : table) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_syncNodeCopy) {
-                _syncNodeCopy->broadcast(_generateCrashMessage(cmd), peer);
-            }
+            _syncNode.broadcast(_generateCrashMessage(cmd), peer);
         }
     }
 }
@@ -2200,10 +2192,7 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
     if (forget) {
         SINFO("Not responding to 'forget' command '" << command->request.methodLine << "' from follower.");
     } else {
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_syncNodeCopy) {
-            _syncNodeCopy->sendResponse(*command);
-        }
+        _syncNode.sendResponse(*command);
     }
 }
 

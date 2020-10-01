@@ -39,7 +39,7 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
+               const string& peerList, int priority, const string& version, const bool useParallelReplication = false);
     ~SQLiteNode();
 
     const vector<Peer*> initPeers(const string& peerList);
@@ -76,6 +76,10 @@ class SQLiteNode : public STCPNode {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
+    // Set the online state of this node.
+    void setOnline(bool);
+    bool isOnline();
+
     // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
     State leaderState() const;
 
@@ -96,7 +100,7 @@ class SQLiteNode : public STCPNode {
     // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
     // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
     // Returns false if the node can't peek the command.
-    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
+    static bool peekPeerCommand(SQLiteNode&, SQLite& db, SQLiteCommand& command);
 
     // This exists so that the _server can inspect internal state for diagnostic purposes.
     list<string> getEscalatedCommandRequestMethodLines();
@@ -119,6 +123,9 @@ class SQLiteNode : public STCPNode {
     // to commit and replicate them.
     SQLite& _db;
 
+    // Boolean indicator as to whether this node is currently "online" or not.
+    atomic<bool> _online;
+
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
@@ -134,7 +141,7 @@ class SQLiteNode : public STCPNode {
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    int _originalPriority;
+    const int _originalPriority;
 
     // Our current State.
     atomic<State> _state;
@@ -164,7 +171,7 @@ class SQLiteNode : public STCPNode {
     SStopwatch _standDownTimeOut;
 
     // Our version string. Supplied by constructor.
-    string _version;
+    const string _version;
 
     // leader's version string.
     string _leaderVersion;

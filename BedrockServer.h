@@ -145,15 +145,12 @@ class BedrockServer : public SQLiteServer {
         DONE
     };
 
-    // All of our available plugins, indexed by the name they supply.
-    map<string, BedrockPlugin*> plugins;
-
     // Our primary constructor.
     BedrockServer(const SData& args_);
 
     // A constructor that builds an object that does nothing. This exists only to pass to stubbed-out test methods that
     // require a BedrockServer object.
-    BedrockServer(SQLiteNode::State state, const SData& args_);
+    //BedrockServer(SQLiteNode::State state, const SData& args_);
 
     // Destructor
     virtual ~BedrockServer();
@@ -243,6 +240,9 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
+    // All of our available plugins, indexed by the name they supply.
+    map<string, BedrockPlugin*> plugins;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -294,9 +294,6 @@ class BedrockServer : public SQLiteServer {
     // This is a map of open listening ports to the plugin objects that created them.
     map<Port*, BedrockPlugin*> _portPluginMap;
 
-    // The server version. This may be fake if the arguments contain a `versionOverride` value.
-    string _version;
-
     // The actual thread object for the sync thread.
     thread _syncThread;
     atomic<bool> _syncThreadComplete;
@@ -328,8 +325,7 @@ class BedrockServer : public SQLiteServer {
                      BedrockServer& server);
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SQLitePool& dbPool,
-                       atomic<SQLiteNode::State>& _replicationState,
+    static void worker(atomic<SQLiteNode::State>& _replicationState,
                        atomic<string>& leaderVersion,
                        BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
                        BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
@@ -348,12 +344,15 @@ class BedrockServer : public SQLiteServer {
     static constexpr auto STATUS_BLACKLIST         = "SetParallelCommandBlacklist";
     static constexpr auto STATUS_MULTIWRITE        = "EnableMultiWrite";
 
+    // The server version. This may be fake if the arguments contain a `versionOverride` value.
+    string _version;
+
+    // The pool of database handles for the server.
+    SQLitePool _dbPool;
+
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
-    // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
-    // until all references to it go out of scope. Since an STCPNode never deletes `Peer` objects until it's being
-    // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
-    // object.
-    shared_ptr<SQLiteNode> _syncNode;
+    // data (such as in the Status command).
+    SQLiteNode _syncNode;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);

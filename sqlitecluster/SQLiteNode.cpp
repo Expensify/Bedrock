@@ -87,13 +87,46 @@ const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString
     return peerList;
 }
 
+void SQLiteNode::setOnline(bool online) {
+    bool wasOnline = _online.exchange(online);
+    if (wasOnline == online) {
+        // Nothing changed.
+        return;
+    }
+
+    // Reset for either state.
+    _priority = -1;
+    _state = SEARCHING;
+    _syncPeer = nullptr;
+    _leadPeer = nullptr;
+
+    if (wasOnline) {
+        // go offline.
+    } else {
+        uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
+        // go online.
+        // TODO: Add anything from the constructor initialization list.
+        _stateTimeout = STimeNow() + firstTimeout;
+        SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+        _localCommitNotifier.notifyThrough(_db.getCommitCount());
+    }
+}
+
+bool SQLiteNode::isOnline() {
+    return _online;
+}
+
 SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name,
-                       const string& host, const string& peerList, int priority, uint64_t firstTimeout,
+                       const string& host, const string& peerList, int priority,
                        const string& version, const bool useParallelReplication)
     : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
       _db(_dbPool.getBase()),
+      _online(false), // We set it true here so that our call to `setOnline` in the body has effect.
+      _priority(priority),
+      _originalPriority(_priority),
       _commitState(CommitState::UNINITIALIZED),
+      _version(version),
       _server(server),
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
@@ -106,25 +139,13 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
       _onMessageTimer("_onMESSAGE"),
       _escalateTimer("escalateCommand")
     {
-
     SASSERT(priority >= 0);
-    _originalPriority = priority;
-    _priority = -1;
-    _state = SEARCHING;
-    _syncPeer = nullptr;
-    _leadPeer = nullptr;
-    _stateTimeout = STimeNow() + firstTimeout;
-    _version = version;
-
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
-    // Get this party started
-    _changeState(SEARCHING);
 
     // Make sure we get notified when the DB needs to checkpoint.
     _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
     _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
+
+    setOnline(true);
 }
 
 SQLiteNode::~SQLiteNode() {
@@ -2364,17 +2385,12 @@ bool SQLiteNode::_majoritySubscribed() {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLiteCommand& command)
+bool SQLiteNode::peekPeerCommand(SQLiteNode& node, SQLite& db, SQLiteCommand& command)
 {
-    if (!node) {
-        // Node deleted while trying to peek peer command, just pretend it worked.
-        return true;
-    }
-
     Peer* peer = nullptr;
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-            peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
+            peer = node.getPeerByID(SToUInt64(command.request["peerID"]));
             if (!peer) {
                 // There's nobody to send to, but this was a valid command that's been handled.
                 return true;
@@ -2383,7 +2399,7 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
 
             // Because we hold a sharedPtr to the node, it can't delete any peers (because it only does at
             // destruction), and since our peers our thread-safe, we can run this just fine.
-            _queueSynchronize(node.get(), peer, db, command.response, false);
+            _queueSynchronize(&node, peer, db, command.response, false);
 
             // The following two lines are copied from `_sendToPeer`.
             command.response["CommitCount"] = to_string(db.getCommitCount());
