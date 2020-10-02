@@ -110,6 +110,7 @@ void SQLiteNode::setOnline(bool online) {
         _stateTimeout = STimeNow() + firstTimeout;
         SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
         _localCommitNotifier.notifyThrough(_db.getCommitCount());
+        _db = _dbPool.getBase();
     }
 }
 

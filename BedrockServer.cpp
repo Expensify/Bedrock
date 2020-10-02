@@ -146,7 +146,12 @@ void BedrockServer::syncWrapper(const SData& args,
             SINFO("Bedrock server entering attached state.");
             server._resetServer();
         }
+        server._syncNode.setOnline(true);
         sync(args, replicationState, leaderVersion, syncNodeQueuedCommands, server);
+        server._syncNode.setOnline(false);
+
+        // Free up the db.
+        _dbPool.clear();
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
         if (!server._detach) {
@@ -164,9 +169,6 @@ void BedrockServer::sync(const SData& args,
     // If -workerThreads is specified, then that's the value used. Otherwise, thread::hardware_concurrency() is used.
     // The caveat being that this value must be at least 2.
     int workerThreads = max(2u, args.calc("-workerThreads") ?: thread::hardware_concurrency());
-
-    // Bring the sync node up.
-    server._syncNode.setOnline(true);
 
     // This should be empty anyway, but let's make sure.
     if (server._completedCommands.size()) {
@@ -1196,6 +1198,7 @@ void BedrockServer::_resetServer() {
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
+    _dbPool.init();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {

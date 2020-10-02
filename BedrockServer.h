@@ -348,6 +348,8 @@ class BedrockServer : public SQLiteServer {
     string _version;
 
     // The pool of database handles for the server.
+    // Oh, crap, we need to close all these. If we destroy and rebuild the pool, that should work, so long as we also
+    // update the handle in SQLiteNode.
     SQLitePool _dbPool;
 
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for

@@ -27,6 +27,12 @@ class SQLitePool {
     // Return an object to the pool.
     void returnToPool(size_t index);
 
+    // Setup a new base DB.
+    void init();
+
+    // Reset the entire thing.
+    void clear();
+
   private:
     // Synchronization variables.
     mutex _sync;
@@ -37,7 +43,8 @@ class SQLitePool {
     size_t _maxDBs;
 
     // Our base object that all others are based upon.
-    SQLite _baseDB;
+    // Make this a pointer so we can delete it.
+    SQLite* _baseDB;
 
     // These are indexes into `_objects`.
     set<size_t> _availableHandles;

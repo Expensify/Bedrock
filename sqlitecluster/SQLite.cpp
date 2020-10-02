@@ -35,6 +35,8 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     lock_guard<mutex> lock(instantiationMutex);
     auto sharedDataIterator = sharedDataLookupMap.find(filename);
     if (sharedDataIterator == sharedDataLookupMap.end()) {
+        // We'll need some sort of count of users, and then we'll need to re-initialize if it's 0. Maybe we can just
+        // add a "clear" or "erase" function we can call.
         SharedData* sharedData = new SharedData();
 
         // Read the highest commit count from the database, and store it in commitCount.

@@ -10,15 +10,20 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int64_t mmapSizeGB,
                        bool pageLoggingEnabled)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled),
   _objects(_maxDBs, nullptr)
 {
+    init();
 }
 
-SQLitePool::~SQLitePool() {
+void SQLitePool::init() {
+    lock_guard<mutex> lock(_sync);
+    _baseDB = new SQLite(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled);
+}
+
+void SQLitePool::clear() {
     lock_guard<mutex> lock(_sync);
     if (_inUseHandles.size()) {
-        SWARN("Destroying SQLitePool with DBs in use.");
+        SWARN("Clearing SQLitePool with DBs in use.");
     }
     for (auto dbHandle : _availableHandles) {
         delete _objects[dbHandle];
@@ -28,10 +33,24 @@ SQLitePool::~SQLitePool() {
         delete _objects[dbHandle];
         _objects[dbHandle] = nullptr;
     }
+
+    _availableHandles.clear();
+    _inUseHandles.clear();
+    _objects.clear();
+
+    delete _baseDB;
+    _baseDB = nullptr;
+}
+
+SQLitePool::~SQLitePool() {
+    clear();
 }
 
 SQLite& SQLitePool::getBase() {
-    return _baseDB;
+    if (!base) {
+        throw out_of_range("No base DB set!");
+    }
+    return *_baseDB;
 }
 
 size_t SQLitePool::getIndex(bool createHandle) {
