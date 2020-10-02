@@ -99,6 +99,7 @@ void SQLiteNode::setOnline(bool online) {
     _state = SEARCHING;
     _syncPeer = nullptr;
     _leadPeer = nullptr;
+    _gracefulShutdownTimeout.alarmDuration.store(0);
 
     if (wasOnline) {
         // go offline.
