@@ -119,7 +119,10 @@ set<string> loadPlugins(SData& args) {
         }
 
         // Open the library.
+        SQinitializerBool = true;
+        SINFO("TYLER Loading: " << pluginName);
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
+        SQinitializerBool = false;
         if(!lib) {
             SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {

@@ -676,7 +676,25 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 // --------------------------------------------------------------------------
 #include "sqlite3.h"
 #include "SQResult.h"
-inline string SQ(const char* val) { return "'" + SEscape(val, "'", '\'') + "'"; }
+static bool SQinitializerBool = false;
+inline string SQ(const char* val) {
+    if (!val) {
+        void* callstack[100];
+        int depth = backtrace(callstack, 100);
+        vector<string> stack = SGetCallstack(depth, callstack);
+        cout << "Null val!" << endl;
+        for (const auto& frame : stack) {
+            cout << frame << endl;
+        }
+
+    }
+    if (SQinitializerBool) {
+        SINFO("TYLER Escaping: " << val);
+        cout << "TYLER Escaping: " << val << endl;
+        SLogStackTrace();
+    }
+        return "'" + SEscape(val, "'", '\'') + "'";
+}
 inline string SQ(const string& val) { return SQ(val.c_str()); }
 inline string SQ(int val) { return SToStr(val); }
 inline string SQ(unsigned val) { return SToStr(val); }
