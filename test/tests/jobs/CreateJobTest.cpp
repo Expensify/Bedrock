@@ -296,13 +296,17 @@ struct CreateJobTest : tpunit::TestFixture {
 
         // Get the job
         command.clear();
-        command.methodLine = "GetJob";
+        command.methodLine = "GetJobs";
         command["name"] = jobName;
+        command["numResults"] = "10";
         response = tester->executeWaitVerifyContentTable(command);
+        list<string> jobs = SParseJSONArray(response["jobs"]);
+        ASSERT_EQUAL(jobs.size(), 1);
+        STable job = SParseJSONObject(jobs.front());
 
-        ASSERT_EQUAL(response["data"], "{}");
-        ASSERT_EQUAL(response["jobID"], jobID);
-        ASSERT_EQUAL(response["name"], jobName);
+        ASSERT_EQUAL(job["data"], "{}");
+        ASSERT_EQUAL(job["jobID"], jobID);
+        ASSERT_EQUAL(job["name"], jobName);
 
         // Query the db and confirm that state, nextRun and lastRun are 1 second apart because of retryAfter
         SQResult jobData;
@@ -327,9 +331,12 @@ struct CreateJobTest : tpunit::TestFixture {
             try {
                 // Let it repeat until it works or we run out of retries.
                 response = tester->executeWaitVerifyContentTable(command);
-                ASSERT_EQUAL(response["data"], "{}");
-                ASSERT_EQUAL(response["jobID"], jobID);
-                ASSERT_EQUAL(response["name"], jobName);
+                list<string> jobs = SParseJSONArray(response["jobs"]);
+                ASSERT_EQUAL(jobs.size(), 1);
+                STable job = SParseJSONObject(jobs.front());
+                ASSERT_EQUAL(job["data"], "{}");
+                ASSERT_EQUAL(job["jobID"], jobID);
+                ASSERT_EQUAL(job["name"], jobName);
             } catch (...) {
                 sleep(1);
                 continue;
