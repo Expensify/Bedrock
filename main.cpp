@@ -119,6 +119,8 @@ set<string> loadPlugins(SData& args) {
         }
 
         // Open the library.
+
+        cout << "TYLER Loading: " << pluginName << endl;
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
         if(!lib) {
             SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
@@ -130,7 +132,7 @@ set<string> loadPlugins(SData& args) {
                 // Call the plugin registration function with the same name.
                 SQinitializerBool = true;
                 SINFO("TYLER Loading: " << pluginName);
-                cout << "TYLER Loading: " << pluginName << endl;
+                cout << "TYLER instantiating: " << pluginName << endl;
                 BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
                 SQinitializerBool = false;
             }
