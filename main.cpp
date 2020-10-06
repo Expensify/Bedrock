@@ -119,10 +119,7 @@ set<string> loadPlugins(SData& args) {
         }
 
         // Open the library.
-        SQinitializerBool = true;
-        SINFO("TYLER Loading: " << pluginName);
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
-        SQinitializerBool = false;
         if(!lib) {
             SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {
@@ -131,7 +128,10 @@ set<string> loadPlugins(SData& args) {
                 SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
+                SQinitializerBool = true;
+                SINFO("TYLER Loading: " << pluginName);
                 BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
+                SQinitializerBool = false;
             }
         }
     }
