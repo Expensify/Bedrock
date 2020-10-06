@@ -77,6 +77,7 @@ void BackupDB(const string& dbPath) {
 
 set<string> loadPlugins(SData& args) {
     list<string> plugins = SParseList(args["-plugins"]);
+    cout << "plugin list: " << args["-plugins"] << endl; 
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
     // Those are stored here.
