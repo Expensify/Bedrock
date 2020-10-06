@@ -867,7 +867,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             for (auto job : retriableJobs) {
                 string currentTime = SCURRENT_TIMESTAMP();
                 string retryAfterDateTime = "DATETIME(" + currentTime + ", " + SQ(job["retryAfter"]) + ")";
-                string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], job["lastRun"] != "" ? job["lastRun"] : job["nextRun"], job["repeat"]);
+                string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], currentTime, job["repeat"]);
                 string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
                 string updateQuery = "UPDATE jobs "
                                      "SET state='RUNQUEUED', "
