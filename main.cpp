@@ -122,9 +122,11 @@ set<string> loadPlugins(SData& args) {
 
         cout << "TYLER Loading: " << pluginName << endl;
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
+        cout << "TYLER DONE Loading: " << pluginName << endl;
         if(!lib) {
             SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {
+            cout << "TYLER dlsym: " << pluginName << endl;
             void* sym = dlsym(lib, symbolName.c_str());
             if (!sym) {
                 SWARN("Couldn't find symbol " << symbolName);
