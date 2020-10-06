@@ -130,6 +130,7 @@ set<string> loadPlugins(SData& args) {
                 // Call the plugin registration function with the same name.
                 SQinitializerBool = true;
                 SINFO("TYLER Loading: " << pluginName);
+                cout << "TYLER Loading: " << pluginName << endl;
                 BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
                 SQinitializerBool = false;
             }

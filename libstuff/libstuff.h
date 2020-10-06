@@ -676,7 +676,7 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 // --------------------------------------------------------------------------
 #include "sqlite3.h"
 #include "SQResult.h"
-static bool SQinitializerBool = false;
+extern atomic<bool> SQinitializerBool;
 inline string SQ(const char* val) {
     if (!val) {
         void* callstack[100];

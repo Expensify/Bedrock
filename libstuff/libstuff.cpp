@@ -62,6 +62,8 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
+atomic<bool> SQinitializerBool(false);
+
 void SInitialize(string threadName, const char* processName) {
     // If a specific process name has been supplied, initialize syslog with it.
     if (processName) {
