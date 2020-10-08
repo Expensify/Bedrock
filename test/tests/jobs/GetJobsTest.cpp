@@ -1,7 +1,7 @@
 #include <test/lib/BedrockTester.h>
 #include <time.h>
 
-// Get a unix timestamp from one of or sqlite date strings.
+// Get a unix timestamp from one of our sqlite date strings.
 time_t stringToUnixTimestamp(const string& timestamp) {
     struct tm time;
     strptime(timestamp.c_str(), "%Y-%m-%d %H:%M:%S", &time);
