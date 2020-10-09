@@ -2,62 +2,6 @@
 #include "../BedrockServer.h"
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{DupeDiagnoser} "
-class DupeDiagnoser {
-  public:
-    DupeDiagnoser();
-    void check(uint64_t jobID, string requestID);
-
-  private:
-    mutex _m;
-    map<uint64_t, pair<string, chrono::steady_clock::time_point>> _jobIdToRequestIdAndInsertionTimeMap;
-    multimap<chrono::steady_clock::time_point, uint64_t> _insertionTimeToJobIdMap;
-};
-
-DupeDiagnoser::DupeDiagnoser() {
-}
-
-void DupeDiagnoser::check(uint64_t jobID, string requestID) {
-    lock_guard<decltype(_m)> lock(_m);
-
-    // Delete everything more than 3s old.
-    while (true) {
-        auto it = _insertionTimeToJobIdMap.begin();
-        if (it == _insertionTimeToJobIdMap.end()) {
-            // We're at the end.
-            break;
-        }
-        if (it->first <= (chrono::steady_clock::now() - 3s)) {
-            // This one should be deleted.
-            _jobIdToRequestIdAndInsertionTimeMap.erase(it->second);
-            _insertionTimeToJobIdMap.erase(it);
-        } else {
-            // Not more than 3s old.
-            break;
-        }
-    }
-
-    // Now check for duplicates.
-    auto it = _jobIdToRequestIdAndInsertionTimeMap.find(jobID);
-    if (it != _jobIdToRequestIdAndInsertionTimeMap.end()) {
-        // Duplicate!
-        SWARN("Duplicate jobIDs returned within 3s of one another! Requests: " << requestID << " and " << it->second.first << ", JobID: " << jobID);
-
-        // Now delete this one.
-        _insertionTimeToJobIdMap.erase(it->second.second);
-        _jobIdToRequestIdAndInsertionTimeMap.erase(it);
-    }
-
-    // Now we insert this value (we may have just removed it if this was a duplicate).
-    auto insertionTime = chrono::steady_clock::now();
-    _jobIdToRequestIdAndInsertionTimeMap.insert(make_pair(jobID, make_pair(requestID, insertionTime)));
-    _insertionTimeToJobIdMap.insert(make_pair(insertionTime, jobID));
-}
-
-// Instance.
-DupeDiagnoser diagnoser;
-
-#undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
@@ -110,19 +54,6 @@ class scopedDisableNoopMode {
 BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin) :
   BedrockCommand(move(baseCommand), plugin, canEscalateImmediately(baseCommand))
 {
-}
-
-BedrockJobsCommand::~BedrockJobsCommand() {
-    if (request.methodLine == "GetJobs" ) {
-        auto it = jsonContent.find("jobs");
-        if (it != jsonContent.end()) {
-            list<string> jobs = SParseJSONArray(it->second);
-            for (auto& jobString : jobs) {
-                STable job = SParseJSONObject(jobString);
-                diagnoser.check(SToUInt64(job["jobID"]), request["requestID"]);
-            }
-        }
-    }
 }
 
 BedrockPlugin_Jobs::BedrockPlugin_Jobs(BedrockServer& s) :
@@ -874,8 +805,6 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          "lastRun=" + SQ(currentTime) + ", "
                                          "nextRun=" + nextRunDateTime + " "
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
-
-                SINFO("Updating last/nextRun: " << updateQuery);
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
                 }
@@ -1435,8 +1364,5 @@ void BedrockJobsCommand::handleFailedReply() {
         auto cmd = make_unique<SQLiteCommand>(move(requeue));
         cmd->initiatingClientID = -1;
         _plugin->server.acceptCommand(move(cmd));
-
-        // Keep these from warning about duplicates on destruction.
-        jsonContent.clear();
     }
 }
