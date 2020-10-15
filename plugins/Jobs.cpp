@@ -932,7 +932,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -948,6 +948,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         string repeat = result[0][3];
         int64_t parentJobID = SToInt64(result[0][4]);
         mockRequest = result[0][5] == "1";
+        const string retryAfter = result[0][6];
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
@@ -1038,10 +1039,26 @@ void BedrockJobsCommand::process(SQLite& db) {
             }
         }
 
-        string safeNewNextRun = "";
         // If this is set to repeat, get the nextRun value
+        string safeNewNextRun = "";
         if (!repeat.empty()) {
-            safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+            // For all jobs, the last time at which they were scheduled is the currently stored 'nextRun' time
+            string lastScheduled = nextRun;
+
+            // Except for jobs with 'retryAfter' + 'repeat' based on `SCHEDULED`. With 'retryAfter', in GetJob we updated 'nextRun'
+            // to a failure check interval, eg 5 minutes. To account for this here when finishing the job, we subtract
+            // 'retryAfter' from 'nextRun' to get back the originally scheduled time which was 'nextRun' when the job ran.
+            if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
+                SQResult scheduledJobResult;
+                if (!db.read("SELECT DATETIME(nextRun, REPLACE(retryAfter, '+', '-')) "
+                             "FROM jobs "
+                             "WHERE jobID = " + SQ(jobID) + ";",
+                             scheduledJobResult)) {
+                    STHROW("502 Select failed");
+                }
+                lastScheduled = scheduledJobResult[0][0];
+            }
+            safeNewNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
         } else if (SIEquals(requestVerb, "RetryJob")) {
             const string& newNextRun = request["nextRun"];
 

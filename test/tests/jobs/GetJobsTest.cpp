@@ -108,14 +108,8 @@ struct GetJobsTest : tpunit::TestFixture {
 
             // Let's see if it's scheduled at the right time.
             if (stoull(row[0]) == jobIDs[0]) {
-                // This uses a `SCHEDULED` modified, but it also uses `retryAfter`, which is just a broken combination.
-                // What happens with `scheduled`, is that when we finish a job we take `nextRun` and add our time
-                // interval to it. This assumes that `nextRun` is whatever it was set to last time we got the job. But
-                // with `retryAfter`, we updated that to some failure check interval, like 5 minutes, rather than
-                // running this from when it was last scheduled, it runs it from when it was last scheduled to be
-                // retried.
-                //
-                // We assert nothing here because this case is broken.
+
+                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[3]), stringToUnixTimestamp(row[2]) + 1 * 60 * 60), 3);
             } else if (stoull(row[0]) == jobIDs[1]) {
                 // Assert that the difference between "lastRun + 1day" and "nextRun" is less than 3 seconds.
                 ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60 * 24, stringToUnixTimestamp(row[3])), 3);
