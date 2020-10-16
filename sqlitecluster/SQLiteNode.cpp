@@ -2077,7 +2077,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         }
 
         // Re-enable commits if they were disabled during a previous stand-down.
-        if (newState == LEADING || newState == FOLLOWING) {
+        if (newState != SEARCHING) {
             _db.setCommitEnabled(true);
         }
 
