@@ -1050,10 +1050,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             // 'retryAfter' from 'nextRun' to get back the originally scheduled time which was 'nextRun' when the job ran.
             if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
                 SQResult scheduledJobResult;
-                if (!db.read("SELECT DATETIME(nextRun, REPLACE(retryAfter, '+', '-')) "
-                             "FROM jobs "
-                             "WHERE jobID = " + SQ(jobID) + ";",
-                             scheduledJobResult)) {
+                if (!db.read("SELECT DATETIME(" + SQ(nextRun) + ", REPLACE(" + SQ(retryAfter) + ", '+', '-'));", scheduledJobResult)) {
                     STHROW("502 Select failed");
                 }
                 lastScheduled = scheduledJobResult[0][0];
