@@ -304,7 +304,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
 
-        // Query the db and confirm that state, nextRun and lastRun are 1 second apart because of retryAfter
+        // Query the db and confirm the state, and that nextRun and lastRun are 5 seconds apart because of retryAfter
         SQResult jobData;
         tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
@@ -360,7 +360,7 @@ struct CreateJobTest : tpunit::TestFixture {
         nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(jobData[0][0], "QUEUED");
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 15);
+        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 10);
     }
 
     void retryWithMalformedValue() {
