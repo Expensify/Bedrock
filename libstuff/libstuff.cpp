@@ -2452,22 +2452,29 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     uint64_t elapsed = STimeNow() - startTime;
 
     // Warn if it took longer than the specified threshold
-    if ((int64_t)elapsed > warnThreshold)
-        SWARN("Slow query (" << elapsed / 1000 << "ms) :" << sql);
+    string sqlToLog = sql;
+    if ((int64_t)elapsed > warnThreshold) {
+        string match;
+        const bool hasAuthToken = SREMatch(".*(\"authToken\"\\:\"[0-9A-F]{400,1024}\").*", sql, match);
+        if (hasAuthToken) {
+            sqlToLog = SReplace(sql, match, "<REDACTED_AUTHTOKEN>");
+        }
+        SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+    }
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
         const string& csvRow =
-            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sql), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
+            "\"" + dbFilename + "\", " + "\"" + SEscape(STrim(sqlToLog), "\"", '"') + "\", " + SToStr(elapsed) + "\n";
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
         if (!skipWarn) {
-            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sql);
+            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 
