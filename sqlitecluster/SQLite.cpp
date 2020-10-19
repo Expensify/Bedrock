@@ -665,6 +665,11 @@ bool SQLite::prepare() {
 }
 
 int SQLite::commit() {
+    // If commits have been disabled, return an error without attempting the commit.
+    if (!_sharedData._commitEnabled) {
+        return COMMIT_DISABLED;
+    }
+
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
     int result = 0;
@@ -1082,16 +1087,26 @@ void SQLite::removeCheckpointListener(SQLite::CheckpointRequiredListener& listen
     _sharedData.removeCheckpointListener(listener);
 }
 
+void SQLite::setCommitEnabled(bool enable) {
+    _sharedData.setCommitEnabled(enable);
+}
+
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 currentTransactionCount(0),
 _currentPageCount(0),
 _checkpointThreadBusy(0),
+_commitEnabled(true),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
 })
 { }
+
+void SQLite::SharedData::setCommitEnabled(bool enable) {
+    lock_guard<decltype(commitLock)> lock(commitLock);
+    _commitEnabled = enable;
+}
 
 void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
