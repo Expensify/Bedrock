@@ -22,6 +22,10 @@ bool SQLiteCore::commit() {
         SINFO("Commit conflict, rolling back.");
         _db.rollback();
         return false;
+    } else if (errorCode == SQLite::COMMIT_DISABLED) {
+        SINFO("Commits currently disabled, rolling back.");
+        _db.rollback();
+        return false;
     }
 
     return true;

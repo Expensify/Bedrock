@@ -23,6 +23,12 @@ class SQLite {
         const char* what() const noexcept { return "checkpoint_required"; }
     };
 
+    // Constant to use like a sqlite result code when commits are disabled (see: https://www.sqlite.org/rescode.html)
+    // Because the existing codes all use values in the first and second bytes of the int (they're or'ed with values
+    // left shifted by 8 bits, see SQLITE_ERROR_MISSING_COLLSEQ in sqlite.h for an example), we left shift by 16 for
+    // this to avoid any overlap.
+    static const int COMMIT_DISABLED = (1 << 16) | 1;
+
     // Abstract base class for objects that need to be notified when we set `checkpointRequired` and then when that
     // checkpoint is complete. Why do we need to notify anyone that we're going to do a checkpoint? Because restart
     // checkpoints can't run simultaneously with any other transactions, and thus will block new transactions and wait
@@ -228,6 +234,10 @@ class SQLite {
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
+    // If commits are disabled, calling commit() will return an error without committing. This can be used to guarantee
+    // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
+    void setCommitEnabled(bool enable);
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
@@ -241,6 +251,9 @@ class SQLite {
         void removeCheckpointListener(CheckpointRequiredListener& listener);
         void checkpointRequired(SQLite& db);
         void checkpointComplete(SQLite& db);
+
+        // Enable or disable commits for the DB.
+        void setCommitEnabled(bool enable);
 
         // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
         // after completing a commit and before releasing the commit lock.
@@ -291,7 +304,11 @@ class SQLite {
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
 
+        // If set to false, this prevents any thread from being able to commit to the DB.
+        atomic<bool> _commitEnabled;
+
         SPerformanceTimer _commitLockTimer;
+
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.

@@ -2060,6 +2060,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
                 _db.rollback();
             }
 
+            // Turn off commits. This prevents late commits coming in right after we call `_sendOutstandingTransactions`
+            // below, which otherwise could get committed on leader and not replicated to followers.
+            _db.setCommitEnabled(false);
+
             // We send any unsent transactions here before we finish switching states, we need to make sure these are
             // all sent to the new leader before we complete the transition.
             _sendOutstandingTransactions();
@@ -2070,6 +2074,11 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
             lock_guard<mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = nullptr;
+        }
+
+        // Re-enable commits if they were disabled during a previous stand-down.
+        if (newState != SEARCHING) {
+            _db.setCommitEnabled(true);
         }
 
         // Additional logic for some new states
