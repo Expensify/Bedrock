@@ -200,7 +200,6 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(updatedJob[0][8], originalJob[0][8]);
         ASSERT_EQUAL(updatedJob[0][9], originalJob[0][9]);
 
-
         // Try to recreate the job with new data, without overwriting the existing data
         string data2 = "{\"blabla2\":\"test2\"}";
         command["data"] = data2;
@@ -219,7 +218,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(nonoverwritenJob[0][4], updatedJob[0][4]);
         ASSERT_EQUAL(nonoverwritenJob[0][5], updatedJob[0][5]);
         ASSERT_EQUAL(nonoverwritenJob[0][6], updatedJob[0][6]);
-        ASSERT_EQUAL(nonoverwritenJob[0][7], data2);
+        ASSERT_EQUAL(nonoverwritenJob[0][7], updatedJob[0][7]);
         ASSERT_EQUAL(nonoverwritenJob[0][8], updatedJob[0][8]);
         ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
     }

@@ -505,10 +505,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 // If we found a job, but the data was different, we'll need to update it.
                 if (!result.empty()) {
                     updateJobID = SToInt64(result[0][0]);
-                    continue;
                 }
-
-                SINFO("ALEX NO DUPE FOUND");
             }
 
             // Record whether or not this job is scheduling itself in the future. If so, it's not suitable for
@@ -584,7 +581,6 @@ void BedrockJobsCommand::process(SQLite& db) {
                         STHROW("502 update query failed");
                     }
                 }
-
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
                 if (SIEquals(requestVerb, "CreateJob")) {
