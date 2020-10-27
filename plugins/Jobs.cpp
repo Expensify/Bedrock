@@ -402,6 +402,8 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
+        //     - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
+        //                   with the new jobs data
         //     - parentJobID - The ID of the parent job (optional)
         //     - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -421,6 +423,8 @@ void BedrockJobsCommand::process(SQLite& db) {
         //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
+        //          - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
+        //                        with the new jobs data
         //          - parentJobID - The ID of the parent job (optional)
         //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -566,14 +570,16 @@ void BedrockJobsCommand::process(SQLite& db) {
 
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
-                // Update the existing job.
-                if(!db.writeIdempotent("UPDATE jobs SET "
-                                         "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
-                                         "data     = JSON_PATCH(data, " + safeData + "), " +
-                                         "priority = " + SQ(priority) + " " +
-                                       "WHERE jobID = " + SQ(updateJobID) + ";"))
-                {
-                    STHROW("502 update query failed");
+                if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
+                    // Update the existing job.
+                    if(!db.writeIdempotent("UPDATE jobs SET "
+                                             "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
+                                             "data     = JSON_PATCH(data, " + safeData + "), " +
+                                             "priority = " + SQ(priority) + " " +
+                                           "WHERE jobID = " + SQ(updateJobID) + ";"))
+                    {
+                        STHROW("502 update query failed");
+                    }
                 }
 
                 // If we are calling CreateJob, return early, there are no more jobs to create.
