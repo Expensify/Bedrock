@@ -570,7 +570,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
-                if (!SContains(job, "overwrite") || job["overwrite"] == "true") {
+                if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
                     // Update the existing job.
                     if(!db.writeIdempotent("UPDATE jobs SET "
                                              "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
