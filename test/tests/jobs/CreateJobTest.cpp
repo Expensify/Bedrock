@@ -199,6 +199,28 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(updatedJob[0][7], data);
         ASSERT_EQUAL(updatedJob[0][8], originalJob[0][8]);
         ASSERT_EQUAL(updatedJob[0][9], originalJob[0][9]);
+
+        // Try to recreate the job with new data, without overwriting the existing data
+        string data2 = "{\"blabla2\":\"test2\"}";
+        command["data"] = data2;
+        command["overwrite"] = "false";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(stol(response["jobID"]), jobID);
+
+        SQResult nonoverwritenJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", nonoverwritenJob);
+        ASSERT_EQUAL(updatedJob.size(), 1);
+        // Assert that we have not overwritten the job data
+        ASSERT_EQUAL(nonoverwritenJob[0][0], updatedJob[0][0]);
+        ASSERT_EQUAL(nonoverwritenJob[0][1], updatedJob[0][1]);
+        ASSERT_EQUAL(nonoverwritenJob[0][2], updatedJob[0][2]);
+        ASSERT_EQUAL(nonoverwritenJob[0][3], updatedJob[0][3]);
+        ASSERT_EQUAL(nonoverwritenJob[0][4], updatedJob[0][4]);
+        ASSERT_EQUAL(nonoverwritenJob[0][5], updatedJob[0][5]);
+        ASSERT_EQUAL(nonoverwritenJob[0][6], updatedJob[0][6]);
+        ASSERT_EQUAL(nonoverwritenJob[0][7], updatedJob[0][7]);
+        ASSERT_EQUAL(nonoverwritenJob[0][8], updatedJob[0][8]);
+        ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
     }
 
     void createWithBadData() {
