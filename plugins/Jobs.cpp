@@ -402,7 +402,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
-        //     - overwrite - Only applicable when submit is is true. When set to true it will overwrite the existing job
+        //     - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
         //                   with the new jobs data
         //     - parentJobID - The ID of the parent job (optional)
         //     - retryAfter - Amount of auto-retries before marking job as failed (optional)
@@ -423,7 +423,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
-        //          - overwrite - Only applicable when submit is is true. When set to true it will overwrite the existing job
+        //          - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
         //                        with the new jobs data
         //          - parentJobID - The ID of the parent job (optional)
         //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
