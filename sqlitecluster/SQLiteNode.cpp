@@ -165,6 +165,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
             SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
+                // Ok, this needs to not get interrupted.
                 SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
                     // This should be impossible.
@@ -206,8 +207,10 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         // Yes, we get this line logged 4 times from four threads as their last activity and then:
                         // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
                         SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                        // this also needs to not get interrupted.
                         SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
                         if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                            // What causes this?
                             SINFO("Replication canceled mid-transaction, stopping.");
                             db.rollback();
                             break;
@@ -2008,9 +2011,18 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            SINFO("[NOTIFY] _replicationThreadsShouldExit");
-            _localCommitNotifier.cancel();
-            _leaderCommitNotifier.cancel();
+            uint64_t cancelAfter = _leaderCommitNotifier.getValue();
+            SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
+
+            // This is inadequate because we also need to cancel any transactions that haven't started yet and any
+            // after that.
+            // All the threads that need to exist here should already exist, though. We should just need to not cancel
+            // them.
+            //2020-10-26T20:05:03.992392+00:00 expensidev bedrock10007: xxxxxx (SQLiteNode.cpp:177) replicate [replicate3386] [info]
+            //{cluster_node_2/FOLLOWING} _localCommitNotifier.waitFor canceled early, returning.
+            // Those wont work. Why are they canceled?
+            _localCommitNotifier.cancel(cancelAfter);
+            _leaderCommitNotifier.cancel(cancelAfter);
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
