@@ -19,7 +19,6 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     const bool isLive;
 
   private:
-    static int64_t getNextID(SQLite& db);
     static const string name;
     static const int64_t JOBS_DEFAULT_PRIORITY;
 };
