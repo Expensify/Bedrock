@@ -16,11 +16,16 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         unique_lock<mutex> lock(state->waitingThreadMutex);
         if (_globalResult == RESULT::CANCELED) {
             if (_cancelAfter != 0 && value <= _cancelAfter) {
-                // We can just keep going here, it's canceled after what we're waiting for.
-                SINFO("Canceled after " << _cancelAfter << " but we're only waiting for " << value << " so continuing.");
+                // If cancelAfter is set, but higher than what we're waiting for, we ignore the CANCELED and wait for
+                // this WaitState to have a result anyway.
+                if (state->result != RESULT::UNKNOWN) {
+                    return state->result;
+                }
+                // If there's no result yet, log that we're waiting for it.
+                SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
             } else {
                 // Canceled and we're not before the cancellation cutoff.
-                return _globalResult;
+                return RESULT::CANCELED;
             }
         } else if (_globalResult != RESULT::UNKNOWN) {
             return _globalResult;
@@ -69,10 +74,14 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
 
 void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
     lock_guard<mutex> lock(_internalStateMutex);
+
+    // It's important that _cancelAfter is set before _globalResult. This avoids a race condition where we check
+    // _globalResult in waitFor but then find _cancelAfter unset.
+    _cancelAfter = cancelAfter;
     _globalResult = RESULT::CANCELED;
 
     // If cancelAfter is specified, start from that value. Otherwise, we start from the beginning.
-    auto start = cancelAfter ? _valueToPendingThreadMap.upper_bound(cancelAfter) : _valueToPendingThreadMap.begin();
+    auto start = _cancelAfter ? _valueToPendingThreadMap.upper_bound(_cancelAfter) : _valueToPendingThreadMap.begin();
     if (start == _valueToPendingThreadMap.end()) {
         // There's nothing to remove.
         return;

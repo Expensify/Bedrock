@@ -39,7 +39,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
 
     // Causes any thread waiting for any value to return `false`. Also, any future calls to `waitFor` will return
     // `RESULT::CANCELED` until `reset` is called.
-    // If `cancelAfter` is specified, then only threads waiting for a value *greater than* cacelAfter are interrupted,
+    // If `cancelAfter` is specified, then only threads waiting for a value *greater than* cancelAfter are interrupted,
     // and only calls to `waitFor` with values higher than the current _value return `RESULT::CANCELED`.
     void cancel(uint64_t cancelAfter = 0);
 
@@ -74,6 +74,6 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     // happen), that is stored here.
     RESULT _globalResult;
 
-    // If we're canceling values after a certain number, we still allow threads up to that value to start.
+    // For saving the value after which new or existing waiters will be returned a CANCELED result.
     atomic<uint64_t> _cancelAfter;
 };
