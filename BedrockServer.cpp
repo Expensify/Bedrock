@@ -695,10 +695,10 @@ void BedrockServer::sync(const SData& args,
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Sync thread exiting in state " << replicationState.load() << ". Setting to SEARCHING.");
+        SWARN("TYLER Sync thread exiting in state " << replicationState.load() << ". Setting to SEARCHING.");
         replicationState.store(SQLiteNode::SEARCHING);
     } else {
-        SINFO("Sync thread exiting, setting state to: " << replicationState.load());
+        SINFO("TYLER Sync thread exiting, setting state to: " << replicationState.load());
     }
 
     // Wait for the worker threads to finish.
@@ -2121,7 +2121,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
         _detach = detach;
         // Begin a graceful shutdown; close our port
-        SINFO("Beginning graceful shutdown due to '" << reason
+        SINFO("TYLER Beginning graceful shutdown due to '" << reason
               << "', closing command port on '" << args["-serverHost"] << "'");
         _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
         _gracefulShutdownTimeout.start();

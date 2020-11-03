@@ -296,6 +296,7 @@ void SQLiteNode::beginShutdown(uint64_t usToWait) {
     // Ignore redundant
     if (!gracefulShutdown()) {
         // Start graceful shutdown
+        SINFO("TYLER Beginning graceful shutdown of sync node.");
         SINFO("Beginning graceful shutdown.");
         _gracefulShutdownTimeout.alarmDuration = usToWait;
         _gracefulShutdownTimeout.start();
@@ -327,7 +328,7 @@ bool SQLiteNode::shutdownComplete() {
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_gracefulShutdownTimeout.ringing()) {
-        SWARN("Graceful shutdown timed out, killing non gracefully.");
+        SWARN("TYLER Graceful shutdown timed out, killing non gracefully.");
         auto lock = _escalatedCommandMap.scopedLock();
         if (_escalatedCommandMap.size()) {
             SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
@@ -345,7 +346,7 @@ bool SQLiteNode::shutdownComplete() {
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
     if (_state > WAITING) {
         // Not in a shutdown state
-        SINFO("Can't graceful shutdown yet because state="
+        SINFO("TYLER Can't graceful shutdown yet because state="
               << stateName(_state) << ", commitInProgress=" << commitInProgress()
               << ", escalated=" << _escalatedCommandMap.size());
 
@@ -368,7 +369,7 @@ bool SQLiteNode::shutdownComplete() {
     for (auto peer : peerList) {
         if (peer->socket && !peer->socket->sendBufferEmpty()) {
             // Still sending data
-            SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
+            SINFO("TYLER Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
             return false;
         }
     }
@@ -376,11 +377,11 @@ bool SQLiteNode::shutdownComplete() {
     // Finally, make sure nothing is blocking shutdown
     if (_isNothingBlockingShutdown()) {
         // Yes!
-        SINFO("Graceful shutdown is complete");
+        SINFO("TYLER Graceful shutdown is complete");
         return true;
     } else {
         // Not done yet
-        SINFO("Can't graceful shutdown yet because waiting on commands: commitInProgress="
+        SINFO("TYLER Can't graceful shutdown yet because waiting on commands: commitInProgress="
               << commitInProgress() << ", escalated=" << _escalatedCommandMap.size());
         return false;
     }
@@ -548,12 +549,18 @@ bool SQLiteNode::update() {
     ///         else send SYNCHRONIZE and goto SYNCHRONIZING
     ///
     case SEARCHING: {
+        if (gracefulShutdown()) {
+            SINFO("TYLER Graceful shutdown underway in SEARCHING, do nothing.");
+            return false;   
+        }
+
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
         // If we're trying to shut down, just do nothing
-        if (shutdownComplete())
+        if (shutdownComplete()) {
             return false; // Don't re-update
+        }
 
         // If no peers, we're the leader, unless we're shutting down.
         if (peerList.empty()) {
@@ -2029,7 +2036,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         }
 
         // Depending on the state, set a timeout
-        SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
+        SINFO("TYLER Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
         uint64_t timeout = 0;
         if (newState == STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
