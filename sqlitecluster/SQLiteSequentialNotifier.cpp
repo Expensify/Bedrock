@@ -64,7 +64,7 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
 
     // Now we've finished with all of our updates and notifications and can remove everything from our map.
     // Note that erasing an empty range (i.e., from() begin to begin()) is tested to be a no-op. The documentation I've
-    // fond for multimap is unclear on this, though the documentation for `std::list` specifies:
+    // found for multimap is unclear on this, though the documentation for `std::list` specifies:
     // "The iterator first does not need to be dereferenceable if first==last: erasing an empty range is a no-op."
     //
     // I think it's reasonable to assume this is the intention for multimap as well, and in my testing, that was the
@@ -91,7 +91,6 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
     auto current = start;
     while(current != _valueToPendingThreadMap.end()) {
         lock_guard<mutex> lock(current->second->waitingThreadMutex);
-        SINFO("Canceling: " << current->first);
         current->second->result = RESULT::CANCELED;
         current->second->waitingThreadConditionVariable.notify_all();
         current++;
