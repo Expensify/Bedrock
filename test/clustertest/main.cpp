@@ -76,8 +76,6 @@ int main(int argc, char* argv[]) {
         threads = SToInt(args["-threads"]);
     }
 
-
-
     int retval = 0;
     {
         for (int i = 0; i < repeatCount; i++) {
@@ -88,6 +86,21 @@ int main(int argc, char* argv[]) {
                 retval = 1;
             }
         }
+    }
+
+    if (BedrockClusterTester::startupTimes.size()) {
+        uint64_t totalMS = 0;
+        for (auto& t : BedrockClusterTester::startupTimes) {
+            totalMS += chrono::duration_cast<chrono::milliseconds>(t).count();
+        }
+        cout << "Average startup time: " << (totalMS / BedrockClusterTester::startupTimes.size()) << "ms, for " << BedrockClusterTester::startupTimes.size() << " startups. " << endl;
+    }
+    if (BedrockClusterTester::shutdownTimes.size()) {
+        uint64_t totalMS = 0;
+        for (auto& t : BedrockClusterTester::shutdownTimes) {
+            totalMS += chrono::duration_cast<chrono::milliseconds>(t).count();
+        }
+        cout << "Average shutdown time: " << (totalMS / BedrockClusterTester::shutdownTimes.size()) << "ms, for " << BedrockClusterTester::shutdownTimes.size() << " shutdowns. " << endl;
     }
 
     // Tester gets destroyed here. Everything's done.

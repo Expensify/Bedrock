@@ -11,6 +11,10 @@ template <typename T>
 class ClusterTester {
   public:
 
+    static inline mutex timingMutex;
+    static inline list<chrono::steady_clock::duration> startupTimes;
+    static inline list<chrono::steady_clock::duration> shutdownTimes;
+
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become leader.
     // You can also specify plugins to load if for some reason you need to override the default configuration.
@@ -70,6 +74,9 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
                                 string pluginsToLoad)
 : _size((int)size)
 {
+
+    auto startTime = chrono::steady_clock::now();
+
     // Generate three ports for each node.
     bool ownPorts = false;
     vector<vector<uint16_t>> ports((int)size);
@@ -180,17 +187,31 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             usleep(500000); // 0.5 seconds.
         }
     }
+
+    auto stopTime = chrono::steady_clock::now();
+    lock_guard<mutex> lock(timingMutex);
+    startupTimes.emplace_back(stopTime - startTime);
 }
 
 template <typename T>
 ClusterTester<T>::~ClusterTester()
 {
+    auto startTime = chrono::steady_clock::now();
     // Shut them down in reverse order so they don't try and stand up as leader in the middle of everything.
+    list<thread> threads;
     for (int i = _size - 1; i >= 0; i--) {
-        stopNode(i);
+        threads.emplace_back([&threads, i, this](){
+            stopNode(i);
+        });
+    }
+    for (auto& t: threads) {
+        t.join();
     }
 
     _cluster.clear();
+    auto stopTime = chrono::steady_clock::now();
+    lock_guard<mutex> lock(timingMutex);
+    shutdownTimes.emplace_back(stopTime - startTime);
 }
 
 template <typename T>
