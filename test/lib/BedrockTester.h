@@ -60,6 +60,9 @@ class BedrockTester {
     string startServer(bool dontWait = false);
     void stopServer(int signal = SIGINT);
 
+    // Change the args on a stopped server.
+    void updateArgs(const map<string, string> args);
+
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
