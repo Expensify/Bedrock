@@ -28,7 +28,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     };
 
     // Constructor
-    SQLiteSequentialNotifier() : _value(0), _globalResult(RESULT::UNKNOWN) {}
+    SQLiteSequentialNotifier() : _value(0), _globalResult(RESULT::UNKNOWN), _cancelAfter(0) {}
 
     // Blocks until `_value` meets or exceeds `value`, unless an exceptional case (CANCELED, CHEKPOINT_REQUIRED) is
     // hit, and returns the corresponding RESULT.
@@ -38,8 +38,13 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     void notifyThrough(uint64_t value);
 
     // Causes any thread waiting for any value to return `false`. Also, any future calls to `waitFor` will return
-    // `false` until `reset` is called.
-    void cancel();
+    // `RESULT::CANCELED` until `reset` is called.
+    // If `cancelAfter` is specified, then only threads waiting for a value *greater than* cancelAfter are interrupted,
+    // and only calls to `waitFor` with values higher than the current _value return `RESULT::CANCELED`.
+    void cancel(uint64_t cancelAfter = 0);
+
+    // Returns the current value of this notifier.
+    uint64_t getValue();
 
     // Implement the base class to notify for checkpoints
     void checkpointRequired(SQLite& db) override;
@@ -68,4 +73,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     // If there is a global result for all pending operations (i.e., they've been canceled or a checkpoint needs to
     // happen), that is stored here.
     RESULT _globalResult;
+
+    // For saving the value after which new or existing waiters will be returned a CANCELED result.
+    atomic<uint64_t> _cancelAfter;
 };

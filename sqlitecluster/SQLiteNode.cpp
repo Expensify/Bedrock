@@ -2008,9 +2008,10 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // If we were following, and now we're not, we give up an any replications.
         if (oldState == FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            SINFO("[NOTIFY] _replicationThreadsShouldExit");
-            _localCommitNotifier.cancel();
-            _leaderCommitNotifier.cancel();
+            uint64_t cancelAfter = _leaderCommitNotifier.getValue();
+            SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
+            _localCommitNotifier.cancel(cancelAfter);
+            _leaderCommitNotifier.cancel(cancelAfter);
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
