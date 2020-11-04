@@ -48,6 +48,20 @@ struct BadCommandTest : tpunit::TestFixture {
                     int error = 0;
                     leader.executeWaitMultipleData({command}, 1, false, true, &error);
 
+                    // Wait for the follower to become leader.
+                    bool leading = false;
+                    for (int i = 0; i < 500; i++) {
+                        SData status("Status");
+                        vector<SData> statusResult = follower.executeWaitMultipleData({status}, 1, true);
+                        STable json = SParseJSONObject(statusResult[0].content);
+                        if (json["state"] == "LEADING") {
+                            leading = true;
+                            break;
+                        }
+                        usleep(100'00);
+                    }
+                    ASSERT_TRUE(leading);
+
                     // This error indicates we couldn't read a response after sending a command. We assume this means the
                     // server died. Even if it didn't and we just had a weird flaky network connection,  we'll still fail this
                     // test if the follower doesn't refuse the same command.

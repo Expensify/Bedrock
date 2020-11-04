@@ -164,6 +164,12 @@ BedrockTester::~BedrockTester() {
     }
 }
 
+void BedrockTester::updateArgs(const map<string, string> args) {
+    for (auto& row : args) {
+        _args[row.first] = row.second;
+    }
+}
+
 string BedrockTester::startServer(bool dontWait) {
     string serverName = getServerName();
     int childPID = fork();
