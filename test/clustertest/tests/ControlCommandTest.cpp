@@ -42,6 +42,9 @@ struct ControlCommandTest : tpunit::TestFixture {
         // Try to attach again, should be allowed now that the sleep in the plugin
         // has passed.
         follower.executeWaitVerifyContent(attachCommand, "204", true);
+
+        // Wait for it to attach.
+        sleep(5);
     }
 
 } __ControlCommandTest;

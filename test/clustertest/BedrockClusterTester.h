@@ -201,6 +201,7 @@ ClusterTester<T>::~ClusterTester()
     list<thread> threads;
     for (int i = _size - 1; i >= 0; i--) {
         threads.emplace_back([&threads, i, this](){
+            syslog(LOG_INFO, "TYLER bedrock stopping server %i", i);
             stopNode(i);
         });
     }
