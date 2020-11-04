@@ -2026,6 +2026,9 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Guaranteed to be done right now.
             _localCommitNotifier.reset();
             _leaderCommitNotifier.reset();
+
+            // We have no leader anymore.
+            _leaderVersion = "";
         }
 
         // Depending on the state, set a timeout

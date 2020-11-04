@@ -413,7 +413,7 @@ void BedrockServer::sync(const SData& args,
             }
         }
 
-        // Now that we've cleared any state associated with switching away from leading, we can nbail out and try again
+        // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (nodeState != SQLiteNode::LEADING && nodeState != SQLiteNode::FOLLOWING && nodeState != SQLiteNode::STANDINGDOWN) {
             continue;
@@ -1426,23 +1426,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
-
-    // If we're a follower, and the leader's on a different version than us, we don't open the command port.
-    // If we do, we'll escalate all of our commands to the leader, which causes undue load on leader during upgrades.
-    // Instead, we'll simply not respond and let this request get re-directed to another follower.
-    string leaderVersion = _leaderVersion.load();
-    if (!_suppressCommandPort && state == SQLiteNode::FOLLOWING && (leaderVersion != _version)) {
-        SINFO("Node " << args["-nodeName"] << " following on version " << _version << ", leader is version: "
-              << leaderVersion << ", not opening command port.");
-        suppressCommandPort("leader version mismatch", true);
-    } else if (_suppressCommandPort && (state == SQLiteNode::LEADING || (leaderVersion == _version))) {
-        // If we become leader, or if leader's version resumes matching ours, open the command port again.
-        if (!_suppressCommandPortManualOverride) {
-            // Only generate this logline if we haven't manually blocked this.
-            SINFO("Node " << args["-nodeName"] << " disabling previously suppressed command port after version check.");
-        }
-        suppressCommandPort("leader version match", false);
-    }
     if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) &&
         _shutdownState.load() == RUNNING) {
         // Open the port
@@ -1636,9 +1619,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            SINFO("Queued new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
+                            if (_version != _leaderVersion.load()) {
+                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else {
+                                SINFO("Queued new '" << command->request.methodLine << "' command from local client, with "
+                                      << _commandQueue.size() << " commands already queued.");
+                                _commandQueue.push(move(command));
+                            }
                         }
                     }
                 } else {
