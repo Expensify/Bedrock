@@ -1,5 +1,6 @@
 #include "Jobs.h"
 #include "../BedrockServer.h"
+#include <sqlitecluster/SQLiteUtils.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -67,25 +68,6 @@ unique_ptr<BedrockCommand> BedrockPlugin_Jobs::getCommand(SQLiteCommand&& baseCo
         return make_unique<BedrockJobsCommand>(move(baseCommand), this);
     }
     return nullptr;
-}
-
-int64_t BedrockPlugin_Jobs::getNextID(SQLite& db)
-{
-    int64_t newID = 0;
-    while (!newID) {
-        // Make sure this fits even in a signed int64_t, and is positive.
-        newID = SRandom::rand64();
-        if (newID < 0) {
-            newID = -newID;
-        }
-        newID %= INT64_MAX;
-        string result = db.read( "SELECT jobID FROM jobs WHERE jobID = " + to_string(newID) + ";");
-        if (!result.empty()) {
-            // This one exists! Pick a new one.
-            newID = 0;
-        }
-    }
-    return newID;
 }
 
 // ==========================================================================
@@ -608,7 +590,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
-                const int64_t jobIDToUse = BedrockPlugin_Jobs::getNextID(db);
+                const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
                 SINFO("Next jobID to be used " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +

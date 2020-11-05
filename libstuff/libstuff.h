@@ -712,6 +712,7 @@ inline string SUNQUOTED_TIMESTAMP(uint64_t when) { return SComposeTime("%Y-%m-%d
 inline string STIMESTAMP(uint64_t when) { return SQ(SUNQUOTED_TIMESTAMP(when)); }
 inline string SUNQUOTED_CURRENT_TIMESTAMP() { return SUNQUOTED_TIMESTAMP(STimeNow()); }
 inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
+string SCURRENT_TIMESTAMP_MS();
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff
