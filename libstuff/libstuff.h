@@ -718,7 +718,7 @@ inline string SCURRENT_TIMESTAMP_MS() {
     string timestamp = SUNQUOTED_TIMESTAMP(time);
     char msString[5] = {0};
     snprintf(msString, 5, "%03lu", ms);
-    return SQ(timestamp + "." + msString);
+    return timestamp + "." + msString;
 }
 
 // --------------------------------------------------------------------------
