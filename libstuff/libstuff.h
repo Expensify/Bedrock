@@ -712,14 +712,7 @@ inline string SUNQUOTED_TIMESTAMP(uint64_t when) { return SComposeTime("%Y-%m-%d
 inline string STIMESTAMP(uint64_t when) { return SQ(SUNQUOTED_TIMESTAMP(when)); }
 inline string SUNQUOTED_CURRENT_TIMESTAMP() { return SUNQUOTED_TIMESTAMP(STimeNow()); }
 inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
-inline string SCURRENT_TIMESTAMP_MS() {
-    uint64_t time = STimeNow();
-    uint64_t ms = (time % 1'000'000) / 1'000;
-    string timestamp = SUNQUOTED_TIMESTAMP(time);
-    char msString[5] = {0};
-    snprintf(msString, 5, "%03lu", ms);
-    return timestamp + "." + msString;
-}
+string SCURRENT_TIMESTAMP_MS();
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff
