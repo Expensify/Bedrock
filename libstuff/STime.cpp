@@ -50,3 +50,13 @@ timeval SToTimeval(uint64_t when) {
     // Just split by high and low bits
     return {(time_t)(when / STIME_US_PER_S), (suseconds_t)(when % STIME_US_PER_S)};
 }
+
+// --------------------------------------------------------------------------
+string SCURRENT_TIMESTAMP_MS() {
+    uint64_t time = STimeNow();
+    uint64_t ms = (time % 1'000'000) / 1'000;
+    string timestamp = SUNQUOTED_TIMESTAMP(time);
+    char msString[5] = {0};
+    snprintf(msString, 5, "%03lu", ms);
+    return timestamp + "." + msString;
+}
