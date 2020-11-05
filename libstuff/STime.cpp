@@ -1,6 +1,5 @@
 #include "libstuff.h"
 
-// --------------------------------------------------------------------------
 uint64_t STimeNow() {
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
     timeval time;
@@ -8,7 +7,6 @@ uint64_t STimeNow() {
     return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
 }
 
-// --------------------------------------------------------------------------
 string SComposeTime(const string& format, uint64_t when) {
     // Convert from high-precision time (usec) to standard low-precision time (sec), then format and return
     const time_t loWhen = (time_t)(when / STIME_US_PER_S);
@@ -17,7 +15,6 @@ string SComposeTime(const string& format, uint64_t when) {
     return string(buf, length);
 }
 
-// --------------------------------------------------------------------------
 int SDaysInMonth(int year, int month) {
     // 30 days hath September...
     if (month == 4 || month == 6 || month == 9 || month == 11) {
@@ -29,7 +26,6 @@ int SDaysInMonth(int year, int month) {
     }
 }
 
-// --------------------------------------------------------------------------
 uint64_t STimeThisMorning() {
     // Get today's date in GMT, zero out the hour, convert into a Unix
     // timestamp, and then into a libstuff timestamp.
@@ -45,8 +41,16 @@ uint64_t STimeThisMorning() {
     return gmtTime * STIME_US_PER_S + hiLoDelta;
 }
 
-// --------------------------------------------------------------------------
 timeval SToTimeval(uint64_t when) {
     // Just split by high and low bits
     return {(time_t)(when / STIME_US_PER_S), (suseconds_t)(when % STIME_US_PER_S)};
+}
+
+string SCURRENT_TIMESTAMP_MS() {
+    uint64_t time = STimeNow();
+    uint64_t ms = (time % 1'000'000) / 1'000;
+    string timestamp = SUNQUOTED_TIMESTAMP(time);
+    char msString[5] = {0};
+    snprintf(msString, 5, "%03lu", ms);
+    return timestamp + "." + msString;
 }
