@@ -1,3 +1,8 @@
+jobs:
+    include:
+        - dist: xenial
+        - dist: focal
+
 sudo: false
 env:
     - GXX=g++-9 CC=gcc-9
@@ -13,7 +18,6 @@ notifications:
         on_success: never
 before_install:
 script: ./travis.sh
-dist: xenial
 deploy:
     provider: releases
     # `api_key` is an encrypted oauth token for rafecolton. See https://docs.travis-ci.com/user/deployment/releases
