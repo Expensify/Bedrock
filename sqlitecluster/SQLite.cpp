@@ -577,6 +577,11 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
     SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
 
+    // If we know we're going to conflict, return true early.
+    if (_willConflictAtCommit) {
+        return true;
+    }
+
     // First, check our current state
     SQResult results;
     SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
@@ -588,8 +593,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool result = false;
     bool usedRewrittenQuery = false;
+    int resultCode = 0;
     if (_enableRewrite) {
-        int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
@@ -601,11 +607,18 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
             result = !resultCode;
         }
     } else {
-        result = !SQuery(_db, "read/write transaction", query);
+        resultCode = SQuery(_db, "read/write transaction", query);
+        result = !resultCode;
     }
+
     _checkInterruptErrors("SQLite::write"s);
     _writeElapsed += STimeNow() - before;
-    if (!result) {
+
+    if (resultCode == SQLITE_CONSTRAINT_UNIQUE) {
+        // treat this as a success that will result in a conflict on commit.
+        _willConflictAtCommit = true;
+        return true;
+    } else if (!result) {
         return false;
     }
 
@@ -712,7 +725,12 @@ int SQLite::commit() {
             result = SQuery(_db, "committing db transaction", "COMMIT");
         }
     } else {
-        result = SQuery(_db, "committing db transaction", "COMMIT");
+        if (_willConflictAtCommit) {
+            // We've deferred an earlier failure to act like a conflict.
+            result = SQLITE_BUSY_SNAPSHOT;
+        } else {
+            result = SQuery(_db, "committing db transaction", "COMMIT");
+        }
     }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
@@ -849,8 +867,9 @@ void SQLite::rollback() {
     _cacheHits = 0;
     _dbCountAtStart = 0;
 
-    // Reset this to the default on any completion of the transaction, successful or not.
+    // Reset these to the default on any completion of the transaction, successful or not.
     _enableCheckpointInterrupt = true;
+    _willConflictAtCommit = false;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,

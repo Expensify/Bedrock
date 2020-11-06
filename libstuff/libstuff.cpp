@@ -2472,16 +2472,15 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
-    // Only OK and commit conflicts are allowed without warning.
-    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
+    // Only OK, commit conflicts, and unique constraints errors are allowed without warning.
+    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && extErr != SQLITE_CONSTRAINT_UNIQUE) {
         if (!skipWarn) {
             SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 
-    // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
-    if (extErr == SQLITE_BUSY_SNAPSHOT) {
-        SHMMM("[concurrent] commit conflict.");
+    if (extErr == SQLITE_BUSY_SNAPSHOT || extErr == SQLITE_CONSTRAINT_UNIQUE) {
+        SHMMM("[concurrent] commit conflict or unique constraint (" << sqlite3_errmsg(db) << ")");
         return extErr;
     }
     return error;

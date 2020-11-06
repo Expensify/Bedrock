@@ -481,6 +481,35 @@ class SQLite {
     const string _synchronous;
     int64_t _mmapSizeGB;
 
+    // If we get a SQLITE_CONSTRAINT_UNIQUE error in a write command, we treat it as a success until we attempt to commit the
+    // transaction, when we act as if it were a conflict. The reasoning for this is there are cases where two commands
+    // that would conflict on commit, and would otherwise be handled just fine like that, instead error out early in a
+    // write. For the example case for this, assume the following table:
+    // CREATE TABLE t (identifier PRIMARY KEY);
+    //
+    // With the following start state:
+    // INSERT INTO t VALUES(1);
+    //
+    // If you run these two commands in this order:
+    // DELETE FROM t WHERE identifier = 1;
+    // INSERT INTO t VALUES(1);
+    //
+    // They will work just fine. If you run them simultaneously, you might expect that they'd conflict, but they don't
+    // because the unique constraints error doesn't get thrown at commit, it gets thrown at the time the `INSERT`
+    // command tries to run but the `DELETE` hasn't completed yet. Re-running the `INSERT` after the `DELETE` will work
+    // as expected.
+    //
+    // You might ask why you'd run these two queries simultaneously in the first place, and the answer is that it's
+    // probably a bug to do so, which might be caused by simply not waiting for a `DELETE` to finish before running an
+    // `INSERT` with new data. Depending on the order the two commands finish, you could end up with data or no data.
+    //
+    // However, the actual case here isn't just to fix a caller sending two commands simultaneously, but to handle the
+    // case where these run successfully in DELETE, INSERT order on LEADER but then run simultaneously on a FOLLOWER.
+    // The follower must commit in the same order as leader, but because the error happens in write, not in commit, we
+    // can throw the error from replication if the follower starts the second transaction before the first finishes.
+    // This would be automatically handled in a commit conflict, so we mimic that behavior for this type of error.
+    bool _willConflictAtCommit = false;
+
     // This is a bit of a weird construct. We lock this in the destructor for an SQLite object because we spawn a
     // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
     // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
