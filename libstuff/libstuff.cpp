@@ -2472,14 +2472,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
-    // Only OK, commit conflicts, and unique constraints errors are allowed without warning.
-    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && extErr != SQLITE_CONSTRAINT_UNIQUE) {
+    // Only OK and commit conflicts are allowed without warning.
+    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
         if (!skipWarn) {
             SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 
-    if (extErr == SQLITE_BUSY_SNAPSHOT || extErr == SQLITE_CONSTRAINT_UNIQUE) {
+    if (extErr == SQLITE_BUSY_SNAPSHOT) {
         SHMMM("[concurrent] commit conflict or unique constraint (" << sqlite3_errmsg(db) << ")");
         return extErr;
     }
