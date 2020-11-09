@@ -270,7 +270,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         command->complete = false;
         SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
         return RESULT::ABANDONED_FOR_CHECKPOINT;
-    } catch (const SQLite::unique_constraints_error& e) {
+    } catch (const SQLite::constraint_error& e) {
         SWARN("Unique Constraints Violation, command: " << request.methodLine);
         command->response.methodLine = "400 Unique Constraints Violation";
         _db.rollback();

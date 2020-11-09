@@ -604,7 +604,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // If we got a constraints error, throw that.
     if (resultCode == SQLITE_CONSTRAINT) {
-        throw unique_constraints_error();
+        throw constraint_error();
     }
 
     _checkInterruptErrors("SQLite::write"s);

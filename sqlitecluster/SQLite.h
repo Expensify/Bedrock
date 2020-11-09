@@ -23,7 +23,7 @@ class SQLite {
         const char* what() const noexcept { return "checkpoint_required"; }
     };
 
-    // We can get a SQLITE_CONSTRAINT_UNIQUE error in a write command for two reasons. One is a legitimate error caused
+    // We can get a SQLITE_CONSTRAINT error in a write command for two reasons. One is a legitimate error caused
     // by a user trying to two rows with the same key. The other is in multi-threaded replication, when transactions
     // start in a different order on a follower than they did on the leader. Consider this example case:
     // CREATE TABLE t (identifier PRIMARY KEY);
@@ -40,14 +40,14 @@ class SQLite {
     // command tries to run but the `DELETE` hasn't completed yet. Re-running the `INSERT` after the `DELETE` will work
     // as expected.
     //
-    // If we detect this error, we throw the following exception, which just returns an error when enocountered in a
+    // If we detect this error, we throw the following exception, which just returns an error when encountered in a
     // normal `process` phase of a command on leader, but is treated similarly to a commit conflict in replication, and
     // re-runs the command after the other command (the `DELETE`) has finished.
-    class unique_constraints_error : public exception {
+    class constraint_error : public exception {
       public :
-        unique_constraints_error() {};
-        virtual ~unique_constraints_error() {};
-        const char* what() const noexcept { return "unique_constraints_error"; }
+        constraint_error() {};
+        virtual ~constraint_error() {};
+        const char* what() const noexcept { return "constraint_error"; }
     };
 
     // Constant to use like a sqlite result code when commits are disabled (see: https://www.sqlite.org/rescode.html)

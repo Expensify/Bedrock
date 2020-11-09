@@ -223,7 +223,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
 
                         // Ok, almost ready.
                         node.handlePrepareTransaction(db, peer, command);
-                    } catch (const SQLite::unique_constraints_error& e) {
+                    } catch (const SQLite::constraint_error& e) {
                         // We could `continue` immediately upon catching this exception, but instead, we wait for the
                         // leader commit notifier to be ready. This prevents us from spinning in an endless loop on the
                         // same error over and over until whatever thread we're waiting for finishes.
