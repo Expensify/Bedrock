@@ -186,7 +186,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
 
             try {
                 int result = -1;
-                int commitAttemptCount = 0;
+                int commitAttemptCount = 1;
                 while (result != SQLITE_OK) {
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
@@ -2452,8 +2452,10 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
             SINFO("Waiting for checkpoint");
             db.waitForCheckpoint();
             SINFO("Done waiting for checkpoint");
-            // If we are running this after a conflict, we'll grab an exclusive lock here so this transaction must run
-            // entirely by itself.
+            // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
+            // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
+            // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
+            // than SHARED mode.
             if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("failed to begin transaction");
             }
