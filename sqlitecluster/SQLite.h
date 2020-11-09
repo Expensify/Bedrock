@@ -24,8 +24,8 @@ class SQLite {
     };
 
     // We can get a SQLITE_CONSTRAINT error in a write command for two reasons. One is a legitimate error caused
-    // by a user trying to two rows with the same key. The other is in multi-threaded replication, when transactions
-    // start in a different order on a follower than they did on the leader. Consider this example case:
+    // by a user trying to insert two rows with the same key. The other is in multi-threaded replication, when
+    // transactions start in a different order on a follower than they did on the leader. Consider this example case:
     // CREATE TABLE t (identifier PRIMARY KEY);
     //
     // With the start state on all nodes:
