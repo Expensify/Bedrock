@@ -586,26 +586,30 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // Try to execute the query
     uint64_t before = STimeNow();
-    bool result = false;
     bool usedRewrittenQuery = false;
+    int resultCode = 0;
     if (_enableRewrite) {
-        int resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            result = !SQuery(_db, "read/write transaction", _rewrittenQuery);
+            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
-        } else {
-            result = !resultCode;
         }
     } else {
-        result = !SQuery(_db, "read/write transaction", query);
+        resultCode = SQuery(_db, "read/write transaction", query);
     }
+
+    // If we got a constraints error, throw that.
+    if (resultCode == SQLITE_CONSTRAINT) {
+        throw constraint_error();
+    }
+
     _checkInterruptErrors("SQLite::write"s);
     _writeElapsed += STimeNow() - before;
-    if (!result) {
+    if (resultCode) {
         return false;
     }
 

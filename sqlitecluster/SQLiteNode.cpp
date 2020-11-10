@@ -186,48 +186,59 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
 
             try {
                 int result = -1;
-                int attemptCount = 1;
+                int commitAttemptCount = 1;
                 while (result != SQLITE_OK) {
-                    if (attemptCount > 1) {
-                        SINFO("Commit attempt number " << attemptCount << " for concurrent replication.");
+                    if (commitAttemptCount > 1) {
+                        SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
                     SINFO("BEGIN for commit " << newCount);
-                    node.handleBeginTransaction(db, peer, command, attemptCount > 1);
+                    bool uniqueContraintsError = false;
+                    try {
+                        node.handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
 
-                    // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
-                    // skip this, we did it above) to enforce that commits are in the same order on followers as on
-                    // leader.
-                    if (!quorum) {
-                        // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
-                        // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
-                        // on the checkpoint if these are started out of order.
-                        //
-                        // Let's see if we can verify that happened.
-                        // Yes, we get this line logged 4 times from four threads as their last activity and then:
-                        // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                        SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
-                        SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
-                        if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                            SINFO("Replication canceled mid-transaction, stopping.");
-                            db.rollback();
-                            break;
-                        } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                            SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                            db.rollback();
-                            db.waitForCheckpoint();
-                            continue;
+                        // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
+                        // skip this, we did it above) to enforce that commits are in the same order on followers as on
+                        // leader.
+                        if (!quorum) {
+                            // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
+                            // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
+                            // on the checkpoint if these are started out of order.
+                            //
+                            // Let's see if we can verify that happened.
+                            // Yes, we get this line logged 4 times from four threads as their last activity and then:
+                            // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
+                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                            SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
+                            if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                                SINFO("Replication canceled mid-transaction, stopping.");
+                                db.rollback();
+                                break;
+                            } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
+                                SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
+                                db.rollback();
+                                db.waitForCheckpoint();
+                                continue;
+                            }
                         }
+
+                        // Ok, almost ready.
+                        node.handlePrepareTransaction(db, peer, command);
+                    } catch (const SQLite::constraint_error& e) {
+                        // We could `continue` immediately upon catching this exception, but instead, we wait for the
+                        // leader commit notifier to be ready. This prevents us from spinning in an endless loop on the
+                        // same error over and over until whatever thread we're waiting for finishes.
+                        uniqueContraintsError = true;
                     }
-
-                    // Ok, almost ready.
-                    node.handlePrepareTransaction(db, peer, command);
-
                     // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
                     // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
                     // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
                     // a commit after us will be able to commit, either.
                     SQLiteSequentialNotifier::RESULT waitResult = node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"));
-                    if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                    if (uniqueContraintsError) {
+                        SINFO("Got unique constraints error in replication, restarting.");
+                        db.rollback();
+                        continue;
+                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
                         SINFO("Replication canceled mid-transaction, stopping.");
                         db.rollback();
                         break;
@@ -239,7 +250,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                     }
 
                     // Leader says it has committed this transaction, so we can too.
-                    ++attemptCount;
+                    ++commitAttemptCount;
                     result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
                     if (result != SQLITE_OK) {
                         db.rollback();
