@@ -1,9 +1,5 @@
-jobs:
-    include:
-        - dist: xenial
-        - dist: focal
-
 sudo: false
+dist: focal
 env:
     - GXX=g++-9 CC=gcc-9
 addons:
