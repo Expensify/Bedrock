@@ -221,6 +221,7 @@ void BedrockServer::sync(const SData& args,
     uint64_t nextActivity = STimeNow();
     unique_ptr<BedrockCommand> command(nullptr);
     bool committingCommand = false;
+    SSynchronizedQueue<int> signalQueue;
 
     // Timer for S_poll performance logging. Created outside the loop because it's cumulative.
     AutoTimer pollTimer("sync thread poll");
@@ -328,6 +329,7 @@ void BedrockServer::sync(const SData& args,
         // Add our command queues to our fd_map.
         syncNodeQueuedCommands.prePoll(fdm);
         server._completedCommands.prePoll(fdm);
+        SPrePollSignals(fdm, signalQueue);
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
@@ -336,8 +338,8 @@ void BedrockServer::sync(const SData& args,
             S_poll(fdm, max(nextActivity, now) - now);
         }
 
-        // And set our next timeout for 20ms from now.
-        nextActivity = STimeNow() + 20'000;
+        // And set our next timeout for 1s from now.
+        nextActivity = STimeNow() + 1'000'000;
 
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
@@ -346,6 +348,7 @@ void BedrockServer::sync(const SData& args,
             SAUTOPREFIX(SData());
 
             // Process any activity in our plugins.
+            SPostPollSignals(fdm, signalQueue);
             AutoTimerTime postPollTime(postPollTimer);
             server._postPollPlugins(fdm, nextActivity);
             server._syncNode->postPoll(fdm, nextActivity);
@@ -766,7 +769,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
             command = unique_ptr<BedrockCommand>(nullptr);
 
             // And get another one.
-            command = commandQueue.get(20'000);
+            command = commandQueue.get(50'000); // This is kind of expensive when spinning in multiple threads.
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " in worker, "
@@ -1416,7 +1419,7 @@ void BedrockServer::prePoll(fd_map& fdm) {
     STCPServer::prePoll(fdm);
 }
 
-void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+void BedrockServer::postPoll(fd_map& fdm) {
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
