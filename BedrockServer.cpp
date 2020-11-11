@@ -336,8 +336,8 @@ void BedrockServer::sync(const SData& args,
             S_poll(fdm, max(nextActivity, now) - now);
         }
 
-        // And set our next timeout for 1 second from now.
-        nextActivity = STimeNow() + STIME_US_PER_S;
+        // And set our next timeout for 20ms from now.
+        nextActivity = STimeNow() + 20'000;
 
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
@@ -766,7 +766,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
             command = unique_ptr<BedrockCommand>(nullptr);
 
             // And get another one.
-            command = commandQueue.get(1000000);
+            command = commandQueue.get(20'000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " in worker, "
@@ -1655,8 +1655,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Log the timing of this loop.
     uint64_t readElapsedMS = (STimeNow() - acceptEndTime) / 1000;
-    SINFO("[performance] Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
-          << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
+    if (socketList.size() || readElapsedMS) {
+        SINFO("[performance] Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
+              << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
+    }
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
