@@ -1,5 +1,4 @@
 sudo: false
-dist: focal
 env:
     - GXX=g++-9 CC=gcc-9
 addons:
@@ -14,6 +13,7 @@ notifications:
         on_success: never
 before_install:
 script: ./travis.sh
+dist: focal
 deploy:
     provider: releases
     # `api_key` is an encrypted oauth token for rafecolton. See https://docs.travis-ci.com/user/deployment/releases
