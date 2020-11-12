@@ -74,6 +74,8 @@ void SPrePollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue) {
 }
 
 void SPostPollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue) {
+    // clear the pipe buffer.
+    queue.postPoll(fdm);
     try {
         while (true) {
             queue.pop();

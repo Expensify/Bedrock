@@ -1141,7 +1141,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
 
         // If we hit the timeout, doesn't matter if we've got work to do. Exit.
         if (server._gracefulShutdownTimeout.ringing()) {
-            SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
+            SINFO("_shutdownState is " <<  server._shutdownState.load() << " and we've timed out, exiting worker.");
             return;
         }
     }
