@@ -625,6 +625,17 @@ inline SFastBuffer S_recv(int s) {
 bool S_sendconsume(int s, SFastBuffer& sendBuffer);
 int S_poll(fd_map& fdm, uint64_t timeout);
 
+// There's currently no `SSignal.h`, everything is contained here in libstuff.h, so we need to include
+// SSynchronizedQueue here.
+#include "SSynchronizedQueue.h"
+
+// Gets ready for a poll loop top be interrupted if a signal occurs. If that happens, the signal number will be added
+// to `queue` and poll will return early.
+void SPrePollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue);
+
+// This just clears `queue`, and is provided mostly to keep the API consistent with SPrePollSignals.
+void SPostPollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue);
+
 // Network helpers
 string SGetHostName();
 string SGetPeerName(int s);
