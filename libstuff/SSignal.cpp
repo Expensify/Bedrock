@@ -27,6 +27,11 @@ thread _SSignal_signalThread;
 // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
 thread_local int _SSignal_threadCaughtSignalNumber = 0;
 
+// Required to allow signals to interrupt calls to `poll`, keeps track of any `poll` loop that wants to listen for
+// signals.
+mutex _SSignal_waitQueueMutex;
+list<SSynchronizedQueue<int>*> _SSignal_waitQueueList;
+
 bool SCheckSignal(int signum) {
     uint64_t signals = _SSignal_pendingSignalBitMask.load();
     signals >>= signum;
@@ -57,6 +62,27 @@ string SGetSignalDescription() {
 
 void SClearSignals() {
     _SSignal_pendingSignalBitMask.store(0);
+}
+
+void SPrePollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue) {
+    lock_guard<mutex> lock(_SSignal_waitQueueMutex);
+    queue.prePoll(fdm);
+    if (SGetSignals()) {
+        queue.push(SGetSignals());
+    }
+    _SSignal_waitQueueList.push_back(&queue);
+}
+
+void SPostPollSignals(fd_map& fdm, SSynchronizedQueue<int>& queue) {
+    // clear the pipe buffer.
+    queue.postPoll(fdm);
+    try {
+        while (true) {
+            queue.pop();
+        }
+    } catch (const out_of_range& e) {
+        // done.
+    }
 }
 
 void SInitializeSignals() {
@@ -129,7 +155,13 @@ void _SSignal_signalHandlerThreadFunc() {
             } else {
                 // Handle every other signal just by setting the mask. Anyone that cares can look them up.
                 SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
+                lock_guard<mutex> lock(_SSignal_waitQueueMutex);
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
+                for (auto q : _SSignal_waitQueueList) {
+                    int s = signum;
+                    q->push(move(s));
+                }
+                _SSignal_waitQueueList.clear();
             }
         }
     }
