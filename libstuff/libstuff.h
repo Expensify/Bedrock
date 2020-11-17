@@ -709,10 +709,22 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
 // --------------------------------------------------------------------------
 inline string SUNQUOTED_TIMESTAMP(uint64_t when) { return SComposeTime("%Y-%m-%d %H:%M:%S", when); }
+inline string SUNQUOTED_TIMESTAMP_WITH_MILLISECONDS(uint64_t when) {
+    const auto now = std::chrono::system_clock::now();
+    const auto nowAsTimeT = std::chrono::system_clock::to_time_t(now);
+    const auto nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()) % 1000;
+    std::stringstream nowSs;
+    nowSs
+        << std::put_time(std::localtime(&nowAsTimeT), "%Y-%m-%d %Y %T")
+        << '.' << std::setfill('0') << std::setw(3) << nowMs.count();
+    return nowSs.str();
+}
 inline string STIMESTAMP(uint64_t when) { return SQ(SUNQUOTED_TIMESTAMP(when)); }
 inline string SUNQUOTED_CURRENT_TIMESTAMP() { return SUNQUOTED_TIMESTAMP(STimeNow()); }
 inline string SCURRENT_TIMESTAMP() { return STIMESTAMP(STimeNow()); }
 string SCURRENT_TIMESTAMP_MS();
+inline string SCURRENT_TIMESTAMP_WITH_MILLISECONDS() { return SQ(SUNQUOTED_TIMESTAMP_WITH_MILLISECONDS(STimeNow())); }
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff
