@@ -192,7 +192,7 @@ class BedrockServer : public SQLiteServer {
 
     // Accept connections and dispatch requests
     // STCPNode API.
-    void postPoll(fd_map& fdm);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
