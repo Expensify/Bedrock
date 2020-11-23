@@ -351,7 +351,7 @@ int main(int argc, char* argv[]) {
         chrono::steady_clock::duration postPollCounter(0);
         chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-        SSynchronizedQueue<int> signalQueue;
+        uint64_t nextActivity = STimeNow();
         while (!server.shutdownComplete()) {
             if (server.shouldBackup() && server.isDetached()) {
                 BackupDB(args["-db"]);
@@ -360,12 +360,12 @@ int main(int argc, char* argv[]) {
             // Wait and process
             fd_map fdm;
             server.prePoll(fdm);
-            SPrePollSignals(fdm, signalQueue);
+            const uint64_t now = STimeNow();
             auto timeBeforePoll = chrono::steady_clock::now();
-            S_poll(fdm, 1'000'000);
-            SPostPollSignals(fdm, signalQueue);
+            S_poll(fdm, max(nextActivity, now) - now);
+            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
             auto timeAfterPoll = chrono::steady_clock::now();
-            server.postPoll(fdm);
+            server.postPoll(fdm, nextActivity);
             auto timeAfterPostPoll = chrono::steady_clock::now();
 
             pollCounter += timeAfterPoll - timeBeforePoll;
