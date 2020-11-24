@@ -52,8 +52,9 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     // Clean up the socket and done
     _activeTransactionList.remove(transaction);
     _completedTransactionList.remove(transaction);
-    if (transaction->s) {
+    if (transaction->s || SContains(_closedSockets, transaction->s)) {
         closeSocket(transaction->s);
+        _closedSockets.push_front(transaction->s);
     }
     transaction->s = nullptr;
     delete transaction;
@@ -238,4 +239,61 @@ bool SStandaloneHTTPSManager::_onRecv(Transaction* transaction)
 {
     transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
     return false;
+}
+
+list<SStandaloneHTTPSManager::Transaction*> SStandaloneHTTPSManager::_httpsSendMultiple(const string& url, vector<SData>& sendRequests)
+{
+    // Synchronize dequeuing requests, and saving results.
+    int currentIndex = 0;
+
+    string host, path;
+    if (!SParseURI(url, host, path)) {
+        _activeTransactionList.push_front(_createErrorTransaction());
+        return _activeTransactionList;
+    }
+    if (!SContains(host, ":")) {
+        host += ":443";
+    }
+
+    // Our results go here.
+    list<SStandaloneHTTPSManager::Transaction*> currentSocketTransactions;
+//    currentSocketTransactions.resize(sendRequests.size());
+
+    // This tries to create a socket on the correct port.
+    SX509* x509 = SX509Open(_pem, _srvCrt, _caCrt);
+    Socket* s = openSocket(host, x509);
+SINFO("[testIt] created a socket");
+    // This continues until there are no more requests to process on the socket.
+    size_t myIndex = 0;
+    SData myRequest;
+    while (true) {
+        // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
+        Transaction* transaction = new Transaction(*this);
+        transaction->s = s;
+
+        myIndex = currentIndex;
+        currentIndex++;
+        if (myIndex >= sendRequests.size()) {
+            // No more requests to process.
+            break;
+        } else {
+            myRequest = sendRequests[myIndex];
+        }
+
+        transaction->fullRequest = myRequest;
+SINFO("[testIt] sending a request to GIACT");
+        // Send the request.
+        transaction->s->send(myRequest.serialize());
+
+        // Keep track of the transaction.
+        SAUTOLOCK(_listMutex);
+        SINFO("[testIt] activeTransactionList size before: " << _activeTransactionList.size());
+        SINFO("[testIt] currentSocketTransactions size before: " << currentSocketTransactions.size());
+        _activeTransactionList.push_front(transaction);
+        currentSocketTransactions.push_front(transaction);
+        SINFO("[testIt] activeTransactionList size after: " << _activeTransactionList.size());
+        SINFO("[testIt] currentSocketTransactions size after: " << currentSocketTransactions.size());
+    }
+
+    return currentSocketTransactions;
 }
