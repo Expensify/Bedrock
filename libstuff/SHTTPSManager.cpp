@@ -52,9 +52,9 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     // Clean up the socket and done
     _activeTransactionList.remove(transaction);
     _completedTransactionList.remove(transaction);
-    if (transaction->s || SContains(_closedSockets, transaction->s)) {
+    if (transaction->s && !SContains(_closedSocketsList, transaction->s)) {
         closeSocket(transaction->s);
-        _closedSockets.push_front(transaction->s);
+        _closedSocketsList.push_front(transaction->s);
     }
     transaction->s = nullptr;
     delete transaction;
@@ -257,16 +257,15 @@ list<SStandaloneHTTPSManager::Transaction*> SStandaloneHTTPSManager::_httpsSendM
 
     // Our results go here.
     list<SStandaloneHTTPSManager::Transaction*> currentSocketTransactions;
-//    currentSocketTransactions.resize(sendRequests.size());
 
     // This tries to create a socket on the correct port.
     SX509* x509 = SX509Open(_pem, _srvCrt, _caCrt);
     Socket* s = openSocket(host, x509);
-SINFO("[testIt] created a socket");
-    // This continues until there are no more requests to process on the socket.
+
     size_t myIndex = 0;
     SData myRequest;
     while (true) {
+        // This continues until all of the passed requests have been sent on the socket.
         // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
         Transaction* transaction = new Transaction(*this);
         transaction->s = s;
@@ -281,18 +280,16 @@ SINFO("[testIt] created a socket");
         }
 
         transaction->fullRequest = myRequest;
-SINFO("[testIt] sending a request to GIACT");
+
         // Send the request.
         transaction->s->send(myRequest.serialize());
 
         // Keep track of the transaction.
         SAUTOLOCK(_listMutex);
-        SINFO("[testIt] activeTransactionList size before: " << _activeTransactionList.size());
-        SINFO("[testIt] currentSocketTransactions size before: " << currentSocketTransactions.size());
         _activeTransactionList.push_front(transaction);
+
+        // In case this gets called by multiple threads, return only the transaction results from this thread.
         currentSocketTransactions.push_front(transaction);
-        SINFO("[testIt] activeTransactionList size after: " << _activeTransactionList.size());
-        SINFO("[testIt] currentSocketTransactions size after: " << currentSocketTransactions.size());
     }
 
     return currentSocketTransactions;
