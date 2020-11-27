@@ -54,7 +54,7 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     _completedTransactionList.remove(transaction);
     if (transaction->s && !SContains(_closedSocketsList, transaction->s)) {
         closeSocket(transaction->s);
-        _closedSocketsList.push_front(transaction->s);
+        _closedSocketsList.push_back(transaction->s);
     }
     transaction->s = nullptr;
     delete transaction;
@@ -197,30 +197,36 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     transaction->response = 503;
     transaction->finished = STimeNow();
     SAUTOLOCK(_listMutex);
-    _completedTransactionList.push_front(transaction);
+    _completedTransactionList.push_back(transaction);
     return transaction;
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request) {
-    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
-    // completed transaction with an error response.
-    string host, path;
-    if (!SParseURI(url, host, path)) {
-        return _createErrorTransaction();
-    }
-    if (!SContains(host, ":")) {
-        host += ":443";
-    }
-
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, Socket* s)
+{
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
     Transaction* transaction = new Transaction(*this);
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
-    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    Socket* s = openSocket(host, x509);
+    // If a socket was not passed, open a new socket.
     if (!s) {
-        delete transaction;
-        return _createErrorTransaction();
+        // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
+        // completed transaction with an error response.
+        string host, path;
+        if (!SParseURI(url, host, path)) {
+            return _createErrorTransaction();
+        }
+        if (!SContains(host, ":")) {
+            host += ":443";
+        }
+
+        // If this is going to be an https transaction, create a certificate and give it to the socket.
+        SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
+        s = openSocket(host, x509);
+
+        // If there is still no socket, then just return a completed transaction with an error response.
+        if (!s) {
+            delete transaction;
+            return _createErrorTransaction();
+        }
     }
 
     transaction->s = s;
@@ -231,7 +237,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
+    _activeTransactionList.push_back(transaction);
     return transaction;
 }
 
@@ -241,56 +247,41 @@ bool SStandaloneHTTPSManager::_onRecv(Transaction* transaction)
     return false;
 }
 
-list<SStandaloneHTTPSManager::Transaction*> SStandaloneHTTPSManager::_httpsSendMultiple(const string& url, vector<SData>& sendRequests)
+list<SStandaloneHTTPSManager::Transaction*> SStandaloneHTTPSManager::_httpsSendMultiple(const string& url, list<SData>& requests)
 {
-    // Synchronize dequeuing requests, and saving results.
-    int currentIndex = 0;
+    // Our results go here.
+    list<SStandaloneHTTPSManager::Transaction*> transactions;
 
+    // Get the host information.
     string host, path;
     if (!SParseURI(url, host, path)) {
-        _activeTransactionList.push_front(_createErrorTransaction());
-        return _activeTransactionList;
+        SStandaloneHTTPSManager::Transaction* transaction = _createErrorTransaction();
+        transactions.push_back(transaction);
+        return transactions;
     }
     if (!SContains(host, ":")) {
         host += ":443";
     }
 
-    // Our results go here.
-    list<SStandaloneHTTPSManager::Transaction*> currentSocketTransactions;
-
-    // This tries to create a socket on the correct port.
+    // Create a socket.
     SX509* x509 = SX509Open(_pem, _srvCrt, _caCrt);
     Socket* s = openSocket(host, x509);
 
-    size_t myIndex = 0;
-    SData myRequest;
-    while (true) {
-        // This continues until all of the passed requests have been sent on the socket.
-        // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
-        Transaction* transaction = new Transaction(*this);
-        transaction->s = s;
-
-        myIndex = currentIndex;
-        currentIndex++;
-        if (myIndex >= sendRequests.size()) {
-            // No more requests to process.
-            break;
-        } else {
-            myRequest = sendRequests[myIndex];
-        }
-
-        transaction->fullRequest = myRequest;
-
-        // Send the request.
-        transaction->s->send(myRequest.serialize());
-
-        // Keep track of the transaction.
-        SAUTOLOCK(_listMutex);
-        _activeTransactionList.push_front(transaction);
-
-        // In case this gets called by multiple threads, return only the transaction results from this thread.
-        currentSocketTransactions.push_front(transaction);
+    // If opening a socket failed, then just return a completed transaction with an error response.
+    if (!s) {
+        SStandaloneHTTPSManager::Transaction* transaction = _createErrorTransaction();
+        transactions.push_back(transaction);
+        return transactions;
     }
 
-    return currentSocketTransactions;
+    // Send all of the requests over the socket.
+    for (auto& request : requests) {
+        // Send that transaction on the socket.
+        Transaction* transaction = _httpsSend(url, request, s);
+
+        // Add the transaction to our transactions list.
+        transactions.push_back(transaction);
+    }
+
+    return transactions;
 }

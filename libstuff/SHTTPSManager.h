@@ -59,10 +59,10 @@ class SStandaloneHTTPSManager : public STCPManager {
     const string _caCrt;
 
     // Methods
-    Transaction* _httpsSend(const string& url, const SData& request);
+    Transaction* _httpsSend(const string& url, const SData& request, Socket* s = nullptr);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
-    list<Transaction*> _httpsSendMultiple(const string& url, vector<SData>& sendRequests);
+    list<Transaction*> _httpsSendMultiple(const string& url, list<SData>& requests);
 
     list<Transaction*> _activeTransactionList;
     list<Transaction*> _completedTransactionList;
