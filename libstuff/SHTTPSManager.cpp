@@ -52,10 +52,13 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     // Clean up the socket and done
     _activeTransactionList.remove(transaction);
     _completedTransactionList.remove(transaction);
-    if (transaction->s && !SContains(_closedSocketsList, transaction->s)) {
+
+    // If the socket has not been closed and removed from the socketList, close it.
+    if (transaction->s && find(socketList.begin(), socketList.end(), transaction->s) != socketList.end()) {
         closeSocket(transaction->s);
-        _closedSocketsList.push_back(transaction->s);
     }
+
+    // Since the socket has been closed, update the transaction's socket to the null pointer.
     transaction->s = nullptr;
     delete transaction;
 }
