@@ -279,11 +279,17 @@ list<SStandaloneHTTPSManager::Transaction*> SStandaloneHTTPSManager::_httpsSendM
 
     // Send all of the requests over the socket.
     for (auto& request : requests) {
-        // Send that transaction on the socket.
+        // Create a request transaction
         Transaction* transaction = _httpsSend(url, request, s);
 
-        // Add the transaction to our transactions list.
+        // Send the transaction on the socket and add it to our transactions list.
         transactions.push_back(transaction);
+
+        // There is no guarantee that multiple responses on the same socket will come back in the order they were sent.
+        // Wait until we have the response from the current request before sending the next one.
+        while (transaction->fullResponse.empty()) {
+            continue;
+        }
     }
 
     return transactions;
