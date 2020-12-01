@@ -335,7 +335,8 @@ int main(int argc, char* argv[]) {
     // Create our BedrockServer object so we can keep it for the life of the
     // program.
     SINFO("Starting bedrock server");
-    BedrockServer server(args);
+    BedrockServer* _server = new BedrockServer(args);
+    BedrockServer& server = *_server;
 
     // Keep going until someone kills it (either via TERM or Control^C)
     while (!(SGetSignal(SIGTERM) || SGetSignal(SIGINT))) {
@@ -386,6 +387,10 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
+
+    SINFO("Deleting BedrockServer");
+    delete _server;
+    SINFO("BedrockServer deleted");
 
     // All done
     SINFO("Graceful process shutdown complete");

@@ -23,6 +23,33 @@ class SQLite {
         const char* what() const noexcept { return "checkpoint_required"; }
     };
 
+    // We can get a SQLITE_CONSTRAINT error in a write command for two reasons. One is a legitimate error caused
+    // by a user trying to insert two rows with the same key. The other is in multi-threaded replication, when
+    // transactions start in a different order on a follower than they did on the leader. Consider this example case:
+    // CREATE TABLE t (identifier PRIMARY KEY);
+    //
+    // With the start state on all nodes:
+    // INSERT INTO t VALUES(1);
+    //
+    // If you run these two commands in this order:
+    // DELETE FROM t WHERE identifier = 1;
+    // INSERT INTO t VALUES(1);
+    //
+    // They will work just fine. If you run them simultaneously, you might expect that they'd conflict, but they don't
+    // because the unique constraints error doesn't get thrown at commit, it gets thrown at the time the `INSERT`
+    // command tries to run but the `DELETE` hasn't completed yet. Re-running the `INSERT` after the `DELETE` will work
+    // as expected.
+    //
+    // If we detect this error, we throw the following exception, which just returns an error when encountered in a
+    // normal `process` phase of a command on leader, but is treated similarly to a commit conflict in replication, and
+    // re-runs the command after the other command (the `DELETE`) has finished.
+    class constraint_error : public exception {
+      public :
+        constraint_error() {};
+        virtual ~constraint_error() {};
+        const char* what() const noexcept { return "constraint_error"; }
+    };
+
     // Constant to use like a sqlite result code when commits are disabled (see: https://www.sqlite.org/rescode.html)
     // Because the existing codes all use values in the first and second bytes of the int (they're or'ed with values
     // left shifted by 8 bits, see SQLITE_ERROR_MISSING_COLLSEQ in sqlite.h for an example), we left shift by 16 for
