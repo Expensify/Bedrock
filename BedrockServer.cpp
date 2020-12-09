@@ -1063,7 +1063,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                                 core.rollback();
                             } else {
                                 BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
-                                commitSuccess = core.commit();
+                                commitSuccess = core.commit(SQLiteNode::stateName(server._replicationState));
                             }
                         }
                         if (commitSuccess) {

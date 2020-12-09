@@ -6,7 +6,7 @@
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
-bool SQLiteCore::commit() {
+bool SQLiteCore::commit(const string& description) {
     // This should always succeed.
     SASSERT(_db.prepare());
 
@@ -17,7 +17,7 @@ bool SQLiteCore::commit() {
     }
 
     // Perform the actual commit, rollback if it fails.
-    int errorCode = _db.commit();
+    int errorCode = _db.commit(description);
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
         SINFO("Commit conflict, rolling back.");
         _db.rollback();
