@@ -668,7 +668,7 @@ bool SQLite::prepare() {
     return true;
 }
 
-int SQLite::commit() {
+int SQLite::commit(const string& description) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -724,7 +724,6 @@ int SQLite::commit() {
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
-        SINFO("SQuery 'COMMIT' took " << time << ".");
 
         // And record pages after the commit.
         int endPages;
@@ -736,9 +735,6 @@ int SQLite::commit() {
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
         pWal->pMethods->xFileSize(pWal, &sz);
 
-        // And log both these statistics.
-        SINFO("COMMIT operation wrote " << (endPages - startPages) << " pages. WAL file size is " << sz << " bytes.");
-
         if (_currentTransactionAttemptCount != -1) {
             const char* report = sqlite3_begin_concurrent_report(_db);
             string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
@@ -749,7 +745,6 @@ int SQLite::commit() {
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
-        SDEBUG("Commit successful (" << _sharedData.commitCount << "), releasing commitLock.");
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
@@ -775,7 +770,9 @@ int SQLite::commit() {
                   << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
                   << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         }
-        SINFO("Transaction commit with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
+        SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
+              << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
+              << " served from cache.");
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
