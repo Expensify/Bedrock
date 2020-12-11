@@ -2224,6 +2224,8 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
 
     for (auto request : commandPtr->httpsRequests) {
         if (!request->response) {
+            SAUTOPREFIX(commandPtr->request);
+            SINFO("Pushing HTTPS request to _outstandingHTTPSRequests to complete.");
             _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
         }
     }
@@ -2248,6 +2250,8 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         if (commandPtrIt != _outstandingHTTPSCommands.end()) {
             // I guess it's still here! Is it done?
             if (commandPtr->areHttpsRequestsComplete()) {
+                SAUTOPREFIX(commandPtr->request);
+                SINFO("All HTTPS requests complete, returning to main queue.");
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
                 _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
                 _outstandingHTTPSCommands.erase(commandPtrIt);

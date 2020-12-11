@@ -179,7 +179,8 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     response(0),
     manager(manager_),
     isDelayedSend(0),
-    sentTime(0)
+    sentTime(0),
+    requestID(SThreadLogPrefix)
 {
     manager.validate();
 }
