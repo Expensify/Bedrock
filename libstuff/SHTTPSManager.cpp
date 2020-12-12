@@ -117,6 +117,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
+        SAUTOPREFIX(active->requestID);
         if (active->isDelayedSend && !active->sentTime) {
             // This transaction was created, queued, and then meant to be sent later.
             // As such we'll use STimeNow() as it's "created" time for time.

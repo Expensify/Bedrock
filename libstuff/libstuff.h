@@ -313,6 +313,11 @@ struct SAutoThreadPrefix {
         const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
         SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
     }
+    SAutoThreadPrefix(const string& rID) {
+        oldPrefix = SThreadLogPrefix;
+        const string requestID = rID.empty() ? "xxxxxx" : rID;
+        SLogSetThreadPrefix(requestID + " ");
+    }
     ~SAutoThreadPrefix() { SLogSetThreadPrefix(oldPrefix); }
 
   private:
