@@ -1009,7 +1009,7 @@ bool SQLiteNode::update() {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
                 uint64_t beforeCommit = STimeNow();
-                int result = _db.commit();
+                int result = _db.commit(stateName(_state));
                 SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
                 // If this is the case, there was a commit conflict.
@@ -2269,7 +2269,7 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
 
         // Transaction succeeded, commit and go to the next
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
-        _db.commit();
+        _db.commit(stateName(_state));
 
         // Should work here.
         SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
@@ -2581,7 +2581,7 @@ int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t c
     }
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-    int result = db.commit();
+    int result = db.commit(stateName(_state));
     if (result == SQLITE_BUSY_SNAPSHOT) {
         // conflict, bail out early.
         return result;
@@ -2777,7 +2777,7 @@ void SQLiteNode::handleSerialCommitTransaction(Peer* peer, const SData& message)
     }
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << _db.getUncommittedQuery());
-    _db.commit();
+    _db.commit(stateName(_state));
 
     // Clear the list of committed transactions. We're following, so we don't need to send these.
     _db.popCommittedTransactions();

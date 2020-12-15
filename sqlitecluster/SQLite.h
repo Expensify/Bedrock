@@ -167,7 +167,7 @@ class SQLite {
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
-    int commit();
+    int commit(const string& description = "UNSPECIFIED");
 
     // Cancels the current transaction and rolls it back.
     void rollback();
