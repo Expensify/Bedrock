@@ -21,6 +21,7 @@ class SStandaloneHTTPSManager : public STCPManager {
         SStandaloneHTTPSManager& manager;
         bool isDelayedSend;
         uint64_t sentTime;
+        const string requestID;
     };
 
     // Constructor/Destructor
