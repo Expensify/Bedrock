@@ -52,6 +52,7 @@ void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNe
             } else {
                 newCommand = getCommandFromPlugins(move(command));
             }
+            SAUTOPREFIX(newCommand->request);
             SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
         }
 
