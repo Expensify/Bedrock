@@ -1742,6 +1742,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             if (!message.isSet("ID")) {
                 STHROW("missing ID");
             }
+            SAUTOPREFIX(request);
             PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
 
             // Create a new Command and send to the server.
