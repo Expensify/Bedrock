@@ -1092,13 +1092,24 @@ string SComposePOST(const STable& nameValueMap) {
 
 // --------------------------------------------------------------------------
 bool SParseHost(const string& host, string& domain, uint16_t& port) {
-    // Split around the ':'
-    domain = SBefore(host, ":");
-    const string& portStr = SAfter(host, ":");
+    // Split around ':' or ']:'
+    string portStr;
+    size_t cnt = count(host.begin(), host.end(), ':');
+    if (cnt == 1) {
+        // IPv4
+        domain = SBefore(host, ":");
+        portStr = SAfter(host, ":");
+    } else if (cnt > 1) {
+        // IPv6
+        domain = SAfter(SBefore(host, "]:"), "[");
+        portStr = SAfter(host, "]:");
+    } else {
+        return false;
+    }
     if (domain.empty() || portStr.empty())
         return false; // Invalid host
 
-    // Make sure the second part is a valid 16-bit host
+    // Make sure the second part is a valid 16-bit port
     int portInt = atoi(portStr.c_str());
     if (portInt < 0 || portInt > 65535)
         return false; // Invalid port
@@ -1598,87 +1609,90 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         uint16_t port = 0;
         if (!SParseHost(host, domain, port)) {
             STHROW("invalid host: " + host);
+        }  else {
+            SINFO("host: " << host << " domain: " << domain << "  port: " << port);
         }
 
-        // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
-        if (!ip || ip == INADDR_NONE) {
-            // Nope -- resolve the domain
-            uint64_t start = STimeNow();
+        uint64_t start = STimeNow();
 
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
+        // Allocate and initialize addrinfo structures.
+        struct addrinfo hints;
+        memset(&hints, 0, sizeof hints);
+        struct addrinfo* resolved = nullptr;
 
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
+        // Set up the hints.
+        hints.ai_family = AF_UNSPEC; // IPv4 or IPv6
+        hints.ai_socktype = SOCK_STREAM;
 
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+        // Do the initialization.
+        int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+        SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + result);
-            }
-            // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
-            ip = addr->sin_addr.s_addr;
-            char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-            // Done resolving.
+        // There was a problem.
+        if (result || !resolved) {
             freeaddrinfo(resolved);
+            STHROW("can't resolve host error no#" + result);
         }
+
+        // Grab the resolved address.
+        string ipver;
+        sockaddr* addr = resolved->ai_addr;
+        char plainTextIP[INET6_ADDRSTRLEN];
+        if (resolved->ai_family == AF_INET) {
+            // IPv4
+            inet_ntop(resolved->ai_family, &((sockaddr_in *)addr)->sin_addr, plainTextIP, sizeof(plainTextIP));
+            ipver = "IPv4";
+        } else {
+            // IPv6
+            inet_ntop(resolved->ai_family, &((sockaddr_in6 *)addr)->sin6_addr, plainTextIP, sizeof(plainTextIP));
+            ipver = "IPv6";
+        }
+        SINFO("Resolved " << domain << " to ip: " << plainTextIP << " (" << ipver << ")");
 
         // Open a socket
         if (isTCP)
-            s = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+            s = (int)socket(resolved->ai_family, SOCK_STREAM, IPPROTO_TCP);
         else
-            s = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (!s || s == -1)
+            s = (int)socket(resolved->ai_family, SOCK_DGRAM, IPPROTO_UDP);
+        
+        if (!s || s == -1) {
+            freeaddrinfo(resolved);
             STHROW("couldn't open");
+        }
 
         // Enable non-blocking, if requested
         if (!isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
-            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
+            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
+                freeaddrinfo(resolved);
                 STHROW("couldn't set non-blocking");
+            }
         }
 
         // If this is a port, bind
         if (isPort) {
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
-            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable))) {
+                freeaddrinfo(resolved);
                 STHROW("couldn't set REUSEADDR");
+            }
 
             // Bind to the configured port
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
-            if (::bind(s, (sockaddr*)&addr, sizeof(addr))) {
+            if (::bind(s, resolved->ai_addr, resolved->ai_addrlen)) {
+                freeaddrinfo(resolved);
                 STHROW("couldn't bind");
             }
 
             // Start listening, if TCP
-            if (isTCP && listen(s, SOMAXCONN))
+            if (isTCP && listen(s, SOMAXCONN)) {
+                freeaddrinfo(resolved);
                 STHROW("couldn't listen");
+            }
         } else {
             // If TCP, connect
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
-            if (connect(s, (sockaddr*)&addr, sizeof(addr)) == -1)
+            if (connect(s, resolved->ai_addr, resolved->ai_addrlen) == -1)
                 switch (S_errno) {
                 case S_EWOULDBLOCK:
                 case S_EALREADY:
@@ -1689,9 +1703,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
                     break;
 
                 default:
+                    freeaddrinfo(resolved);
                     STHROW("couldn't connect");
                 }
         }
+
+        // Done resolving.
+        freeaddrinfo(resolved);
 
         // Success, ready to go.
         return s;
