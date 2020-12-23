@@ -24,7 +24,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
-                                    TEST(LibStuff::testContains))
+                                    TEST(LibStuff::testContains),
+                                    TEST(LibStuff::testParseHost))
     { }
 
     void testEncryptDecrpyt() {
@@ -593,5 +594,29 @@ struct LibStuff : tpunit::TestFixture {
 
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+    }
+
+    void testParseHost() {
+        string domain;
+        uint16_t port = 0;
+        ASSERT_TRUE(SParseHost("localhost:8888", domain, port));
+        ASSERT_EQUAL("localhost", domain);
+        ASSERT_EQUAL(8888, port);
+
+        ASSERT_TRUE(SParseHost("127.0.0.1:8080", domain, port));
+        ASSERT_EQUAL("127.0.0.1", domain);
+        ASSERT_EQUAL(8080, port);
+
+        ASSERT_TRUE(SParseHost("[::1]:8889", domain, port));
+        ASSERT_EQUAL("::1", domain);
+        ASSERT_EQUAL(8889, port);
+
+        ASSERT_TRUE(SParseHost("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:80", domain, port));
+        ASSERT_EQUAL("2001:0db8:85a3:0000:0000:8a2e:0370:7334", domain);
+        ASSERT_EQUAL(80, port);
+
+        ASSERT_FALSE(SParseHost("127.0.0.1", domain, port));
+        ASSERT_FALSE(SParseHost("ip6-localhost", domain, port));
+        ASSERT_FALSE(SParseHost("::1", domain, port));
     }
 } __LibStuff;
