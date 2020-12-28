@@ -1,6 +1,7 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include "DB.h"
+#include "BedrockServer.h"
 
 #define MYSQL_NUM_VARIABLES 292
 extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
@@ -96,16 +97,12 @@ class BedrockPlugin_MySQL : public BedrockPlugin_DB {
   public:
     BedrockPlugin_MySQL(BedrockServer& s);
     virtual const string& getName() const;
-    virtual void initialize(const SData& args, BedrockServer& server) { _args = args; }
-    virtual string getPort() {
-        return _args.isSet("-mysql.host") ? _args["-mysql.host"] : "localhost:3306";
-    }
+    virtual string getPort();
     virtual void onPortAccept(STCPManager::Socket* s);
     virtual void onPortRecv(STCPManager::Socket* s, SData& request);
     virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s);
 
   private:
     // Attributes
-    SData _args;
     static const string name;
 };
