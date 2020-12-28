@@ -229,6 +229,10 @@ BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin_DB(s)
 {
 }
 
+string BedrockPlugin_MySQL::getPort() {
+    return server.args.isSet("-mysql.host") ? server.args["-mysql.host"] : "localhost:3306";
+}
+
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
     // Send Protocol::HandshakeV10
     SINFO("Accepted MySQL request from '" << s->addr << "'");
