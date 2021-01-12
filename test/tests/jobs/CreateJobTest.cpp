@@ -349,7 +349,7 @@ struct CreateJobTest : tpunit::TestFixture {
             try {
                 // Let it repeat until it works or we run out of retries.
                 response = tester->executeWaitVerifyContentTable(command);
-                ASSERT_EQUAL(response["data"], "{}");
+                ASSERT_EQUAL(response["data"], "{\"originalNextRun\":\"" + originalJob[0][4] + "\"}");
                 ASSERT_EQUAL(response["jobID"], jobID);
                 ASSERT_EQUAL(response["name"], jobName);
             } catch (...) {
