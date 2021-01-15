@@ -10,9 +10,9 @@ using namespace std;
 int main (int argc, char** argv) {
     
     // Set our number of threads and number of loglines.
-    uint64_t logLineCount = 10'000'000;
+    uint64_t logLineCount = 100'000;
     atomic<uint64_t> currentLogLine(0);
-    size_t threadCount = 192;
+    size_t threadCount = 4;
 
     // Parse args.
     for (int i = 1; i < argc; i++) {
