@@ -274,17 +274,17 @@ extern void (*SSyslogFunc)(int priority, const char *format, ...);
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
-#define SSYSLOG(_PRI_, _MSG_)                                                               \
-    do {                                                                                    \
-        if (_g_SLogMask & (1 << (_PRI_))) {                                                 \
-            ostringstream __out;                                                            \
-            __out << _MSG_ << endl;                                                         \
-            const string s = __out.str();                                                   \
-            const string prefix = SWHEREAMI;                                                \
-            for (size_t i = 0; i < s.size(); i += 7168) {                                   \
-                SSyslogFunc(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str());             \
-            }                                                                               \
-        }                                                                                   \
+#define SSYSLOG(_PRI_, _MSG_)                                                   \
+    do {                                                                        \
+        if (_g_SLogMask & (1 << (_PRI_))) {                                     \
+            ostringstream __out;                                                \
+            __out << _MSG_ << endl;                                             \
+            const string s = __out.str();                                       \
+            const string prefix = SWHEREAMI;                                    \
+            for (size_t i = 0; i < s.size(); i += 7168) {                       \
+                SSyslogFunc(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+            }                                                                   \
+        }                                                                       \
     } while (false)
 
 #define SLOGPREFIX ""
