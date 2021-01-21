@@ -62,16 +62,31 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
+// Socket logging variables.
+thread_local struct sockaddr_un SSyslogSocketAddr;
+thread_local int SSyslogSocketFD = 0;
+thread_local string SProcessName;
+
+// Set to `syslog` or `SSyslogSocketDirect`.
+void (*SSyslogFunc)(int priority, const char *format, ...) = &SSyslogSocketDirect;
+
 void SInitialize(string threadName, const char* processName) {
     // If a specific process name has been supplied, initialize syslog with it.
     if (processName) {
         openlog(processName, 0, 0);
+        SProcessName = processName;
+    } else {
+        SProcessName = "bedrock";
     }
 
     // Initialize signal handling
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxxx ");
     SInitializeSignals();
+
+    SSyslogSocketAddr.sun_family = AF_UNIX;
+    strcpy(SSyslogSocketAddr.sun_path, "/run/systemd/journal/syslog");
+    SSyslogSocketFD = -1;
 }
 
 // Thread-local log prefix
@@ -140,6 +155,57 @@ vector<string> SException::details() const noexcept {
     vector<string> stack = SGetCallstack(_depth, _callstack);
     stack.push_back(string("Initially thrown from: ") + basename((char*)_file.c_str()) + ":" + to_string(_line));
     return stack;
+}
+
+void SSyslogSocketDirect(int priority, const char *format, ...) {
+    int socketError = 0;
+    static const size_t MAX_MESSAGE_SIZE = 8 * 1024;
+
+    // This block shouldn't be required, but it kicks in if this is used from somewhere that fails to call
+    // `SInitialize`. I figured this is better than just losing the log.
+    if (SSyslogSocketFD == 0) {
+        SSyslogSocketAddr.sun_family = AF_UNIX;
+        strcpy(SSyslogSocketAddr.sun_path, "/run/systemd/journal/syslog");
+        SSyslogSocketFD = -1;
+    }
+
+    if (SSyslogSocketFD == -1) {
+        // Create a socket if there isn't one already.
+        SSyslogSocketFD = socket(AF_UNIX, SOCK_DGRAM, 0);
+    }
+    if (SSyslogSocketFD == -1) {
+        // Error opening the socket. We'll fall back to regular syslog.
+        socketError = errno;
+    } else {
+        // At this point, the socket should be good.
+
+        // This is based on the message format here: https://tools.ietf.org/html/rfc5424#section-6 but doesn't actually
+        // match the format there, as it seems syslog ignores almost the entire "header" and "structured data" fields
+        // and treats them as part of the message.
+        string messageHeader = "<" + to_string(8 + priority) + ">" + SProcessName + ": ";
+        thread_local char messageBuffer[MAX_MESSAGE_SIZE];
+        strcpy(messageBuffer, messageHeader.c_str());
+        va_list argptr;
+        va_start(argptr, format);
+        int bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
+        va_end(argptr);
+
+        // Assume we send the whole message. We don't do anything to handle message truncation.
+        ssize_t bytesSent = sendto(SSyslogSocketFD, messageBuffer, bytesWritten + messageHeader.size(), 0, (struct sockaddr *)&SSyslogSocketAddr, sizeof(struct sockaddr_un));
+        if (bytesSent == -1) {
+            socketError = errno;
+            close(SSyslogSocketFD);
+            SSyslogSocketFD = -1;
+        }
+    }
+
+    if (socketError) {
+        syslog(LOG_WARNING, "Could not use direct logging socket (error: %i, %s), falling back to syslog syscall.", socketError, strerror(socketError));
+        va_list argptr;
+        va_start(argptr, format);
+        vsyslog(priority, format, argptr);
+        va_end(argptr);
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
