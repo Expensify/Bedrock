@@ -267,10 +267,10 @@ inline void SLogLevel(int level) {
 void SLogStackTrace();
 
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
-void SSyslogSocketDirect(int priority, const char *format, ...);
+void SSyslogSocketDirect(int priority, const char* format, ...);
 
-// Pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
-extern void (*SSyslogFunc)(int priority, const char *format, ...);
+// Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
+extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "

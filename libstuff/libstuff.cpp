@@ -68,7 +68,7 @@ thread_local int SSyslogSocketFD = 0;
 thread_local string SProcessName;
 
 // Set to `syslog` or `SSyslogSocketDirect`.
-void (*SSyslogFunc)(int priority, const char *format, ...) = &SSyslogSocketDirect;
+atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
 void SInitialize(string threadName, const char* processName) {
     // If a specific process name has been supplied, initialize syslog with it.
@@ -189,6 +189,7 @@ void SSyslogSocketDirect(int priority, const char *format, ...) {
         va_start(argptr, format);
         int bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
         va_end(argptr);
+
 
         // Assume we send the whole message. We don't do anything to handle message truncation.
         ssize_t bytesSent = sendto(SSyslogSocketFD, messageBuffer, bytesWritten + messageHeader.size(), 0, (struct sockaddr *)&SSyslogSocketAddr, sizeof(struct sockaddr_un));
