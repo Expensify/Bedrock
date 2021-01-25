@@ -103,7 +103,8 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
-        {"-logDirectlyToSyslogSocket", ""},
+        // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
+        //{"-logDirectlyToSyslogSocket", ""},
     };
 
     // Set defaults.
