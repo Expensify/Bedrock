@@ -1289,6 +1289,11 @@ BedrockServer::BedrockServer(const SData& args_)
         SQLite::enableTrace.store(true);
     }
 
+    // Bypass journald.
+    if (args.isSet("-logDirectlyToSyslogSocket")) {
+        SSyslogFunc = &SSyslogSocketDirect;
+    }
+
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
