@@ -90,12 +90,15 @@ void SInitialize(string threadName, const char* processName) {
         }
     }
 
+    // We statically store whichever process name was passed most recently to reuse. This lets new threads start up
+    // with the same process name as existing threads, even when using socket logging, since "openlog" has no effect
+    // then.
+    static string initialProcessName = processName ? processName : "bedrock";
+    SProcessName = initialProcessName;
+
     // If a specific process name has been supplied, initialize syslog with it.
     if (processName) {
         openlog(processName, 0, 0);
-        SProcessName = processName;
-    } else {
-        SProcessName = "bedrock";
     }
 
     // Initialize signal handling
