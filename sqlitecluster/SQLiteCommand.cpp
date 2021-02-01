@@ -9,12 +9,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
 
     // Add a request ID if one was missing.
     if (!request.isSet("requestID")) {
-        string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        string requestID;
-        for (int i = 0; i < 6; i++) {
-            requestID += chars[SRandom::rand64() % chars.size()];
-        }
-        request["requestID"] = requestID;
+        request["requestID"] = SRandom::randStr(8);
     }
     return request;
 }

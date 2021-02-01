@@ -12,13 +12,13 @@ uint64_t SRandom::rand64() {
     return _distribution64(_generator);
 }
 
-string SRandom::randStr(uint& length) {
-    string str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    string newstr;
-    int pos;
-    while(newstr.size() != length) {
-        pos = (rand64() % (str.size() - 1));
-        newstr += str.substr(pos,1);
+string SRandom::randStr(size_t length) {
+    char randomChars[63] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    char newstr[length + 1] = {0};
+    uniform_int_distribution<char> limitedRandom(0, 61);
+    for (size_t i = 0; i < length; i++) {
+        newstr[i] = randomChars[(size_t)limitedRandom(_generator)];
     }
+
     return newstr;
 }
