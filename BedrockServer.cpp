@@ -614,6 +614,7 @@ void BedrockServer::sync(const SData& args,
 
                         // If we just started a new HTTPS request, save it for later.
                         if (command->httpsRequests.size()) {
+                            // Why doesn't this one check for completeness like the other one?
                             server.waitForHTTPS(move(command));
 
                             // Move on to the next command until this one finishes.
@@ -2254,14 +2255,20 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         // can't find it in _outstandingHTTPSCommands, it must be done.
         auto commandPtrIt = _outstandingHTTPSCommands.find(commandPtr);
         if (commandPtrIt != _outstandingHTTPSCommands.end()) {
+            SAUTOPREFIX(commandPtr->request);
+
             // I guess it's still here! Is it done?
             if (commandPtr->areHttpsRequestsComplete()) {
-                SAUTOPREFIX(commandPtr->request);
                 SINFO("All HTTPS requests complete, returning to main queue.");
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
                 _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
                 _outstandingHTTPSCommands.erase(commandPtrIt);
                 commandsCompleted++;
+            } else {
+                SINFO("Some HTTPS requests (of " << commandPtr->httpsRequests.size() << ") still pending, not returning to main queue yet.");
+                for (auto& r : commandPtr->httpsRequests) {
+                    SINFO("Request methodLine: " << r->fullRequest.methodLine);
+                }
             }
         }
 

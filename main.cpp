@@ -277,7 +277,7 @@ int main(int argc, char* argv[]) {
     if (args.isSet("-v")) {
         // Verbose logging
         SINFO("Enabling verbose logging");
-        SLogLevel(LOG_DEBUG);
+        //SLogLevel(LOG_DEBUG);
     } else if (args.isSet("-q")) {
         // Quiet logging
         SLogLevel(LOG_WARNING);
