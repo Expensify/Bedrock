@@ -2087,6 +2087,8 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
         auto timeoutIt = _outstandingHTTPSCommands.begin();
         while (timeoutIt != _outstandingHTTPSCommands.end() && (*timeoutIt)->timeout() < now) {
             // Add all the transactions for this command, even if some are already complete, they'll just get ignored.
+            SAUTOPREFIX((*timeoutIt)->request);
+            SINFO("Timing out transactions for command.");
             for (auto transaction : (*timeoutIt)->httpsRequests) {
                 transactionTimeouts[transaction] = (*timeoutIt)->timeout();
             }
@@ -2100,13 +2102,15 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
                 // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
+                SINFO("Calling manager->postPoll 1.");
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
             } else {
                 // Otherwise, use the default timeout.
+                SINFO("Calling manager->postPoll 2.");
                 manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts);
             }
-
             // Move any fully completed commands back to the main queue.
+            SINFO("About to call finishWaitingForHTTPS with " << completedHTTPSRequests.size() << " completed requests."); 
             finishWaitingForHTTPS(completedHTTPSRequests);
         }
     }
@@ -2224,16 +2228,22 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
 
     // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
     BedrockCommand* commandPtr = command.get();
+    SAUTOPREFIX(commandPtr->request);
     command.release();
 
     // And we keep it in a set of all commands with outstanding HTTPS requests.
-    _outstandingHTTPSCommands.insert(commandPtr);
+    auto result = _outstandingHTTPSCommands.insert(commandPtr);
+    if (!result.second) {
+        SWARN("Failed inserting command, it was already there!");
+    }
 
     for (auto request : commandPtr->httpsRequests) {
         if (!request->response) {
-            SAUTOPREFIX(commandPtr->request);
-            SINFO("Pushing HTTPS request to _outstandingHTTPSRequests to complete.");
+            SINFO("Pushing HTTPS request to _outstandingHTTPSRequests to complete. Request: " << request << ", command: " << commandPtr);
             _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
+        } else {
+            // Oh crap, it's done already!
+            SINFO("request already complete, not marking as outstanding.");
         }
     }
 }
@@ -2242,6 +2252,9 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     lock_guard<mutex> lock(_httpsCommandMutex);
     int commandsCompleted = 0;
     for (auto transaction : completedHTTPSRequests) {
+        SAUTOPREFIX(transaction->requestID);
+        SINFO("Checking transaction in finishWaitingForHTTPS: " << transaction);
+        
         auto transactionIt = _outstandingHTTPSRequests.find(transaction);
         if (transactionIt == _outstandingHTTPSRequests.end()) {
             // We should never be looking for a transaction in this list that isn't there.
@@ -2249,6 +2262,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
             continue;
         }
         auto commandPtr = transactionIt->second;
+        SINFO("Transaction has command: " << commandPtr);
 
         // It's possible that we've already completed this command (imagine if completedHTTPSRequests contained more
         // than one request for the same command, the first one we looked at will have finished the command), so if we
@@ -2262,6 +2276,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
                 SINFO("All HTTPS requests complete, returning to main queue.");
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
                 _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
+                SINFO("Erasing command at address: " << *commandPtrIt << " and marking completed.");
                 _outstandingHTTPSCommands.erase(commandPtrIt);
                 commandsCompleted++;
             } else {
@@ -2270,11 +2285,14 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
                     SINFO("Request methodLine: " << r->fullRequest.methodLine);
                 }
             }
+        } else {
+            SINFO("Couldn't find command for request in _outstandingHTTPSCommands.");
         }
 
         // Now we can erase the transaction, as it's no longer outstanding.
         _outstandingHTTPSRequests.erase(transactionIt);
     }
+
     return commandsCompleted;
 }
 

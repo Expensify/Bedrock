@@ -121,6 +121,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list
         if (active->isDelayedSend && !active->sentTime) {
             // This transaction was created, queued, and then meant to be sent later.
             // As such we'll use STimeNow() as it's "created" time for time.
+            // Why don't we do this where we actually send it?
             SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
             active->sentTime = STimeNow();
         }

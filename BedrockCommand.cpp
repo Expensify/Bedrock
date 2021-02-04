@@ -66,7 +66,10 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
         SWARN("BedrockCommand '" + request.methodLine + "' created with no commandExecuteTime, should be done in base constructor!");
         start = STimeNow();
     }
-    return timeout + start;
+
+    int64_t retVal = timeout + start;
+    retVal -= retVal % 10'000; // Make these only have 10ms resolution to induce collisions.
+    return retVal;
 }
 
 BedrockCommand::~BedrockCommand() {
