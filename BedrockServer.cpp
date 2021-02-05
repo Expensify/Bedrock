@@ -2225,17 +2225,15 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
 
     // If the command has outstanding HTTPS requests, we'll need to save a plain pointer to it.
     BedrockCommand* commandPtr = 0;
-    for (auto request : commandPtr->httpsRequests) {
+    for (auto request : command->httpsRequests) {
         if (!request->response) {
-            // This request is outstanding, save it.
-            _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
-
-            // And if we haven't saved the pointer to the command, do so now.
+            // This request is outstanding, save it, and if we haven't saved the pointer to the command, do so now.
             if (!commandPtr) {
                 // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
                 commandPtr = command.get();
                 command.release();
             }
+            _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
         }
     }
 
