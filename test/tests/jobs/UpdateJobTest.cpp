@@ -6,6 +6,7 @@ struct UpdateJobTest : tpunit::TestFixture {
             : tpunit::TestFixture("UpdateJob",
                                   BEFORE_CLASS(UpdateJobTest::setupClass),
                                   TEST(UpdateJobTest::updateJob),
+                                  TEST(UpdateJobTest::updateMockedJob),
                                   AFTER_CLASS(UpdateJobTest::tearDownClass)) { }
 
     BedrockTester* tester;
@@ -44,6 +45,37 @@ struct UpdateJobTest : tpunit::TestFixture {
         tester->readDB("SELECT repeat, data, priority, nextRun FROM jobs WHERE jobID = " + jobID + ";", currentJob);
         ASSERT_EQUAL(currentJob[0][0], "HOURLY");
         ASSERT_EQUAL(currentJob[0][1], "{key:\"value\"}");
+        ASSERT_EQUAL(currentJob[0][2], "1000");
+        ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
+        ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
+    }
+
+    void updateMockedJob() {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        string oldPriority = "500";
+        command["jobPriority"] = oldPriority;
+        command["mockRequest"] = "1";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+        ASSERT_GREATER_THAN(stol(jobID), 0);
+
+        // Call the UpdateJob command
+        command.clear();
+        command.methodLine = "UpdateJob";
+        command["jobID"] = jobID;
+        command["data"] = "{\"key\":\"value\"}";
+        command["repeat"] = "HOURLY";
+        command["jobPriority"] = "1000";
+        command["nextRun"] = "2020-01-01 00:00:00";
+        tester->executeWaitVerifyContent(command);
+
+        // Verify that the job was actually updated
+        SQResult currentJob;
+        tester->readDB("SELECT repeat, data, priority, nextRun FROM jobs WHERE jobID = " + jobID + ";", currentJob);
+        ASSERT_EQUAL(currentJob[0][0], "HOURLY");
+        ASSERT_EQUAL(currentJob[0][1], "{\"key\":\"value\",\"mockRequest\":1}");
         ASSERT_EQUAL(currentJob[0][2], "1000");
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
