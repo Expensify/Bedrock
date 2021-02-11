@@ -860,7 +860,15 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         const string& nextRun = result[0][1];
         const string& lastRun = result[0][2];
-        const string& mockRequest = result[0][3];
+        mockRequest = result[0][3] == "1";
+
+        // Preserve the jobs mockRequest attribute so it is not overwritten by data updates.
+        STable newData = SParseJSONObject(request["data"]);
+        if (mockRequest) {
+            newData["mockRequest"] = mockRequest;
+        } else {
+            newData.erase("mockRequest");
+        }
 
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
@@ -870,15 +878,10 @@ void BedrockJobsCommand::process(SQLite& db) {
             newNextRun = SQ(request["nextRun"]);
         }
 
-        // Preserve the mockRequest attribute if it previously existed.
-        string dataString = SQ(request["data"]);
-        if (SIEquals(mockRequest, "1")) {
-            dataString = "JSON_SET(" + SQ(request["data"]) + ",'$.mockRequest'," + mockRequest + ") ";
-        }
-
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data=" + dataString +
+                                "SET data=" +
+                                SQ(SComposeJSONObject(newData)) +
                                 (request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                                 (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
