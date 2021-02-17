@@ -62,7 +62,40 @@
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
 
+// We store the process name passed in `SInitialize` to use in logging.
+thread_local string SProcessName;
+
+// This is a set of reusable sockets, each with an associated mutex, to allow for parallel logging directly to the
+// syslog socket, rather than going through the syslog() system call, which goes through journald.
+const size_t S_LOG_SOCKET_MAX = 500;
+int SLogSocketFD[S_LOG_SOCKET_MAX] = {};
+mutex SLogSocketMutex[S_LOG_SOCKET_MAX];
+atomic<size_t> SLogSocketCurrentOffset(0);
+struct sockaddr_un SLogSocketAddr;
+atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
+
+// Set to `syslog` or `SSyslogSocketDirect`.
+atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
+
 void SInitialize(string threadName, const char* processName) {
+    // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
+    // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
+    // use the socket logging variables. This is handled by the fact that we call `SInitialize` in main() which waits
+    // for the completion of the call before any other threads can be initialized.
+    if (!SLogSocketsInitialized.test_and_set()) {
+        SLogSocketAddr.sun_family = AF_UNIX;
+        strcpy(SLogSocketAddr.sun_path, "/run/systemd/journal/syslog");
+        for (size_t i = 0; i < S_LOG_SOCKET_MAX; i++) {
+            SLogSocketFD[i] = -1;
+        }
+    }
+
+    // We statically store whichever process name was passed most recently to reuse. This lets new threads start up
+    // with the same process name as existing threads, even when using socket logging, since "openlog" has no effect
+    // then.
+    static string initialProcessName = processName ? processName : "bedrock";
+    SProcessName = initialProcessName;
+
     // If a specific process name has been supplied, initialize syslog with it.
     if (processName) {
         openlog(processName, 0, 0);
@@ -140,6 +173,56 @@ vector<string> SException::details() const noexcept {
     vector<string> stack = SGetCallstack(_depth, _callstack);
     stack.push_back(string("Initially thrown from: ") + basename((char*)_file.c_str()) + ":" + to_string(_line));
     return stack;
+}
+
+void SSyslogSocketDirect(int priority, const char *format, ...) {
+    int socketError = 0;
+    static const size_t MAX_MESSAGE_SIZE = 8 * 1024;
+
+    // Choose an FD from our array.
+    size_t socketIndex = (++SLogSocketCurrentOffset) % S_LOG_SOCKET_MAX;
+
+    // Lock for this particular socket. If more than one thread want to log using the same FD, some will wait.
+    lock_guard<mutex> lock(SLogSocketMutex[socketIndex]);
+
+    if (SLogSocketFD[socketIndex] == -1) {
+        // Create a socket if there isn't one already.
+        SLogSocketFD[socketIndex] = socket(AF_UNIX, SOCK_DGRAM, 0);
+    }
+    if (SLogSocketFD[socketIndex] == -1) {
+        // Error opening the socket. We'll fall back to regular syslog.
+        socketError = errno;
+    } else {
+        // At this point, the socket should be good.
+
+        // This is based on the message format here: https://tools.ietf.org/html/rfc5424#section-6 but doesn't actually
+        // match the format there, as it seems syslog ignores almost the entire "header" and "structured data" fields
+        // and treats them as part of the message.
+        string messageHeader = "<" + to_string(8 + priority) + ">" + SProcessName + ": ";
+        thread_local char messageBuffer[MAX_MESSAGE_SIZE];
+        strcpy(messageBuffer, messageHeader.c_str());
+        va_list argptr;
+        va_start(argptr, format);
+        int bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
+        va_end(argptr);
+
+
+        // Assume we send the whole message. We don't do anything to handle message truncation.
+        ssize_t bytesSent = sendto(SLogSocketFD[socketIndex], messageBuffer, bytesWritten + messageHeader.size(), 0, (const struct sockaddr *)&SLogSocketAddr, sizeof(struct sockaddr_un));
+        if (bytesSent == -1) {
+            socketError = errno;
+            close(SLogSocketFD[socketIndex]);
+            SLogSocketFD[socketIndex] = -1;
+        }
+    }
+
+    if (socketError) {
+        syslog(LOG_WARNING, "Could not use direct logging socket (error: %i, %s), falling back to syslog syscall.", socketError, strerror(socketError));
+        va_list argptr;
+        va_start(argptr, format);
+        vsyslog(priority, format, argptr);
+        va_end(argptr);
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////

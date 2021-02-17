@@ -295,7 +295,10 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 }
 
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
-    const string& msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
+    string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
+    if (!e.body.empty()) {
+        msg = msg + " Request body: " + e.body;
+    }
     if (SContains(e.what(), "_ALERT_")) {
         SALERT(msg);
     } else if (SContains(e.what(), "_WARN_")) {

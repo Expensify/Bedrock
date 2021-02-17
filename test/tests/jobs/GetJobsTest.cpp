@@ -108,8 +108,9 @@ struct GetJobsTest : tpunit::TestFixture {
 
             // Let's see if it's scheduled at the right time.
             if (stoull(row[0]) == jobIDs[0]) {
-                // Assert that the difference between "lastRun + 1hour" and "nextRun" is less than 3 seconds.
-                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60, stringToUnixTimestamp(row[3])), 3);
+                // Assert that the difference between "lastRun + 1hour - 5 seconds" and "nextRun" is less than 3 seconds.
+                // We remove 5 seconds here because the job is rescheduled for when it was _scheduled_, not when it started/finished
+                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60 - 5, stringToUnixTimestamp(row[3])), 3);
             } else if (stoull(row[0]) == jobIDs[1]) {
                 // Assert that the difference between "lastRun + 1day" and "nextRun" is less than 3 seconds.
                 ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60 * 24, stringToUnixTimestamp(row[3])), 3);
