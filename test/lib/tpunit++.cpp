@@ -82,14 +82,16 @@ tpunit::TestFixture::~TestFixture() {
     delete _tests;
 }
 
-int tpunit::TestFixture::tpunit_detail_do_run(int threads) {
+int tpunit::TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction) {
     const std::set<std::string> include, exclude;
     const std::list<std::string> before, after;
-    return tpunit_detail_do_run(include, exclude, before, after, threads);
+    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
 }
 
 int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
-                                              const list<string>& before, const list<string>& after, int threads) {
+                                              const list<string>& before, const list<string>& after, int threads,
+                                              std::function<void()> threadInitFunction) {
+   threadInitFunction();
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
     * run unless it's in 'exclude'. If 'include' has at least one entry,
@@ -145,6 +147,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
+           threadInitFunction();
             try {
                 // Do test.
                 while (1) {
@@ -406,11 +409,11 @@ list<tpunit::TestFixture*>* tpunit::TestFixture::tpunit_detail_fixture_list() {
     return _fixtureList;
 }
 
-int tpunit::Tests::run(int threads) {
-    return TestFixture::tpunit_detail_do_run(threads);
+int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction) {
+    return TestFixture::tpunit_detail_do_run(threads, threadInitFunction);
 }
 
 int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
-                       const list<string>& before, const list<string>& after, int threads) {
-    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads);
+                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction) {
+    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
 }

@@ -28,6 +28,7 @@
 #include <thread>
 #include <mutex>
 #include <algorithm>
+#include <functional>
 using namespace std;
 
 /**
@@ -297,10 +298,11 @@ namespace tpunit {
             return new method(this, static_cast<void (TestFixture::*)()>(_method), _name, _type);
          }
 
-         static int tpunit_detail_do_run(int threads = 1);
+         static int tpunit_detail_do_run(int threads = 1, std::function<void()> threadInitFunction = [](){});
 
          static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude,
-                                         const std::list<std::string>& before, const std::list<std::string>& after, int threads);
+                                         const std::list<std::string>& before, const std::list<std::string>& after, int threads,
+                                         std::function<void()> threadInitFunction);
 
       protected:
 
@@ -359,7 +361,7 @@ namespace tpunit {
        *
        * @return Number of failed assertions or zero if all tests pass.
        */
-      static int run(int threads = 1);
+      static int run(int threads = 1, std::function<void()> threadInitFunction = [](){});
 
       /**
        * Run specific tests by name. If 'include' is empty, then every test is
@@ -369,6 +371,7 @@ namespace tpunit {
        * @return Number of failed assertions or zero if all tests pass.
        */
       static int run(const std::set<std::string>& include, const std::set<std::string>& exclude,
-                     const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1);
+                     const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1,
+                     std::function<void()> threadInitFunction = [](){});
    };
 }
