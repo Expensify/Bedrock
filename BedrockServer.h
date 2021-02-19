@@ -416,6 +416,10 @@ class BedrockServer : public SQLiteServer {
     // commands ordered such that the first ones to time out are at the front.
     struct compareCommandByTimeout {
         bool operator() (BedrockCommand* a, BedrockCommand* b) const {
+            if (a->timeout() == b->timeout()) {
+                // Tiebreaker so that two commands with the same timeout don't appear equivalent.
+                return a < b;
+            }
             return a->timeout() < b->timeout();
         }
     };

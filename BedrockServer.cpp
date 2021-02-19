@@ -1289,6 +1289,11 @@ BedrockServer::BedrockServer(const SData& args_)
         SQLite::enableTrace.store(true);
     }
 
+    // Bypass journald.
+    if (args.isSet("-logDirectlyToSyslogSocket")) {
+        SSyslogFunc = &SSyslogSocketDirect;
+    }
+
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
@@ -2081,6 +2086,7 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
         auto timeoutIt = _outstandingHTTPSCommands.begin();
         while (timeoutIt != _outstandingHTTPSCommands.end() && (*timeoutIt)->timeout() < now) {
             // Add all the transactions for this command, even if some are already complete, they'll just get ignored.
+            SAUTOPREFIX((*timeoutIt)->request);
             for (auto transaction : (*timeoutIt)->httpsRequests) {
                 transactionTimeouts[transaction] = (*timeoutIt)->timeout();
             }
@@ -2214,21 +2220,34 @@ void BedrockServer::_acceptSockets() {
 }
 
 void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
+    SAUTOPREFIX(command->request);
     lock_guard<mutex> lock(_httpsCommandMutex);
 
-    // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
-    BedrockCommand* commandPtr = command.get();
-    command.release();
-
-    // And we keep it in a set of all commands with outstanding HTTPS requests.
-    _outstandingHTTPSCommands.insert(commandPtr);
-
-    for (auto request : commandPtr->httpsRequests) {
+    // If the command has outstanding HTTPS requests, we'll need to save a plain pointer to it.
+    BedrockCommand* commandPtr = 0;
+    for (auto request : command->httpsRequests) {
         if (!request->response) {
-            SAUTOPREFIX(commandPtr->request);
-            SINFO("Pushing HTTPS request to _outstandingHTTPSRequests to complete.");
+            // This request is outstanding, save it, and if we haven't saved the pointer to the command, do so now.
+            if (!commandPtr) {
+                // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
+                commandPtr = command.get();
+                command.release();
+            }
             _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
         }
+    }
+
+    // If we had any outstanding requests, we save the command pointer.
+    if (commandPtr) {
+        auto result = _outstandingHTTPSCommands.insert(commandPtr);
+        if (!result.second) {
+            SWARN("Failed to insert command with pending request, likely leaked!");
+        }
+    } else {
+        // This is a warn even though it should work, because it's an unexpected case, and likely would have failed in
+        // the previous version of this code, so we're curious if it ever happens.
+        SWARN("Tried to wait for HTTPS for command, but no pending requests. Returning to main queue.");
+        _commandQueue.push(move(command));
     }
 }
 
@@ -2236,6 +2255,7 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
     lock_guard<mutex> lock(_httpsCommandMutex);
     int commandsCompleted = 0;
     for (auto transaction : completedHTTPSRequests) {
+        SAUTOPREFIX(transaction->requestID);
         auto transactionIt = _outstandingHTTPSRequests.find(transaction);
         if (transactionIt == _outstandingHTTPSRequests.end()) {
             // We should never be looking for a transaction in this list that isn't there.
@@ -2251,13 +2271,14 @@ int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& comp
         if (commandPtrIt != _outstandingHTTPSCommands.end()) {
             // I guess it's still here! Is it done?
             if (commandPtr->areHttpsRequestsComplete()) {
-                SAUTOPREFIX(commandPtr->request);
-                SINFO("All HTTPS requests complete, returning to main queue.");
                 // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
+                SINFO("All HTTPS requests complete, returning to main queue.");
                 _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
                 _outstandingHTTPSCommands.erase(commandPtrIt);
                 commandsCompleted++;
             }
+        } else {
+            SINFO("Command not found, possibly completed on previous request.");
         }
 
         // Now we can erase the transaction, as it's no longer outstanding.
