@@ -601,8 +601,6 @@ struct LibStuff : tpunit::TestFixture {
         string timeStamp2 = "2020-12-01";
         string timeStamp3 = "2020-06-17";
 
-        string timestamp5 = SFirstOfNextMonth(timeStamp);
-
         ASSERT_EQUAL(SFirstOfNextMonth(timeStamp), "2020-04-01");
         ASSERT_EQUAL(SFirstOfNextMonth(timeStamp2), "2021-01-01");
         ASSERT_EQUAL(SFirstOfNextMonth(timeStamp3), "2020-07-01");
