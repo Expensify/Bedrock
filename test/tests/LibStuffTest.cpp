@@ -24,7 +24,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testRandom),
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
-                                    TEST(LibStuff::testContains))
+                                    TEST(LibStuff::testContains),
+                                    TEST(LibStuff::testFirstOfNextMonth))
     { }
 
     void testEncryptDecrpyt() {
@@ -593,5 +594,17 @@ struct LibStuff : tpunit::TestFixture {
 
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+    }
+
+    void testFirstOfNextMonth() {
+        string timeStamp = "2020-03-01";
+        string timeStamp2 = "2020-12-01";
+        string timeStamp3 = "2020-06-17";
+
+        string timestamp5 = SFirstOfNextMonth(timeStamp);
+
+        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp), "2020-04-01");
+        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp2), "2021-01-01");
+        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp3), "2020-07-01");
     }
 } __LibStuff;

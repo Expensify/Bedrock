@@ -54,3 +54,30 @@ string SCURRENT_TIMESTAMP_MS() {
     snprintf(msString, 5, "%03lu", ms);
     return timestamp + "." + msString;
 }
+
+string SFirstOfNextMonth(string timeStamp) {
+
+    list<string> parts = SParseList(timeStamp, '-');
+
+    struct tm t = {0};  // Initalize to all 0's
+    t.tm_year = stoull(parts.front()) - 1900;  // This is year - 1900
+    parts.pop_front();
+
+    // Month values start at 0 in tm structs, so values are off by one.
+    uint64_t month = stoull(parts.front()) -1;
+
+    // If the month is 11, that means its december, we need to roll the year
+    // up by one and set the month to january. Otherwise just move the month
+    // forward one.
+    if (month == 11) {
+        t.tm_year += 1;
+        t.tm_mon = 0;
+    } else {
+        t.tm_mon = month + 1;
+    }
+    t.tm_mday = 1;
+    
+    char buf[256] = {};
+    size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+    return string(buf, length);
+}
