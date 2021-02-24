@@ -55,10 +55,9 @@ string SCURRENT_TIMESTAMP_MS() {
     return timestamp + "." + msString;
 }
 
-string SFirstOfMonth(const string& timeStamp, const uint64_t& offset) {
+string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
 
     if (offset < 0) {
-        SINFO("[deetergp] offset is : " << offset);
         STHROW("500 Offset may only be positive");
     }
 
