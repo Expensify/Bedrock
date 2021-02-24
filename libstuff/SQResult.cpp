@@ -76,3 +76,32 @@ bool SQResult::deserialize(const string& json) {
     clear();
     return false;
 }
+
+bool SQResult::empty() const {
+    return rows.empty();
+}
+
+size_t SQResult::size() const {
+    return rows.size();
+}
+
+void SQResult::clear() {
+    headers.clear();
+    rows.clear();
+}
+
+vector<string>& SQResult::operator[](size_t rowNum) {
+    try {
+        return rows.at(rowNum);
+    } catch (const out_of_range& e) {
+        STHROW("Out of range");
+    }
+}
+
+const vector<string>& SQResult::operator[](size_t rowNum) const {
+    try {
+        return rows.at(rowNum);
+    } catch (const out_of_range& e) {
+        STHROW("Out of range");
+    }
+}
