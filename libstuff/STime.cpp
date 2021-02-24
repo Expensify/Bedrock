@@ -54,3 +54,48 @@ string SCURRENT_TIMESTAMP_MS() {
     snprintf(msString, 5, "%03lu", ms);
     return timestamp + "." + msString;
 }
+
+string SFirstOfNextMonth(const string& timeStamp) {
+
+    list<string> parts = SParseList(timeStamp, '-');
+
+    // Initalize to all 0's
+    struct tm t = {0};  
+
+    try {
+        // This is year - 1900
+        t.tm_year = stoull(parts.front(), 0, 10) - 1900; 
+    } catch (const invalid_argument& e) {
+        STHROW("500 Error parsing year");
+    } catch (const out_of_range& e) {
+        STHROW("500 Error parsing year");
+    }
+
+    // Pop the year off
+    parts.pop_front();
+
+    try {
+        // Month values start at 0 in tm structs, so values are off by one.
+        uint64_t month = stoull(parts.front(), 0, 10) -1;
+
+        // If the month is 11, that means its december, we need to roll the year
+        // up by one and set the month to january. Otherwise just move the month
+        // forward one.
+        if (month == 11) {
+            t.tm_year += 1;
+            t.tm_mon = 0;
+        } else {
+            t.tm_mon = month + 1;
+        }
+    } catch (const invalid_argument& e) {
+        STHROW("500 Error parsing month");
+    } catch (const out_of_range& e) {
+        STHROW("500 Error parsing month");
+    }
+
+    t.tm_mday = 1;
+    
+    char buf[256] = {};
+    size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+    return string(buf, length);
+}
