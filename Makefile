@@ -1,10 +1,10 @@
 # Set the compiler, if it's not set by the environment.
 ifndef GXX
-	GXX = g++-9
+	GXX = g++-10
 endif
 
 ifndef CC
-	CC = gcc-9
+	CC = gcc-10
 endif
 
 GIT_REVISION = $(shell git rev-parse --short HEAD)

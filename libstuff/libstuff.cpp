@@ -26,7 +26,7 @@
 #endif
 
 // Common error definitions
-#define S_errno errno
+#define S_errno (unsigned int) errno
 #define S_NOTINITIALISED 0xFEFEFEFE // Doesn't exist for Linux
 #ifdef __APPLE__
 // The above doesn't even build on OS X with C++11 turned on. I don't know why
