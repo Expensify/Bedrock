@@ -55,11 +55,16 @@ string SCURRENT_TIMESTAMP_MS() {
     return timestamp + "." + msString;
 }
 
-string SFirstOfNextMonth(const string& timeStamp) {
+string SFirstOfMonth(const string& timeStamp, const uint64_t& offset) {
+
+    if (offset < 0) {
+        SINFO("[deetergp] offset is : " << offset);
+        STHROW("500 Offset may only be positive");
+    }
 
     list<string> parts = SParseList(timeStamp, '-');
 
-    // Initalize to all 0's
+    // Initialize to all 0's
     struct tm t = {0};  
 
     try {
@@ -81,11 +86,11 @@ string SFirstOfNextMonth(const string& timeStamp) {
         // If the month is 11, that means its december, we need to roll the year
         // up by one and set the month to january. Otherwise just move the month
         // forward one.
-        if (month == 11) {
+        if ((month + offset) >= 11) {
             t.tm_year += 1;
-            t.tm_mon = 0;
+            t.tm_mon = (month + offset) - 12;
         } else {
-            t.tm_mon = month + 1;
+            t.tm_mon = month + offset;
         }
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing month");
