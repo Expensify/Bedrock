@@ -194,6 +194,7 @@ uint64_t STimeThisMorning(); // Timestamp for this morning at midnight GMT
 int SDaysInMonth(int year, int month);
 string SComposeTime(const string& format, uint64_t when);
 timeval SToTimeval(uint64_t when);
+string SFirstOfNextMonth(const string& timeStamp);
 
 // Helpful class for timing
 struct SStopwatch {
