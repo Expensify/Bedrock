@@ -55,16 +55,17 @@ string SCURRENT_TIMESTAMP_MS() {
     return timestamp + "." + msString;
 }
 
-string SFirstOfNextMonth(const string& timeStamp) {
+string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
 
     list<string> parts = SParseList(timeStamp, '-');
 
-    // Initalize to all 0's
+    // Initialize to all 0's
     struct tm t = {0};  
+    int64_t year;
 
     try {
         // This is year - 1900
-        t.tm_year = stoull(parts.front(), 0, 10) - 1900; 
+        year = stoull(parts.front(), 0, 10) - 1900;
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing year");
     } catch (const out_of_range& e) {
@@ -75,18 +76,11 @@ string SFirstOfNextMonth(const string& timeStamp) {
     parts.pop_front();
 
     try {
-        // Month values start at 0 in tm structs, so values are off by one.
-        uint64_t month = stoull(parts.front(), 0, 10) -1;
-
-        // If the month is 11, that means its december, we need to roll the year
-        // up by one and set the month to january. Otherwise just move the month
-        // forward one.
-        if (month == 11) {
-            t.tm_year += 1;
-            t.tm_mon = 0;
-        } else {
-            t.tm_mon = month + 1;
-        }
+        int64_t month = stoull(parts.front(), 0, 10) - 1;
+        int64_t yearInMonths = year * 12 + month;
+        yearInMonths += offset;
+        t.tm_year = yearInMonths / 12;
+        t.tm_mon = yearInMonths % 12;
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing month");
     } catch (const out_of_range& e) {
