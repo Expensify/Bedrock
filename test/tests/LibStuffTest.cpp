@@ -602,17 +602,27 @@ struct LibStuff : tpunit::TestFixture {
         string timeStamp3 = "2020-06-17";
         string timeStamp4 = "2020-07-07";
         string timeStamp5 = "2020-11-11";
+        string timeStamp6 = "2020-01-01";
         string octalTimestamp = "2019-09-03";
         string notATimeStamp = "this is not a timestamp";
+
+        cout << "[deetergp] Date is : " << SFirstOfMonth(timeStamp, 1) << "\n";
+        cout << "[deetergp] Date is : " << SFirstOfMonth(timeStamp2, 1) << "\n";
+        cout << "[deetergp] Date is : " << SFirstOfMonth(timeStamp4, -13) << "\n";
+        cout << "[deetergp] Date is : " << SFirstOfMonth(timeStamp6, -1) << "\n";
 
         ASSERT_EQUAL(SFirstOfMonth(timeStamp, 1), "2020-04-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp2, 1), "2021-01-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp3, 1), "2020-07-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4), "2020-07-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 12), "2021-07-01");
-        ASSERT_THROW(SFirstOfMonth(timeStamp4, -1), SException);
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 25), "2022-08-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -1), "2020-06-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01")
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01")
         ASSERT_EQUAL(SFirstOfMonth(timeStamp5, 3), "2021-02-01");
         ASSERT_EQUAL(SFirstOfMonth(octalTimestamp, 1), "2019-10-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp6, -1), "2019-12-01")
         ASSERT_THROW(SFirstOfMonth(notATimeStamp), SException);
     }
 } __LibStuff;
