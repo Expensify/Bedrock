@@ -57,18 +57,15 @@ string SCURRENT_TIMESTAMP_MS() {
 
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
 
-    if (offset < 0) {
-        STHROW("500 Offset may only be positive");
-    }
-
     list<string> parts = SParseList(timeStamp, '-');
 
     // Initialize to all 0's
     struct tm t = {0};  
+    int64_t year;
 
     try {
         // This is year - 1900
-        t.tm_year = stoull(parts.front(), 0, 10) - 1900; 
+        year = stoull(parts.front(), 0, 10) - 1900;
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing year");
     } catch (const out_of_range& e) {
@@ -79,18 +76,24 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     parts.pop_front();
 
     try {
-        // Month values start at 0 in tm structs, so values are off by one.
-        uint64_t month = stoull(parts.front(), 0, 10) -1;
+        int64_t month = stoull(parts.front(), 0, 10);
+        int64_t months = offset % 12;
+        int64_t years = offset / 12;
 
-        // If the month is 11, that means its december, we need to roll the year
-        // up by one and set the month to january. Otherwise just move the month
-        // forward one.
-        if ((month + offset) >= 11) {
-            t.tm_year += 1;
-            t.tm_mon = (month + offset) - 12;
-        } else {
-            t.tm_mon = month + offset;
+        month += months;
+        year += years;
+
+        if (month < 1) {
+            month += 12;
+            year--;
+        } else if (month > 12) {
+            month -= 12;
+            year++;
         }
+
+
+        t.tm_year = year;
+        t.tm_mon = month - 1;
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing month");
     } catch (const out_of_range& e) {
