@@ -76,24 +76,11 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     parts.pop_front();
 
     try {
-        int64_t month = stoull(parts.front(), 0, 10);
-        int64_t months = offset % 12;
-        int64_t years = offset / 12;
-
-        month += months;
-        year += years;
-
-        if (month < 1) {
-            month += 12;
-            year--;
-        } else if (month > 12) {
-            month -= 12;
-            year++;
-        }
-
-
-        t.tm_year = year;
-        t.tm_mon = month - 1;
+        int64_t month = stoull(parts.front(), 0, 10) - 1;
+        int64_t yearInMonths = year * 12 + month;
+        yearInMonths += offset;
+        t.tm_year = yearInMonths / 12;
+        t.tm_mon = yearInMonths % 12;
     } catch (const invalid_argument& e) {
         STHROW("500 Error parsing month");
     } catch (const out_of_range& e) {
