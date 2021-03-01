@@ -25,7 +25,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testFirstOfNextMonth))
+                                    TEST(LibStuff::testFirstOfMonth))
     { }
 
     void testEncryptDecrpyt() {
@@ -596,18 +596,37 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
     }
 
-    void testFirstOfNextMonth() {
+    void testFirstOfMonth() {
         string timeStamp = "2020-03-01";
         string timeStamp2 = "2020-12-01";
         string timeStamp3 = "2020-06-17";
+        string timeStamp4 = "2020-07-07";
+        string timeStamp5 = "2020-11-11";
+        string timeStamp6 = "2020-01-01";
         string octalTimestamp = "2019-09-03";
         string notATimeStamp = "this is not a timestamp";
 
-        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp), "2020-04-01");
-        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp2), "2021-01-01");
-        ASSERT_EQUAL(SFirstOfNextMonth(timeStamp3), "2020-07-01");
-        ASSERT_EQUAL(SFirstOfNextMonth(octalTimestamp), "2019-10-01");
-        ASSERT_THROW(SFirstOfNextMonth(notATimeStamp), SException);
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp, 1), "2020-04-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp2, 1), "2021-01-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp3, 1), "2020-07-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4), "2020-07-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 12), "2021-07-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 25), "2022-08-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -1), "2020-06-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01")
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01")
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp5, 3), "2021-02-01");
+        ASSERT_EQUAL(SFirstOfMonth(octalTimestamp, 1), "2019-10-01");
+        ASSERT_THROW(SFirstOfMonth(notATimeStamp), SException);
 
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4), "2020-07-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 1), "2020-08-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 6), "2021-01-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 13), "2021-08-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, 25), "2022-08-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -1), "2020-06-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
+        ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
     }
 } __LibStuff;
