@@ -1423,12 +1423,16 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    // start timing for postPoll internals
+    uint64_t postPollStartTime = STimeNow();
+
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
         SAUTOLOCK(_socketIDMutex);
         STCPServer::postPoll(fdm);
     }
+    uint64_t postPollSTCPServerTime = STimeNow() - postPollStartTime;
 
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
@@ -1494,14 +1498,22 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     int deserializedRequests = 0;
 
     // Accept any new connections
+    uint64_t acceptStartTime = STimeNow();
     _acceptSockets();
 
     // Time the end of the accept section.
     uint64_t acceptEndTime = STimeNow();
+    uint64_t acceptTime = acceptEndTime - acceptStartTime;
 
     // Process any new activity from incoming sockets. In order to not modify the socket list while we're iterating
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
+
+    // Set up additional roll-up timers for the postPoll() command deserialization loop
+    uint64_t closeSocketsTime;
+    uint64_t checkSocketActivityTime;
+    uint64_t deserializationTime;
+    uint64_t dispatchCommandsTime;
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
@@ -1512,16 +1524,19 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
             {
+    		uint64_t closeSocketsStartTime = STimeNow();
                 // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
                 // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
                 // able to have their responses returned.
                 SAUTOLOCK(_socketIDMutex);
                 _socketIDMap.erase(s->id);
                 socketsToClose.push_back(s);
+    		closeSocketsTime += STimeNow() - closeSocketsStartTime;
             }
             break;
             case STCPManager::Socket::CONNECTED:
             {
+    		uint64_t checkSocketActivityStartTime = STimeNow();
                 {
                     SAUTOLOCK(_socketIDMutex);
                     if (s->recvBuffer.empty()) {
@@ -1543,6 +1558,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                     }
                 }
+    		uint64_t checkSocketActivityEndTime = STimeNow();
+                checkSocketActivityTime += checkSocketActivityEndTime - checkSocketActivityStartTime;
 
                 // If there's a request, we'll dequeue it (but only the first one).
                 SData request;
@@ -1562,12 +1579,15 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     s->recvBuffer.consumeFront(requestSize);
                     deserializationAttempts++;
                 }
+                uint64_t deserializationEndTime = STimeNow();
+                deserializationTime += deserializationEndTime - checkSocketActivityEndTime;
 
                 // If we have a populated request, from either a plugin or our default handling, we'll queue up the
                 // command.
                 if (!request.empty()) {
                     SAUTOPREFIX(request);
                     deserializedRequests++;
+
                     // Either shut down the socket or store it so we can eventually sync out the response.
                     if (SIEquals(request["Connection"], "forget") ||
                         (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
@@ -1601,6 +1621,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
+                    //if (_handleIfStatusOrControlCommand(command)) {
+                    //    break;
+                    //}
 
                     if (command->writeConsistency != SQLiteNode::QUORUM
                         && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
@@ -1643,6 +1666,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         socketsToClose.push_back(s);
                     }
                 }
+                dispatchCommandsTime += STimeNow() - deserializationEndTime;
             }
             break;
             case STCPManager::Socket::SHUTTINGDOWN:
@@ -1664,10 +1688,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     SINFO("[performance] Read from " << socketList.size() << " sockets, attempted to deserialize " << deserializationAttempts
           << " commands, " << deserializedRequests << " were complete and deserialized in " << readElapsedMS << "ms.");
 
+    uint64_t closeSocketsStartTime = STimeNow();
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
         closeSocket(s);
     }
+    closeSocketsTime += STimeNow() - closeSocketsStartTime;
 
     // If any plugin timers are firing, let the plugins know.
     for (auto plugin : plugins) {
@@ -1701,6 +1727,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
     }
+    SINFO("[performance] postPoll breakdown ms, spent " << postPollSTCPServerTime/1000 << " in STCPServer postPoll, " << acceptTime/1000 << " accepting new sockets, " << closeSocketsTime/1000 << " closing sockets, " << checkSocketActivityTime/1000 << " checking sockets for activity, " << deserializationTime/1000 << " deserializing requests, and " << dispatchCommandsTime/1000 << " dispatching commands out of " << (STimeNow() - postPollStartTime)/1000 << " total ms");
 }
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request) {
