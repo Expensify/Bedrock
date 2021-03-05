@@ -1510,10 +1510,10 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     list<STCPManager::Socket*> socketsToClose;
 
     // Set up additional roll-up timers for the postPoll() command deserialization loop
-    uint64_t closeSocketsTime;
-    uint64_t checkSocketActivityTime;
-    uint64_t deserializationTime;
-    uint64_t dispatchCommandsTime;
+    uint64_t closeSocketsTime = 0;
+    uint64_t checkSocketActivityTime = 0;
+    uint64_t deserializationTime = 0;
+    uint64_t dispatchCommandsTime = 0;
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
@@ -1531,7 +1531,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SAUTOLOCK(_socketIDMutex);
                 _socketIDMap.erase(s->id);
                 socketsToClose.push_back(s);
-    		closeSocketsTime += STimeNow() - closeSocketsStartTime;
+
+                uint64_t closeSocketsEndTime = STimeNow();
+                closeSocketsTime += closeSocketsEndTime - closeSocketsStartTime;
             }
             break;
             case STCPManager::Socket::CONNECTED:
@@ -1666,7 +1668,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         socketsToClose.push_back(s);
                     }
                 }
-                dispatchCommandsTime += STimeNow() - deserializationEndTime;
+                uint64_t dispatchCommandsEndTime = STimeNow();
+                dispatchCommandsTime += dispatchCommandsEndTime - deserializationEndTime;
             }
             break;
             case STCPManager::Socket::SHUTTINGDOWN:
