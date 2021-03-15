@@ -31,7 +31,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                                            TEST(SQLiteNodeTest::testFindSyncPeer)) { }
 
     // Filename for temp DB.
-    char filename[17] = "br_sync_dbXXXXXX";
+    char filenameTemplate[17] = "br_sync_dbXXXXXX";
+    char filename[17];
 
     void teardown() {
         unlink(filename);
@@ -40,6 +41,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
     void testFindSyncPeer() {
 
         // This exposes just enough to test the peer selection logic.
+        strcpy(filename, filenameTemplate);
         int fd = mkstemp(filename);
         close(fd);
         SQLitePool dbPool(10, filename, 1000000, 5000, 0);

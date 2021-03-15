@@ -504,13 +504,8 @@ struct RetryJobTest : tpunit::TestFixture {
         // Confirm nextRun is in 1 hour, not in the given nextRun time
         SQResult result;
         tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        struct tm tm1;
-        struct tm tm2;
-        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t createdTime = mktime(&tm1);
-        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t nextRunTime = mktime(&tm2);
-        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_FLOAT_EQUAL(difftime(JobTestHelper::getTimestampForDateTimeString(result[0][1]), JobTestHelper::getTimestampForDateTimeString(result[0][0])), 3600);
     }
 
     // Repeat should take precedence over delay
@@ -538,13 +533,8 @@ struct RetryJobTest : tpunit::TestFixture {
         // Confirm nextRun is in 1 hour, not in the 5 second delay
         SQResult result;
         tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        struct tm tm1;
-        struct tm tm2;
-        strptime(result[0][0].c_str(), "%Y-%m-%d %H:%M:%S", &tm1);
-        time_t createdTime = mktime(&tm1);
-        strptime(result[0][1].c_str(), "%Y-%m-%d %H:%M:%S", &tm2);
-        time_t nextRunTime = mktime(&tm2);
-        ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_FLOAT_EQUAL(difftime(JobTestHelper::getTimestampForDateTimeString(result[0][1]), JobTestHelper::getTimestampForDateTimeString(result[0][0])), 3600);
     }
 
     // nextRun should take precedence over delay

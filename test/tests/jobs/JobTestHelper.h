@@ -4,5 +4,5 @@
 
 class JobTestHelper {
 public:
-    static time_t getTimestampForDateTimeString(string datetime);
+    static time_t getTimestampForDateTimeString(const string& datetime);
 };
