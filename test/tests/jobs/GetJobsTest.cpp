@@ -1,12 +1,6 @@
 #include <test/lib/BedrockTester.h>
+#include <test/tests/jobs/JobTestHelper.h>
 #include <time.h>
-
-// Get a unix timestamp from one of our sqlite date strings.
-time_t stringToUnixTimestamp(const string& timestamp) {
-    struct tm time;
-    strptime(timestamp.c_str(), "%Y-%m-%d %H:%M:%S", &time);
-    return mktime(&time);
-}
 
 // Get the difference in seconds between a and b
 uint64_t absoluteDiff(time_t a, time_t b) {
@@ -83,7 +77,7 @@ struct GetJobsTest : tpunit::TestFixture {
         SQResult jobData = getAllJobData(tester);
         for (auto& row : jobData.rows) {
             // Assert that the difference between "lastRun + 5min" and "nextRun" is less than 3 seconds.
-            ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 5 * 60, stringToUnixTimestamp(row[3])), 3);
+            ASSERT_LESS_THAN(absoluteDiff(JobTestHelper::getTimestampForDateTimeString(row[2]) + 5 * 60, JobTestHelper::getTimestampForDateTimeString(row[3])), 3);
             ASSERT_EQUAL(row[1], "RUNQUEUED");
         }
 
@@ -110,13 +104,13 @@ struct GetJobsTest : tpunit::TestFixture {
             if (stoull(row[0]) == jobIDs[0]) {
                 // Assert that the difference between "lastRun + 1hour - 5 seconds" and "nextRun" is less than 3 seconds.
                 // We remove 5 seconds here because the job is rescheduled for when it was _scheduled_, not when it started/finished
-                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60 - 5, stringToUnixTimestamp(row[3])), 3);
+                ASSERT_LESS_THAN(absoluteDiff(JobTestHelper::getTimestampForDateTimeString(row[2]) + 1 * 60 * 60 - 5, JobTestHelper::getTimestampForDateTimeString(row[3])), 3);
             } else if (stoull(row[0]) == jobIDs[1]) {
                 // Assert that the difference between "lastRun + 1day" and "nextRun" is less than 3 seconds.
-                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(row[2]) + 1 * 60 * 60 * 24, stringToUnixTimestamp(row[3])), 3);
+                ASSERT_LESS_THAN(absoluteDiff(JobTestHelper::getTimestampForDateTimeString(row[2]) + 1 * 60 * 60 * 24, JobTestHelper::getTimestampForDateTimeString(row[3])), 3);
             } else if (stoull(row[0]) == jobIDs[2]) {
                 // Assert that the difference between "finishedTime + 7days" and "nextRun" is less than 3 seconds.
-                ASSERT_LESS_THAN(absoluteDiff(stringToUnixTimestamp(finishedTime) + 7 * 60 * 60 * 24, stringToUnixTimestamp(row[3])), 3);
+                ASSERT_LESS_THAN(absoluteDiff(JobTestHelper::getTimestampForDateTimeString(finishedTime) + 7 * 60 * 60 * 24, JobTestHelper::getTimestampForDateTimeString(row[3])), 3);
             } else {
                 // It should be one of the above three.
                 ASSERT_TRUE(false);
