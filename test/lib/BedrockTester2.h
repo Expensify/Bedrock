@@ -47,7 +47,8 @@ class BedrockTester2 {
     // but can generally be used for any temporary file required.
     static string getTempFileName(string prefix = "");
 
-    // Change the args on a stopped server.
+    // Change the arguments for a server. Only takes effect when the server next starts. This can change or add args,
+    // but not remove args. Any args specified here are added or replaced into the existing set.
     void updateArgs(const map<string, string> args);
 
     // Takes a list of requests, and returns a corresponding list of responses.
@@ -57,39 +58,18 @@ class BedrockTester2 {
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
+    // Convenience wrapper around executeWaitMultipleData.
     string executeWaitVerifyContent(SData request, const string& expectedResult = "200", bool control = false);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
+    // Convenience wrapper around executeWaitMultipleData.
     STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200");
 
-    // Read from the DB file. Interface is the same as SQLiteNode's 'read' for backwards compatibility.
+    // Read from the DB file, without going through the bedrock server. Two interfaces are provided to maintain
+    // compatibility with the `SQLite` class.
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
-    SQLite& getSQLiteDB();
-    bool autoRollbackEveryDBCall = true;
-
-    // This allows callers to run an entire transaction easily.
-    class ScopedTransaction {
-      public:
-        ScopedTransaction(BedrockTester2* tester) : _tester(tester) {
-            _tester->autoRollbackEveryDBCall = false;
-            _tester->getSQLiteDB().beginTransaction();
-        }
-        ~ScopedTransaction() {
-            _tester->getSQLiteDB().rollback();
-            _tester->autoRollbackEveryDBCall = true;
-        }
-      private:
-        BedrockTester2* _tester;
-    };
-
-    int getServerPID() { return _serverPID; }
-
-    // Expose the ports that the server is listening on.
-    int getServerPort();
-    int getNodePort();
-    int getControlPort();
 
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
@@ -113,6 +93,10 @@ class BedrockTester2 {
   protected:
     // Returns the name of the server binary, by finding the first path that exists in `locations`.
     static string getServerName();
+
+    // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and
+    // should not be done!
+    SQLite& getSQLiteDB();
 
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.

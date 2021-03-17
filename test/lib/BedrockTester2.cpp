@@ -178,13 +178,13 @@ string BedrockTester2::startServer(bool wait) {
 
         // Make sure the ports we need are free.
         int portsFree = 0;
-        portsFree |= ports.waitForPort(getServerPort());
-        portsFree |= ports.waitForPort(getNodePort());
-        portsFree |= ports.waitForPort(getControlPort());
+        portsFree |= ports.waitForPort(_serverPort);
+        portsFree |= ports.waitForPort(_nodePort);
+        portsFree |= ports.waitForPort(_controlPort);
 
         if (portsFree) {
-            cout << "At least one port wasn't free (of: " << getServerPort() << ", " << getNodePort() << ", "
-                 << getControlPort() << ") to start server, things will probably fail." << endl;
+            cout << "At least one port wasn't free (of: " << _serverPort << ", " << _nodePort << ", "
+                 << _controlPort << ") to start server, things will probably fail." << endl;
         }
 
         // And then start the new server!
@@ -476,32 +476,25 @@ SQLite& BedrockTester2::getSQLiteDB()
     if (!_db) {
         _db = new SQLite(_dbName, 1000000, 3000000, -1);
     }
-    if (autoRollbackEveryDBCall) {
-        _db->rollback();
-    }
     return *_db;
 }
 
 string BedrockTester2::readDB(const string& query)
 {
-    return getSQLiteDB().read(query);
+    SQLite& db = getSQLiteDB();
+    db.beginTransaction();
+    string result = db.read(query);
+    db.rollback();
+    return result;
 }
 
 bool BedrockTester2::readDB(const string& query, SQResult& result)
 {
-    return getSQLiteDB().read(query, result);
-}
-
-int BedrockTester2::getServerPort() {
-    return _serverPort;
-}
-
-int BedrockTester2::getNodePort() {
-    return _nodePort;
-}
-
-int BedrockTester2::getControlPort() {
-    return _controlPort;
+    SQLite& db = getSQLiteDB();
+    db.beginTransaction();
+    bool success = db.read(query, result);
+    db.rollback(); // In case this was left mid-transaction.
+    return success;
 }
 
 bool BedrockTester2::waitForState(string state, uint64_t timeoutUS, bool control) {
