@@ -159,7 +159,7 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 
     // Release programmatically allocated ports
-    if (!_ownPorts) {
+    if (_ownPorts) {
         ports.returnPort(_serverPort);
         ports.returnPort(_nodePort);
         ports.returnPort(_controlPort);
