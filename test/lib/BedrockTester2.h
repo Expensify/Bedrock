@@ -73,10 +73,7 @@ class BedrockTester2 {
 
     // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
     // false if the timeout is hit.
-    bool waitForState(string state, uint64_t timeoutUS = 60'000'000, bool control = false);
-
-    // Like `waitForState` but wait for any of a set of states.
-    bool waitForStates(set<string> states, uint64_t timeoutUS = 60'000'000, bool control = false);
+    bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
 
     // get the output of a "Status" command from the command port
     STable getStatus(bool control = false);

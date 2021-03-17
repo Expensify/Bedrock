@@ -497,19 +497,14 @@ bool BedrockTester2::readDB(const string& query, SQResult& result)
     return success;
 }
 
-bool BedrockTester2::waitForState(string state, uint64_t timeoutUS, bool control) {
-    return waitForStates({state}, timeoutUS, control);
-}
-
-bool BedrockTester2::waitForStates(set<string> states, uint64_t timeoutUS, bool control)
+bool BedrockTester2::waitForState(const string& state, uint64_t timeoutUS)
 {
     STable json;
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            json = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
-            auto it = states.find(json["state"]);
-            if (it != states.end()) {
+            json = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true));
+            if (json["state"] == state) {
                 return true;
             }
             // It's still not there, let it try again.
@@ -520,7 +515,7 @@ bool BedrockTester2::waitForStates(set<string> states, uint64_t timeoutUS, bool 
     }
 
     // we timed out, let's get some debugging info
-    cout << "waitForStates() timed out at " << STimeNow() << " waiting for states " << SComposeList(states) << ". Started waiting at " << start << " Most recent status: " << SComposeJSONObject(json) << endl;
+    cout << "waitForStates() timed out at " << STimeNow() << " waiting for state " << state << ". Started waiting at " << start << " Most recent status: " << SComposeJSONObject(json) << endl;
 
     return false;
 }
