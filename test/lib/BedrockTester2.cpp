@@ -1,23 +1,15 @@
-#if 0
-#include "BedrockTester.h"
+#include "BedrockTester2.h"
 #include <sys/wait.h>
 
 // Define static vars.
-string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibility.
-string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
-SData BedrockTester::globalArgs;
-mutex BedrockTester::_testersMutex;
-PortMap BedrockTester::ports;
-set<BedrockTester*> BedrockTester::_testers;
-list<string> BedrockTester::locations = {
-    "../bedrock",
-    "../../bedrock"
-};
+mutex BedrockTester2::_testersMutex;
+PortMap BedrockTester2::ports;
+set<BedrockTester2*> BedrockTester2::_testers;
 
 // Set to 2 or more for duplicated requests.
-int BedrockTester::mockRequestMode = 0;
+int BedrockTester2::mockRequestMode = 0;
 
-string BedrockTester::getTempFileName(string prefix) {
+string BedrockTester2::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
     strcpy(buffer, templateStr.c_str());
@@ -26,38 +18,30 @@ string BedrockTester::getTempFileName(string prefix) {
     return buffer;
 }
 
-string BedrockTester::getServerName() {
-    for (auto location : locations) {
-        if (SFileExists(location)) {
-            return location;
+string BedrockTester2::getServerName() {
+    string path = "bedrock";
+    for (int i = 0; i < 3; i++) {
+        if (SFileExists(path)) {
+            break;
         }
+        path = "../" + path;
     }
-    cout << "Couldn't find bedrock server" << endl;
-    exit(1);
 
-    // Won't get hit.
-    return "";
+    if (path.empty()) {
+        cout << "Couldn't find bedrock server" << endl;
+        exit(1);
+    }
+    return path;
 }
 
-void BedrockTester::stopAll() {
+void BedrockTester2::stopAll() {
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     for (auto p : _testers) {
         p->stopServer();
     }
 }
 
-BedrockTester::BedrockTester(const map<string, string>& args,
-                             const list<string>& queries,
-                             bool startImmediately,
-                             bool keepFilesWhenFinished,
-                             uint16_t serverPort,
-                             uint16_t nodePort,
-                             uint16_t controlPort,
-                             bool ownPorts) :
-    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished, serverPort, nodePort, controlPort, ownPorts)
-{ }
-
-BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
+BedrockTester2::BedrockTester2(const map<string, string>& args,
                              const list<string>& queries,
                              bool startImmediately,
                              bool keepFilesWhenFinished,
@@ -144,7 +128,7 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
     }
 }
 
-BedrockTester::~BedrockTester() {
+BedrockTester2::~BedrockTester2() {
     if (_db) {
         delete _db;
     }
@@ -167,13 +151,13 @@ BedrockTester::~BedrockTester() {
     }
 }
 
-void BedrockTester::updateArgs(const map<string, string> args) {
+void BedrockTester2::updateArgs(const map<string, string> args) {
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
 }
 
-string BedrockTester::startServer(bool dontWait) {
+string BedrockTester2::startServer(bool dontWait) {
     string serverName = getServerName();
     int childPID = fork();
     if (childPID == -1) {
@@ -184,7 +168,7 @@ string BedrockTester::startServer(bool dontWait) {
         // We are the child!
         list<string> args;
         // First arg is path to file.
-        args.push_front(getServerName());
+        args.push_front(serverName);
         for (auto& row : _args) {
             args.push_back(row.first);
             if (!row.second.empty()) {
@@ -267,7 +251,7 @@ string BedrockTester::startServer(bool dontWait) {
     return "";
 }
 
-void BedrockTester::stopServer(int signal) {
+void BedrockTester2::stopServer(int signal) {
     if (_serverPID) {
         kill(_serverPID, signal);
         int status;
@@ -276,7 +260,7 @@ void BedrockTester::stopServer(int signal) {
     }
 }
 
-string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
+string BedrockTester2::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
     auto results = executeWaitMultipleData({request}, 1, control);
     if (results.size() == 0) {
         STHROW("No result.");
@@ -289,12 +273,12 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     return results[0].content;
 }
 
-STable BedrockTester::executeWaitVerifyContentTable(SData request, const string& expectedResult) {
+STable BedrockTester2::executeWaitVerifyContentTable(SData request, const string& expectedResult) {
     string result = executeWaitVerifyContent(request, expectedResult);
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode) {
+vector<SData> BedrockTester2::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -518,7 +502,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     return results;
 }
 
-SQLite& BedrockTester::getSQLiteDB()
+SQLite& BedrockTester2::getSQLiteDB()
 {
     if (!_db) {
         _db = new SQLite(_dbName, 1000000, 3000000, -1);
@@ -529,33 +513,33 @@ SQLite& BedrockTester::getSQLiteDB()
     return *_db;
 }
 
-string BedrockTester::readDB(const string& query)
+string BedrockTester2::readDB(const string& query)
 {
     return getSQLiteDB().read(query);
 }
 
-bool BedrockTester::readDB(const string& query, SQResult& result)
+bool BedrockTester2::readDB(const string& query, SQResult& result)
 {
     return getSQLiteDB().read(query, result);
 }
 
-int BedrockTester::getServerPort() {
+int BedrockTester2::getServerPort() {
     return _serverPort;
 }
 
-int BedrockTester::getNodePort() {
+int BedrockTester2::getNodePort() {
     return _nodePort;
 }
 
-int BedrockTester::getControlPort() {
+int BedrockTester2::getControlPort() {
     return _controlPort;
 }
 
-bool BedrockTester::waitForState(string state, uint64_t timeoutUS, bool control) {
+bool BedrockTester2::waitForState(string state, uint64_t timeoutUS, bool control) {
     return waitForStates({state}, timeoutUS, control);
 }
 
-bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool control)
+bool BedrockTester2::waitForStates(set<string> states, uint64_t timeoutUS, bool control)
 {
     STable json;
     uint64_t start = STimeNow();
@@ -579,18 +563,18 @@ bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool c
     return false;
 }
 
-STable BedrockTester::getStatus(bool control) {
+STable BedrockTester2::getStatus(bool control) {
     // FYI: sometimes the status command doesn't return with every key/value expected
     return SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
 }
 
-string BedrockTester::getStatusTerm(string term, bool control) {
+string BedrockTester2::getStatusTerm(string term, bool control) {
     // FYI: sometimes the status command doesn't return with every key/value expected
     // Use with caution
     return getStatus(control)[term];
 }
 
-bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t timeoutUS, bool control){
+bool BedrockTester2::waitForStatusTerm(string term, string testValue, uint64_t timeoutUS, bool control){
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
@@ -608,7 +592,7 @@ bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t ti
     return false;
 }
 
-bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control){
+bool BedrockTester2::waitForCommit(int minCommitCount, int retries, bool control){
     int commitCount = SToInt64(getStatusTerm("commitCount", control));
     int i = 0;
 
@@ -620,4 +604,4 @@ bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control)
     }
     return commitCount >= minCommitCount;
 }
-#endif
+

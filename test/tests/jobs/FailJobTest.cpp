@@ -14,7 +14,7 @@ struct FailJobTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {

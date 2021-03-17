@@ -1,31 +1,17 @@
 #pragma once
-#include "BedrockTester2.h"
-typedef BedrockTester2 BedrockTester;
-#if 0
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/TestHTTPS.h>
 #include <test/lib/tpunit++.hpp>
 #include <test/lib/PortMap.h>
 
-class BedrockTester {
+class BedrockTester2 {
   public:
 
     static int mockRequestMode;
+
     // Generate a temporary filename for a test DB, with an optional prefix.
     static string getTempFileName(string prefix = "");
-
-    // Returns the name of the server binary, by finding the first path that exists in `locations`.
-    static string getServerName();
-
-    // Search paths for `getServerName()`. Allowed to be modified before startup by implementer.
-    static list<string> locations;
-
-    static string defaultDBFile; // Unused, exists for backwards compatibility.
-    static string defaultServerAddr; // Unused, exists for backwards compatibility.
-
-    // This is expected to be set by main, built from argv, to expose command-line options to tests.
-    static SData globalArgs;
 
     // Shuts down all bedrock servers associated with any testers.
     static void stopAll();
@@ -37,7 +23,7 @@ class BedrockTester {
     string getServerAddr() { return _serverAddr; };
 
     // Constructor/destructor
-    BedrockTester(const map<string, string>& args = {},
+    BedrockTester2(const map<string, string>& args = {},
                   const list<string>& queries = {},
                   bool startImmediately = true,
                   bool keepFilesWhenFinished = false,
@@ -46,17 +32,7 @@ class BedrockTester {
                   uint16_t controlPort = 0,
                   bool ownPorts = true);
 
-    // Supply a threadID (now obsolete)
-    BedrockTester(int threadID,
-                  const map<string, string>& args = {},
-                  const list<string>& queries = {},
-                  bool startImmediately = true,
-                  bool keepFilesWhenFinished = false,
-                  uint16_t serverPort = 0,
-                  uint16_t nodePort = 0,
-                  uint16_t controlPort = 0,
-                  bool ownPorts = true);
-    ~BedrockTester();
+    ~BedrockTester2();
 
     // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
     // the cmmand port, is ready.
@@ -88,7 +64,7 @@ class BedrockTester {
     // This allows callers to run an entire transaction easily.
     class ScopedTransaction {
       public:
-        ScopedTransaction(BedrockTester* tester) : _tester(tester) {
+        ScopedTransaction(BedrockTester2* tester) : _tester(tester) {
             _tester->autoRollbackEveryDBCall = false;
             _tester->getSQLiteDB().beginTransaction();
         }
@@ -97,7 +73,7 @@ class BedrockTester {
             _tester->autoRollbackEveryDBCall = true;
         }
       private:
-        BedrockTester* _tester;
+        BedrockTester2* _tester;
     };
 
     int getServerPID() { return _serverPID; }
@@ -127,6 +103,9 @@ class BedrockTester {
     bool waitForCommit(int minCommitCount, int retries = 30, bool control = false);
 
   protected:
+    // Returns the name of the server binary, by finding the first path that exists in `locations`.
+    static string getServerName();
+
     // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
     // is called later on with an empty args list.
     map<string, string> _args;
@@ -141,7 +120,7 @@ class BedrockTester {
     int _serverPID = 0;
 
     // A set of all bedrock testers.
-    static set<BedrockTester*> _testers;
+    static set<BedrockTester2*> _testers;
 
     // Flag indicating whether the DB should be kept when the tester is destroyed.
     bool _keepFilesWhenFinished;
@@ -160,4 +139,3 @@ class BedrockTester {
     // If the ports were specified in advance.
     const bool _ownPorts;
 };
-#endif

@@ -18,7 +18,6 @@ void sigclean(int sig) {
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
-    BedrockTester::globalArgs = args;
 
     // Catch sigint.
     signal(SIGINT, sigclean);
