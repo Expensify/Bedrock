@@ -497,45 +497,11 @@ bool BedrockTester2::readDB(const string& query, SQResult& result)
     return success;
 }
 
-bool BedrockTester2::waitForState(const string& state, uint64_t timeoutUS)
-{
-    STable json;
+bool BedrockTester2::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            json = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true));
-            if (json["state"] == state) {
-                return true;
-            }
-            // It's still not there, let it try again.
-        } catch (...) {
-            // Doesn't do anything, we'll fall through to the sleep and try again.
-        }
-        usleep(100'000);
-    }
-
-    // we timed out, let's get some debugging info
-    cout << "waitForStates() timed out at " << STimeNow() << " waiting for state " << state << ". Started waiting at " << start << " Most recent status: " << SComposeJSONObject(json) << endl;
-
-    return false;
-}
-
-STable BedrockTester2::getStatus(bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    return SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
-}
-
-string BedrockTester2::getStatusTerm(string term, bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    // Use with caution
-    return getStatus(control)[term];
-}
-
-bool BedrockTester2::waitForStatusTerm(string term, string testValue, uint64_t timeoutUS, bool control){
-    uint64_t start = STimeNow();
-    while (STimeNow() < start + timeoutUS) {
-        try {
-            string result = getStatusTerm(term, control);
+            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
@@ -549,16 +515,7 @@ bool BedrockTester2::waitForStatusTerm(string term, string testValue, uint64_t t
     return false;
 }
 
-bool BedrockTester2::waitForCommit(int minCommitCount, int retries, bool control){
-    int commitCount = SToInt64(getStatusTerm("commitCount", control));
-    int i = 0;
-
-    // check commitCount up to "retries" times with a 1s sleep between calls
-    while (commitCount < minCommitCount && i < retries) {
-        sleep(1);
-        commitCount = SToInt64(getStatusTerm("commitCount", control));
-        i++;
-    }
-    return commitCount >= minCommitCount;
+bool BedrockTester2::waitForState(const string& state, uint64_t timeoutUS)
+{
+    return waitForStatusTerm("state", state, timeoutUS);
 }
-

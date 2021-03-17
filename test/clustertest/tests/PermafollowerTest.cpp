@@ -27,7 +27,7 @@ struct PermafollowerTest : tpunit::TestFixture {
         ASSERT_TRUE(node5.waitForState("FOLLOWING"));
 
         // Confirm permafollower priority is correct
-        ASSERT_TRUE(node5.waitForStatusTerm("Priority", "0", 5'000'000, true));
+        ASSERT_TRUE(node5.waitForStatusTerm("Priority", "0", 5'000'000));
 
         // Shut down less than half the full peers
         tester.stopNode(1);

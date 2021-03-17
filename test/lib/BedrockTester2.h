@@ -71,21 +71,12 @@ class BedrockTester2 {
     string readDB(const string& query);
     bool readDB(const string& query, SQResult& result);
 
-    // Waits up to timeoutUS for the node to be in state `state`, returning true as soon as that state is reached, or
-    // false if the timeout is hit.
+    // Wait for a particular key in a `Status` message to equal a particular value, for up to `timeoutUS` us. Returns
+    // true if a match was found, or times out otherwose.
+    bool waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS = 60'000'000);
+
+    // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
-
-    // get the output of a "Status" command from the command port
-    STable getStatus(bool control = false);
-
-    // get the value of a particular term from the output of a "Status" command
-    string getStatusTerm(string term, bool control = false);
-
-    // wait for the value of a particular term to match the testValue
-    bool waitForStatusTerm(string term, string testValue, uint64_t timeoutUS = 30'000'000, bool control = false);
-
-    // wait for the specified commit, up to "retries" times
-    bool waitForCommit(int minCommitCount, int retries = 30, bool control = false);
 
   protected:
     // Returns the name of the server binary, by finding the first path that exists in `locations`.
