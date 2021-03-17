@@ -7,37 +7,43 @@
 
 class BedrockTester2 {
   public:
-
-    static int mockRequestMode;
-
-    // Generate a temporary filename for a test DB, with an optional prefix.
-    static string getTempFileName(string prefix = "");
-
-    // Shuts down all bedrock servers associated with any testers.
-    static void stopAll();
-
-    // This is an allocator for TCP ports.
+    // This is an allocator for TCP ports, new servers can get new port numbers from this object and return them when
+    // they're done.
     static PortMap ports;
 
-    // Returns the address of this server.
-    string getServerAddr() { return _serverAddr; };
-
-    // Constructor/destructor
+    // Constructor.
+    // args: A set of command line arguments to pass to the bedrock server when it starts.
+    // queries: A list of queries to run on the newly created DB for the server *before it starts*.
+    // serverPort: the port on which to listen for commands
+    // nodePort: the port on which to communicate with the rest of the cluster.
+    // controlPort: the port on which to send control messages to the server.
+    //
+    // NOTE ON PORTS:
+    // IF these are 0, they will be allocated automatically from `ports` above. If the are non-zero, they must have
+    // already been allocated from `ports` above by the caller, and they will be returned to `ports` on destruction.
+    //
+    // startImmediately: Should the server start running before the constructor returns?
     BedrockTester2(const map<string, string>& args = {},
                   const list<string>& queries = {},
-                  bool startImmediately = true,
-                  bool keepFilesWhenFinished = false,
                   uint16_t serverPort = 0,
                   uint16_t nodePort = 0,
                   uint16_t controlPort = 0,
-                  bool ownPorts = true);
+                  bool startImmediately = true);
 
+    // Destructor.
     ~BedrockTester2();
 
     // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
-    // the cmmand port, is ready.
+    // the command port, is ready.
     string startServer(bool dontWait = false);
     void stopServer(int signal = SIGINT);
+
+    // Shuts down all bedrock servers associated with any existing testers.
+    static void stopAll();
+
+    // Generate a temporary filename with an optional prefix. Used particularly to create new DB files for each server,
+    // but can generally be used for any temporary file required.
+    static string getTempFileName(string prefix = "");
 
     // Change the args on a stopped server.
     void updateArgs(const map<string, string> args);
@@ -122,9 +128,6 @@ class BedrockTester2 {
     // A set of all bedrock testers.
     static set<BedrockTester2*> _testers;
 
-    // Flag indicating whether the DB should be kept when the tester is destroyed.
-    bool _keepFilesWhenFinished;
-
     // A version of the DB that can be queries without going through bedrock.
     SQLite* _db = 0;
 
@@ -135,7 +138,4 @@ class BedrockTester2 {
     uint16_t _serverPort;
     uint16_t _nodePort;
     uint16_t _controlPort;
-
-    // If the ports were specified in advance.
-    const bool _ownPorts;
 };

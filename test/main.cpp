@@ -71,12 +71,6 @@ int main(int argc, char* argv[]) {
         exclude.insert("Perf");
     }
 
-    if (args.isSet("-duplicateRequests")) {
-        // Duplicate every request N times.
-        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
-        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
-    }
-
     // Set the defaults for the servers that each BedrockTester will start.
 
     if (args.isSet("-wait")) {

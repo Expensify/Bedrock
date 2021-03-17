@@ -2,12 +2,9 @@
 #include <sys/wait.h>
 
 // Define static vars.
-mutex BedrockTester2::_testersMutex;
 PortMap BedrockTester2::ports;
+mutex BedrockTester2::_testersMutex;
 set<BedrockTester2*> BedrockTester2::_testers;
-
-// Set to 2 or more for duplicated requests.
-int BedrockTester2::mockRequestMode = 0;
 
 string BedrockTester2::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -43,17 +40,13 @@ void BedrockTester2::stopAll() {
 
 BedrockTester2::BedrockTester2(const map<string, string>& args,
                              const list<string>& queries,
-                             bool startImmediately,
-                             bool keepFilesWhenFinished,
                              uint16_t serverPort,
                              uint16_t nodePort,
                              uint16_t controlPort,
-                             bool ownPorts)
-  : _keepFilesWhenFinished(keepFilesWhenFinished),
-    _serverPort(ownPorts ? ports.getPort() : serverPort),
-    _nodePort(ownPorts ? ports.getPort() : nodePort),
-    _controlPort(ownPorts ? ports.getPort() : controlPort),
-    _ownPorts(ownPorts)
+                             bool startImmediately) :
+    _serverPort(serverPort ?: ports.getPort()),
+    _nodePort(nodePort ?: ports.getPort()),
+    _controlPort(controlPort ?: ports.getPort())
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
@@ -135,20 +128,16 @@ BedrockTester2::~BedrockTester2() {
     if (_serverPID) {
         stopServer();
     }
-    if (!_keepFilesWhenFinished) {
-        SFileExists(_dbName.c_str()) && unlink(_dbName.c_str());
-        SFileExists((_dbName + "-shm").c_str()) && unlink((_dbName + "-shm").c_str());
-        SFileExists((_dbName + "-wal").c_str()) && unlink((_dbName + "-wal").c_str());
-    }
+    SFileExists(_dbName.c_str()) && unlink(_dbName.c_str());
+    SFileExists((_dbName + "-shm").c_str()) && unlink((_dbName + "-shm").c_str());
+    SFileExists((_dbName + "-wal").c_str()) && unlink((_dbName + "-wal").c_str());
+
+    ports.returnPort(_serverPort);
+    ports.returnPort(_nodePort);
+    ports.returnPort(_controlPort);
+
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
-
-    // Release programmatically allocated ports
-    if (_ownPorts) {
-        ports.returnPort(_serverPort);
-        ports.returnPort(_nodePort);
-        ports.returnPort(_controlPort);
-    }
 }
 
 void BedrockTester2::updateArgs(const map<string, string> args) {
@@ -364,122 +353,102 @@ vector<SData> BedrockTester2::executeWaitMultipleData(vector<SData> requests, in
                 }
                 timedOut = false;
 
-                // See if we need to send mock requests.
-                size_t count = 1;
-                if (mockRequestMode > 1) {
-                    count = mockRequestMode;
-                }
-                
-                // Send all of the requests, including mocked ones.
-                for (size_t mockCount = 0; mockCount < count; mockCount++) {
-                    // For every request but the first one, mark it mocked.
-                    if (mockCount) {
-                        myRequest["mockRequest"] = "true";
-                    }
-
-                    // Send until there's nothing left in the buffer.
-                    SFastBuffer sendBuffer(myRequest.serialize());
-                    while (sendBuffer.size()) {
-                        bool result = S_sendconsume(socket, sendBuffer);
-                        if (!result) {
-                            cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
-                            ::shutdown(socket, SHUT_RDWR);
-                            ::close(socket);
-                            socket = -1;
-                            if (returnOnDisconnect) {
-                                if (errorCode) {
-                                    *errorCode = 3;
-                                }
-                                return;
+                // Send until there's nothing left in the buffer.
+                SFastBuffer sendBuffer(myRequest.serialize());
+                while (sendBuffer.size()) {
+                    bool result = S_sendconsume(socket, sendBuffer);
+                    if (!result) {
+                        cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = -1;
+                        if (returnOnDisconnect) {
+                            if (errorCode) {
+                                *errorCode = 3;
                             }
-
-                            break;
+                            return;
                         }
+
+                        break;
                     }
+                }
 
-                    // Now we wait for the response.
-                    SFastBuffer recvBuffer("");
-                    string methodLine, content;
-                    STable headers;
-                    int count = 0;
-                    uint64_t recvStart = STimeNow();
-                    while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
-                        // Poll the socket, so we get a timeout.
-                        pollfd readSock;
-                        readSock.fd = socket;
-                        readSock.events = POLLIN | POLLHUP;
-                        readSock.revents = 0;
+                // Now we wait for the response.
+                SFastBuffer recvBuffer("");
+                string methodLine, content;
+                STable headers;
+                int count = 0;
+                uint64_t recvStart = STimeNow();
+                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+                    // Poll the socket, so we get a timeout.
+                    pollfd readSock;
+                    readSock.fd = socket;
+                    readSock.events = POLLIN | POLLHUP;
+                    readSock.revents = 0;
 
-                        // wait for a second...
-                        poll(&readSock, 1, 1000);
-                        count++;
-                        if (readSock.revents & POLLIN) {
-                            bool result = S_recvappend(socket, recvBuffer);
-                            if (!result) {
-                                ::shutdown(socket, SHUT_RDWR);
-                                ::close(socket);
-                                socket = -1;
-                                if (errorCode) {
-                                    *errorCode = 4;
-                                }
-                                if (returnOnDisconnect) {
-                                    return;
-                                }
-                                break;
-                            }
-                        } else if (readSock.revents & POLLHUP) {
-                            cout << "Failure in readSock.revents & POLLHUP" << endl;
+                    // wait for a second...
+                    poll(&readSock, 1, 1000);
+                    count++;
+                    if (readSock.revents & POLLIN) {
+                        bool result = S_recvappend(socket, recvBuffer);
+                        if (!result) {
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
                             if (errorCode) {
-                                *errorCode = 5;
+                                *errorCode = 4;
                             }
                             if (returnOnDisconnect) {
                                 return;
                             }
                             break;
-                        } else {
-                            // If it's been over 60s, give up.
-                            if (recvStart + 60'000'000 < STimeNow()) {
-                                timedOut = true;
-                                break;
-                            }
+                        }
+                    } else if (readSock.revents & POLLHUP) {
+                        cout << "Failure in readSock.revents & POLLHUP" << endl;
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = -1;
+                        if (errorCode) {
+                            *errorCode = 5;
+                        }
+                        if (returnOnDisconnect) {
+                            return;
+                        }
+                        break;
+                    } else {
+                        // If it's been over 60s, give up.
+                        if (recvStart + 60'000'000 < STimeNow()) {
+                            timedOut = true;
+                            break;
                         }
                     }
+                }
 
-                    // Lock to avoid log lines writing over each other.
-                    {
-                        SAUTOLOCK(listLock);
-                        if (timedOut && !timeoutAutoRetries) {
-                            SData responseData = myRequest;
-                            responseData.nameValueMap = headers;
-                            responseData.methodLine = "000 Timeout";
-                            responseData.content = content;
-                            if (!mockCount) {
-                                results[myIndex] = move(responseData);
-                            }
+                // Lock to avoid log lines writing over each other.
+                {
+                    SAUTOLOCK(listLock);
+                    if (timedOut && !timeoutAutoRetries) {
+                        SData responseData = myRequest;
+                        responseData.nameValueMap = headers;
+                        responseData.methodLine = "000 Timeout";
+                        responseData.content = content;
+                        results[myIndex] = move(responseData);
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = 0;
+                        break;
+                    } else if (!timedOut) {
+                        // Ok, done, let's lock again and insert this in the results.
+                        SData responseData;
+                        responseData.nameValueMap = headers;
+                        responseData.methodLine = methodLine;
+                        responseData.content = content;
+                        results[myIndex] = move(responseData);
+                        if (headers["Connection"] == "close") {
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = 0;
                             break;
-                        } else if (!timedOut) {
-                            // Ok, done, let's lock again and insert this in the results.
-                            SData responseData;
-                            responseData.nameValueMap = headers;
-                            responseData.methodLine = methodLine;
-                            responseData.content = content;
-
-                            if (!mockCount) {
-                                results[myIndex] = move(responseData);
-                            }
-
-                            if (headers["Connection"] == "close") {
-                                ::shutdown(socket, SHUT_RDWR);
-                                ::close(socket);
-                                socket = 0;
-                                break;
-                            }
                         }
                     }
                 }
