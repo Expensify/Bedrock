@@ -34,7 +34,7 @@ string BedrockTester2::getServerName() {
 void BedrockTester2::stopAll() {
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     for (auto p : _testers) {
-        p->stopServer();
+        p->stopServer(SIGKILL);
     }
 }
 
@@ -146,7 +146,7 @@ void BedrockTester2::updateArgs(const map<string, string> args) {
     }
 }
 
-string BedrockTester2::startServer(bool dontWait) {
+string BedrockTester2::startServer(bool wait) {
     string serverName = getServerName();
     int childPID = fork();
     if (childPID == -1) {
@@ -216,7 +216,7 @@ string BedrockTester2::startServer(bool dontWait) {
             }
             if (needSocket) {
                 int socket = 0;
-                socket = S_socket(dontWait ? _controlAddr : _serverAddr, true, false, true);
+                socket = S_socket(wait ? _serverAddr: _controlAddr, true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
@@ -228,7 +228,7 @@ string BedrockTester2::startServer(bool dontWait) {
 
             // We've successfully opened a socket, so let's try and send a command.
             SData status("Status");
-            auto result = executeWaitMultipleData({status}, 1, dontWait);
+            auto result = executeWaitMultipleData({status}, 1, !wait);
             if (result[0].methodLine == "200 OK") {
                 return result[0].content;
             }

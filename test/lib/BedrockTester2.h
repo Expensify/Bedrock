@@ -33,9 +33,11 @@ class BedrockTester2 {
     // Destructor.
     ~BedrockTester2();
 
-    // Start and stop the bedrock server. If `dontWait` is specified, return as soon as the control port, rather that
-    // the command port, is ready.
-    string startServer(bool dontWait = false);
+    // Start the server. If `wait` is specified, wait until the server is fully up with the command port open and
+    // accepting requests. Otherwise, returns as soon as the control port is open and can return `Status`.
+    string startServer(bool wait = true);
+
+    // Stop a server by sending it a signal.
     void stopServer(int signal = SIGINT);
 
     // Shuts down all bedrock servers associated with any existing testers.

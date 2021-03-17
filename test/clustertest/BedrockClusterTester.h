@@ -210,5 +210,5 @@ string ClusterTester<T>::startNode(size_t index)
 template <typename T>
 string ClusterTester<T>::startNodeDontWait(size_t index)
 {
-    return next(_cluster.begin(), index)->startServer(true);
+    return next(_cluster.begin(), index)->startServer(false);
 }
