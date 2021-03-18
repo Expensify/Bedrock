@@ -1,21 +1,9 @@
-#if 0
 #include "BedrockTester.h"
 #include <sys/wait.h>
 
-// Define static vars.
-string BedrockTester::defaultDBFile; // Unused, exists for backwards compatibility.
-string BedrockTester::defaultServerAddr; // Unused, exists for backwards compatibility.
-SData BedrockTester::globalArgs;
-mutex BedrockTester::_testersMutex;
 PortMap BedrockTester::ports;
+mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
-list<string> BedrockTester::locations = {
-    "../bedrock",
-    "../../bedrock"
-};
-
-// Set to 2 or more for duplicated requests.
-int BedrockTester::mockRequestMode = 0;
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -26,71 +14,31 @@ string BedrockTester::getTempFileName(string prefix) {
     return buffer;
 }
 
-string BedrockTester::getServerName() {
-    for (auto location : locations) {
-        if (SFileExists(location)) {
-            return location;
-        }
-    }
-    cout << "Couldn't find bedrock server" << endl;
-    exit(1);
-
-    // Won't get hit.
-    return "";
-}
-
 void BedrockTester::stopAll() {
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     for (auto p : _testers) {
-        p->stopServer();
+        p->stopServer(SIGKILL);
     }
 }
 
 BedrockTester::BedrockTester(const map<string, string>& args,
                              const list<string>& queries,
-                             bool startImmediately,
-                             bool keepFilesWhenFinished,
                              uint16_t serverPort,
                              uint16_t nodePort,
                              uint16_t controlPort,
-                             bool ownPorts) :
-    BedrockTester(0, args, queries, startImmediately, keepFilesWhenFinished, serverPort, nodePort, controlPort, ownPorts)
-{ }
-
-BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
-                             const list<string>& queries,
-                             bool startImmediately,
-                             bool keepFilesWhenFinished,
-                             uint16_t serverPort,
-                             uint16_t nodePort,
-                             uint16_t controlPort,
-                             bool ownPorts)
-  : _keepFilesWhenFinished(keepFilesWhenFinished),
-    _serverPort(ownPorts ? ports.getPort() : serverPort),
-    _nodePort(ownPorts ? ports.getPort() : nodePort),
-    _controlPort(ownPorts ? ports.getPort() : controlPort),
-    _ownPorts(ownPorts)
+                             bool startImmediately) :
+    _serverPort(serverPort ?: ports.getPort()),
+    _nodePort(nodePort ?: ports.getPort()),
+    _controlPort(controlPort ?: ports.getPort())
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
     }
 
-    // Set these values from the arguments if provided, or the defaults if not.
-    try {
-        _dbName = args.at("-db");
-    } catch (...) {
-        _dbName = getTempFileName();
-    }
-    try {
-        _serverAddr = args.at("-serverHost");
-    } catch (...) {
-        _serverAddr = "127.0.0.1:" + to_string(_serverPort);
-    }
-
     map <string, string> defaultArgs = {
-        {"-db", _dbName},
-        {"-serverHost", _serverAddr},
+        {"-db", getTempFileName()},
+        {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
         {"-controlPort", "localhost:" + to_string(_controlPort)},
@@ -118,26 +66,24 @@ BedrockTester::BedrockTester(int threadID, const map<string, string>& args,
         _args[row.first] = row.second;
     }
     
-    _controlAddr = _args["-controlPort"];
-
     // If the DB file doesn't exist, create it.
-    if (!SFileExists(_dbName)) {
-        SFileSave(_dbName, "");
+    if (!SFileExists(_args["-db"])) {
+        SFileSave(_args["-db"], "");
     }
 
     // Run any supplied queries on the DB.
     // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
     if (queries.size()) {
-        sqlite3* _db;
+        sqlite3* db;
         sqlite3_initialize();
-        sqlite3_open_v2(_dbName.c_str(), &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+        sqlite3_open_v2(_args["-db"].c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
         for (string query : queries) {
-            int error = sqlite3_exec(_db, query.c_str(), 0, 0, 0);
+            int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
                 cout << "Init Query: " << query << ", FAILED. Error: " << error << endl;
             }
         }
-        SASSERT(!sqlite3_close(_db));
+        SASSERT(!sqlite3_close(db));
     }
     if (startImmediately) {
         startServer();
@@ -151,20 +97,16 @@ BedrockTester::~BedrockTester() {
     if (_serverPID) {
         stopServer();
     }
-    if (!_keepFilesWhenFinished) {
-        SFileExists(_dbName.c_str()) && unlink(_dbName.c_str());
-        SFileExists((_dbName + "-shm").c_str()) && unlink((_dbName + "-shm").c_str());
-        SFileExists((_dbName + "-wal").c_str()) && unlink((_dbName + "-wal").c_str());
-    }
+    SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
+    SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
+    SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
+
+    ports.returnPort(_serverPort);
+    ports.returnPort(_nodePort);
+    ports.returnPort(_controlPort);
+
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     _testers.erase(this);
-
-    // Release programmatically allocated ports
-    if (_ownPorts) {
-        ports.returnPort(_serverPort);
-        ports.returnPort(_nodePort);
-        ports.returnPort(_controlPort);
-    }
 }
 
 void BedrockTester::updateArgs(const map<string, string> args) {
@@ -173,8 +115,20 @@ void BedrockTester::updateArgs(const map<string, string> args) {
     }
 }
 
-string BedrockTester::startServer(bool dontWait) {
-    string serverName = getServerName();
+string BedrockTester::startServer(bool wait) {
+    string serverName = "bedrock";
+    for (int i = 0; i < 3; i++) {
+        if (SFileExists(serverName)) {
+            break;
+        }
+        serverName = "../" + serverName;
+    }
+
+    if (!SFileExists(serverName)) {
+        cout << "Couldn't find bedrock server" << endl;
+        exit(1);
+    }
+
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -184,7 +138,7 @@ string BedrockTester::startServer(bool dontWait) {
         // We are the child!
         list<string> args;
         // First arg is path to file.
-        args.push_front(getServerName());
+        args.push_front(serverName);
         for (auto& row : _args) {
             args.push_back(row.first);
             if (!row.second.empty()) {
@@ -205,13 +159,13 @@ string BedrockTester::startServer(bool dontWait) {
 
         // Make sure the ports we need are free.
         int portsFree = 0;
-        portsFree |= ports.waitForPort(getServerPort());
-        portsFree |= ports.waitForPort(getNodePort());
-        portsFree |= ports.waitForPort(getControlPort());
+        portsFree |= ports.waitForPort(_serverPort);
+        portsFree |= ports.waitForPort(_nodePort);
+        portsFree |= ports.waitForPort(_controlPort);
 
         if (portsFree) {
-            cout << "At least one port wasn't free (of: " << getServerPort() << ", " << getNodePort() << ", "
-                 << getControlPort() << ") to start server, things will probably fail." << endl;
+            cout << "At least one port wasn't free (of: " << _serverPort << ", " << _nodePort << ", "
+                 << _controlPort << ") to start server, things will probably fail." << endl;
         }
 
         // And then start the new server!
@@ -243,7 +197,7 @@ string BedrockTester::startServer(bool dontWait) {
             }
             if (needSocket) {
                 int socket = 0;
-                socket = S_socket(dontWait ? _controlAddr : _serverAddr, true, false, true);
+                socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
@@ -255,7 +209,7 @@ string BedrockTester::startServer(bool dontWait) {
 
             // We've successfully opened a socket, so let's try and send a command.
             SData status("Status");
-            auto result = executeWaitMultipleData({status}, 1, dontWait);
+            auto result = executeWaitMultipleData({status}, 1, !wait);
             if (result[0].methodLine == "200 OK") {
                 return result[0].content;
             }
@@ -330,7 +284,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 while (true) {
                     // If there's no socket, create a socket.
                     if (socket <= 0) {
-                        socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true);
                     }
 
                     // If that failed, we'll continue our main loop and try again.
@@ -380,122 +334,102 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 }
                 timedOut = false;
 
-                // See if we need to send mock requests.
-                size_t count = 1;
-                if (mockRequestMode > 1) {
-                    count = mockRequestMode;
-                }
-                
-                // Send all of the requests, including mocked ones.
-                for (size_t mockCount = 0; mockCount < count; mockCount++) {
-                    // For every request but the first one, mark it mocked.
-                    if (mockCount) {
-                        myRequest["mockRequest"] = "true";
-                    }
-
-                    // Send until there's nothing left in the buffer.
-                    SFastBuffer sendBuffer(myRequest.serialize());
-                    while (sendBuffer.size()) {
-                        bool result = S_sendconsume(socket, sendBuffer);
-                        if (!result) {
-                            cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
-                            ::shutdown(socket, SHUT_RDWR);
-                            ::close(socket);
-                            socket = -1;
-                            if (returnOnDisconnect) {
-                                if (errorCode) {
-                                    *errorCode = 3;
-                                }
-                                return;
+                // Send until there's nothing left in the buffer.
+                SFastBuffer sendBuffer(myRequest.serialize());
+                while (sendBuffer.size()) {
+                    bool result = S_sendconsume(socket, sendBuffer);
+                    if (!result) {
+                        cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = -1;
+                        if (returnOnDisconnect) {
+                            if (errorCode) {
+                                *errorCode = 3;
                             }
-
-                            break;
+                            return;
                         }
+
+                        break;
                     }
+                }
 
-                    // Now we wait for the response.
-                    SFastBuffer recvBuffer("");
-                    string methodLine, content;
-                    STable headers;
-                    int count = 0;
-                    uint64_t recvStart = STimeNow();
-                    while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
-                        // Poll the socket, so we get a timeout.
-                        pollfd readSock;
-                        readSock.fd = socket;
-                        readSock.events = POLLIN | POLLHUP;
-                        readSock.revents = 0;
+                // Now we wait for the response.
+                SFastBuffer recvBuffer("");
+                string methodLine, content;
+                STable headers;
+                int count = 0;
+                uint64_t recvStart = STimeNow();
+                while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
+                    // Poll the socket, so we get a timeout.
+                    pollfd readSock;
+                    readSock.fd = socket;
+                    readSock.events = POLLIN | POLLHUP;
+                    readSock.revents = 0;
 
-                        // wait for a second...
-                        poll(&readSock, 1, 1000);
-                        count++;
-                        if (readSock.revents & POLLIN) {
-                            bool result = S_recvappend(socket, recvBuffer);
-                            if (!result) {
-                                ::shutdown(socket, SHUT_RDWR);
-                                ::close(socket);
-                                socket = -1;
-                                if (errorCode) {
-                                    *errorCode = 4;
-                                }
-                                if (returnOnDisconnect) {
-                                    return;
-                                }
-                                break;
-                            }
-                        } else if (readSock.revents & POLLHUP) {
-                            cout << "Failure in readSock.revents & POLLHUP" << endl;
+                    // wait for a second...
+                    poll(&readSock, 1, 1000);
+                    count++;
+                    if (readSock.revents & POLLIN) {
+                        bool result = S_recvappend(socket, recvBuffer);
+                        if (!result) {
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = -1;
                             if (errorCode) {
-                                *errorCode = 5;
+                                *errorCode = 4;
                             }
                             if (returnOnDisconnect) {
                                 return;
                             }
                             break;
-                        } else {
-                            // If it's been over 60s, give up.
-                            if (recvStart + 60'000'000 < STimeNow()) {
-                                timedOut = true;
-                                break;
-                            }
+                        }
+                    } else if (readSock.revents & POLLHUP) {
+                        cout << "Failure in readSock.revents & POLLHUP" << endl;
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = -1;
+                        if (errorCode) {
+                            *errorCode = 5;
+                        }
+                        if (returnOnDisconnect) {
+                            return;
+                        }
+                        break;
+                    } else {
+                        // If it's been over 60s, give up.
+                        if (recvStart + 60'000'000 < STimeNow()) {
+                            timedOut = true;
+                            break;
                         }
                     }
+                }
 
-                    // Lock to avoid log lines writing over each other.
-                    {
-                        SAUTOLOCK(listLock);
-                        if (timedOut && !timeoutAutoRetries) {
-                            SData responseData = myRequest;
-                            responseData.nameValueMap = headers;
-                            responseData.methodLine = "000 Timeout";
-                            responseData.content = content;
-                            if (!mockCount) {
-                                results[myIndex] = move(responseData);
-                            }
+                // Lock to avoid log lines writing over each other.
+                {
+                    SAUTOLOCK(listLock);
+                    if (timedOut && !timeoutAutoRetries) {
+                        SData responseData = myRequest;
+                        responseData.nameValueMap = headers;
+                        responseData.methodLine = "000 Timeout";
+                        responseData.content = content;
+                        results[myIndex] = move(responseData);
+                        ::shutdown(socket, SHUT_RDWR);
+                        ::close(socket);
+                        socket = 0;
+                        break;
+                    } else if (!timedOut) {
+                        // Ok, done, let's lock again and insert this in the results.
+                        SData responseData;
+                        responseData.nameValueMap = headers;
+                        responseData.methodLine = methodLine;
+                        responseData.content = content;
+                        results[myIndex] = move(responseData);
+                        if (headers["Connection"] == "close") {
                             ::shutdown(socket, SHUT_RDWR);
                             ::close(socket);
                             socket = 0;
                             break;
-                        } else if (!timedOut) {
-                            // Ok, done, let's lock again and insert this in the results.
-                            SData responseData;
-                            responseData.nameValueMap = headers;
-                            responseData.methodLine = methodLine;
-                            responseData.content = content;
-
-                            if (!mockCount) {
-                                results[myIndex] = move(responseData);
-                            }
-
-                            if (headers["Connection"] == "close") {
-                                ::shutdown(socket, SHUT_RDWR);
-                                ::close(socket);
-                                socket = 0;
-                                break;
-                            }
                         }
                     }
                 }
@@ -521,80 +455,34 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
-        _db = new SQLite(_dbName, 1000000, 3000000, -1);
-    }
-    if (autoRollbackEveryDBCall) {
-        _db->rollback();
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1);
     }
     return *_db;
 }
 
 string BedrockTester::readDB(const string& query)
 {
-    return getSQLiteDB().read(query);
+    SQLite& db = getSQLiteDB();
+    db.beginTransaction();
+    string result = db.read(query);
+    db.rollback();
+    return result;
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
-    return getSQLiteDB().read(query, result);
+    SQLite& db = getSQLiteDB();
+    db.beginTransaction();
+    bool success = db.read(query, result);
+    db.rollback();
+    return success;
 }
 
-int BedrockTester::getServerPort() {
-    return _serverPort;
-}
-
-int BedrockTester::getNodePort() {
-    return _nodePort;
-}
-
-int BedrockTester::getControlPort() {
-    return _controlPort;
-}
-
-bool BedrockTester::waitForState(string state, uint64_t timeoutUS, bool control) {
-    return waitForStates({state}, timeoutUS, control);
-}
-
-bool BedrockTester::waitForStates(set<string> states, uint64_t timeoutUS, bool control)
-{
-    STable json;
+bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            json = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
-            auto it = states.find(json["state"]);
-            if (it != states.end()) {
-                return true;
-            }
-            // It's still not there, let it try again.
-        } catch (...) {
-            // Doesn't do anything, we'll fall through to the sleep and try again.
-        }
-        usleep(100'000);
-    }
-
-    // we timed out, let's get some debugging info
-    cout << "waitForStates() timed out at " << STimeNow() << " waiting for states " << SComposeList(states) << ". Started waiting at " << start << " Most recent status: " << SComposeJSONObject(json) << endl;
-
-    return false;
-}
-
-STable BedrockTester::getStatus(bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    return SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", control));
-}
-
-string BedrockTester::getStatusTerm(string term, bool control) {
-    // FYI: sometimes the status command doesn't return with every key/value expected
-    // Use with caution
-    return getStatus(control)[term];
-}
-
-bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t timeoutUS, bool control){
-    uint64_t start = STimeNow();
-    while (STimeNow() < start + timeoutUS) {
-        try {
-            string result = getStatusTerm(term, control);
+            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
@@ -608,16 +496,8 @@ bool BedrockTester::waitForStatusTerm(string term, string testValue, uint64_t ti
     return false;
 }
 
-bool BedrockTester::waitForCommit(int minCommitCount, int retries, bool control){
-    int commitCount = SToInt64(getStatusTerm("commitCount", control));
-    int i = 0;
-
-    // check commitCount up to "retries" times with a 1s sleep between calls
-    while (commitCount < minCommitCount && i < retries) {
-        sleep(1);
-        commitCount = SToInt64(getStatusTerm("commitCount", control));
-        i++;
-    }
-    return commitCount >= minCommitCount;
+bool BedrockTester::waitForState(const string& state, uint64_t timeoutUS)
+{
+    return waitForStatusTerm("state", state, timeoutUS);
 }
-#endif
+
