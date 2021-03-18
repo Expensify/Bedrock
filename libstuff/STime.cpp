@@ -54,3 +54,42 @@ string SCURRENT_TIMESTAMP_MS() {
     snprintf(msString, 5, "%03lu", ms);
     return timestamp + "." + msString;
 }
+
+string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
+
+    list<string> parts = SParseList(timeStamp, '-');
+
+    // Initialize to all 0's
+    struct tm t = {0};  
+    int64_t year;
+
+    try {
+        // This is year - 1900
+        year = stoull(parts.front(), 0, 10) - 1900;
+    } catch (const invalid_argument& e) {
+        STHROW("500 Error parsing year");
+    } catch (const out_of_range& e) {
+        STHROW("500 Error parsing year");
+    }
+
+    // Pop the year off
+    parts.pop_front();
+
+    try {
+        int64_t month = stoull(parts.front(), 0, 10) - 1;
+        int64_t yearInMonths = year * 12 + month;
+        yearInMonths += offset;
+        t.tm_year = yearInMonths / 12;
+        t.tm_mon = yearInMonths % 12;
+    } catch (const invalid_argument& e) {
+        STHROW("500 Error parsing month");
+    } catch (const out_of_range& e) {
+        STHROW("500 Error parsing month");
+    }
+
+    t.tm_mday = 1;
+    
+    char buf[256] = {};
+    size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
+    return string(buf, length);
+}
