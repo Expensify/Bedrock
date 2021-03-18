@@ -116,18 +116,8 @@ void BedrockTester::updateArgs(const map<string, string> args) {
 }
 
 string BedrockTester::startServer(bool wait) {
+    // This expects that `bedrock` exists in the current path. It may need to be added.
     string serverName = "bedrock";
-    for (int i = 0; i < 3; i++) {
-        if (SFileExists(serverName)) {
-            break;
-        }
-        serverName = "../" + serverName;
-    }
-
-    if (!SFileExists(serverName)) {
-        cout << "Couldn't find bedrock server" << endl;
-        exit(1);
-    }
 
     int childPID = fork();
     if (childPID == -1) {

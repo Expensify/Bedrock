@@ -21,9 +21,6 @@ class ClusterTester {
     // Returns the tester at the given index in the cluster.
     T& getTester(size_t index);
 
-    // Legacy name for the above. TODO: Remove when not used by auth.
-    T* getBedrockTester(size_t index);
-
     // Starts a given node, given the same arguments given by the constructor.
     string startNode(size_t index);
 
@@ -181,12 +178,6 @@ ClusterTester<T>::~ClusterTester()
     }
 
     _cluster.clear();
-}
-
-template <typename T>
-T* ClusterTester<T>::getBedrockTester(size_t index)
-{
-    return &(*next(_cluster.begin(), index));
 }
 
 template <typename T>
