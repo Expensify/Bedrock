@@ -1,7 +1,6 @@
 #include "BedrockTester2.h"
 #include <sys/wait.h>
 
-// Define static vars.
 PortMap BedrockTester2::ports;
 mutex BedrockTester2::_testersMutex;
 set<BedrockTester2*> BedrockTester2::_testers;
@@ -13,22 +12,6 @@ string BedrockTester2::getTempFileName(string prefix) {
     int filedes = mkstemps(buffer, 3);
     close(filedes);
     return buffer;
-}
-
-string BedrockTester2::getServerName() {
-    string path = "bedrock";
-    for (int i = 0; i < 3; i++) {
-        if (SFileExists(path)) {
-            break;
-        }
-        path = "../" + path;
-    }
-
-    if (path.empty()) {
-        cout << "Couldn't find bedrock server" << endl;
-        exit(1);
-    }
-    return path;
 }
 
 void BedrockTester2::stopAll() {
@@ -53,21 +36,9 @@ BedrockTester2::BedrockTester2(const map<string, string>& args,
         _testers.insert(this);
     }
 
-    // Set these values from the arguments if provided, or the defaults if not.
-    try {
-        _dbName = args.at("-db");
-    } catch (...) {
-        _dbName = getTempFileName();
-    }
-    try {
-        _serverAddr = args.at("-serverHost");
-    } catch (...) {
-        _serverAddr = "127.0.0.1:" + to_string(_serverPort);
-    }
-
     map <string, string> defaultArgs = {
-        {"-db", _dbName},
-        {"-serverHost", _serverAddr},
+        {"-db", getTempFileName()},
+        {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
         {"-controlPort", "localhost:" + to_string(_controlPort)},
@@ -95,26 +66,24 @@ BedrockTester2::BedrockTester2(const map<string, string>& args,
         _args[row.first] = row.second;
     }
     
-    _controlAddr = _args["-controlPort"];
-
     // If the DB file doesn't exist, create it.
-    if (!SFileExists(_dbName)) {
-        SFileSave(_dbName, "");
+    if (!SFileExists(_args["-db"])) {
+        SFileSave(_args["-db"], "");
     }
 
     // Run any supplied queries on the DB.
     // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
     if (queries.size()) {
-        sqlite3* _db;
+        sqlite3* db;
         sqlite3_initialize();
-        sqlite3_open_v2(_dbName.c_str(), &_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+        sqlite3_open_v2(_args["-db"].c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
         for (string query : queries) {
-            int error = sqlite3_exec(_db, query.c_str(), 0, 0, 0);
+            int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
                 cout << "Init Query: " << query << ", FAILED. Error: " << error << endl;
             }
         }
-        SASSERT(!sqlite3_close(_db));
+        SASSERT(!sqlite3_close(db));
     }
     if (startImmediately) {
         startServer();
@@ -128,9 +97,9 @@ BedrockTester2::~BedrockTester2() {
     if (_serverPID) {
         stopServer();
     }
-    SFileExists(_dbName.c_str()) && unlink(_dbName.c_str());
-    SFileExists((_dbName + "-shm").c_str()) && unlink((_dbName + "-shm").c_str());
-    SFileExists((_dbName + "-wal").c_str()) && unlink((_dbName + "-wal").c_str());
+    SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
+    SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
+    SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
@@ -147,7 +116,19 @@ void BedrockTester2::updateArgs(const map<string, string> args) {
 }
 
 string BedrockTester2::startServer(bool wait) {
-    string serverName = getServerName();
+    string serverName = "bedrock";
+    for (int i = 0; i < 3; i++) {
+        if (SFileExists(serverName)) {
+            break;
+        }
+        serverName = "../" + serverName;
+    }
+
+    if (!SFileExists(serverName)) {
+        cout << "Couldn't find bedrock server" << endl;
+        exit(1);
+    }
+
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -216,7 +197,7 @@ string BedrockTester2::startServer(bool wait) {
             }
             if (needSocket) {
                 int socket = 0;
-                socket = S_socket(wait ? _serverAddr: _controlAddr, true, false, true);
+                socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
@@ -303,7 +284,7 @@ vector<SData> BedrockTester2::executeWaitMultipleData(vector<SData> requests, in
                 while (true) {
                     // If there's no socket, create a socket.
                     if (socket <= 0) {
-                        socket = S_socket((control ? _controlAddr : _serverAddr), true, false, true);
+                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true);
                     }
 
                     // If that failed, we'll continue our main loop and try again.
@@ -474,7 +455,7 @@ vector<SData> BedrockTester2::executeWaitMultipleData(vector<SData> requests, in
 SQLite& BedrockTester2::getSQLiteDB()
 {
     if (!_db) {
-        _db = new SQLite(_dbName, 1000000, 3000000, -1);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1);
     }
     return *_db;
 }
@@ -493,7 +474,7 @@ bool BedrockTester2::readDB(const string& query, SQResult& result)
     SQLite& db = getSQLiteDB();
     db.beginTransaction();
     bool success = db.read(query, result);
-    db.rollback(); // In case this was left mid-transaction.
+    db.rollback();
     return success;
 }
 

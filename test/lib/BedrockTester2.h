@@ -79,34 +79,28 @@ class BedrockTester2 {
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
 
   protected:
-    // Returns the name of the server binary, by finding the first path that exists in `locations`.
-    static string getServerName();
-
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and
     // should not be done!
     SQLite& getSQLiteDB();
 
-    // Args passed on creation, which will be used to start the server if the `start` flag is set, or if `startServer`
-    // is called later on with an empty args list.
+    // These are the arguments for the bedrock process we'll start for this tester. This is a combination of defaults,
+    // automatically assigned arguments (like a randomly generated DB file name) and any args passed into the
+    // constructor. These are storesd and used any time the server is started, and can be modified with `updateArgs`.
     map<string, string> _args;
 
-    // If these are set, they'll be used instead of the global defaults.
-    string _serverAddr;
-    string _dbName;
-
-    string _controlAddr;
-
-    // The PID of the bedrock server we started.
+    // Stores the process ID of the running bedrock server while it's online, so that we can signal it to shut down.
     int _serverPID = 0;
 
-    // A set of all bedrock testers.
+    // Each new tester registers itself in this set on creation, and removes itself on destruction. This exists to
+    // faciliate `stopAll` tearing down all existing servers in case we need to shutdown, for instance in the case
+    // where we send the test `ctrl+c`.
     static set<BedrockTester2*> _testers;
 
-    // A version of the DB that can be queries without going through bedrock.
-    SQLite* _db = 0;
-
-    // For locking around changes to the _testers list.
+    // Locks around changes to the _testers list as each tester can run in a separate thread.
     static mutex _testersMutex;
+
+    // This is the underlying storage for `getSQLiteDB` and will only be initialized once per tester.
+    SQLite* _db = nullptr;
 
     // The ports the server will listen on.
     uint16_t _serverPort;
