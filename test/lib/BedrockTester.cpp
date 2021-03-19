@@ -215,7 +215,7 @@ void BedrockTester::stopServer(int signal) {
     if (_serverPID) {
         kill(_serverPID, signal);
         int status;
-        waitpid(_serverPID, &status, WNOHANG);
+        waitpid(_serverPID, &status, 0);
         _serverPID = 0;
     }
 }
