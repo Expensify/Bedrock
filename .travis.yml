@@ -1,17 +1,17 @@
 sudo: false
 env:
     - GXX=g++-9 CC=gcc-9
-addons:
-    apt:
-        sources:
-            - sourceline: "ppa:ubuntu-toolchain-r/test"
-        packages:
-            - gcc-9
-            - g++-9
+    - secure: gB/utRWujHAhKC97U3zlLweMQ69FvE/0TeWTI5MuPNHyDzE0RuHAJllia+k5TsVaR0+IzCGCJ2wPUphJl3dbdaJXuxO3sde2pYHsWyFSOnBQzUfHhQRvAn1SzPpVLRZ5j+lRXRmBCADBQPIiBa0VxpP5hlHU+kprRaY99y9jRbi4SB3FIYzCxaUPnaIfSlt+bs/DlPuy3rV04Kh1HNTyW/0hJhrvn/bycduDRGIyqVDG76zypxs+6AX1T8of//lU/WLJV5xuEycsphxH8AkBFkxNS1MYfrhsYQ3yc351Gw5ZlVPoD/FDZdHFZ4jJ9CQ6hQFSNDfSocPTUJVwkazunYaaqjy31il5CKBzKKbBhq6KoLGCCruV2FkTaglJP9SlbwoQN4S/EJ1e0slBeFaC5KdBz/eWINVrJ+MD3j9u57FPd4Lo5x0R/GtT0I779vWDRgWakB3WqmZjFROyAtHEWtAOf5/ctlSJKKrIsnJ5lWLZShx4rZnxRT6NC8NRzw0Lo6RUW1Gh6MIV2w5S+2SGe1EZRdXimJFPQXxoeZuKMpYzWbVd2ogTnAZcVU3oix4Jhu4r6aqVt9r4TEfAgO5DrP49X3wi4v2x/80xBn4QqZmHWGrI+Q7ErgDjvhFRxpfMe+OGxd1URXGQC2hhQPh179opDbE+2Aw1MQGCMPAYASQ=
 notifications:
     email:
         on_success: never
 before_install:
+    - sudo openssl aes-256-cbc -K $encrypted_f9e02b3c1033_key -iv $encrypted_f9e02b3c1033_iv -in expensify.ca.crt.enc -out /usr/local/share/ca-certificates/expensify.ca.crt -d
+    - sudo update-ca-certificates
+    - sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
+    - echo "deb [arch=amd64] https://travis:$APT_MIRROR_PASSWORD@apt-mirror.expensify.com:843/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" | sudo tee -a /etc/apt/sources.list
+    - sudo apt-get update -y
+    - sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-9 g++-9
 script: ./travis.sh
 dist: xenial
 deploy:
