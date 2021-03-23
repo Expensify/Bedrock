@@ -12,7 +12,7 @@ struct UpdateJobTest : tpunit::TestFixture {
     BedrockTester* tester;
 
     void setupClass() {
-        tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
     }
 
     void tearDownClass() {

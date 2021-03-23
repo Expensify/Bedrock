@@ -18,7 +18,7 @@ struct SSLTest : tpunit::TestFixture {
             STHROW("Couldn't get CWD");
         }
 
-        tester = new BedrockTester(_threadID, {
+        tester = new BedrockTester({
             {"-plugins", string(cwd) + "/clustertest/testplugin/testplugin.so"},
         });
     }

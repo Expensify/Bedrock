@@ -55,7 +55,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
             follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
         });
 
-        leader.startServer(true);
+        leader.startServer(false);
         slowQueryThread.join();
         healthCheckThread.join();
 

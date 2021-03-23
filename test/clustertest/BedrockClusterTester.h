@@ -14,16 +14,12 @@ class ClusterTester {
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become leader.
     // You can also specify plugins to load if for some reason you need to override the default configuration.
-    ClusterTester(ClusterSize size, list<string> queries = {}, int threadID = 0, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs");
-    ClusterTester(int threadID, string pluginsToLoad = "db,cache,jobs");
+    ClusterTester(ClusterSize size, list<string> queries = {}, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs");
     ClusterTester(const string& pluginString = "db,cache,jobs");
     ~ClusterTester();
 
     // Returns the tester at the given index in the cluster.
     T& getTester(size_t index);
-
-    // Legacy name for the above. TODO: Remove when not used by auth.
-    T* getBedrockTester(size_t index);
 
     // Starts a given node, given the same arguments given by the constructor.
     string startNode(size_t index);
@@ -49,7 +45,6 @@ template <typename T>
 ClusterTester<T>::ClusterTester(const string& pluginString) : ClusterTester<T>(
     ClusterSize::THREE_NODE_CLUSTER,
     {},
-    0,
     {},
     {},
     pluginString
@@ -57,21 +52,14 @@ ClusterTester<T>::ClusterTester(const string& pluginString) : ClusterTester<T>(
 {}
 
 template <typename T>
-ClusterTester<T>::ClusterTester(int threadID, string pluginsToLoad)
-  : ClusterTester<T>(ClusterSize::THREE_NODE_CLUSTER, {},
-                            threadID, {}, {}, pluginsToLoad, nullptr) {}
-
-template <typename T>
 ClusterTester<T>::ClusterTester(ClusterSize size,
                                 list<string> queries,
-                                int threadID,
                                 map<string, string> _args,
                                 list<string> uniquePorts,
                                 string pluginsToLoad)
 : _size((int)size)
 {
     // Generate three ports for each node.
-    bool ownPorts = false;
     vector<vector<uint16_t>> ports((int)size);
     for (size_t i = 0; i < (size_t)size; i++) {
         const uint16_t serverPort = BedrockTester::ports.getPort();
@@ -139,14 +127,13 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         for (auto& a : _args) {
             if (a.first == "-serverHost" || a.first == "-nodeHost" || a.first == "-controlPort") {
                 cout << "Skipping port overwriting, " << a.first << ":" << a.second << endl;
-                ownPorts = true;
             } else {
                 args[a.first] = a.second;
             }
         }
 
         // And add the new entry in the map.
-        _cluster.emplace_back(args, queries, false, false, serverPort, nodePort, controlPort, ownPorts);
+        _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false);
     }
 
     // Now start them all.
@@ -194,12 +181,6 @@ ClusterTester<T>::~ClusterTester()
 }
 
 template <typename T>
-T* ClusterTester<T>::getBedrockTester(size_t index)
-{
-    return &(*next(_cluster.begin(), index));
-}
-
-template <typename T>
 T& ClusterTester<T>::getTester(size_t index)
 {
     return *next(_cluster.begin(), index);
@@ -220,5 +201,5 @@ string ClusterTester<T>::startNode(size_t index)
 template <typename T>
 string ClusterTester<T>::startNodeDontWait(size_t index)
 {
-    return next(_cluster.begin(), index)->startServer(true);
+    return next(_cluster.begin(), index)->startServer(false);
 }

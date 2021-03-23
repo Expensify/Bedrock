@@ -27,7 +27,7 @@ struct FinishJobTest : tpunit::TestFixture {
     BedrockTester* tester;
 
     void setupClass() {
-        clusterTester = new BedrockClusterTester(ClusterSize::THREE_NODE_CLUSTER, {}, _threadID);
+        clusterTester = new BedrockClusterTester(ClusterSize::THREE_NODE_CLUSTER, {});
         tester = &(clusterTester->getTester(1));
     }
 
