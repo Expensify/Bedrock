@@ -38,12 +38,6 @@ int main(int argc, char* argv[]) {
     int threads = 1;
     int repeatCount = 1;
 
-    if (args.isSet("-duplicateRequests")) {
-        // Duplicate every request N times.
-        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
-        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
-    }
-
     if (args.isSet("-repeatCount")) {
         repeatCount = max(1, SToInt(args["-repeatCount"]));
     }
