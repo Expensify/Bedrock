@@ -58,7 +58,7 @@ fi
 sudo apt-get update -y
 sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-9 g++-9
 
-trafis_time_finish
+travis_time_finish
 travis_fold end build_bedrock
 
 # don't print out versions until after they are installed
