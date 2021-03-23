@@ -31,7 +31,7 @@ struct GetJobsTest : tpunit::TestFixture {
     static constexpr auto jobName = "TestJobName";
     void getJobs() {
         // Create a tester.
-        BedrockTester tester(_threadID, {{"-plugins", "Jobs,DB"}}, {});
+        BedrockTester tester({{"-plugins", "Jobs,DB"}}, {});
 
         // Create some jobs.
         vector<string> repeatModifiers = {

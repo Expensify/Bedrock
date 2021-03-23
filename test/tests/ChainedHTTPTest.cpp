@@ -14,7 +14,7 @@ struct ChainedHTTPTest : tpunit::TestFixture {
         if (!getcwd(cwd, sizeof(cwd))) {
             STHROW("Couldn't get CWD");
         }
-        BedrockTester tester(_threadID, {
+        BedrockTester tester({
             {"-plugins", string(cwd) + "/clustertest/testplugin/testplugin.so"},
         });
 
