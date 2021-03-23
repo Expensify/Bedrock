@@ -7,9 +7,6 @@ export CC=gcc-9
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
 
-${CC} --version
-${GXX} --version
-
 travis_time_start() {
   travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
   travis_start_time=$(travis_nanoseconds)
@@ -63,6 +60,10 @@ sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_g
 
 trafis_time_finish
 travis_fold end build_bedrock
+
+# don't print out versions until after they are installed
+${CC} --version
+${GXX} --version
 
 travis_fold start build_bedrock
 travis_time_start
