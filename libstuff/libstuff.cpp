@@ -2602,7 +2602,7 @@ string SGetCurrentExceptionName()
     int status = 0;
     size_t length = 1000;
     char buffer[length];
-    memset(buffer,0,length);
+    memset(buffer, 0, length);
 
     // Demangle the name of the current exception.
     // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
