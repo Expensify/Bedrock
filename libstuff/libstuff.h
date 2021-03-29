@@ -283,7 +283,7 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
             const string s = __out.str();                                       \
             const string prefix = SWHEREAMI;                                    \
             for (size_t i = 0; i < s.size(); i += 7168) {                       \
-                SSyslogFunc(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+                (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
             }                                                                   \
         }                                                                       \
     } while (false)
