@@ -100,18 +100,20 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
     _valueToPendingThreadMap.erase(start, _valueToPendingThreadMap.end());
 }
 
-void SQLiteSequentialNotifier::checkpointRequired(SQLite& db) {
+void SQLiteSequentialNotifier::checkpointRequired() {
     lock_guard<mutex> lock(_internalStateMutex);
     _globalResult = RESULT::CHECKPOINT_REQUIRED;
     for (auto& p : _valueToPendingThreadMap) {
         lock_guard<mutex> lock(p.second->waitingThreadMutex);
         p.second->result = RESULT::CHECKPOINT_REQUIRED;
+        auto start = STimeNow();
         p.second->waitingThreadConditionVariable.notify_all();
+        SINFO("Notified all threads waiting on a checkpoint in " << ((STimeNow() - start) / 1000) << "ms");
     }
     _valueToPendingThreadMap.clear();
 }
 
-void SQLiteSequentialNotifier::checkpointComplete(SQLite& db) {
+void SQLiteSequentialNotifier::checkpointComplete() {
     lock_guard<mutex> lock(_internalStateMutex);
     _globalResult = RESULT::UNKNOWN;
 }

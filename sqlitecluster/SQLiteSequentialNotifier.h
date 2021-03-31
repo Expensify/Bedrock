@@ -47,8 +47,8 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     uint64_t getValue();
 
     // Implement the base class to notify for checkpoints
-    void checkpointRequired(SQLite& db) override;
-    void checkpointComplete(SQLite& db) override;
+    void checkpointRequired() override;
+    void checkpointComplete() override;
 
     // After calling `reset`, all calls to `waitFor` return `false` until this is called, and then they will wait
     // again. This allows for a caller to call `cancel`, wait for the completion of their threads, and then call

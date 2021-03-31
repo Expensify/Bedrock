@@ -430,9 +430,12 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
                 // Clear the response flag from the last transaction
                 peer->transactionResponse = Peer::Response::NONE;
             }
+
+            // Allows us to easily figure out how far behind followers are by analyzing the logs.
+            SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
             _sendToAllPeers(transaction, true); // subscribed only
         } else {
-            SINFO("Sending COMMIT for QUORUM transaction " << idHeader << " to followers");
+            SINFO("Sending COMMIT for QUORUM transaction " << id << " to followers");
         }
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = idHeader;

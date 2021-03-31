@@ -64,8 +64,8 @@ class SQLite {
     // transaction) to be notified that it needs to either finish or abandon the transaction.
     class CheckpointRequiredListener {
       public:
-        virtual void checkpointRequired(SQLite& db) = 0;
-        virtual void checkpointComplete(SQLite& db) = 0;
+        virtual void checkpointRequired() = 0;
+        virtual void checkpointComplete() = 0;
     };
 
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
@@ -276,8 +276,8 @@ class SQLite {
         // Add and remove and call checkpoint listeners in a thread-safe way.
         void addCheckpointListener(CheckpointRequiredListener& listener);
         void removeCheckpointListener(CheckpointRequiredListener& listener);
-        void checkpointRequired(SQLite& db);
-        void checkpointComplete(SQLite& db);
+        void checkpointRequired();
+        void checkpointComplete();
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);

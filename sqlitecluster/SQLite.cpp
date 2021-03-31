@@ -300,7 +300,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
-                    object->_sharedData.checkpointRequired(*object);
+                    object->_sharedData.checkpointRequired();
                 }
 
                 if (count == 0) {
@@ -317,7 +317,7 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
                     // We're done. Anyone can start a new transaction.
-                    object->_sharedData.checkpointComplete(*object);
+                    object->_sharedData.checkpointComplete();
                     break;
                 }
 
@@ -1119,17 +1119,17 @@ void SQLite::SharedData::removeCheckpointListener(SQLite::CheckpointRequiredList
     _checkpointListeners.erase(&listener);
 }
 
-void SQLite::SharedData::checkpointRequired(SQLite& db) {
+void SQLite::SharedData::checkpointRequired() {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     for (auto listener : _checkpointListeners) {
-        listener->checkpointRequired(db);
+        listener->checkpointRequired();
     }
 }
 
-void SQLite::SharedData::checkpointComplete(SQLite& db) {
+void SQLite::SharedData::checkpointComplete() {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     for (auto listener : _checkpointListeners) {
-        listener->checkpointComplete(db);
+        listener->checkpointComplete();
     }
 }
 
