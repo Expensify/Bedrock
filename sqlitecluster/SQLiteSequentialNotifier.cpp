@@ -118,9 +118,12 @@ void SQLiteSequentialNotifier::checkpointRequired() {
         p.second->result = RESULT::CHECKPOINT_REQUIRED;
         auto start = STimeNow();
         p.second->waitingThreadConditionVariable.notify_all();
-        SINFO("Notified all threads waiting on a checkpoint in " << ((STimeNow() - start) / 1000) << "ms");
+        SINFO("[checkpoint] Notified all threads waiting on a checkpoint in " << ((STimeNow() - start) / 1000) << "ms");
     }
     _valueToPendingThreadMap.clear();
+    if (_valueToPendingThreadMapNoCurrentTransaction.size()) {
+        SINFO("[checkpoint] Not unblocking threads waiting with no transaction.");
+    }
 }
 
 void SQLiteSequentialNotifier::checkpointComplete() {

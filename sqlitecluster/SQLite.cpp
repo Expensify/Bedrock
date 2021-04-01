@@ -254,6 +254,10 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (pageCount >= fullCheckpointPageMin.load()) {
+        if (object->_sharedData.commitCount <= object->_sharedData.lastCompleteCheckpointCommitCount + 100) {
+            SINFO("[checkpoint] Ready for complete checkpoint but skipping because less than 100 commits since last complete checkpoint.");
+            return SQLITE_OK;
+        }
         // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
         SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
 
@@ -304,7 +308,6 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                 }
 
                 if (count == 0) {
-
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
                     SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
@@ -318,6 +321,10 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
 
                     // We're done. Anyone can start a new transaction.
                     object->_sharedData.checkpointComplete();
+
+                    // Update our count so we don't re-run this too often.
+                    object->_sharedData.lastCompleteCheckpointCommitCount.store(object->_sharedData.commitCount);
+
                     break;
                 }
 
@@ -1101,7 +1108,8 @@ _commitEnabled(true),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
-})
+}),
+lastCompleteCheckpointCommitCount(0)
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {

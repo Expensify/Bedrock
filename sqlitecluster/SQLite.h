@@ -328,6 +328,7 @@ class SQLite {
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
         atomic<int> _currentPageCount;
 
+
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
 
@@ -335,6 +336,10 @@ class SQLite {
         atomic<bool> _commitEnabled;
 
         SPerformanceTimer _commitLockTimer;
+
+        // We keep track of the commitCount at each complete checkpoint, so that we can throttle the frequency of
+        // checkpoints to not more often than every N commits.
+        atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
