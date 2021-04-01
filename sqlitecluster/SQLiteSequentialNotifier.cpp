@@ -122,7 +122,7 @@ void SQLiteSequentialNotifier::checkpointRequired() {
     }
     _valueToPendingThreadMap.clear();
     if (_valueToPendingThreadMapNoCurrentTransaction.size()) {
-        SINFO("[checkpoint] Not unblocking threads waiting with no transaction.");
+        SINFO("[checkpoint] Not unblocking " << _valueToPendingThreadMapNoCurrentTransaction.size() << " threads waiting with no transaction.");
     }
 }
 
