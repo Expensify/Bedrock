@@ -64,8 +64,8 @@ class SQLite {
     // transaction) to be notified that it needs to either finish or abandon the transaction.
     class CheckpointRequiredListener {
       public:
-        virtual void checkpointRequired(SQLite& db) = 0;
-        virtual void checkpointComplete(SQLite& db) = 0;
+        virtual void checkpointRequired() = 0;
+        virtual void checkpointComplete() = 0;
     };
 
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
@@ -276,8 +276,8 @@ class SQLite {
         // Add and remove and call checkpoint listeners in a thread-safe way.
         void addCheckpointListener(CheckpointRequiredListener& listener);
         void removeCheckpointListener(CheckpointRequiredListener& listener);
-        void checkpointRequired(SQLite& db);
-        void checkpointComplete(SQLite& db);
+        void checkpointRequired();
+        void checkpointComplete();
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
@@ -328,6 +328,7 @@ class SQLite {
         // we need to store it across callbacks so we can check if the full check point thread still needs to run.
         atomic<int> _currentPageCount;
 
+
         // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
         atomic<int> _checkpointThreadBusy;
 
@@ -335,6 +336,10 @@ class SQLite {
         atomic<bool> _commitEnabled;
 
         SPerformanceTimer _commitLockTimer;
+
+        // We keep track of the commitCount at each complete checkpoint, so that we can throttle the frequency of
+        // checkpoints to not more often than every N commits.
+        atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared

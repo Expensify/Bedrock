@@ -165,7 +165,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
             SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
-                SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount);
+                SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount, false);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
                     // This should be impossible.
                     SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
@@ -208,7 +208,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                             // Yes, we get this line logged 4 times from four threads as their last activity and then:
                             // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
                             SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
-                            SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount);
+                            SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount, true);
                             if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
                                 SINFO("Replication canceled mid-transaction, stopping.");
                                 db.rollback();
@@ -233,7 +233,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                     // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
                     // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
                     // a commit after us will be able to commit, either.
-                    SQLiteSequentialNotifier::RESULT waitResult = node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"));
+                    SQLiteSequentialNotifier::RESULT waitResult = node._leaderCommitNotifier.waitFor(command.calcU64("NewCount"), true);
                     if (uniqueContraintsError) {
                         SINFO("Got unique constraints error in replication, restarting.");
                         db.rollback();
@@ -430,9 +430,12 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
                 // Clear the response flag from the last transaction
                 peer->transactionResponse = Peer::Response::NONE;
             }
+
+            // Allows us to easily figure out how far behind followers are by analyzing the logs.
+            SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
             _sendToAllPeers(transaction, true); // subscribed only
         } else {
-            SINFO("Sending COMMIT for QUORUM transaction " << idHeader << " to followers");
+            SINFO("Sending COMMIT for QUORUM transaction " << id << " to followers");
         }
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = idHeader;
