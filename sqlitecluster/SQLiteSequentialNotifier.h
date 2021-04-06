@@ -32,7 +32,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
 
     // Blocks until `_value` meets or exceeds `value`, unless an exceptional case (CANCELED, CHEKPOINT_REQUIRED) is
     // hit, and returns the corresponding RESULT.
-    SQLiteSequentialNotifier::RESULT waitFor(uint64_t value);
+    SQLiteSequentialNotifier::RESULT waitFor(uint64_t value, bool insideTransaction);
 
     // Causes any threads waiting for a value up to and including `value` to return `true`.
     void notifyThrough(uint64_t value);
@@ -47,8 +47,8 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
     uint64_t getValue();
 
     // Implement the base class to notify for checkpoints
-    void checkpointRequired(SQLite& db) override;
-    void checkpointComplete(SQLite& db) override;
+    void checkpointRequired() override;
+    void checkpointComplete() override;
 
     // After calling `reset`, all calls to `waitFor` return `false` until this is called, and then they will wait
     // again. This allows for a caller to call `cancel`, wait for the completion of their threads, and then call
@@ -68,6 +68,7 @@ class SQLiteSequentialNotifier : public SQLite::CheckpointRequiredListener {
 
     mutex _internalStateMutex;
     multimap<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMap;
+    multimap<uint64_t, shared_ptr<WaitState>> _valueToPendingThreadMapNoCurrentTransaction;
     uint64_t _value;
 
     // If there is a global result for all pending operations (i.e., they've been canceled or a checkpoint needs to
