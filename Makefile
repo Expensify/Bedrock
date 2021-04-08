@@ -30,7 +30,7 @@ CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wfor
 INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
-LIBPATHS =-Lmbedtls/library -L$(PROJECT)
+LIBPATHS =-L$(PROJECT) -Lmbedtls/library
 LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
 # These targets aren't actual files.
@@ -40,10 +40,7 @@ LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbed
 all: bedrock test clustertest
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
-
-# TODO: Collapse the separate Makefile into this one.
-testplugin:
-	cd test/clustertest/testplugin && $(MAKE)
+testplugin: test/clustertest/testplugin/testplugin.so
 
 clean:
 	rm -rf $(INTERMEDIATEDIR)
@@ -52,13 +49,13 @@ clean:
 	rm -rf bedrock
 	rm -rf test/test
 	rm -rf test/clustertest/clustertest
+	rm -rf test/clustertest/testplugin/testplugin.so
 	# The following two lines are unused but will remove old files that are no longer needed.
 	rm -rf libstuff/libstuff.d 
 	rm -rf libstuff/libstuff.h.gch
 	# If we've never run `make`, `mbedtls/Makefile` does not exist. Add a `test
 	# -f` check and `|| true` so it doesn't cause `make clean` to exit nonzero
 	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
-	cd test/clustertest/testplugin && $(MAKE) clean
 
 # Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
@@ -94,6 +91,11 @@ CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for the test plugin.
+TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp
+TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+
 # Rules to build our two static libraries.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
@@ -112,15 +114,20 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
+# The rule to build TestPlugin
+test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
+	$(GXX) $(INCLUDE) $(CXXFLAGS) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
+ 
+# This builds both the dependencies and the object file from the cpp.
 $(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) $(INCLUDE) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # Build c files. This is just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
+	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fpic -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
 
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
@@ -130,4 +137,5 @@ ifneq ($(MAKECMDGOALS),clean)
 -include $(TESTDEP)
 -include $(CLUSTERTESTDEP)
 -include $(BEDROCKDEP)
+-include $(TESTPLUGINTDEP)
 endif
