@@ -10,13 +10,21 @@ ifndef CC
 	CC = gcc-9
 endif
 
+# Set the optimization level from the environment, or default to -O2.
+ifndef BEDROCK_OPTIM_COMPILE_FLAG
+	BEDROCK_OPTIM_COMPILE_FLAG = -O2
+endif
+
 # Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
 # contained in a git repo.
-GIT_REVISION = $(shell git rev-parse --short HEAD)
+GIT_REVISION = "-DGIT_REVISION=$(shell git rev-parse --short HEAD)"
 PROJECT = $(shell git rev-parse --show-toplevel)
 
+# Set our include paths. We need this for the pre-processor to use to generate dependencies.
+INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++17 -fpic -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security $(GIT_REVISION) $(INCLUDE)
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
@@ -33,17 +41,6 @@ clustertest: test/clustertest/clustertest testplugin
 testplugin:
 	cd test/clustertest/testplugin && $(MAKE)
 
-# Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
-# Including it here causes it to be generated.
-# Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
-PRECOMPILE_D =libstuff/libstuff.d
-PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
-libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
-	$(CXX) $(CXXFLAGS) -MD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
-ifneq ($(MAKECMDGOALS),clean)
--include  libstuff/libstuff.d
-endif
-
 clean:
 	rm -rf $(INTERMEDIATEDIR)
 	rm -rf libstuff.a
@@ -51,7 +48,8 @@ clean:
 	rm -rf bedrock
 	rm -rf test/test
 	rm -rf test/clustertest/clustertest
-	rm -rf libstuff/libstuff.d
+	# The following two lines are unused but will remove old files that are no longer needed.
+	rm -rf libstuff/libstuff.d 
 	rm -rf libstuff/libstuff.h.gch
 	# If we've never run `make`, `mbedtls/Makefile` does not exist. Add a `test
 	# -f` check and `|| true` so it doesn't cause `make clean` to exit nonzero
@@ -63,14 +61,13 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 	git submodule init
 	git submodule update
 	cd mbedtls && git checkout -q 04a049bda1ceca48060b57bc4bcf5203ce591421
-	cd mbedtls && $(MAKE) no_test && touch library/libmbedcrypto.a && touch library/libmbedtls.a && touch library/libmbedx509.a
+	cd mbedtls && $(MAKE) no_test
 
 # Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
 
 # We're going to build a shared library from every CPP file in this directory or it's children.
 STUFFCPP = $(shell find libstuff -name '*.cpp')
-STUFFC = $(shell find libstuff -name '*.c')
-STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
+STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
@@ -90,6 +87,8 @@ CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+$(info LIBBEDROCKOBJ is [${LIBBEDROCKOBJ}])
+
 # Our static libraries just depend on their object files.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
@@ -106,7 +105,6 @@ BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
-	echo $(BEDROCKOBJ)
 	$(CXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
@@ -114,19 +112,17 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
-# This is the same as making the object files, both dependencies and object files are built together. The only
-# difference is that here, the fie passed as `-MF` is the target, and the output file is a modified version of that,
-# where for the object file rule, the reverse is true.
-$(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
+$(INTERMEDIATEDIR)/%.d: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -MD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(CXX) $(INCLUDE) -MM -MF $@ -MT $(@:.d=.o) $<
 
-# .o files depend on .d files to prevent simultaneous jobs from trying to create both.
+# The object files depend on both the cpp source files and the dependency files. They also depend on the precompiled
+# header file, because that will force the precompiled header to be built before the object files that use it.
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -MD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
-# Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
+# Build c files. This is just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -135,9 +131,9 @@ $(INTERMEDIATEDIR)/%.o: %.c
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
 ifneq ($(MAKECMDGOALS),clean)
--include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
+-include $(STUFFDEP)
+-include $(TESTDEP)
+-include $(CLUSTERTESTDEP)
 -include $(BEDROCKDEP)
-#-include $(TESTDEP)
-#-include $(CLUSTERTESTDEP)
 endif
