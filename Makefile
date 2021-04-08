@@ -1,19 +1,24 @@
 # Set the compiler, if it's not set by the environment.
-ifndef GXX
-	GXX = g++-9
+# TODO: Remove when the standard dev environment uses the new variable names.
+ifndef CXX
+	echo "Auto-setting C++ compiler to g++ 9"
+	CXX = g++-9
 endif
 
 ifndef CC
+	echo "Auto-setting C compiler to gcc 9"
 	CC = gcc-9
 endif
 
+# Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
+# contained in a git repo.
 GIT_REVISION = $(shell git rev-parse --short HEAD)
 PROJECT = $(shell git rev-parse --show-toplevel)
-INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
-CXXFLAGS = -g -std=c++17 -fpic -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
-LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
 
-# We'll stick object and dependency files in here so we don't need to look at them.
+# Set our standard C++ compiler flags
+CXXFLAGS = -g -std=c++17 -fpic -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+
+# All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
 
 # These targets aren't actual files.
@@ -24,6 +29,7 @@ all: bedrock test clustertest
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 
+# TODO: Collapse the separate Makefile into this one.
 testplugin:
 	cd test/clustertest/testplugin && $(MAKE)
 
@@ -33,7 +39,7 @@ testplugin:
 PRECOMPILE_D =libstuff/libstuff.d
 PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
 libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
-	$(GXX) $(CXXFLAGS) -MD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
+	$(CXX) $(CXXFLAGS) -MD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
 ifneq ($(MAKECMDGOALS),clean)
 -include  libstuff/libstuff.d
 endif
@@ -101,11 +107,11 @@ BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 # All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
 	echo $(BEDROCKOBJ)
-	$(GXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
-	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
-	$(GXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
 # Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
 # This is the same as making the object files, both dependencies and object files are built together. The only
@@ -113,12 +119,12 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 # where for the object file rule, the reverse is true.
 $(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
 	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(CXX) $(CXXFLAGS) -MD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # .o files depend on .d files to prevent simultaneous jobs from trying to create both.
 $(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
 	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
+	$(CXX) $(CXXFLAGS) -MD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
 
 # Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
