@@ -1,13 +1,12 @@
-# Set the compiler, if it's not set by the environment.
-# TODO: Remove when the standard dev environment uses the new variable names.
-ifndef CXX
-	echo "Auto-setting C++ compiler to g++ 9"
-	CXX = g++-9
+# If $CC and $CXX are defined as environment variables, those will be used here. However, if they aren't then GNU make
+# automatically defines them as `cc` and `g++`. Ultimately, we'd like those names to work, or the environment variables
+# to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
+# can be removed when that is resolved.
+ifeq ($(CC),cc)
+CC = gcc-9
 endif
-
-ifndef CC
-	echo "Auto-setting C compiler to gcc 9"
-	CC = gcc-9
+ifeq ($(CXX),g++)
+CXX = g++-9
 endif
 
 # Set the optimization level from the environment, or default to -O2.
