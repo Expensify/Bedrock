@@ -116,7 +116,7 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 
 # The rule to build TestPlugin
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
-	$(GXX) $(INCLUDE) $(CXXFLAGS) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
  
 # This builds both the dependencies and the object file from the cpp.
 $(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp
