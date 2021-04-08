@@ -17,7 +17,7 @@ endif
 
 # Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
 # contained in a git repo.
-GIT_REVISION = "-DGIT_REVISION=$(shell git rev-parse --short HEAD)"
+GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse --short HEAD)
 PROJECT = $(shell git rev-parse --show-toplevel)
 
 # Set our include paths. We need this for the pre-processor to use to generate dependencies.
@@ -112,16 +112,9 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
-# Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
-$(INTERMEDIATEDIR)/%.d: %.cpp
+$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(INCLUDE) -MM -MF $@ -MT $(@:.d=.o) $<
-
-# The object files depend on both the cpp source files and the dependency files. They also depend on the precompiled
-# header file, because that will force the precompiled header to be built before the object files that use it.
-$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
-	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -o $@ -c $<
+	$(CXX) $(CXXFLAGS) $(INCLUDE) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
 # Build c files. This is just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
