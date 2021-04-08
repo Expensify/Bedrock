@@ -29,6 +29,10 @@ CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wfor
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
 
+# We use the same library paths and required libraries for all binaries.
+LIBPATHS =-Lmbedtls/library -L$(PROJECT)
+LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin
 
@@ -56,51 +60,48 @@ clean:
 	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
 	cd test/clustertest/testplugin && $(MAKE) clean
 
-# The mbedtls libraries are all built the same way.
+# Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
 	cd mbedtls && git checkout -q 04a049bda1ceca48060b57bc4bcf5203ce591421
 	cd mbedtls && $(MAKE) no_test
 
-# Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
-
-# We're going to build a shared library from every CPP file in this directory or it's children.
+# We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
+# We then transform those file names into a list of object file name and dependency file names.
 STUFFCPP = $(shell find libstuff -name '*.cpp')
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# The same for libbedrock.
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for the main binary (which is just adding main.cpp)
 BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for our tests.
 TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for the cluster tests (manually adding one file from `test`)
 CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path "test/main.cpp")
 CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-$(info LIBBEDROCKOBJ is [${LIBBEDROCKOBJ}])
-
-# Our static libraries just depend on their object files.
+# Rules to build our two static libraries.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
 libbedrock.a: $(LIBBEDROCKOBJ)
 	ar crv $@ $(LIBBEDROCKOBJ)
 
-# We use the same library paths and required libraries for both binaries.
-LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
-
-# The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
-# times in parallel.
+# The prerequisites for all binaries are the same. We only include one of the mbedtls libs to avoid building three
+# times in parallel if it's out of date.
 BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
