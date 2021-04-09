@@ -1,3 +1,4 @@
+#include <libstuff/libstuff.h>
 #include "SQLite.h"
 #include "SQLitePool.h"
 

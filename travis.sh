@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export GXX=g++-9
+export CXX=g++-9
 export CC=gcc-9
 
 # Add the current working directory to $PATH so that tests can find bedrock.
@@ -63,7 +63,7 @@ travis_fold end build_bedrock
 
 # don't print out versions until after they are installed
 ${CC} --version
-${GXX} --version
+${CXX} --version
 
 travis_fold start build_bedrock
 travis_time_start
