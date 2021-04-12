@@ -1,6 +1,7 @@
 #include "libstuff.h"
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
+#include <sqlitecluster/SQLiteNode.h>
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {

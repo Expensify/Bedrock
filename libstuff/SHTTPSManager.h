@@ -1,6 +1,5 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include <sqlitecluster/SQLiteNode.h>
 class BedrockPlugin;
 
 class SStandaloneHTTPSManager : public STCPManager {
