@@ -118,7 +118,9 @@ test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
  
 # This builds both the dependencies and the object file from the cpp.
-$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp
+# We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
+# which many of our cpp files will reference.
+$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp mbedtls/library/libmbedcrypto.a
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
