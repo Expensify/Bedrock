@@ -1,3 +1,4 @@
+#include <libstuff/libstuff.h>
 #include "SQLiteSequentialNotifier.h"
 
 SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t value,  bool insideTransaction) {
