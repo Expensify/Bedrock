@@ -1,6 +1,6 @@
 #pragma once
 #include <libstuff/libstuff.h>
-class SQLite;
+#include <sqlitecluster/SQLite.h>
 
 class SQLitePool {
   public:
