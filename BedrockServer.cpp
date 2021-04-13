@@ -17,6 +17,12 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
     acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
 }
 
+void BedrockServer::acceptAndLaunchThread() {
+    if (_commandPort) {
+        _acceptSockets();
+    }
+}
+
 void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
     if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
@@ -1145,6 +1151,72 @@ void BedrockServer::worker(SQLitePool& dbPool,
     }
 }
 
+void BedrockServer::connectionThread(Socket* s, BedrockServer& server) {
+
+    // Process the socket and monitor for changes
+    bool exit = false;
+    while (!exit) {
+        switch (s->state.load()) {
+            case STCPManager::Socket::CLOSED:
+            {
+                // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
+                // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
+                // able to have their responses returned.
+                SAUTOLOCK(server._socketIDMutex);
+                server._socketIDMap.erase(s->id);
+                server.closeSocket(s);
+                exit = true;
+            }
+            case STCPManager::Socket::SHUTTINGDOWN:
+            {
+                // do nothing. Maybe someday do something.
+            }
+            break;
+
+            case STCPManager::Socket::CONNECTED:
+            {
+
+
+                {
+                    SAUTOLOCK(server._socketIDMutex);
+                    // If nothing's been received, break early.
+                    if (s->recvBuffer.empty()) {
+                        // If we're shutting down and past our _lastChance timeout, go ahead and close.
+                        if (server._shutdownState.load() != RUNNING && server._lastChance && server._lastChance < STimeNow() && server._socketIDMap.find(s->id) == server._socketIDMap.end()) {
+                            SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
+                            server._socketIDMap.erase(s->id);
+                            server.closeSocket(s);
+                            exit = true;
+                        }
+                        break;
+                    } else {
+                        // Or, if the socket ID isn't in the Map, break early
+                        auto socketIt = server._socketIDMap.find(s->id);
+                        if (socketIt != server._socketIDMap.end()) {
+                            break;
+                        }
+                    }
+                }
+
+                // Otherwise, we'll see if there's any activity on this socket. Currently, we don't handle clients
+                // pipelining requests well. We process commands in no particular order, so we can't dequeue two
+                // requests off the same socket at one time, or we don't guarantee their return order, thus we just
+                // wait and will try again later.
+            }
+            break;
+
+            default:
+            {
+                SWARN("Socket " << s->addr << " in unhandled state: " << s->state);
+            }
+            break;
+        }
+        // probably want something less ugly, but this is quick and dirty to reduce cpu time
+        // sleep 10ms
+        usleep(10000);
+    }
+}
+
 bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command) {
     if (_isStatusCommand(command)) {
         _status(command);
@@ -1225,6 +1297,7 @@ void BedrockServer::_resetServer() {
     _commandPort = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
+    _lastChance = 0;
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1241,7 +1314,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false)
+    _pluginsDetached(false), _lastChance(0)
 {
     _version = VERSION;
 
@@ -1503,33 +1576,18 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // over it, we'll keep a list of sockets that need closing.
     list<STCPManager::Socket*> socketsToClose;
 
-    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
-    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
-    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
-    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
-    static uint64_t lastChance = 0;
     for (auto s : socketList) {
         switch (s->state.load()) {
             case STCPManager::Socket::CLOSED:
             {
-                // TODO: Cancel any outstanding commands initiated by this socket. This isn't critical, and is an
-                // optimization. Otherwise, they'll continue to get processed to completion, and will just never be
-                // able to have their responses returned.
-                SAUTOLOCK(_socketIDMutex);
-                _socketIDMap.erase(s->id);
-                socketsToClose.push_back(s);
             }
             break;
             case STCPManager::Socket::CONNECTED:
             {
                 {
-                    SAUTOLOCK(_socketIDMutex);
+                    // If nothing's been received, break early.
                     if (s->recvBuffer.empty()) {
-                        // If nothing's been received, break early.
-                        if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
-                            // If we're shutting down and past our lastChance timeout, we start killing these.
-                            SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                            socketsToClose.push_back(s);
+                        if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                         }
                         break;
                     } else {
@@ -1638,7 +1696,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } else {
                     SAUTOLOCK(_socketIDMutex);
                     // If we weren't able to deserialize a complete request, and we're shutting down, give up.
-                    if (_shutdownState.load() != RUNNING && lastChance && lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
+                    if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow() && _socketIDMap.find(s->id) == _socketIDMap.end()) {
                         SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
                         socketsToClose.push_back(s);
                     }
@@ -1678,14 +1736,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we've been told to start shutting down, we'll set the lastChance timer.
+    // If we've been told to start shutting down, we'll set the _lastChance timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        if (!lastChance) {
-            lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
+        if (!_lastChance) {
+            _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (socketList.empty() || _gracefulShutdownTimeout.ringing()) {
-            lastChance = 0;
+            _lastChance = 0;
 
             // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
             // shutdown any time after here, and we'll have no way to handle new requests.
@@ -2216,6 +2274,9 @@ void BedrockServer::_acceptSockets() {
             SASSERT(!s->data);
             s->data = plugin;
         }
+
+        thread connThread (connectionThread, s, ref(*this));
+        connThread.detach();
     }
 }
 

@@ -357,6 +357,10 @@ int main(int argc, char* argv[]) {
                 BackupDB(args["-db"]);
                 server.setDetach(false);
             }
+
+            // TODO: new thread stuff
+            server.acceptAndLaunchThread();
+
             // Wait and process
             fd_map fdm;
             server.prePoll(fdm);
