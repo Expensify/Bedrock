@@ -2,7 +2,6 @@
 #include "BedrockServer.h"
 
 #include <arpa/inet.h>
-#include <cstring>
 #include <iomanip>
 #include <sys/resource.h>
 #include <sys/time.h>
