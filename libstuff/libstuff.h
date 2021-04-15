@@ -326,7 +326,7 @@ namespace std {
 // --------------------------------------------------------------------------
 // Converting between various bases
 string SToHex(uint64_t value, int digits = 16);
-inline string SToHex(uint32_t value);
+string SToHex(uint32_t value);
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
 string SStrFromHex(const string& buffer);
