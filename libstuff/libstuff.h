@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 // Forward declarations of types only used by reference.
 struct sockaddr_in;
