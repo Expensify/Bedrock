@@ -1,5 +1,10 @@
-#include <libstuff/libstuff.h>
 #include "SQLite.h"
+
+#include <linux/limits.h>
+#include <string.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SQResult.h>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 

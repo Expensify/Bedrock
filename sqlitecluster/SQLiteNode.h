@@ -1,9 +1,11 @@
 #pragma once
-#include "SQLite.h"
-#include "SQLitePool.h"
-#include "SQLiteSequentialNotifier.h"
-#include "WallClockTimer.h"
-#include "../SynchronizedMap.h"
+#include <libstuff/STCPNode.h>
+#include <sqlitecluster/SQLite.h>
+#include <sqlitecluster/SQLitePool.h>
+#include <sqlitecluster/SQLiteSequentialNotifier.h>
+#include <WallClockTimer.h>
+#include <SynchronizedMap.h>
+
 class SQLiteCommand;
 class SQLiteServer;
 

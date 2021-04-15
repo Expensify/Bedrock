@@ -1,3 +1,5 @@
+#include <libstuff/SQResult.h>
+#include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
 struct CancelJobTest : tpunit::TestFixture {

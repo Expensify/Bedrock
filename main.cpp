@@ -2,18 +2,21 @@
 /// =================
 /// Process entry point for Bedrock server.
 ///
-#include <libstuff/libstuff.h>
-#include <bedrockVersion.h>
-#include "BedrockServer.h"
-#include "BedrockPlugin.h"
-#include "plugins/Cache.h"
-#include "plugins/DB.h"
-#include "plugins/Jobs.h"
-#include "plugins/MySQL.h"
-#include "sqlitecluster/SQLite.h"
-#include <sys/stat.h> // for umask()
 #include <dlfcn.h>
+#include <iostream>
+#include <signal.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+
+#include <bedrockVersion.h>
+#include <BedrockServer.h>
+#include <BedrockPlugin.h>
+#include <plugins/Cache.h>
+#include <plugins/DB.h>
+#include <plugins/Jobs.h>
+#include <plugins/MySQL.h>
+#include <libstuff/libstuff.h>
+#include <sqlitecluster/SQLite.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////

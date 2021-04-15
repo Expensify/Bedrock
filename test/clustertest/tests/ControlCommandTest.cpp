@@ -1,5 +1,7 @@
+#include <iostream>
 
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct ControlCommandTest : tpunit::TestFixture {
     ControlCommandTest()

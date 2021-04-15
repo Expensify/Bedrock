@@ -1,4 +1,4 @@
-#include <libstuff/libstuff.h>
+#include "SRandom.h"
 
 mt19937_64 SRandom::_generator = mt19937_64(random_device()());
 uniform_int_distribution<uint64_t> SRandom::_distribution64 = uniform_int_distribution<uint64_t>();

@@ -1,4 +1,8 @@
-#include "libstuff.h"
+#include "STCPServer.h"
+
+#include <unistd.h>
+
+#include <libstuff/libstuff.h>
 
 STCPServer::STCPServer(const string& host) {
     // Initialize

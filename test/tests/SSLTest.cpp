@@ -1,4 +1,7 @@
+#include <unistd.h>
+
 #include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
 

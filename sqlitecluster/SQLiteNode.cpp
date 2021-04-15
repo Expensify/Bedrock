@@ -1,7 +1,12 @@
-#include <libstuff/libstuff.h>
 #include "SQLiteNode.h"
-#include "SQLiteServer.h"
-#include "SQLiteCommand.h"
+
+#include <unistd.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SRandom.h>
+#include <libstuff/SQResult.h>
+#include <sqlitecluster/SQLiteCommand.h>
+#include <sqlitecluster/SQLiteServer.h>
 
 // Introduction
 // ------------

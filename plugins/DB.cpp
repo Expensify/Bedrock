@@ -1,5 +1,9 @@
 #include "DB.h"
-#include "BedrockServer.h"
+
+#include <string.h>
+
+#include <BedrockServer.h>
+#include <libstuff/SQResult.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "

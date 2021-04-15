@@ -1,8 +1,14 @@
 #pragma once
-#include <libstuff/libstuff.h>
-#include <mbedtls/ssl.h>
-#include <mbedtls/entropy.h>
+
 #include <mbedtls/ctr_drbg.h>
+#include <mbedtls/entropy.h>
+#include <mbedtls/ssl.h>
+#include <string>
+
+using namespace std;
+
+class SX509;
+class SFastBuffer;
 
 struct SSSLState {
     // Attributes

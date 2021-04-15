@@ -1,5 +1,10 @@
 #pragma once
+#include <cstdint>
+#include <string>
+
 class SQLite;
+
+using namespace std;
 
 class SQLiteUtils {
   public:
