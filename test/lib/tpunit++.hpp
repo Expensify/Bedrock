@@ -75,22 +75,22 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { logOnFailure(this, "asserted true, got false"); ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { logOnFailure(this, "expected true, got false"); FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { logOnFailure(this, "asserted false, got true"); ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { logOnFailure(this, "expected false, got true"); FAIL(); } else { PASS(); }
-#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
-#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
-#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
-#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
-#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
-#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " >= " + SToStr(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " < " + SToStr(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " < " + SToStr(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " <= " + SToStr(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " <= " + SToStr(rhs)); FAIL(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "asserted true, got false"); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "expected true, got false"); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { testLog(this, "asserted false, got true"); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { testLog(this, "expected false, got true"); FAIL(); } else { PASS(); }
+#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
+#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
+#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
+#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " >= " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " < " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " < " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " <= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " <= " + SToStr(rhs)); FAIL(); }
 
 /**
  * The set of floating-point macros used to compare double/float values.
@@ -100,10 +100,10 @@ using namespace std;
  * ASSERT|EXPECT_FLOAT_NEAR(lhs, rhs, abs_error); generates a failure if
  * the given floating-point values exceed the absolute error.
  */
-#define ASSERT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { ABORT(); }
-#define EXPECT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { FAIL(); }
-#define ASSERT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { ABORT(); }
-#define EXPECT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { FAIL(); }
+#define ASSERT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs); ABORT(); }
+#define EXPECT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs); FAIL(); }
+#define ASSERT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { "incorrectly asserted " + SToStr(lhs) + " near " + SToStr(rhs); ABORT(); }
+#define EXPECT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { "incorrectly expected " + SToStr(lhs) + " near " + SToStr(rhs); FAIL(); }
 
 /**
  * The set of macros for checking whether a statement will throw or not
@@ -306,9 +306,9 @@ namespace tpunit {
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
                                          std::function<void()> threadInitFunction);
 
-         static void logOnFailure(TestFixture* f, const string& newLog);
+         static void testLog(TestFixture* f, const string& newLog);
 
-         void logOnFailure(const string& newLog);
+         void testLog(const string& newLog);
 
       protected:
 
