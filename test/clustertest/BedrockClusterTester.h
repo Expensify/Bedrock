@@ -1,3 +1,4 @@
+#pragma once
 #include <test/lib/BedrockTester.h>
 
 enum class ClusterSize {
