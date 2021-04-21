@@ -393,8 +393,8 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
             tpunit_detail_stats()._passes++;
         } else {
             lock_guard<recursive_mutex> lock(m);
-            printf("[       FAILED ] %s\n", t->_name);
             cout << f->testPrintBuffer << "\n";
+            printf("[       FAILED ] %s\n", t->_name);
             tpunit_detail_stats()._failures++;
         }
         t = t->_next;
@@ -402,12 +402,12 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
 }
 
 void tpunit::TestFixture::logOnFailure(const string& newLog) {
-    testPrintBuffer += newLog;
+    testPrintBuffer = testPrintBuffer + "[              ]    " + newLog + "\n";
 }
 
 void tpunit::TestFixture::logOnFailure(TestFixture* f, const string& newLog) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    f->testPrintBuffer += newLog;
+    f->testPrintBuffer = f->testPrintBuffer + "[              ]    " + newLog + "\n";
 }
 
 tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {

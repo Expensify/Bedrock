@@ -75,22 +75,22 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); logOnFailure(this, "EXPECTED TRUE, GOT FALSE"); } else { ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { FAIL(); } else { PASS(); }
-#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { FAIL(); }
-#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { FAIL(); }
-#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { FAIL(); }
-#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { FAIL(); }
-#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { FAIL(); }
-#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { ABORT(); }
-#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { FAIL(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { logOnFailure(this, "asserted true, got false"); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { logOnFailure(this, "expected true, got false"); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { logOnFailure(this, "asserted false, got true"); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { logOnFailure(this, "expected false, got true"); FAIL(); } else { PASS(); }
+#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
+#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
+#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
+#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " >= " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " < " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " < " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly asserted " + SToStr(lhs) + " <= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { logOnFailure(this, "incorrectly expected " + SToStr(lhs) + " <= " + SToStr(rhs)); FAIL(); }
 
 /**
  * The set of floating-point macros used to compare double/float values.
