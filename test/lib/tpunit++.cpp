@@ -188,7 +188,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                             }
                         }
                     }
-                    
+
                     // Similar for excluding. If it has no name, or there's no exclude list, it's not excluded.
                     else if (f->_name && _exclude.size()) {
                         for (string excludedName : _exclude) {
@@ -378,25 +378,36 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     method* t = f->_tests;
     recursive_mutex& m = *(f->_mutex);
     while(t) {
-       int _prev_assertions = f->_stats._assertions;
-       int _prev_exceptions = f->_stats._exceptions;
-       if (!f->_multiThreaded) {
-           printf("[ RUN          ] %s\n", t->_name);
-       }
-       tpunit_detail_do_methods(f->_befores);
-       tpunit_detail_do_method(t);
-       tpunit_detail_do_methods(f->_afters);
-       if(_prev_assertions == f->_stats._assertions && _prev_exceptions == f->_stats._exceptions) {
-          lock_guard<recursive_mutex> lock(m);
-          printf("[       PASSED ] %s\n", t->_name);
-          tpunit_detail_stats()._passes++;
-       } else {
-          lock_guard<recursive_mutex> lock(m);
-          printf("[       FAILED ] %s\n", t->_name);
-          tpunit_detail_stats()._failures++;
-       }
-       t = t->_next;
+        int _prev_assertions = f->_stats._assertions;
+        int _prev_exceptions = f->_stats._exceptions;
+        f->testPrintBuffer = "";
+        if (!f->_multiThreaded) {
+            printf("[ RUN          ] %s\n", t->_name);
+        }
+        tpunit_detail_do_methods(f->_befores);
+        tpunit_detail_do_method(t);
+        tpunit_detail_do_methods(f->_afters);
+        if(_prev_assertions == f->_stats._assertions && _prev_exceptions == f->_stats._exceptions) {
+            lock_guard<recursive_mutex> lock(m);
+            printf("[       PASSED ] %s\n", t->_name);
+            tpunit_detail_stats()._passes++;
+        } else {
+            lock_guard<recursive_mutex> lock(m);
+            printf("[       FAILED ] %s\n", t->_name);
+            cout << f->testPrintBuffer << "\n";
+            tpunit_detail_stats()._failures++;
+        }
+        t = t->_next;
     }
+}
+
+void tpunit::TestFixture::logOnFailure(const string& newLog) {
+    testPrintBuffer += newLog;
+}
+
+void tpunit::TestFixture::logOnFailure(TestFixture* f, const string& newLog) {
+    lock_guard<recursive_mutex> lock(*(f->_mutex));
+    f->testPrintBuffer += newLog;
 }
 
 tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {

@@ -20,11 +20,12 @@ struct ReadTest : tpunit::TestFixture {
     }
 
     void simpleRead() {
+        logOnFailure("THIS SHOULD FAIL AND BE PRINTED - > JOHN");
         SData status("Query");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
         int val = SToInt(response);
-        ASSERT_EQUAL(val, 1);
+        ASSERT_EQUAL(val, 0);
     }
 
     void simpleReadWithHttp() {

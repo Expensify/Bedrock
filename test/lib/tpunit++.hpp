@@ -75,7 +75,7 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { ABORT(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); logOnFailure(this, "EXPECTED TRUE, GOT FALSE"); } else { ABORT(); }
 #define EXPECT_TRUE(condition) if(condition) { PASS(); } else { FAIL(); }
 #define ASSERT_FALSE(condition) if(condition) { ABORT(); } else { PASS(); }
 #define EXPECT_FALSE(condition) if(condition) { FAIL(); } else { PASS(); }
@@ -213,6 +213,8 @@ namespace tpunit {
          int _threadID;
 
       protected:
+         // Test buffer for printing to stdout if a test were to fail.
+         string testPrintBuffer;
 
          /**
           * Internal class encapsulating a registered test method.
@@ -304,13 +306,17 @@ namespace tpunit {
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
                                          std::function<void()> threadInitFunction);
 
+         static void logOnFailure(TestFixture* f, const string& newLog);
+
+         void logOnFailure(const string& newLog);
+
       protected:
 
          /**
           * Determine if two binary32 single precision IEEE 754 floating-point
           * numbers are equal using unit in the last place (ULP) analysis.
           *
-          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm 
+          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
           */
          static bool tpunit_detail_fp_equal(float lhs, float rhs, unsigned char ulps);
 
@@ -318,7 +324,7 @@ namespace tpunit {
           * Determine if two binary64 double precision IEEE 754 floating-point
           * numbers are equal using unit in the last place (ULP) analysis.
           *
-          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm 
+          * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
 
