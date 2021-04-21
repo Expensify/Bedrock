@@ -75,10 +75,10 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "asserted true, got false"); ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "expected true, got false"); FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { testLog(this, "asserted false, got true"); ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { testLog(this, "expected false, got true"); FAIL(); } else { PASS(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { testLog(this, "assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { testLog(this, "expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); } else { PASS(); }
 #define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
 #define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
 #define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
