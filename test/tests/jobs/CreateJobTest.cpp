@@ -464,7 +464,7 @@ struct CreateJobTest : tpunit::TestFixture {
             }
             ASSERT_EQUAL(response["data"], "{}");
             ASSERT_EQUAL(response["jobID"], jobID);
-            ASSERT_NOT_EQUAL(response["name"], jobName);
+            ASSERT_EQUAL(response["name"], jobName);
             assertionsChecked = true;
             break;
         }
