@@ -1,3 +1,4 @@
+#pragma once
 #include <libstuff/libstuff.h>
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
