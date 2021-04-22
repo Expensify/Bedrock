@@ -336,22 +336,19 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("[              ]    assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
-    cout << f->testPrintBuffer;
-    f->testPrintBuffer = "";
+    flushTestBuffer(f);
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("[              ]    exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
-    cout << f->testPrintBuffer;
-    f->testPrintBuffer = "";
+    flushTestBuffer(f);
 }
 
 void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("[              ]    trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
-    cout << f->testPrintBuffer;
-    f->testPrintBuffer = "";
+    flushTestBuffer(f);
 }
 
 void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m) {
@@ -386,7 +383,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     while(t) {
         int _prev_assertions = f->_stats._assertions;
         int _prev_exceptions = f->_stats._exceptions;
-        f->testPrintBuffer = "";
+        f->testOutputBuffer = "";
         if (!f->_multiThreaded) {
             printf("[ RUN          ] %s\n", t->_name);
         }
@@ -399,7 +396,9 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
             tpunit_detail_stats()._passes++;
         } else {
             lock_guard<recursive_mutex> lock(m);
-            cout << f->testPrintBuffer;
+
+            // Dump the test buffer if the test included any log lines.
+            flushTestBuffer(f);
             printf("[       FAILED ] %s\n", t->_name);
             tpunit_detail_stats()._failures++;
         }
@@ -408,12 +407,24 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
 }
 
 void tpunit::TestFixture::testLog(const string& newLog) {
-    testPrintBuffer = testPrintBuffer + "[              ]    " + newLog + "\n";
+    // Format the buffer nicely as we print it out.
+    testOutputBuffer = testOutputBuffer + "[              ]    " + newLog + "\n";
 }
 
 void tpunit::TestFixture::testLog(TestFixture* f, const string& newLog) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    f->testPrintBuffer = f->testPrintBuffer + "[              ]    " + newLog + "\n";
+
+    // Format the buffer nicely as we print it out.
+    f->testOutputBuffer = f->testOutputBuffer + "[              ]    " + newLog + "\n";
+}
+
+void tpunit::TestFixture::flushTestBuffer(TestFixture* f) {
+    cout << f->testOutputBuffer;
+    f->testOutputBuffer = "";
+}
+
+void tpunit::TestFixture::flushTestBuffer() {
+    flushTestBuffer(this);
 }
 
 tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {

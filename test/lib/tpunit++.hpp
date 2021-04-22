@@ -214,7 +214,7 @@ namespace tpunit {
 
       protected:
          // Test buffer for printing to stdout if a test were to fail.
-         string testPrintBuffer;
+         string testOutputBuffer;
 
          /**
           * Internal class encapsulating a registered test method.
@@ -350,7 +350,14 @@ namespace tpunit {
 
          static stats& tpunit_detail_stats();
 
-          static std::list<TestFixture*>* tpunit_detail_fixture_list();
+         static std::list<TestFixture*>* tpunit_detail_fixture_list();
+
+         /**
+          * Takes the test buffer and outputs it to cout
+          */
+         static void flushTestBuffer(TestFixture* f);
+
+         void flushTestBuffer();
 
          method* _afters;
          method* _after_classes;
