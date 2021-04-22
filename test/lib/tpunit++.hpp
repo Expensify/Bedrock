@@ -306,6 +306,10 @@ namespace tpunit {
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
                                          std::function<void()> threadInitFunction);
 
+         /**
+          * These two methods write to a temporary buffer and format the message nicely for debugging
+          * purposes if a test were to fail.
+          */
          static void testLog(TestFixture* f, const string& newLog);
 
          void testLog(const string& newLog);
