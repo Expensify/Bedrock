@@ -335,17 +335,17 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
 // TODO: These three functions need to be updated to act on the current TestFixture.
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("[              ]    assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
+    printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("[              ]    exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
+    printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
 }
 
 void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("[              ]    trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
+    printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
 }
 
 void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m) {
@@ -381,18 +381,18 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
        int _prev_assertions = f->_stats._assertions;
        int _prev_exceptions = f->_stats._exceptions;
        if (!f->_multiThreaded) {
-           printf("[ RUN          ] %s\n", t->_name);
+           printf("➡️  %s\n", t->_name);
        }
        tpunit_detail_do_methods(f->_befores);
        tpunit_detail_do_method(t);
        tpunit_detail_do_methods(f->_afters);
        if(_prev_assertions == f->_stats._assertions && _prev_exceptions == f->_stats._exceptions) {
           lock_guard<recursive_mutex> lock(m);
-          printf("[       PASSED ] %s\n", t->_name);
+          printf("✅ %s\n", t->_name);
           tpunit_detail_stats()._passes++;
        } else {
           lock_guard<recursive_mutex> lock(m);
-          printf("[       FAILED ] %s\n", t->_name);
+          printf("❌ %s\n", t->_name);
           tpunit_detail_stats()._failures++;
        }
        t = t->_next;
