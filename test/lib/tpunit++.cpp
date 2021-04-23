@@ -379,19 +379,16 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     while(t) {
        int _prev_assertions = f->_stats._assertions;
        int _prev_exceptions = f->_stats._exceptions;
-       if (!f->_multiThreaded) {
-           printf("➡️  %s\n", t->_name);
-       }
        tpunit_detail_do_methods(f->_befores);
        tpunit_detail_do_method(t);
        tpunit_detail_do_methods(f->_afters);
        if(_prev_assertions == f->_stats._assertions && _prev_exceptions == f->_stats._exceptions) {
           lock_guard<recursive_mutex> lock(m);
-          printf("✅ %s\n", t->_name);
+          printf("\xE2\x9C\x85 %s\n", t->_name);
           tpunit_detail_stats()._passes++;
        } else {
           lock_guard<recursive_mutex> lock(m);
-          printf("❌ %s\n", t->_name);
+          printf("\xE2\x9D\x8C %s\n", t->_name);
           tpunit_detail_stats()._failures++;
           tpunit_detail_stats()._failureNames.emplace(t->_name);
        }
