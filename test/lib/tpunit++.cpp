@@ -125,11 +125,10 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                _exclude.insert(name);
 
                // Run the test.
-               printf("[--------------]\n");
+               printf("--------------\n");
                tpunit_detail_do_methods(fixture->_before_classes);
                tpunit_detail_do_tests(fixture);
                tpunit_detail_do_methods(fixture->_after_classes);
-               printf("[--------------]\n\n");
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -212,14 +211,11 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                    // At this point, we know this test should run.
                    if (!f->_multiThreaded) {
-                       printf("[--------------]\n");
+                       printf("--------------\n");
                    }
                    tpunit_detail_do_methods(f->_before_classes);
                    tpunit_detail_do_tests(f);
                    tpunit_detail_do_methods(f->_after_classes);
-                   if (!f->_multiThreaded) {
-                       printf("[--------------]\n\n");
-                   }
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -247,11 +243,10 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                fixture->_multiThreaded = false;
 
                // Run the test.
-               printf("[--------------]\n");
+               printf("--------------\n");
                tpunit_detail_do_methods(fixture->_before_classes);
                tpunit_detail_do_tests(fixture);
                tpunit_detail_do_methods(fixture->_after_classes);
-               printf("[--------------]\n\n");
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -259,9 +254,13 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     }
 
     if (!exitFlag) {
-        printf("[==============]\n");
-        printf("[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
-        printf("[==============]\n");
+        printf("\n[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
+        if (tpunit_detail_stats()._failureNames.size()) {
+            printf("\nFailures:\n");
+            for (const auto& failure : tpunit_detail_stats()._failureNames) {
+                printf("%s\n", failure.c_str());
+            }
+        }
         return tpunit_detail_stats()._failures;
     }
     return 1;
@@ -394,6 +393,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
           lock_guard<recursive_mutex> lock(m);
           printf("❌ %s\n", t->_name);
           tpunit_detail_stats()._failures++;
+          tpunit_detail_stats()._failureNames.emplace(t->_name);
        }
        t = t->_next;
     }
