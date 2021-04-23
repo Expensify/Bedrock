@@ -244,6 +244,7 @@ namespace tpunit {
 
             int _failures;
             int _passes;
+            set<string> _failureNames;
          };
 
       public:
