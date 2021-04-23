@@ -25,13 +25,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
-                                    TEST(LibStuff::failOnPurpose),
                                     TEST(LibStuff::testFirstOfMonth))
     { }
-
-    void failOnPurpose() {
-        ASSERT_EQUAL(1, 2);
-    }
 
     void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";
