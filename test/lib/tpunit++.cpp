@@ -335,19 +335,19 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
-    flushTestBuffer(f);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
-    flushTestBuffer(f);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
-    flushTestBuffer(f);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m) {
@@ -394,7 +394,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
           lock_guard<recursive_mutex> lock(m);
 
           // Dump the test buffer if the test included any log lines.
-          flushTestBuffer(f);
+          f->printTestBuffer();
           printf("\xE2\x9D\x8C %s\n", t->_name);
           tpunit_detail_stats()._failures++;
           tpunit_detail_stats()._failureNames.emplace(t->_name);
@@ -404,24 +404,15 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
 }
 
 void tpunit::TestFixture::testLog(const string& newLog) {
-    // Format the buffer nicely as we print it out.
-    testOutputBuffer = testOutputBuffer + "[              ]    " + newLog + "\n";
+    lock_guard<recursive_mutex> lock(*(_mutex));
+
+    // Format the buffer with an indent as we print it out.
+    testOutputBuffer = testOutputBuffer + "    " + newLog + "\n";
 }
 
-void tpunit::TestFixture::testLog(TestFixture* f, const string& newLog) {
-    lock_guard<recursive_mutex> lock(*(f->_mutex));
-
-    // Format the buffer nicely as we print it out.
-    f->testOutputBuffer = f->testOutputBuffer + "[              ]    " + newLog + "\n";
-}
-
-void tpunit::TestFixture::flushTestBuffer(TestFixture* f) {
-    cout << f->testOutputBuffer;
-    f->testOutputBuffer = "";
-}
-
-void tpunit::TestFixture::flushTestBuffer() {
-    flushTestBuffer(this);
+void tpunit::TestFixture::printTestBuffer() {
+    cout << testOutputBuffer;
+    testOutputBuffer = "";
 }
 
 tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {

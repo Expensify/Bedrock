@@ -75,22 +75,22 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog(this, "expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { testLog(this, "assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { testLog(this, "expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); } else { PASS(); }
-#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
-#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
-#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
-#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
-#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
-#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " >= " + SToStr(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " < " + SToStr(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " < " + SToStr(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog(this, "incorrectly asserted " + SToStr(lhs) + " <= " + SToStr(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog(this, "incorrectly expected " + SToStr(lhs) + " <= " + SToStr(rhs)); FAIL(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog("assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); } else { PASS(); }
+#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
+#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
+#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
+#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " >= " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " < " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " < " + SToStr(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " <= " + SToStr(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " <= " + SToStr(rhs)); FAIL(); }
 
 /**
  * The set of floating-point macros used to compare double/float values.
@@ -308,11 +308,9 @@ namespace tpunit {
                                          std::function<void()> threadInitFunction);
 
          /**
-          * These two methods write to a temporary buffer and format the message nicely for debugging
+          * This method writes to a temporary buffer and formats the message nicely for debugging
           * purposes if a test were to fail.
           */
-         static void testLog(TestFixture* f, const string& newLog);
-
          void testLog(const string& newLog);
 
       protected:
@@ -356,9 +354,7 @@ namespace tpunit {
          /**
           * Takes the test buffer and outputs it to cout
           */
-         static void flushTestBuffer(TestFixture* f);
-
-         void flushTestBuffer();
+         void printTestBuffer();
 
          method* _afters;
          method* _after_classes;
