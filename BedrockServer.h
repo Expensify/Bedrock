@@ -243,6 +243,18 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
+    // WIP New stuff for parallel sockets.
+
+    // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
+    // will not be managed by that poll loop, instead, it starts a new thread.
+    STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
+
+    // This is the thread that handles a new socket, parses a command, and queues it for work.
+    void handleSocket(Socket* socket);
+
+    // This counts how many outstanding socket threads there are so we can wait for them to complete before exiting.
+    atomic<uint64_t> outstandingSocketThreads;
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";

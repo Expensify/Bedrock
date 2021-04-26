@@ -2205,7 +2205,8 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::_acceptSockets() {
     Socket* s = nullptr;
     Port* acceptPort = nullptr;
-    while ((s = acceptSocket(acceptPort))) {
+    while ((s = acceptUnlistedSocket(acceptPort))) {
+        /* TODO: Doesn't work with this.
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
             // Allow the plugin to process this
@@ -2216,7 +2217,48 @@ void BedrockServer::_acceptSockets() {
             SASSERT(!s->data);
             s->data = plugin;
         }
+        */
     }
+}
+
+STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& portOut) {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    portOut = 0;
+    Socket* socket = nullptr;
+
+    // See if we can accept on any port
+    lock_guard <decltype(portListMutex)> lock(portListMutex);
+    for (Port& port : portList) {
+        // Try to accept on the port and wrap in a socket
+        sockaddr_in addr;
+        int s = S_accept(port.s, addr, false);
+        if (s > 0) {
+            SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
+            socket = new Socket(s, Socket::CONNECTED);
+            socket->addr = addr;
+
+            // Record what port it was accepted on
+            portOut = &port;
+
+            outstandingSocketThreads++;
+            thread(&BedrockServer::handleSocket, this, socket).detach();
+        }
+    }
+
+    return socket;
+}
+
+void BedrockServer::handleSocket(Socket* socket) {
+    // Received a socket, wrap
+
+    // Try to read immediately
+    S_recvappend(socket->s, socket->recvBuffer);
+
+    // TODO: WORK GOES HERE.
+
+    // Done.
+    outstandingSocketThreads--;
+    delete socket;
 }
 
 void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
