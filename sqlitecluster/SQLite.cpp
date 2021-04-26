@@ -258,7 +258,16 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
             SINFO("[checkpoint] Ready for complete checkpoint but skipping because less than 100 commits since last complete checkpoint.");
             return SQLITE_OK;
         }
-        // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
+
+        int dbInUse = 0;
+        int useCheckResult = sqlite3_file_control(db, "main", SQLITE_FCNTL_EXTERNAL_READER, (void*)&dbInUse);
+        if (useCheckResult == SQLITE_OK && dbInUse) {
+            SINFO("Skipping complete checkpoint because external transaction in progress.");
+            return SQLITE_OK;
+        }
+
+        // If we get here, then full checkpoints are enabled, we have enough pages in the WAL file to perform one, and
+        // nothing else is stopping us from running one.
         SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
 
         // This thread will run independently. We capture the variables we need here and pass them by value.
