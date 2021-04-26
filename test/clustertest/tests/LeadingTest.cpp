@@ -63,7 +63,7 @@ struct LeadingTest : tpunit::TestFixture {
             SData cmd("Status");
             string response = newMaster.executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
-            if (json["state"] == "LEADING" || json["state"] == "MASTERING") {
+            if (json["state"] == "LEADING") {
                 success = true;
                 break;
             }
@@ -116,9 +116,9 @@ struct LeadingTest : tpunit::TestFixture {
             STable json1 = SParseJSONObject(responses[1]);
             STable json2 = SParseJSONObject(responses[2]);
 
-            if ((json0["state"] == "LEADING" || json0["state"] == "MASTERING") && 
-                (json1["state"] == "FOLLOWING" || json1["state"] == "SLAVING") && 
-                (json2["state"] == "FOLLOWING" || json2["state"] == "SLAVING")) {
+            if (json0["state"] == "LEADING" &&
+                json1["state"] == "FOLLOWING" &&
+                json2["state"] == "FOLLOWING") {
 
                 break;
             }
@@ -169,7 +169,7 @@ struct LeadingTest : tpunit::TestFixture {
                     continue;
                 }
             }
-            if(json["state"] == "FOLLOWING" || json["state"] == "SLAVING") {
+            if(json["state"] == "FOLLOWING") {
                 // Make sure it was following before it was synchronizing.
                 ASSERT_TRUE(wasSynchronizing);
                 wasFollowing = true;
