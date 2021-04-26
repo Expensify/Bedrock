@@ -407,7 +407,7 @@ void tpunit::TestFixture::testLog(const string& newLog) {
     lock_guard<recursive_mutex> lock(*(_mutex));
 
     // Format the buffer with an indent as we print it out.
-    testOutputBuffer = testOutputBuffer + "    " + newLog + "\n";
+    testOutputBuffer += "    " + newLog + "\n";
 }
 
 void tpunit::TestFixture::printTestBuffer() {
