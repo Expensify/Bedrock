@@ -502,4 +502,7 @@ class BedrockServer : public SQLiteServer {
     // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
     atomic<uint64_t> _lastChance;
     atomic<uint64_t> _socketThreadNumber;
+
+    // Setup a new command from a bare request.
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
 };
