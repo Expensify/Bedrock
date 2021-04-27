@@ -187,7 +187,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                             }
                         }
                     }
-                    
+
                     // Similar for excluding. If it has no name, or there's no exclude list, it's not excluded.
                     else if (f->_name && _exclude.size()) {
                         for (string excludedName : _exclude) {
@@ -335,16 +335,19 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
+    f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m) {
@@ -379,6 +382,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     while(t) {
        int _prev_assertions = f->_stats._assertions;
        int _prev_exceptions = f->_stats._exceptions;
+       f->testOutputBuffer = "";
        tpunit_detail_do_methods(f->_befores);
        tpunit_detail_do_method(t);
        tpunit_detail_do_methods(f->_afters);
@@ -388,12 +392,27 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
           tpunit_detail_stats()._passes++;
        } else {
           lock_guard<recursive_mutex> lock(m);
+
+          // Dump the test buffer if the test included any log lines.
+          f->printTestBuffer();
           printf("\xE2\x9D\x8C %s\n", t->_name);
           tpunit_detail_stats()._failures++;
           tpunit_detail_stats()._failureNames.emplace(t->_name);
        }
        t = t->_next;
     }
+}
+
+void tpunit::TestFixture::testLog(const string& newLog) {
+    lock_guard<recursive_mutex> lock(*(_mutex));
+
+    // Format the buffer with an indent as we print it out.
+    testOutputBuffer += "    " + newLog + "\n";
+}
+
+void tpunit::TestFixture::printTestBuffer() {
+    cout << testOutputBuffer;
+    testOutputBuffer = "";
 }
 
 tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {
