@@ -29,6 +29,7 @@
 #include <mutex>
 #include <algorithm>
 #include <functional>
+#include <test/lib/Comparator.h>
 using namespace std;
 
 /**
@@ -79,10 +80,10 @@ using namespace std;
 #define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); }
 #define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); } else { PASS(); }
 #define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); } else { PASS(); }
-#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs)); ABORT(); }
-#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs)); FAIL(); }
-#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " != " + SToStr(rhs)); ABORT(); }
-#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " != " + SToStr(rhs)); FAIL(); }
+#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }
+#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); FAIL(); }
+#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }
+#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); FAIL(); }
 #define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " > " + SToStr(rhs)); ABORT(); }
 #define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly expected " + SToStr(lhs) + " > " + SToStr(rhs)); FAIL(); }
 #define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + SToStr(lhs) + " >= " + SToStr(rhs)); ABORT(); }
