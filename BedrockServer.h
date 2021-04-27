@@ -501,4 +501,5 @@ class BedrockServer : public SQLiteServer {
     // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
     // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
     atomic<uint64_t> _lastChance;
+    atomic<uint64_t> _socketThreadNumber;
 };

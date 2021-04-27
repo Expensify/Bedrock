@@ -1242,7 +1242,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false), _lastChance(0)
+    _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0)
 {
     _version = VERSION;
 
@@ -2245,7 +2245,7 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
 }
 
 void BedrockServer::handleSocket(Socket* s) {
-    SInitialize("socketNUM"); // TODO: Add a number
+    SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
     // This is nearly (but not quite) identical to the main body of the main `for each socket` loop inside `postPoll`.
     while (1) {
@@ -2359,7 +2359,8 @@ void BedrockServer::handleSocket(Socket* s) {
                                   << _commandQueue.size() << " commands already queued.");
                             _commandQueue.push(move(command));
                         }
-                        // TODO: Wait for the above command to finish, and then run again.
+                        // Now we can just wait for the next command on this socket, it will either get closed, or it
+                        // will get more data, in either case, we'll wait in `S_recvappend`.
                     }
                 }
             } else {
