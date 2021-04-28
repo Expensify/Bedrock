@@ -63,6 +63,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
 
 const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
+    _state = UNKNOWN;
     vector<Peer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
     for (const string& peerString : parsedPeerList) {
@@ -93,6 +94,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
       _db(_dbPool.getBase()),
+      _state(UNKNOWN),
       _commitState(CommitState::UNINITIALIZED),
       _server(server),
       _stateChangeCount(0),
