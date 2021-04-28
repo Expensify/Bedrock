@@ -252,9 +252,6 @@ class BedrockServer : public SQLiteServer {
     // This is the thread that handles a new socket, parses a command, and queues it for work.
     void handleSocket(Socket* s);
 
-    // This counts how many outstanding socket threads there are so we can wait for them to complete before exiting.
-    atomic<uint64_t> outstandingSocketThreads;
-
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -505,4 +502,7 @@ class BedrockServer : public SQLiteServer {
 
     // Setup a new command from a bare request.
     unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
+
+    // This counts how many outstanding socket threads there are so we can wait for them to complete before exiting.
+    atomic<uint64_t> _outstandingSocketThreads;
 };

@@ -14,6 +14,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     repeek(false),
     crashIdentifyingValues(*this),
     escalateImmediately(escalateImmediately_),
+    waiter(nullptr),
     _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
@@ -74,6 +75,9 @@ BedrockCommand::~BedrockCommand() {
         request->manager.closeTransaction(request);
     }
     _commandCount--;
+    if (waiter) {
+        waiter->notify_all();
+    }
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {

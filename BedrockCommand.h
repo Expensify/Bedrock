@@ -153,6 +153,9 @@ class BedrockCommand : public SQLiteCommand {
     // Record the state we were acting under in the last call to `peek` or `process`.
     SQLiteNode::State lastPeekedOrProcessedInState = SQLiteNode::UNKNOWN;
 
+    // If someone is waiting for this command to complete, this will be called in the destructor.
+    condition_variable* waiter;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;

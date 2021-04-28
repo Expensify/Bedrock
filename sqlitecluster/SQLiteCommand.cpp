@@ -22,6 +22,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
 SQLiteCommand::SQLiteCommand(SData&& _request) : 
     initiatingPeerID(0),
     initiatingClientID(0),
+    socket(nullptr),
     request(preprocessRequest(move(_request))),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
@@ -51,6 +52,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
 SQLiteCommand::SQLiteCommand() :
     initiatingPeerID(0),
     initiatingClientID(0),
+    socket(nullptr),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
     escalationTimeUS(0),
