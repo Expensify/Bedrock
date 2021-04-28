@@ -80,7 +80,7 @@ void SInitializeSignals() {
     sigprocmask(SIG_BLOCK, &signals, 0);
 
     // This is the signal action structure we'll use to specify what to listen for.
-    struct sigaction newAction;
+    struct sigaction newAction = {0};
 
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
