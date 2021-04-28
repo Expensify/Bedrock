@@ -26,11 +26,11 @@ class EqualComparator {
         template <typename T, enable_if_t<is_integral<T>::value, bool> = true, typename U>
         EqualComparator(T a, U b)
         {
-            // Integer case.
-            if (Equal<T>(a) != b) {
-                cout << "(integers): " << a << " != " << b << endl;
+            // Integral case.
+            if (Equal<T>(a) != (T) b) {
+                cout << "(Integral): " << a << " != " << b << endl;
             } else {
-                cout << "(integers): " << a << " == " << b << endl;
+                cout << "(Integral): " << a << " == " << b << endl;
             }
         }
 
@@ -47,6 +47,17 @@ class EqualComparator {
                 cout << "Not equal (unhandled type: " << buffer << ")" << endl;
             } else {
                 cout << "equal (unhandled type: " << buffer << ")" << endl;
+            }
+        }
+
+        template <typename U>
+        EqualComparator(int a, U b)
+        {
+            // Non-integer base case.
+            if (Equal<int>(a) != b) {
+                cout << "(int): \"" << a << "\" != \""<< b << "\"" << endl;
+            } else {
+                cout << "(int): \"" << a << "\" == \""<< b << "\"" << endl;
             }
         }
 
