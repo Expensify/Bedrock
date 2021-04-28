@@ -136,16 +136,7 @@ string BedrockTester::startServer(bool wait) {
             }
         }
 
-        // Convert our c++ strings to old-school C strings for exec.
-        char* cargs[args.size() + 1];
-        int count = 0;
-        for(string arg : args) {
-            char* newstr = (char*)malloc(arg.size() + 1);
-            strcpy(newstr, arg.c_str());
-            cargs[count] = newstr;
-            count++;
-        }
-        cargs[count] = 0;
+
 
         // Make sure the ports we need are free.
         int portsFree = 0;
@@ -157,6 +148,35 @@ string BedrockTester::startServer(bool wait) {
             cout << "At least one port wasn't free (of: " << _serverPort << ", " << _nodePort << ", "
                  << _controlPort << ") to start server, things will probably fail." << endl;
         }
+
+#ifdef VALGRIND
+    #define xstr(a) str(a)
+    #define str(a) #a
+
+    list<string> valgrind = SParseList(xstr(VALGRIND), ' ');
+    if (valgrind.size()) {
+        serverName = valgrind.front();
+        cout << "Starting bedrock server in '" << serverName << "' with args: " << endl;
+        auto it = valgrind.rbegin();
+        while (it != valgrind.rend()) {
+            args.push_front(*it);
+            it++;
+        }
+        cout << SComposeList(args, " ") << endl;
+        cout << "==========================" << endl;
+    }
+#endif
+
+        // Convert our c++ strings to old-school C strings for exec.
+        char* cargs[args.size() + 1];
+        int count = 0;
+        for(string arg : args) {
+            char* newstr = (char*)malloc(arg.size() + 1);
+            strcpy(newstr, arg.c_str());
+            cargs[count] = newstr;
+            count++;
+        }
+        cargs[count] = 0;
 
         // And then start the new server!
         execvp(serverName.c_str(), cargs);
