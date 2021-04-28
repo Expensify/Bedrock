@@ -2341,7 +2341,7 @@ void BedrockServer::handleSocket(Socket* s) {
     // We never return early, we always want to hit this code.
     outstandingSocketThreads--;
     // We don't call `closeSocket` which tries to remove it from socketList.
-    // TODO: I think there's a race condition if `reply` closes the socket, and then we try and delete it here (which
+    // TODO: I think there's a race condition if `_reply` closes the socket, and then we try and delete it here (which
     // closes it).
     delete s;
     SINFO("Socket thread complete (" << outstandingSocketThreads << " remaining).");
