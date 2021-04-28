@@ -76,10 +76,10 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog("assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " + SToStr(#condition) + " resolved to " + (condition ? "TRUE" : "FALSE")); FAIL(); } else { PASS(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog("assertion failed: " + SToStr(#condition) + " resolved to FALSE"); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " + SToStr(#condition) + " resolved to FALSE"); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " + SToStr(#condition) + " resolved to TRUE"); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " + SToStr(#condition) + " resolved to TRUE"); FAIL(); } else { PASS(); }
 #define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }
 #define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); FAIL(); }
 #define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }

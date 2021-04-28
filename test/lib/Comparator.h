@@ -13,7 +13,7 @@ class Equal {
 
     template<typename U>
     bool operator!=(const U& rhs) const {
-        return val != rhs;
+        return !(val == rhs);
     }
 
   private:
@@ -47,17 +47,6 @@ class EqualComparator {
                 cout << "Not equal (unhandled type: " << buffer << ")" << endl;
             } else {
                 cout << "equal (unhandled type: " << buffer << ")" << endl;
-            }
-        }
-
-        template <typename U>
-        EqualComparator(int a, U b)
-        {
-            // Non-integer base case.
-            if (Equal<int>(a) != b) {
-                cout << "(int): \"" << a << "\" != \""<< b << "\"" << endl;
-            } else {
-                cout << "(int): \"" << a << "\" == \""<< b << "\"" << endl;
             }
         }
 
