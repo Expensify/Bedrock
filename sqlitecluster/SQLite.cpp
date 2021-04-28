@@ -30,12 +30,21 @@ string SQLite::initializeFilename(const string& filename) {
 }
 
 SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
-    static map<string, SharedData*> sharedDataLookupMap;
+    static struct SharedDataLookupMapType {
+        map<string, SharedData*> m;
+        ~SharedDataLookupMapType() {
+            for (auto& p : m) {
+                delete(p.second);
+            }
+            m.clear();
+        }
+    } sharedDataLookupMap;
+
     static mutex instantiationMutex;
     lock_guard<mutex> lock(instantiationMutex);
-    auto sharedDataIterator = sharedDataLookupMap.find(filename);
-    if (sharedDataIterator == sharedDataLookupMap.end()) {
-        SharedData* sharedData = new SharedData();
+    auto sharedDataIterator = sharedDataLookupMap.m.find(filename);
+    if (sharedDataIterator == sharedDataLookupMap.m.end()) {
+        SharedData* sharedData = new SharedData(); // This is never deleted.
 
         // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
@@ -55,7 +64,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         }
 
         // Insert our SharedData object into the global map.
-        sharedDataLookupMap.emplace(filename, sharedData);
+        sharedDataLookupMap.m.emplace(filename, sharedData);
         return *sharedData;
     } else {
         // Otherwise, use the existing one.
