@@ -1,5 +1,9 @@
 #pragma once
-#include <libstuff/libstuff.h>
+
+#include <iostream>
+#include <cxxabi.h>
+
+using namespace std;
 
 template <typename T>
 class Equal {
@@ -28,9 +32,9 @@ class EqualComparator {
         {
             // Integral case.
             if (Equal<T>(a) != (T) b) {
-                cout << "(Integral): " << a << " != " << b << endl;
+                cout << "(Integral): " << a << " != " << b << "\n";
             } else {
-                cout << "(Integral): " << a << " == " << b << endl;
+                cout << "(Integral): " << a << " == " << b << "\n";
             }
         }
 
@@ -44,9 +48,9 @@ class EqualComparator {
             abi::__cxa_demangle(typeid(a).name(), buffer, &length, &status);
 
             if (Equal<T>(a) != b) {
-                cout << "Not equal (unhandled type: " << buffer << ")" << endl;
+                cout << "Not equal (unhandled type: " << buffer << ")" << "\n";
             } else {
-                cout << "equal (unhandled type: " << buffer << ")" << endl;
+                cout << "equal (unhandled type: " << buffer << ")" << "\n";
             }
         }
 
@@ -55,9 +59,9 @@ class EqualComparator {
         {
             // Non-integer base case.
             if (Equal<string>(a) != b) {
-                cout << "(string): \"" << a << "\" != \""<< b << "\"" << endl;
+                cout << "(string): \"" << a << "\" != \""<< b << "\"" << "\n";
             } else {
-                cout << "(string): \"" << a << "\" == \""<< b << "\"" << endl;
+                cout << "(string): \"" << a << "\" == \""<< b << "\"" << "\n";
             }
         }
 
@@ -65,9 +69,9 @@ class EqualComparator {
         EqualComparator(const char* a, U b) {
             // Non-integer base case.
             if (Equal<const char*>(a) != string(b)) { // Note that `!=` doesn't work correctly on plain `const char *`
-                cout << "(const char*): \"" << a << "\" != \""<< b << "\"" << endl;
+                cout << "(const char*): \"" << a << "\" != \""<< b << "\"" << "\n";
             } else {
-                cout << "(const char*): \"" << a << "\" == \""<< b << "\"" << endl;
+                cout << "(const char*): \"" << a << "\" == \""<< b << "\"" << "\n";
             }
         }
 };
