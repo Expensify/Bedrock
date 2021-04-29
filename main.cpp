@@ -194,11 +194,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
-    // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
-    SInitialize("main", (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
-    SLogLevel(LOG_INFO);
-
     if (args.isSet("-version")) {
         // Just output the version
         cout << VERSION << endl;
@@ -274,6 +269,12 @@ int main(int argc, char* argv[]) {
         cout << endl;
         return 1;
     }
+
+    // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
+    // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
+    SInitialize("main", (args.isSet("-overrideProcessName") ? args["-overrideProcessName"].c_str() : 0));
+    SLogLevel(LOG_INFO);
+
     if (args.isSet("-v")) {
         // Verbose logging
         SINFO("Enabling verbose logging");
@@ -391,6 +392,9 @@ int main(int argc, char* argv[]) {
     SINFO("Deleting BedrockServer");
     delete _server;
     SINFO("BedrockServer deleted");
+
+    // Finished with our signal handler.
+    SStopSignalThread();
 
     // All done
     SINFO("Graceful process shutdown complete");
