@@ -156,6 +156,9 @@ class BedrockCommand : public SQLiteCommand {
     // If someone is waiting for this command to complete, this will be called in the destructor.
     condition_variable* waiter;
 
+    // Lock for the socket for this command.
+    mutex socketLock;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;

@@ -1113,6 +1113,7 @@ void BedrockServer::worker(SQLitePool& dbPool,
                         // Escalated command. Send it back to the peer.
                         server._finishPeerCommand(command);
                     } else {
+                        // So this can get called on a command with a deleted socket.
                         server._reply(command);
                     }
 
@@ -1669,6 +1670,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     // Is a plugin handling this command? If so, it gets to send the response.
     const string& pluginName = command->request["plugin"];
 
+    lock_guard lock(command->socketLock);
     if (command->socket) {
         if (!pluginName.empty()) {
             // Let the plugin handle it
@@ -1682,12 +1684,18 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             }
         } else {
             // Otherwise we send the standard response.
+            SINFO("About to reply to command " << command->request.methodLine);
             if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 command->handleFailedReply();
             }
         }
     } else {
+        if (!SIEquals(command->request["Connection"], "forget")) {
+            // I don't see how this could still be reachable.
+            SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
+        }
+
         // This is the case for a fire-and-forget command, such as one set to run in the future.
         command->handleFailedReply();
     }
@@ -2279,7 +2287,13 @@ void BedrockServer::handleSocket(Socket* s) {
                 if (!_handleIfStatusOrControlCommand(command)) {
                     auto _syncNodeCopy = atomic_load(&_syncNode);
                     if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                        // Duplicates the below code.
+                        mutex waitForCommand;
+                        unique_lock<mutex> lock(waitForCommand);
+                        condition_variable cv;
+                        command->waiter = &cv;
                         _standDownQueue.push(move(command));
+                        cv.wait(lock);
                     } else {
                         // TODO: DRY.
                         if (!command->socket) {
@@ -2329,10 +2343,7 @@ void BedrockServer::handleSocket(Socket* s) {
 
     // We never return early, we always want to hit this code.
     _outstandingSocketThreads--;
-    // We don't call `closeSocket` which tries to remove it from socketList.
-    // TODO: I think there's a race condition if `_reply` closes the socket, and then we try and delete it here (which
-    // closes it).
-    delete s; // TYLER Deleting here.
+    delete s;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 }
 
