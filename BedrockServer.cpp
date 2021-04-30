@@ -1669,21 +1669,27 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     // Is a plugin handling this command? If so, it gets to send the response.
     const string& pluginName = command->request["plugin"];
 
-    if (!pluginName.empty()) {
-        // Let the plugin handle it
-        SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
-              << "' to request '" << command->request.methodLine << "'");
-        auto it = plugins.find(pluginName);
-        if (it != plugins.end()) {
-            it->second->onPortRequestComplete(*command, command->socket);
+    if (command->socket) {
+        if (!pluginName.empty()) {
+            // Let the plugin handle it
+            SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
+                  << "' to request '" << command->request.methodLine << "'");
+            auto it = plugins.find(pluginName);
+            if (it != plugins.end()) {
+                it->second->onPortRequestComplete(*command, command->socket);
+            } else {
+                SERROR("Couldn't find plugin '" << pluginName << ".");
+            }
         } else {
-            SERROR("Couldn't find plugin '" << pluginName << ".");
+            // Otherwise we send the standard response.
+            if (!command->socket->send(command->response.serialize())) {
+                // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
+                command->handleFailedReply();
+            }
         }
     } else {
-        // Otherwise we send the standard response.
-        // TODO: If the client has closed the socket before we get here, and the socketHandler thread picked that up,
-        // then the socket could have already been deleted.
-        command->socket->send(command->response.serialize()); // TYLER reading here on deleted socket.
+        // This is the case for a fire-and-forget command, such as one set to run in the future.
+        command->handleFailedReply();
     }
 
     // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
@@ -2163,9 +2169,9 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
 
 unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket* s) {
     SAUTOPREFIX(request);
-    // Either shut down the socket or store it so we can eventually sync out the response.
-    if (SIEquals(request["Connection"], "forget") ||
-        (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
+
+    bool fireAndForget = false;
+    if (SIEquals(request["Connection"], "forget") || (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
         // Respond immediately to make it clear we successfully queued it, but don't add to the socket
         // map as we don't care about the answer.
         SINFO("Firing and forgetting '" << request.methodLine << "'");
@@ -2174,7 +2180,8 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
             response["Connection"] = "close";
         }
         s->send(response.serialize());
-
+        fireAndForget = true;
+        
         // If we're shutting down, discard this command, we won't wait for the future.
         if (_shutdownState.load() != RUNNING) {
             SINFO("Not queuing future command '" << request.methodLine << "' while shutting down.");
@@ -2194,7 +2201,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
-    command->socket = s;
+    command->socket = fireAndForget ? nullptr : s;
 
     if (command->writeConsistency != SQLiteNode::QUORUM
         && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
@@ -2222,7 +2229,7 @@ void BedrockServer::handleSocket(Socket* s) {
     while (1) {
         // Attempt to read from the socket. This will block.
         if (!s->recv()) {
-            SINFO("recv failed.");
+            // This is the normal shutdown case. `recv` will log an error if anything weird happened.
             break;
         }
 
@@ -2274,21 +2281,36 @@ void BedrockServer::handleSocket(Socket* s) {
                     if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                         _standDownQueue.push(move(command));
                     } else {
-                        mutex waitForCommand;
-                        unique_lock<mutex> lock(waitForCommand);
-                        condition_variable cv;
-                        command->waiter = &cv;
-                        if (_version != _leaderVersion.load()) {
-                            SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                            _syncNodeQueuedCommands.push(move(command));
+                        // TODO: DRY.
+                        if (!command->socket) {
+                            // Fire-and-forget command, don't wait for it, move on to the next.
+                            SINFO("Not waiting for command " << command->id);
+                            if (_version != _leaderVersion.load()) {
+                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else {
+                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                      << _commandQueue.size() << " commands already queued.");
+                                _commandQueue.push(move(command));
+                            }
                         } else {
-                            SINFO("Queued new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
+                            mutex waitForCommand;
+                            unique_lock<mutex> lock(waitForCommand);
+                            condition_variable cv;
+                            command->waiter = &cv;
+                            SINFO("Waiting for command " << command->id);
+                            if (_version != _leaderVersion.load()) {
+                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else {
+                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                      << _commandQueue.size() << " commands already queued.");
+                                _commandQueue.push(move(command));
+                            }
+                            // Now we can just wait for the next command on this socket, it will either get closed, or it
+                            // will get more data, in either case, we'll wait in `S_recvappend`.
+                            cv.wait(lock);
                         }
-                        // Now we can just wait for the next command on this socket, it will either get closed, or it
-                        // will get more data, in either case, we'll wait in `S_recvappend`.
-                        cv.wait(lock);
                     }
                 }
             } else {
