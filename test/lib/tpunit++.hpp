@@ -29,7 +29,7 @@
 #include <mutex>
 #include <algorithm>
 #include <functional>
-#include <test/lib/Comparator.h>
+#include <test/lib/PrintEquality.h>
 using namespace std;
 
 /**
@@ -80,10 +80,10 @@ using namespace std;
 #define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " #condition " resolved to FALSE"); FAIL(); }
 #define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " #condition " resolved to TRUE"); ABORT(); } else { PASS(); }
 #define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " #condition " resolved to TRUE"); FAIL(); } else { PASS(); }
-#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }
-#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); FAIL(); }
-#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); ABORT(); }
-#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { EqualComparator(lhs, rhs); FAIL(); }
+#define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, false); ABORT(); }
+#define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, false); FAIL(); }
+#define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, true); ABORT(); }
+#define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, true); FAIL(); }
 #define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " > " + to_string(rhs)); ABORT(); }
 #define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly expected " + to_string(lhs) + " > " + to_string(rhs)); FAIL(); }
 #define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " >= " + to_string(rhs)); ABORT(); }
