@@ -76,22 +76,22 @@ using namespace std;
  * executing test function to continue if the supplied predicate
  * is not satisified.
  */
-#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { testLog("assertion failed: " #condition " resolved to FALSE"); ABORT(); }
-#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { testLog("expect failed: " #condition " resolved to FALSE"); FAIL(); }
-#define ASSERT_FALSE(condition) if(condition) { testLog("assertion failed: " #condition " resolved to TRUE"); ABORT(); } else { PASS(); }
-#define EXPECT_FALSE(condition) if(condition) { testLog("expect failed: " #condition " resolved to TRUE"); FAIL(); } else { PASS(); }
+#define ASSERT_TRUE(condition) if(condition) { PASS(); } else { TESTINFO("assertion failed: " #condition " resolved to FALSE"); ABORT(); }
+#define EXPECT_TRUE(condition) if(condition) { PASS(); } else { TESTINFO("expect failed: " #condition " resolved to FALSE"); FAIL(); }
+#define ASSERT_FALSE(condition) if(condition) { TESTINFO("assertion failed: " #condition " resolved to TRUE"); ABORT(); } else { PASS(); }
+#define EXPECT_FALSE(condition) if(condition) { TESTINFO("expect failed: " #condition " resolved to TRUE"); FAIL(); } else { PASS(); }
 #define ASSERT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, false); ABORT(); }
 #define EXPECT_EQUAL(lhs, rhs) if((lhs) == (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, false); FAIL(); }
 #define ASSERT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, true); ABORT(); }
 #define EXPECT_NOT_EQUAL(lhs, rhs) if((lhs) != (rhs)) { PASS(); } else { PrintEquality(lhs, rhs, true); FAIL(); }
-#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " > " + to_string(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { testLog("incorrectly expected " + to_string(lhs) + " > " + to_string(rhs)); FAIL(); }
-#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " >= " + to_string(rhs)); ABORT(); }
-#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { testLog("incorrectly expected " + to_string(lhs) + " >= " + to_string(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " < " + to_string(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { testLog("incorrectly expected " + to_string(lhs) + " < " + to_string(rhs)); FAIL(); }
-#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog("incorrectly asserted " + to_string(lhs) + " <= " + to_string(rhs)); ABORT(); }
-#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { testLog("incorrectly expected " + to_string(lhs) + " <= " + to_string(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { TESTINFO("incorrectly asserted " + to_string(lhs) + " > " + to_string(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN(lhs, rhs) if((lhs) > (rhs)) { PASS(); } else { TESTINFO("incorrectly expected " + to_string(lhs) + " > " + to_string(rhs)); FAIL(); }
+#define ASSERT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { TESTINFO("incorrectly asserted " + to_string(lhs) + " >= " + to_string(rhs)); ABORT(); }
+#define EXPECT_GREATER_THAN_EQUAL(lhs, rhs) if((lhs) >= (rhs)) { PASS(); } else { TESTINFO("incorrectly expected " + to_string(lhs) + " >= " + to_string(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { TESTINFO("incorrectly asserted " + to_string(lhs) + " < " + to_string(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN(lhs, rhs) if((lhs) < (rhs)) { PASS(); } else { TESTINFO("incorrectly expected " + to_string(lhs) + " < " + to_string(rhs)); FAIL(); }
+#define ASSERT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { TESTINFO("incorrectly asserted " + to_string(lhs) + " <= " + to_string(rhs)); ABORT(); }
+#define EXPECT_LESS_THAN_EQUAL(lhs, rhs) if((lhs) <= (rhs)) { PASS(); } else { TESTINFO("incorrectly expected " + to_string(lhs) + " <= " + to_string(rhs)); FAIL(); }
 
 /**
  * The set of floating-point macros used to compare double/float values.
@@ -312,7 +312,7 @@ namespace tpunit {
           * This method writes to a temporary buffer and formats the message nicely for debugging
           * purposes if a test were to fail.
           */
-         void testLog(const string& newLog);
+         void TESTINFO(const string& newLog);
 
       protected:
 

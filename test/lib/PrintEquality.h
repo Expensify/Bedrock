@@ -21,7 +21,7 @@ class PrintEquality {
         template <typename T, enable_if_t<!is_integral<T>::value, bool> = true, typename U>
         PrintEquality(T a, U b, bool isEqual)
         {
-            // Non-integer base case.
+            // Non-integral base case.
             char buffer[1000];
             size_t length = 1000;
             int status;
@@ -37,21 +37,21 @@ class PrintEquality {
         template <typename U>
         PrintEquality(string a, U b, bool isEqual)
         {
-            // Non-integer base case.
+            // Non-integral base case.
             if (!isEqual) {
-                cout << "(string): \"" << a << "\" != \""<< b << "\"" << "\n";
+                cout << "(string): \"" << a << "\" != \"" << b << "\"" << "\n";
             } else {
-                cout << "(string): \"" << a << "\" == \""<< b << "\"" << "\n";
+                cout << "(string): \"" << a << "\" == \"" << b << "\"" << "\n";
             }
         }
 
         template <typename U>
         PrintEquality(const char* a, U b, bool isEqual) {
-            // Non-integer base case.
-            if (!isEqual) { // Note that `!=` doesn't work correctly on plain `const char *`
-                cout << "(const char*): \"" << a << "\" != \""<< b << "\"" << "\n";
+            // Non-integral base case.
+            if (!isEqual) {
+                cout << "(const char*): \"" << a << "\" != \"" << b << "\"" << "\n";
             } else {
-                cout << "(const char*): \"" << a << "\" == \""<< b << "\"" << "\n";
+                cout << "(const char*): \"" << a << "\" == \"" << b << "\"" << "\n";
             }
         }
 };

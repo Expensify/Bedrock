@@ -403,7 +403,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     }
 }
 
-void tpunit::TestFixture::testLog(const string& newLog) {
+void tpunit::TestFixture::TESTINFO(const string& newLog) {
     lock_guard<recursive_mutex> lock(*(_mutex));
 
     // Format the buffer with an indent as we print it out.
