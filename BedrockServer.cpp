@@ -1417,7 +1417,6 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
-    SAUTOLOCK(_socketIDMutex);
     STCPServer::prePoll(fdm);
 }
 
@@ -1425,7 +1424,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
     // writing to them, but this can truncate send buffers).
     {
-        SAUTOLOCK(_socketIDMutex);
         STCPServer::postPoll(fdm);
     }
 
@@ -1493,7 +1491,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     int deserializedRequests = 0;
 
     // Accept any new connections
-    _acceptSockets(); // TODO: Invalid write.
+    _acceptSockets();
 
     // Time the end of the accept section.
     uint64_t acceptEndTime = STimeNow();
@@ -1512,7 +1510,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             case STCPManager::Socket::CONNECTED:
             {
                 {
-                    SAUTOLOCK(_socketIDMutex);
                     if (s->recvBuffer.empty()) {
                         // If nothing's been received, break early.
                         if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow()) {
@@ -1598,7 +1595,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Now we can close any sockets that we need to.
     for (auto s: socketsToClose) {
-        SAUTOLOCK(_socketIDMutex);
         closeSocket(s);
     }
 
@@ -1623,7 +1619,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
             // shutdown any time after here, and we'll have no way to handle new requests.
             if (socketList.size()) {
-                SAUTOLOCK(_socketIDMutex);
                 SINFO("Killing " << socketList.size() << " remaining sockets at graceful shutdown timeout.");
                 while(socketList.size()) {
                     auto s = socketList.front();

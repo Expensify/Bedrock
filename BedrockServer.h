@@ -265,21 +265,6 @@ class BedrockServer : public SQLiteServer {
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
 
-    // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
-    // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
-    // open. It will be re-inserted in this set when another command is read from it.
-    map <uint64_t, Socket*> _socketIDMap;
-
-    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
-    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
-    // to the main thread.
-    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
-    // and acceptSocket in STCPServer.
-    // prePoll and postPoll are only ever called by the main thread.
-    // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
-    // closeSocket and acceptSocket are only called inside postPoll.
-    recursive_mutex _socketIDMutex;
-
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
     atomic<SQLiteNode::State> _replicationState;
