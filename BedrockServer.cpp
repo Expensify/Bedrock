@@ -1346,10 +1346,6 @@ BedrockServer::~BedrockServer() {
     }
     SINFO("Threads closed.");
 
-    if (_socketThreadNumber) {
-        SWARN("Still have " << _socketThreadNumber << " socket threads.");
-    }
-
     if (socketList.size()) {
         SWARN("Still have " << socketList.size() << " entries in socketList.");
         for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
@@ -1357,6 +1353,9 @@ BedrockServer::~BedrockServer() {
             Socket* s = *socketIt++;
             closeSocket(s);
         }
+    }
+    if (_outstandingSocketThreads) {
+        SWARN("Shutting down with " << _outstandingSocketThreads << " socket threads remaining.");
     }
 
     // Delete our plugins.
@@ -1614,7 +1613,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
-        if (socketList.empty() || _gracefulShutdownTimeout.ringing()) {
+        if ((socketList.empty() && !_outstandingSocketThreads) || _gracefulShutdownTimeout.ringing()) {
             _lastChance = 0;
 
             // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
@@ -1625,6 +1624,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     auto s = socketList.front();
                     closeSocket(s);
                 }
+            }
+            if (_outstandingSocketThreads) {
+                SINFO("Have " << _outstandingSocketThreads << " socket threads to kill.");
+            }
+            size_t count = BedrockCommand::getCommandCount();
+            if (count) {
+                SINFO("Have " << count << " remaining commands to kill.");
             }
             _shutdownState.store(CLIENTS_RESPONDED);
         }
@@ -1687,6 +1693,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             SINFO("About to reply to command " << command->request.methodLine);
             if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
+                SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
             }
         }
@@ -2209,6 +2216,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
+    SINFO("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : s;
 
     if (command->writeConsistency != SQLiteNode::QUORUM
@@ -2237,6 +2245,16 @@ void BedrockServer::handleSocket(Socket* s) {
     while (1) {
         // Attempt to read from the socket. This will block.
         if (!s->recv()) {
+
+            // Ok, so when we start shutting down, we want to close any of these sockets with no activity. I.e., no
+            // active command and nothing read. When we're responding to commands, if we're in a shutdown state, we can
+            // close them there (do we already do that?) But there's still a race condition where we respond and then
+            // immediately enter the shutdown state. That needs to interrupt this read and close the socket.
+            //
+            // Is there any way this loses connections? Let's say we just got a new connection, and are reading the
+            // first command off if it when we go into a shutdown state. We don't want to interrupt that, we want it to
+            // continue.
+            // Hmm....
             // This is the normal shutdown case. `recv` will log an error if anything weird happened.
             break;
         }
@@ -2250,6 +2268,8 @@ void BedrockServer::handleSocket(Socket* s) {
                     // If nothing's been received, break early.
                     if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow()) {
                         // If we're shutting down and past our _lastChance timeout, we start killing these.
+                        // This will never happen though, we need a switch to kill all outstanding sockets so that
+                        // `s->recv()` above gets interrupted.
                         SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
                         break;
                     }

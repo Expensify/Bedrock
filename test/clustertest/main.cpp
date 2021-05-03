@@ -81,6 +81,9 @@ int main(int argc, char* argv[]) {
                 cout << "Unhandled exception running tests!" << endl;
                 retval = 1;
             }
+            if (retval) {
+                break;
+            }
         }
     }
 

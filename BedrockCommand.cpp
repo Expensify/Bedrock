@@ -74,10 +74,10 @@ BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->manager.closeTransaction(request);
     }
-    _commandCount--;
     if (waiter) {
         waiter->notify_all();
     }
+    _commandCount--;
 }
 
 void BedrockCommand::startTiming(TIMING_INFO type) {
