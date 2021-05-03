@@ -37,7 +37,6 @@ class PrintEquality {
         template <typename U>
         PrintEquality(string a, U b, bool isEqual)
         {
-            // Non-integral base case.
             if (!isEqual) {
                 cout << "(string): \"" << a << "\" != \"" << b << "\"" << "\n";
             } else {
@@ -47,7 +46,6 @@ class PrintEquality {
 
         template <typename U>
         PrintEquality(const char* a, U b, bool isEqual) {
-            // Non-integral base case.
             if (!isEqual) {
                 cout << "(const char*): \"" << a << "\" != \"" << b << "\"" << "\n";
             } else {
