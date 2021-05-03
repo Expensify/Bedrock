@@ -411,6 +411,8 @@ void tpunit::TestFixture::TESTINFO(const string& newLog) {
 }
 
 void tpunit::TestFixture::printTestBuffer() {
+    lock_guard<recursive_mutex> lock(*(_mutex));
+
     cout << testOutputBuffer;
     testOutputBuffer = "";
 }
