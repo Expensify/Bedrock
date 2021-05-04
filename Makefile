@@ -60,7 +60,7 @@ clean:
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
-	cd mbedtls && git checkout -q 04a049bda1ceca48060b57bc4bcf5203ce591421
+	cd mbedtls && git checkout -q v2.26.0
 	cd mbedtls && $(MAKE) no_test
 
 # We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.

@@ -225,6 +225,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     Socket* s = openSocket(host, x509);
     if (!s) {
         delete transaction;
+        delete x509;
         return _createErrorTransaction();
     }
 

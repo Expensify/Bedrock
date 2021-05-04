@@ -206,6 +206,8 @@ string SGetSignalDescription();
 // Clear all outstanding signals.
 void SClearSignals();
 
+void SStopSignalThread();
+
 // And also exception stuff.
 string SGetCurrentExceptionName();
 void STerminateHandler(void);
