@@ -2177,6 +2177,7 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
             // Record what port it was accepted on
             portOut = &port;
 
+            // Start up the thread for this socket.
             _outstandingSocketThreads++;
             thread(&BedrockServer::handleSocket, this, socket).detach();
         }
@@ -2222,9 +2223,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     SINFO("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : s;
 
-    if (command->writeConsistency != SQLiteNode::QUORUM
-        && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
-
+    if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
         command->writeConsistency = SQLiteNode::QUORUM;
         _lastQuorumCommandTime = STimeNow();
         SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
@@ -2242,28 +2241,42 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 }
 
 void BedrockServer::handleSocket(Socket* s) {
+    // Initilaize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
-    // This is nearly (but not quite) identical to the main body of the main `for each socket` loop inside `postPoll`.
-    while (1) {
-        // Attempt to read from the socket. This will block.
 
+    // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
+    // waits for it to get processed, deserializes another, etc, until the socket gets closed.
+    // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
+    while (1) {
+        // We are going to call `poll` in a loop with only this one socket as a file descriptor.
+        // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
+        // It may be waiting for it's own data before it can send us a request, or it may have just forgotten to
+        // disconnect. In the normal case, this is no big deal, we can wait inside `recv` until it either sends us some
+        // data or it disconnects. The exception is if we want to shut down. In that case, we need to know to close the
+        // socket at some point, so what we do is `poll` with a 1 second timeout, and if we ever hit the timeout and
+        // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
+        // until we get some data or a disconnection.
         int pollResult = 0;
         bool exitMainLoop = false;
-       struct pollfd pollStruct = { s->s, POLLIN, 0 };
+        struct pollfd pollStruct = { s->s, POLLIN, 0 };
 
+        // This loop just calls `poll` sequentially optionally exiting if we're shutting down and haven't received any
+        // data.
         while (true) {
-            // Wait up to a second.
-            SINFO("Waiting in poll");
+            // Do the actual `poll` call.
             pollResult = poll(&pollStruct, 1, 1'000);
-            SINFO("Done waiting in poll");
+
+            // A result > 0 indicates a socket is ready to read (or has an error).
             if (pollResult > 0) {
-                // If this returns false, our socket is dead, close it.
+                // We can now safely call `recv` without blocking. If it returns true, we've got some data, so we'll
+                // break out of this loop and see if we can do something with that data (like create a command).
                 if (!s->recv()) {
-                    // Break main loop, the socket is closed with nothing to read.
+                    // But if it returns false, this means our connection is dead and we should clean it up. We'll drop
+                    // to the bottom of the whole function here.
                     exitMainLoop = true;
                 }
-                // Otherwise, stop reading and try and make a command.
+                // We break out of the inner loop in either case.
                 break;
             } else if (pollResult == 0) {
                 // Timeout. If we're shutting down, exit main loop, otherwise, try again.
@@ -2273,34 +2286,27 @@ void BedrockServer::handleSocket(Socket* s) {
                     break;
                 }
             } else {
-                SINFO("Poll failed!");
+                // This is an exceptional case, we'll just kill the socket if this happens and let the client
+                // reconnect.
+                SINFO("Poll failed: " << strerror(errno));
                 exitMainLoop = true;
                 break;
             }
         }
 
+        // If our poll loop needed to exit from the main loop, we do that now.
         if (exitMainLoop) {
             break;
         }
 
         // Handle any activity.
         if (s->state.load() == STCPManager::Socket::CLOSED) {
+            // If the socket got closed, we can jump to the end, there's nothing to do.
+            // FUTURE IMPROVEMENT: What if a client sent us a "fire and forget" command and immediately closed the
+            // socket without waiting for the `202` response. Should we handle that case?
             break;
         } else if (s->state.load() == STCPManager::Socket::CONNECTED) {
-            {
-                if (s->recvBuffer.empty()) {
-                    // If nothing's been received, break early.
-                    if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow()) {
-                        // If we're shutting down and past our _lastChance timeout, we start killing these.
-                        // This will never happen though, we need a switch to kill all outstanding sockets so that
-                        // `s->recv()` above gets interrupted.
-                        SINFO("Closing socket " << s->id << " with no data and no pending command: shutting down.");
-                        break;
-                    }
-                }
-            }
-
-            // If there's a request, we'll dequeue it (but only the first one).
+            // If there's a request, we'll dequeue it.
             SData request;
 
             // If the socket is owned by a plugin, we let the plugin populate our request.
@@ -2321,64 +2327,61 @@ void BedrockServer::handleSocket(Socket* s) {
             // If we have a populated request, from either a plugin or our default handling, we'll queue up the
             // command.
             if (!request.empty()) {
+                // Make a command from our request.
                 unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), s);
 
-                // If it's a status or control command, we handle it specially there. If not, we'll queue it for
-                // later processing.
+                // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
+                // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
                 if (!_handleIfStatusOrControlCommand(command)) {
-                    auto _syncNodeCopy = atomic_load(&_syncNode);
-                    if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
-                        // Duplicates the below code.
-                        mutex m;
-                        unique_lock<mutex> lock(m);
-                        condition_variable cv;
-                        function<void()> callback = [&m, &cv]() {
-                            lock_guard lock(m);
-                            cv.notify_all();
-                            
-                        };
+                    // If the command has a socket (it's this socket) then we need to wait for it to finish before
+                    // we can dequeue the next command, so that the responses all end up delivered in order.
+                    // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
+                    // command that was already responded to in `buildCommandFromRequest` and we can move on to the
+                    // next thing immediately.
+                    mutex m;
+
+                    // Defer locking until we actually have to.
+                    unique_lock<mutex> lock(m, defer_lock);
+                    condition_variable cv;
+
+                    function<void()> callback = [&m, &cv]() {
+                        // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
+                        // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
+                        // socket thread.
+                        lock_guard lock(m);
+                        cv.notify_all();
+                    };
+
+                    // Ok, none of above synchronization code gets called unless the command has a socket to respond
+                    // on.
+                    bool hasSocket = command->socket;
+                    if (hasSocket) {
+                        // Set the destructor callback for when the command finishes.
                         command->destructionCallback = &callback;
 
-                        _standDownQueue.push(move(command));
-                        cv.wait(lock);
-                    } else {
-                        // TODO: DRY.
-                        if (!command->socket) {
-                            // Fire-and-forget command, don't wait for it, move on to the next.
-                            SINFO("Not waiting for command " << command->id);
-                            if (_version != _leaderVersion.load()) {
-                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                _syncNodeQueuedCommands.push(move(command));
-                            } else {
-                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                      << _commandQueue.size() << " commands already queued.");
-                                _commandQueue.push(move(command));
-                            }
-                        } else {
-                            mutex m;
-                            unique_lock<mutex> lock(m);
-                            condition_variable cv;
-                            function<void()> callback = [&m, &cv]() {
-                                lock_guard lock(m);
-                                cv.notify_all();
-                            };
-                            command->destructionCallback = &callback;
+                        // And lock the mutex so the command can't complete until we are in `wait` below.
+                        lock.lock();
+                    }
 
-                            string commandID = command->id;
-                            SINFO("Waiting for command " << commandID);
-                            if (_version != _leaderVersion.load()) {
-                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                _syncNodeQueuedCommands.push(move(command));
-                            } else {
-                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                      << _commandQueue.size() << " commands already queued.");
-                                _commandQueue.push(move(command));
-                            }
-                            // Now we can just wait for the next command on this socket, it will either get closed, or it
-                            // will get more data, in either case, we'll wait in `S_recvappend`.
-                            cv.wait(lock);
-                            SINFO("Finished command " << commandID);
+                    // Now we'll queue this command in one of three queues.
+                    auto _syncNodeCopy = atomic_load(&_syncNode);
+                    if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                        _standDownQueue.push(move(command));
+                    } else {
+                        if (_version != _leaderVersion.load()) {
+                            SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                            _syncNodeQueuedCommands.push(move(command));
+                        } else {
+                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                  << _commandQueue.size() << " commands already queued.");
+                            _commandQueue.push(move(command));
                         }
+                    }
+
+                    // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
+                    // destructionCallback fires, this will stop blocking and we can move on to the next request.
+                    if (hasSocket) {
+                        cv.wait(lock);
                     }
                 }
             } else {
@@ -2393,9 +2396,12 @@ void BedrockServer::handleSocket(Socket* s) {
         } else {
             SWARN("Socket in unhandled state: " << s->state);
         }
+
+        // At the bottom of the loop, we need to `recv` again to either notice that we're disconnected, or get the next
+        // request.
     }
 
-    // We never return early, we always want to hit this code.
+    // We never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
     delete s;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
