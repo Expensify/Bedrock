@@ -154,7 +154,7 @@ class BedrockCommand : public SQLiteCommand {
     SQLiteNode::State lastPeekedOrProcessedInState = SQLiteNode::UNKNOWN;
 
     // If someone is waiting for this command to complete, this will be called in the destructor.
-    condition_variable* waiter;
+    function<void()>* destructionCallback;
 
     // Lock for the socket for this command.
     mutex socketLock;

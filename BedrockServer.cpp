@@ -1609,6 +1609,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the _lastChance timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
+        SINFO("In shutdown state.");
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
@@ -1625,14 +1626,15 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     closeSocket(s);
                 }
             }
-            if (_outstandingSocketThreads) {
-                SINFO("Have " << _outstandingSocketThreads << " socket threads to kill.");
-            }
-            size_t count = BedrockCommand::getCommandCount();
-            if (count) {
-                SINFO("Have " << count << " remaining commands to kill.");
-            }
+
             _shutdownState.store(CLIENTS_RESPONDED);
+        }
+        if (_outstandingSocketThreads) {
+            SINFO("Have " << _outstandingSocketThreads << " socket threads to kill.");
+        }
+        size_t count = BedrockCommand::getCommandCount();
+        if (count) {
+            SINFO("Have " << count << " remaining commands to kill.");
         }
     }
 }
@@ -1695,6 +1697,8 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
+            } else {
+                SINFO("Replied");
             }
         }
     } else {
@@ -2244,18 +2248,39 @@ void BedrockServer::handleSocket(Socket* s) {
     // This is nearly (but not quite) identical to the main body of the main `for each socket` loop inside `postPoll`.
     while (1) {
         // Attempt to read from the socket. This will block.
-        if (!s->recv()) {
 
-            // Ok, so when we start shutting down, we want to close any of these sockets with no activity. I.e., no
-            // active command and nothing read. When we're responding to commands, if we're in a shutdown state, we can
-            // close them there (do we already do that?) But there's still a race condition where we respond and then
-            // immediately enter the shutdown state. That needs to interrupt this read and close the socket.
-            //
-            // Is there any way this loses connections? Let's say we just got a new connection, and are reading the
-            // first command off if it when we go into a shutdown state. We don't want to interrupt that, we want it to
-            // continue.
-            // Hmm....
-            // This is the normal shutdown case. `recv` will log an error if anything weird happened.
+        int pollResult = 0;
+        bool exitMainLoop = false;
+       struct pollfd pollStruct = { s->s, POLLIN, 0 };
+
+        while (true) {
+            // Wait up to a second.
+            SINFO("Waiting in poll");
+            pollResult = poll(&pollStruct, 1, 1'000);
+            SINFO("Done waiting in poll");
+            if (pollResult > 0) {
+                // If this returns false, our socket is dead, close it.
+                if (!s->recv()) {
+                    // Break main loop, the socket is closed with nothing to read.
+                    exitMainLoop = true;
+                }
+                // Otherwise, stop reading and try and make a command.
+                break;
+            } else if (pollResult == 0) {
+                // Timeout. If we're shutting down, exit main loop, otherwise, try again.
+                if (_shutdownState.load() != RUNNING) {
+                    SINFO("Socket thread exiting because no data and shutting down.");
+                    exitMainLoop = true;
+                    break;
+                }
+            } else {
+                SINFO("Poll failed!");
+                exitMainLoop = true;
+                break;
+            }
+        }
+
+        if (exitMainLoop) {
             break;
         }
 
@@ -2298,9 +2323,6 @@ void BedrockServer::handleSocket(Socket* s) {
             // command.
             if (!request.empty()) {
                 unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), s);
-                if (!command) {
-                    break;
-                }
 
                 // If it's a status or control command, we handle it specially there. If not, we'll queue it for
                 // later processing.
@@ -2308,10 +2330,16 @@ void BedrockServer::handleSocket(Socket* s) {
                     auto _syncNodeCopy = atomic_load(&_syncNode);
                     if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                         // Duplicates the below code.
-                        mutex waitForCommand;
-                        unique_lock<mutex> lock(waitForCommand);
+                        mutex m;
+                        unique_lock<mutex> lock(m);
                         condition_variable cv;
-                        command->waiter = &cv;
+                        function<void()> callback = [&m, &cv]() {
+                            lock_guard lock(m);
+                            cv.notify_all();
+                            
+                        };
+                        command->destructionCallback = &callback;
+
                         _standDownQueue.push(move(command));
                         cv.wait(lock);
                     } else {
@@ -2328,11 +2356,17 @@ void BedrockServer::handleSocket(Socket* s) {
                                 _commandQueue.push(move(command));
                             }
                         } else {
-                            mutex waitForCommand;
-                            unique_lock<mutex> lock(waitForCommand);
+                            mutex m;
+                            unique_lock<mutex> lock(m);
                             condition_variable cv;
-                            command->waiter = &cv;
-                            SINFO("Waiting for command " << command->id);
+                            function<void()> callback = [&m, &cv]() {
+                                lock_guard lock(m);
+                                cv.notify_all();
+                            };
+                            command->destructionCallback = &callback;
+
+                            string commandID = command->id;
+                            SINFO("Waiting for command " << commandID);
                             if (_version != _leaderVersion.load()) {
                                 SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
                                 _syncNodeQueuedCommands.push(move(command));
@@ -2344,6 +2378,7 @@ void BedrockServer::handleSocket(Socket* s) {
                             // Now we can just wait for the next command on this socket, it will either get closed, or it
                             // will get more data, in either case, we'll wait in `S_recvappend`.
                             cv.wait(lock);
+                            SINFO("Finished command " << commandID);
                         }
                     }
                 }
