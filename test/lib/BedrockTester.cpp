@@ -299,7 +299,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                     // If that failed, we'll continue our main loop and try again.
                     if (socket == -1) {
-                        cout << "Failed to connect for command: " << myRequest.methodLine << endl;
                         // Return if we've specified to return on failure, or if it's been 20 seconds.
                         bool timeout = sendStart + 20'000'000 < STimeNow();
                         if (returnOnDisconnect || timeout) {
@@ -428,7 +427,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         ::shutdown(socket, SHUT_RDWR);
                         ::close(socket);
                         socket = 0;
-                        cout << "Timed out command " << myRequest.methodLine << endl;
                         break;
                     } else if (!timedOut) {
                         // Ok, done, let's lock again and insert this in the results.

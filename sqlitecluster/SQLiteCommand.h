@@ -1,6 +1,5 @@
 #pragma once
 #include "SQLiteNode.h"
-#include <libstuff/STCPManager.h>
 
 class SQLiteCommand {
   public:
@@ -23,8 +22,6 @@ class SQLiteCommand {
     // A negative value indicates a valid ID of an invalid client (a psuedo-client, or a disconnected client), that we
     // can't respond to.
     int64_t initiatingClientID;
-
-    STCPManager::Socket* socket;
 
     // Each command is given a unique id that can be serialized and passed back and forth across nodes. Its id must be
     // uniquely identifiable for cases where, for instance, two peers escalate commands to the leader, and leader will

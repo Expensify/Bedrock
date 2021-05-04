@@ -66,7 +66,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             vector<string> results(3);
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
-                SData query("Query " + to_string(SRandom::rand64()));
+                SData query("Query");
                 query["writeConsistency"] = "ASYNC";
                 query["query"] = "SELECT id, value FROM test ORDER BY id;";
                 string result = brtester.executeWaitVerifyContent(query);
@@ -132,7 +132,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             threads.emplace_back([this, i, &allResults, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
-                SData query("Query " + to_string(SRandom::rand64()));
+                SData query("Query");
                 query["query"] = "SELECT name FROM sqlite_master WHERE type='table';";
 
                 // Ok, send them all!
@@ -174,7 +174,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             allResults.clear();
             allResults.resize(3);
             for (int i : {0, 1, 2}) {
-                threads.emplace_back([this, i, &allResults, &tables, &m]() {
+                threads.emplace_back([this, i, &allResults, &tables, &m](){
                     BedrockTester& brtester = tester->getTester(i);
 
                     auto journals = tables[i];
@@ -186,7 +186,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                     string query = "SELECT MAX(maxIDs) FROM (" + SComposeList(queries, " UNION ");
                     query += ");";
 
-                    SData cmd("Query " + to_string(SRandom::rand64()));
+                    SData cmd("Query");
                     cmd["query"] = query;
                     // Ok, send them all!
                     auto result = brtester.executeWaitVerifyContent(cmd);
@@ -223,7 +223,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             for (auto journal : journals) {
                 string query = "SELECT COUNT(id) FROM " + journal + ";";
 
-                SData cmd("Query " + to_string(SRandom::rand64()));
+                SData cmd("Query");
                 cmd["query"] = query;
                 commands.push_back(cmd);
             }
@@ -233,9 +233,6 @@ struct ConflictSpamTest : tpunit::TestFixture {
             auto results = brtester.executeWaitMultipleData(commands);
 
             for (size_t i = 0; i < results.size(); i++) {
-                if (SToInt(results[i].methodLine) != 200) {
-                    cout << results[i].serialize() << endl;
-                }
                 // Make sure they all succeeded.
                 ASSERT_TRUE(SToInt(results[i].methodLine) == 200);
                 list<string> lines = SParseList(results[i].content, '\n');
@@ -253,7 +250,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             threads.emplace_back([this, i, &allResults, &tables, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
-                SData cmd("Query " + to_string(SRandom::rand64()));
+                SData cmd("Query");
                 cmd["query"] = "SELECT * FROM test;";
 
                 // Ok, send them all!
@@ -277,7 +274,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             threads.emplace_back([this, i, &allResults, &tables, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
-                SData cmd("Query " + to_string(SRandom::rand64()));
+                SData cmd("Query");
                 cmd["query"] = "SELECT COUNT(id) FROM test;";
 
                 // Ok, send them all!
@@ -302,9 +299,6 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // And that they're all 66.
         list<string> resultCount = SParseList(allResults[0], '\n');
         resultCount.pop_front();
-        if (cmdID.load() != SToInt(resultCount.front())) {
-            cout << cmdID.load() << ", " << SToInt(resultCount.front()) << endl;
-        }
         ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
 
         int fail = totalRequestFailures.load();

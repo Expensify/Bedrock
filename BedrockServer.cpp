@@ -1678,7 +1678,6 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     // Is a plugin handling this command? If so, it gets to send the response.
     const string& pluginName = command->request["plugin"];
 
-    lock_guard lock(command->socketLock);
     if (command->socket) {
         if (!pluginName.empty()) {
             // Let the plugin handle it

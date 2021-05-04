@@ -15,6 +15,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     crashIdentifyingValues(*this),
     escalateImmediately(escalateImmediately_),
     destructionCallback(nullptr),
+    socket(nullptr),
     _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
