@@ -243,8 +243,6 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
-    // WIP New stuff for parallel sockets.
-
     // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
     // will not be managed by that poll loop, instead, it starts a new thread.
     STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
