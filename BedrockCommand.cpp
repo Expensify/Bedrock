@@ -76,7 +76,6 @@ BedrockCommand::~BedrockCommand() {
         request->manager.closeTransaction(request);
     }
     if (destructionCallback) {
-        SINFO("Calling destruction callback");
         (*destructionCallback)();
     }
     _commandCount--;

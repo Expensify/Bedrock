@@ -478,16 +478,18 @@ class BedrockServer : public SQLiteServer {
     // so that the state can't change for the lifetime of that call, from the view of that function.
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 
+    // Setup a new command from a bare request.
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
+
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
     // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
     // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
     atomic<uint64_t> _lastChance;
+
+    // This is a monotonically incrementing integer just used to uniquely identify socket threads.
     atomic<uint64_t> _socketThreadNumber;
 
-    // Setup a new command from a bare request.
-    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
-
-    // This counts how many outstanding socket threads there are so we can wait for them to complete before exiting.
+    // This records how many outstanding socket threads there are so we can wait for them to complete before exiting.
     atomic<uint64_t> _outstandingSocketThreads;
 };
