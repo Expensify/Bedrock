@@ -1,5 +1,7 @@
-#include <libstuff/libstuff.h>
 #include "SQLiteCommand.h"
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SRandom.h>
 
 SData SQLiteCommand::preprocessRequest(SData&& request) {
     // If the request doesn't specify an execution time, default to right now.

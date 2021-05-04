@@ -1,6 +1,9 @@
-#include <libstuff/libstuff.h>
-#include <test/clustertest/BedrockClusterTester.h>
+#include <iostream>
 #include <unistd.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
+#include <test/lib/BedrockTester.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the

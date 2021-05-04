@@ -1,6 +1,11 @@
-#include "libstuff.h"
+#include "SSSLState.h"
+
 #include <mbedtls/error.h>
 #include <mbedtls/net.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SFastBuffer.h>
+#include <libstuff/SX509.h>
 
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);

@@ -1,5 +1,7 @@
-#include "../BedrockClusterTester.h"
 #include <fstream>
+
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct FutureExecutionTest : tpunit::TestFixture {
     FutureExecutionTest()

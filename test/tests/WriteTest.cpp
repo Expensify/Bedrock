@@ -1,3 +1,4 @@
+#include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
 struct WriteTest : tpunit::TestFixture {

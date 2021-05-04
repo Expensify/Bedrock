@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/SHTTPSManager.h>
 #include <sqlitecluster/SQLiteCommand.h>
 
 class BedrockPlugin;

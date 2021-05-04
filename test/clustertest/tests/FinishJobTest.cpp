@@ -1,4 +1,6 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SQResult.h>
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct FinishJobTest : tpunit::TestFixture {

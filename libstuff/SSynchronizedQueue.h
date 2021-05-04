@@ -1,5 +1,8 @@
 #pragma once
 
+#include <unistd.h>
+#include <fcntl.h>
+
 template <typename T>
 class SSynchronizedQueue {
   public:

@@ -1,3 +1,6 @@
+#include <iostream>
+
+#include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 

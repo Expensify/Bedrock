@@ -1,5 +1,11 @@
 #include "TestPlugin.h"
+
+#include <iostream>
 #include <sys/file.h>
+#include <string.h>
+
+#include <libstuff/SQResult.h>
+#include <libstuff/SX509.h>
 
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;

@@ -1,5 +1,7 @@
 #include "Jobs.h"
-#include "../BedrockServer.h"
+
+#include <BedrockServer.h>
+#include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLiteUtils.h>
 
 #undef SLOGPREFIX
