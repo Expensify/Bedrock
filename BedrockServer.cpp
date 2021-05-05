@@ -2148,7 +2148,6 @@ void BedrockServer::_acceptSockets() {
     Socket* s = nullptr;
     Port* acceptPort = nullptr;
     while ((s = acceptUnlistedSocket(acceptPort))) {
-        /* TODO: Doesn't work
         if (SContains(_portPluginMap, acceptPort)) {
             BedrockPlugin* plugin = _portPluginMap[acceptPort];
             // Allow the plugin to process this
@@ -2156,10 +2155,8 @@ void BedrockServer::_acceptSockets() {
             plugin->onPortAccept(s);
 
             // Remember that this socket is owned by this plugin.
-            SASSERT(!s->data);
             s->data = plugin;
         }
-        */
     }
 }
 
