@@ -1118,7 +1118,6 @@ void BedrockServer::worker(SQLitePool& dbPool,
                         // Escalated command. Send it back to the peer.
                         server._finishPeerCommand(command);
                     } else {
-                        // So this can get called on a command with a deleted socket.
                         server._reply(command);
                     }
 
@@ -1614,7 +1613,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the _lastChance timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        SINFO("In shutdown state.");
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
@@ -1635,11 +1633,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
         if (_outstandingSocketThreads) {
-            SINFO("Have " << _outstandingSocketThreads << " socket threads to kill.");
+            SINFO("Have " << _outstandingSocketThreads << " socket threads to close.");
         }
         size_t count = BedrockCommand::getCommandCount();
         if (count) {
-            SINFO("Have " << count << " remaining commands to kill.");
+            SINFO("Have " << count << " remaining commands to delete.");
         }
     }
 }
@@ -1705,19 +1703,18 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
                 SINFO("Replied");
             }
         }
+
+        // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
+        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
+            shutdownSocket(command->socket, SHUT_RDWR);
+        }
     } else {
+        // This is the case for a fire-and-forget command, such as one set to run in the future. If `Connection:
+        // forget` was specified, this is normal and we won't log.
         if (!SIEquals(command->request["Connection"], "forget")) {
-            // I don't see how this could still be reachable.
             SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
         }
-
-        // This is the case for a fire-and-forget command, such as one set to run in the future.
         command->handleFailedReply();
-    }
-
-    // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
-    if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
-        shutdownSocket(command->socket, SHUT_RDWR);
     }
 }
 
