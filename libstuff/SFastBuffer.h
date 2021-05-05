@@ -1,4 +1,10 @@
 #pragma once
+
+#include <string>
+#include <ostream>
+
+using namespace std;
+
 class SFastBuffer {
   public:
     SFastBuffer();

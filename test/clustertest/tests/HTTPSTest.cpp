@@ -1,4 +1,5 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 /* This test is inherently a non-conclusive test. It aims to submit conflicting HTTPS requests, but there's no simple
  * way to prove, conclusively that any of our commands actually conflicted. This test is constructed such that it has

@@ -1,4 +1,6 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct GracefulFailoverTest : tpunit::TestFixture {
     GracefulFailoverTest()

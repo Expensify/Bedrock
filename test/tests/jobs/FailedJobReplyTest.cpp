@@ -1,3 +1,7 @@
+#include <iostream>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
 struct FailedJobReplyTest : tpunit::TestFixture {

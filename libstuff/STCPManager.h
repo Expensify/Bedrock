@@ -1,4 +1,18 @@
 #pragma once
+#include <atomic>
+#include <list>
+#include <mutex>
+#include <netinet/in.h>
+#include <poll.h>
+#include <string>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SFastBuffer.h>
+
+class SSSLState;
+class SX509;
+
+using namespace std;
 
 // Convenience base class for managing a series of TCP sockets. This includes filling receive buffers, emptying send
 // buffers, completing connections, performing graceful shutdowns, etc.

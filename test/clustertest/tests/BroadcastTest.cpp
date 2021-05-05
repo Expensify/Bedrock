@@ -1,4 +1,7 @@
-#include "../BedrockClusterTester.h"
+#include <iostream>
+
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct BroadcastCommandTest : tpunit::TestFixture {
     BroadcastCommandTest()

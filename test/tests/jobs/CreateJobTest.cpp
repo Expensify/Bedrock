@@ -1,3 +1,8 @@
+#include <iostream>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 

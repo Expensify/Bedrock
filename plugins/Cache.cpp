@@ -1,5 +1,7 @@
 #include "Cache.h"
-#include "BedrockServer.h"
+
+#include <BedrockServer.h>
+#include <libstuff/SQResult.h>
 
 const string BedrockPlugin_Cache::name("Cache");
 const string& BedrockPlugin_Cache::getName() const {

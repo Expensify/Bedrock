@@ -1,5 +1,11 @@
-#include "libstuff.h"
-#include <execinfo.h> // for backtrace
+#include "STCPNode.h"
+
+#include <execinfo.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 

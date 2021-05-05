@@ -1,4 +1,9 @@
 #pragma once
+#include <string>
+
+#include <libstuff/libstuff.h>
+
+using namespace std;
 
 // --------------------------------------------------------------------------
 // A very simple HTTP-like structure consisting of a method line, a table,
@@ -16,6 +21,9 @@ struct SData {
     // Initializes a new SData from a string. If the string provided is not
     // an entire HTTPs like message, the string is used as the methodLine.
     SData(const string& fromString);
+
+    // Allow conversion from STable.
+    SData(const STable& from);
 
     // Allow forwarding emplacements directly so SData can act like `std::map`.
     template <typename... Ts>
@@ -95,9 +103,7 @@ struct SData {
     int deserialize(const char* buffer, size_t length);
 
     // Deserializes from an SFastBuffer.
-    int deserialize(const SFastBuffer& buf) {
-        return deserialize(buf.c_str(), buf.size());
-    }
+    int deserialize(const SFastBuffer& buf);
 
     // Initializes a new SData from a string. If there is no content provided,
     // then use whatever data remains in the string as the content

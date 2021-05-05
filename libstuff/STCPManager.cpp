@@ -1,4 +1,10 @@
-#include "libstuff.h"
+#include "STCPManager.h"
+
+#include <unistd.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SSSLState.h>
+#include <libstuff/SX509.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 

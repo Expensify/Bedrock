@@ -1,5 +1,7 @@
 #include "libstuff.h"
 
+#include <sys/time.h>
+
 uint64_t STimeNow() {
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
     timeval time;

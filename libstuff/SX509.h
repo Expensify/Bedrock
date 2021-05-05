@@ -1,6 +1,9 @@
 #pragma once
 #include <mbedtls/pk.h>
 #include <mbedtls/x509_crt.h>
+#include <string>
+
+using namespace std;
 
 // Wraps a X509 Cert
 struct SX509 {
