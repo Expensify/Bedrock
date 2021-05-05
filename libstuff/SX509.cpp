@@ -1,5 +1,9 @@
-#include "libstuff.h"
+#include "SX509.h"
+
+#include <cstring>
 #include <mbedtls/certs.h>
+
+#include <libstuff/libstuff.h>
 
 // --------------------------------------------------------------------------
 SX509* SX509Open() {

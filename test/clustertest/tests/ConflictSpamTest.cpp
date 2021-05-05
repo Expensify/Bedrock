@@ -1,4 +1,5 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct ConflictSpamTest : tpunit::TestFixture {
     ConflictSpamTest()

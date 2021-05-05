@@ -1,9 +1,10 @@
 #pragma once
-#include <libstuff/libstuff.h>
-#include <sqlitecluster/SQLite.h>
-#include <test/lib/TestHTTPS.h>
-#include <test/lib/tpunit++.hpp>
+#include <signal.h>
+
 #include <test/lib/PortMap.h>
+#include <test/lib/tpunit++.hpp>
+
+class SQLite;
 
 class BedrockTester {
   public:

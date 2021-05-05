@@ -1,5 +1,8 @@
 #pragma once
-#include <libstuff/libstuff.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/STCPManager.h>
+
 class BedrockPlugin;
 
 class SStandaloneHTTPSManager : public STCPManager {

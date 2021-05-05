@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/STCPManager.h>
 
 // Convenience class for listening on a port and accepting sockets.
 struct STCPServer : public STCPManager {

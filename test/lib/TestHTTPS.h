@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/libstuff.h>
+#include <libstuff/SHTTPSManager.h>
 
 class TestHTTPS : public SHTTPSManager {
   public:

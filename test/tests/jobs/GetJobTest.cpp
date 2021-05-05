@@ -1,3 +1,8 @@
+#include <iostream>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
 bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, string timestampString) {

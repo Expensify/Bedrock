@@ -1,5 +1,15 @@
 #include "BedrockTester.h"
+
+#include <cstring>
+#include <iostream>
+#include <netinet/in.h>
 #include <sys/wait.h>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SFastBuffer.h>
+#include <sqlitecluster/SQLite.h>
+#include <test/lib/BedrockTester.h>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;

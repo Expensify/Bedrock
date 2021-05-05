@@ -1,4 +1,4 @@
-#include <libstuff/libstuff.h>
+#include "SRandom.h"
 
 #ifdef VALGRIND
 // random_device breaks valgrind.

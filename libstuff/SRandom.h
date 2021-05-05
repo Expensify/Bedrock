@@ -1,5 +1,10 @@
 #pragma once
 
+#include <random>
+#include <string>
+
+using namespace std;
+
 // Random number generator class.
 class SRandom {
   public:

@@ -1,4 +1,6 @@
-#include "libstuff.h"
+#include "SData.h"
+
+#include <libstuff/SFastBuffer.h>
 
 const string SData::placeholder;
 
@@ -6,6 +8,9 @@ SData::SData() {
     // Nothing to do here
 }
 
+SData::SData(const STable& from) : nameValueMap(from)
+{
+}
 
 SData::SData(const string& fromString) {
     if(!SParseHTTP(fromString, methodLine, nameValueMap, content)){
@@ -107,4 +112,8 @@ SData SData::create(const string& fromString) {
         data.content = fromString.substr(header);
     }
     return data;
+}
+
+int SData::deserialize(const SFastBuffer& buf) {
+    return deserialize(buf.c_str(), buf.size());
 }

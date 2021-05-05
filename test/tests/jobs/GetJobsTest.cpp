@@ -1,6 +1,10 @@
+#include <time.h>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
-#include <time.h>
 
 // Get the difference in seconds between a and b
 uint64_t absoluteDiff(time_t a, time_t b) {

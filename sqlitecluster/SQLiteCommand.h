@@ -1,5 +1,7 @@
 #pragma once
-#include "SQLiteNode.h"
+
+#include <libstuff/SData.h>
+#include <sqlitecluster/SQLiteNode.h>
 
 class SQLiteCommand {
   public:

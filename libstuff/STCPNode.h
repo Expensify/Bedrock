@@ -1,5 +1,6 @@
 #pragma once
-#include <libstuff/libstuff.h>
+
+#include <libstuff/STCPServer.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
