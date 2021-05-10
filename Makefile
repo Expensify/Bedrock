@@ -16,7 +16,7 @@ endif
 
 # Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
 # contained in a git repo.
-GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse --short HEAD)
+GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse HEAD | grep -o '^.\{10\}')
 PROJECT = $(shell git rev-parse --show-toplevel)
 
 # Set our include paths. We need this for the pre-processor to use to generate dependencies.
