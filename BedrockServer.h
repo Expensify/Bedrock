@@ -179,6 +179,9 @@ class BedrockServer : public SQLiteServer {
     // SQLiteNode API.
     void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew = true);
 
+    // TODO: new thread stuff
+    void acceptAndLaunchThread();
+
     // Backwards-compatible version of the above method for plugins that already used it.
     void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
@@ -336,6 +339,9 @@ class BedrockServer : public SQLiteServer {
                        BedrockServer& server,
                        int threadId);
 
+    // Connection management threads handle the lifecycle of a single socket
+    static void connectionThread(Socket* s, BedrockServer& server);
+
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(unique_ptr<BedrockCommand>& command);
@@ -363,10 +369,10 @@ class BedrockServer : public SQLiteServer {
     void _control(unique_ptr<BedrockCommand>& command);
 
     // Accepts any sockets pending on our listening ports. We do this both after `poll()`, and before shutting down
-    // those ports.
+    // those ports. Allow spawning connections to their own thread.
     void _acceptSockets();
 
-    // This stars the server shutting down.
+    // This starts the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
     // This is a map of commit counts in the future to commands that depend on them. We can receive a command that
@@ -483,4 +489,11 @@ class BedrockServer : public SQLiteServer {
     // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
     // so that the state can't change for the lifetime of that call, from the view of that function.
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
+
+    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
+    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
+    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
+    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
+    uint64_t _lastChance;
+
 };
