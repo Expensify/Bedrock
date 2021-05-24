@@ -135,6 +135,10 @@ void STCPManager::postPoll(fd_map& fdm) {
                 // Only send/recv if the socket is ready
                 if (SFDAnySet(fdm, socket->s, SREADEVTS)) {
                     aliveAfterRecv = socket->recv();
+                    if(!aliveAfterRecv && errno == EAGAIN) {
+                        SHMMM("Retrying after receive error " << errno << ": " << strerror(errno));
+                        break;
+                    }
                 }
                 if (SFDAnySet(fdm, socket->s, SWRITEEVTS)) {
                     aliveAfterSend = socket->send();
@@ -145,7 +149,7 @@ void STCPManager::postPoll(fd_map& fdm) {
             if (!aliveAfterRecv || !aliveAfterSend) {
                 // How did we die?
                 SDEBUG("Connection to '" << socket->addr << "' died (recv=" << aliveAfterRecv << ", send="
-                       << aliveAfterSend << ")");
+                       << aliveAfterSend << ") with error: " << errno << " " << strerror(errno));
                 socket->state.store(Socket::CLOSED);
             }
             break;
