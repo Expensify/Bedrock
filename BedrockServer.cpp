@@ -2058,7 +2058,7 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
     for (Port& port : portList) {
         // Try to accept on the port and wrap in a socket
         sockaddr_in addr;
-        int s = S_accept(port.s, addr, true); // Note that this is set to be blocking.
+        int s = S_accept(port.s, addr, true); // Note that this sets the newly accepted socket to be blocking.
         if (s > 0) {
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
             socket = new Socket(s, Socket::CONNECTED);
@@ -2131,7 +2131,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 }
 
 void BedrockServer::handleSocket(Socket* s) {
-    // Initilaize and get a unique thread ID.
+    // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
 
