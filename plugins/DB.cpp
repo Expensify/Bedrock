@@ -69,7 +69,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     int preChangeCount = db.getChangeCount();
     if (!db.read(query, result)) {
         if (shouldRequireWhere &&
-            (SContains(upperQuery, "UPDATE ") || SContains(upperQuery, "DELETE ")) &&
+            (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
             !SContains(upperQuery, " WHERE ")) {
             SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
             STHROW("502 Query aborted");
