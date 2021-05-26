@@ -328,6 +328,9 @@ class BedrockServer : public SQLiteServer {
                        BedrockServer& server,
                        int threadId);
 
+    // Like worker, when worker isn't a thing.
+    void handleCommand(unique_ptr<BedrockCommand>& command);
+
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _reply(unique_ptr<BedrockCommand>& command);

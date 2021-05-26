@@ -11,7 +11,7 @@ class BedrockCore : public SQLiteCore {
     enum class RESULT {
         INVALID = 0,
         COMPLETE = 1,
-        SHOULD_PROCESS = 2,
+        SHOULD_PROCESS = 2, // Note that "should process" is really "should run again" and includes "repeek".
         NEEDS_COMMIT = 3,
         NO_COMMIT_REQUIRED = 4,
         ABANDONED_FOR_CHECKPOINT = 5,
