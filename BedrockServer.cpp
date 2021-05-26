@@ -2176,7 +2176,7 @@ void BedrockServer::handleSocket(Socket* s) {
                     break;
                 }
             } else {
-                // This is an exceptional case, we'll just kill the socket if this happens and let the client
+                // This is an exception case, we'll just kill the socket if this happens and let the client
                 // reconnect.
                 SINFO("Poll failed: " << strerror(errno));
                 exitMainLoop = true;
