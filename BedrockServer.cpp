@@ -2178,7 +2178,7 @@ void BedrockServer::handleSocket(Socket* s) {
             }
         }
 
-        // Now, if the socket hasn't been closed, we'll try to handle the new data on from it appropriately.
+        // Now, if the socket hasn't been closed, we'll try to handle the new data on it appropriately.
         if (s->state == STCPManager::Socket::CONNECTED) {
             // If there's a request, we'll dequeue it.
             SData request;
@@ -2272,7 +2272,7 @@ void BedrockServer::handleSocket(Socket* s) {
         }
     }
 
-    // At this point out socket is closed and we cal clean up.
+    // At this point out socket is closed and we can clean up.
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
     delete s;
