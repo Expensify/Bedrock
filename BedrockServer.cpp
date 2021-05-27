@@ -2138,7 +2138,7 @@ void BedrockServer::handleSocket(Socket* s) {
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
     // waits for it to get processed, deserializes another, etc, until the socket gets closed.
     // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
-    while (1) {
+    while (s->state != STCPManager::Socket::CLOSED) {
         // We are going to call `poll` in a loop with only this one socket as a file descriptor.
         // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
         // It may be waiting for it's own data before it can send us a request, or it may have just forgotten to
@@ -2148,54 +2148,38 @@ void BedrockServer::handleSocket(Socket* s) {
         // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
         // until we get some data or a disconnection.
         int pollResult = 0;
-        bool exitMainLoop = false;
         struct pollfd pollStruct = { s->s, POLLIN, 0 };
 
-        // This loop just calls `poll` sequentially optionally exiting if we're shutting down and haven't received any
-        // data.
-        while (true) {
-            // Do the actual `poll` call.
-            pollResult = poll(&pollStruct, 1, 1'000);
+        // As long as `poll` returns 0 we've timed out, indicating that we're still waiting for something to happen. In
+        // that case, we'll loop again *unless* we're shutting down.
+        while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
+            if (_shutdownState != RUNNING) {
+                SINFO("Socket thread exiting because no data and shutting down.");
+                s->state = Socket::CLOSED;
+                ::shutdown(s->s, SHUT_RDWR);
+                break;
+            } 
+        }
 
-            // A result > 0 indicates a socket is ready to read (or has an error).
-            if (pollResult > 0) {
-                // We can now safely call `recv` without blocking. If it returns true, we've got some data, so we'll
-                // break out of this loop and see if we can do something with that data (like create a command).
-                if (!s->recv()) {
-                    // But if it returns false, this means our connection is dead and we should clean it up. We'll drop
-                    // to the bottom of the whole function here.
-                    exitMainLoop = true;
-                }
-                // We break out of the inner loop in either case.
-                break;
-            } else if (pollResult == 0) {
-                // Timeout. If we're shutting down, exit main loop, otherwise, try again.
-                if (_shutdownState.load() != RUNNING) {
-                    SINFO("Socket thread exiting because no data and shutting down.");
-                    exitMainLoop = true;
-                    break;
-                }
-            } else {
-                // This is an exceptional case, we'll just kill the socket if this happens and let the client
-                // reconnect.
+        // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
+        if (s->state != STCPManager::Socket::CLOSED) {
+            if (pollResult < 0) {
+                // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
                 SINFO("Poll failed: " << strerror(errno));
-                exitMainLoop = true;
-                break;
+                s->state = Socket::CLOSED;
+                ::shutdown(s->s, SHUT_RDWR);
+            } else {
+                // We've either got new data, or an error on the socket. Let's determine which by trying to read.
+                if (!s->recv()) {
+                    // If reading failed, then the socket was closed.
+                    s->state = Socket::CLOSED;
+                    ::shutdown(s->s, SHUT_RDWR);
+                }
             }
         }
 
-        // If our poll loop needed to exit from the main loop, we do that now.
-        if (exitMainLoop) {
-            break;
-        }
-
-        // Handle any activity.
-        if (s->state.load() == STCPManager::Socket::CLOSED) {
-            // If the socket got closed, we can jump to the end, there's nothing to do.
-            // FUTURE IMPROVEMENT: What if a client sent us a "fire and forget" command and immediately closed the
-            // socket without waiting for the `202` response. Should we handle that case?
-            break;
-        } else if (s->state.load() == STCPManager::Socket::CONNECTED) {
+        // Now, if the socket hasn't been closed, we'll try to handle the new data on from it appropriately.
+        if (s->state == STCPManager::Socket::CONNECTED) {
             // If there's a request, we'll dequeue it.
             SData request;
 
@@ -2276,22 +2260,20 @@ void BedrockServer::handleSocket(Socket* s) {
                 }
             } else {
                 // If we weren't able to deserialize a complete request, and we're shutting down, give up.
-                if (_shutdownState.load() != RUNNING && _lastChance && _lastChance < STimeNow()) {
+                if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
                     SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
                 }
             }
-        } else if (s->state.load() == STCPManager::Socket::SHUTTINGDOWN) {
-            // We do nothing in this state, we just wait until the next iteration of poll and let the CLOSED
-            // case run. This block just prevents default warning from firing.
+        } else if (s->state == STCPManager::Socket::SHUTTINGDOWN || s->state == STCPManager::Socket::CLOSED) {
+            // Do nothing here except prevent the warning below from firing. This loop should exit on the next
+            // iteration.
         } else {
             SWARN("Socket in unhandled state: " << s->state);
         }
-
-        // At the bottom of the loop, we need to `recv` again to either notice that we're disconnected, or get the next
-        // request.
     }
 
-    // We never return early, we always want to hit this code and decrement our counter and clean up our socket.
+    // At this point out socket is closed and we cal clean up.
+    // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
     delete s;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
