@@ -184,7 +184,7 @@ struct WriteTest : tpunit::TestFixture {
         SData query2("query: INSERT INTO stuff VALUES ( NULL, 12, 'Do not delete the test' );");
         tester->executeWaitVerifyContent(query2);
 
-        // This is a false test case, This query should't get executed. This is currently a limitation of our parsing
+        // This is a false test case, This query shouldn't get executed. This is currently a limitation of our parsing
         // As "nowhere" parameter is not provided, this query should get aborted and prevent all rows from updating
         // Change the expected result to "502 Query aborted" once https://github.com/Expensify/Expensify/issues/165207 is solved
         SData query3("query: UPDATE stuff SET info = 'This is not a where clause';");
