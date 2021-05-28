@@ -21,14 +21,11 @@ struct ReadTest : tpunit::TestFixture {
     }
 
     void simpleRead() {
-        string test = "34";
-        EXPECT_EQUAL("12", test);
-        EXPECT_TRUE(1 == 2);
         SData status("Query");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
         int val = SToInt(response);
-        ASSERT_EQUAL(val, 0);
+        ASSERT_EQUAL(val, 1);
     }
 
     void simpleReadWithHttp() {
