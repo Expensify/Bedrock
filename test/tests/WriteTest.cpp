@@ -18,6 +18,7 @@ struct WriteTest : tpunit::TestFixture {
                               TEST(WriteTest::failedUpdateNoWhereFalse),
                               TEST(WriteTest::updateAndInsertWithHttp),
                               TEST(WriteTest::shortHandSyntax),
+                              TEST(WriteTest::keywordsAsValue),
                               AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -25,7 +26,7 @@ struct WriteTest : tpunit::TestFixture {
     void setup() {
         tester = new BedrockTester({}, {
             "CREATE TABLE foo (bar INTEGER);",
-            "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER);",
+            "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER, info TEXT);",
         });
     }
 
@@ -57,7 +58,7 @@ struct WriteTest : tpunit::TestFixture {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
             query["debugID"] = "parallelCommand#" + to_string(i);
-            query["query"] = "INSERT INTO stuff VALUES ( NULL, " + SQ(i) + " );";
+            query["query"] = "INSERT INTO stuff VALUES ( NULL, " + SQ(i) + ", NULL );";
             requests.push_back(query);
         }
         auto results = tester->executeWaitMultipleData(requests);
@@ -174,6 +175,20 @@ struct WriteTest : tpunit::TestFixture {
 
         SData query2("Query: UPDATE stuff SET value = 3 WHERE id = 2;");
         tester->executeWaitVerifyContent(query2);
+    }
+
+    void keywordsAsValue() {
+        SData query("query: INSERT INTO stuff VALUES ( NULL, 11, 'Please update the test' );");
+        tester->executeWaitVerifyContent(query);
+
+        SData query2("query: INSERT INTO stuff VALUES ( NULL, 12, 'Do not delete the test' );");
+        tester->executeWaitVerifyContent(query2);
+
+        // This is a false test case, This query shouldn't get executed. This is currently a limitation of our parsing
+        // As "nowhere" parameter is not provided, this query should get aborted and prevent all rows from updating
+        // Change the expected result to "502 Query aborted" once https://github.com/Expensify/Expensify/issues/165207 is solved
+        SData query3("query: UPDATE stuff SET info = 'This is not a where clause';");
+        tester->executeWaitVerifyContent(query3);
     }
 
 } __WriteTest;
