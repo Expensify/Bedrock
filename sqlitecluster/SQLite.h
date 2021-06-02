@@ -265,6 +265,8 @@ class SQLite {
     // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
     void setCommitEnabled(bool enable);
 
+    int getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements);
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
