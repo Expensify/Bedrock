@@ -208,8 +208,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _pageLoggingEnabled(pageLoggingEnabled),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
-    _mmapSizeGB(mmapSizeGB),
-    _isWriting(false)
+    _mmapSizeGB(mmapSizeGB)
 {
     commonConstructorInitialization();
 }
@@ -225,8 +224,7 @@ SQLite::SQLite(const SQLite& from) :
     _pageLoggingEnabled(from._pageLoggingEnabled),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
-    _mmapSizeGB(from._mmapSizeGB),
-    _isWriting(false)
+    _mmapSizeGB(from._mmapSizeGB)
 {
     commonConstructorInitialization();
 }
@@ -400,7 +398,6 @@ void SQLite::waitForCheckpoint() {
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
-    _isWriting = false;
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         _sharedData.commitLock.lock();
         _sharedData._commitLockTimer.start("EXCLUSIVE");
@@ -423,9 +420,6 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     uint64_t before = STimeNow();
     _currentTransactionAttemptCount = -1;
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
-    if (_insideTransaction) {
-        _sharedData.concurrentTransactionCount++;
-    }
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -608,12 +602,6 @@ bool SQLite::writeUnmodified(const string& query) {
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
-    if (!_isWriting) {
-        _isWriting = true;
-        _sharedData.concurrentWriteTransactionCount++;
-        SINFO("Currently running " << _sharedData.concurrentTransactionCount << " total simultaneous transactions (" << _sharedData.concurrentWriteTransactionCount << " write).");
-    }
-
     _queryCache.clear();
     _queryCount++;
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
@@ -788,11 +776,6 @@ int SQLite::commit(const string& description) {
         _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
         _insideTransaction = false;
-        _sharedData.concurrentTransactionCount--;
-        if (_isWriting) {
-            _sharedData.concurrentWriteTransactionCount--;
-            _isWriting = false;
-        }
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
         _sharedData._commitLockTimer.stop();
@@ -870,11 +853,6 @@ void SQLite::rollback() {
 
         // Finally done with this.
         _insideTransaction = false;
-        _sharedData.concurrentTransactionCount--;
-        if (_isWriting) {
-            _sharedData.concurrentWriteTransactionCount--;
-            _isWriting = false;
-        }
         _uncommittedHash.clear();
         if (_uncommittedQuery.size()) {
             SINFO("Rollback successful.");
@@ -1154,9 +1132,7 @@ _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
 }),
-lastCompleteCheckpointCommitCount(0),
-concurrentTransactionCount(0),
-concurrentWriteTransactionCount(0)
+lastCompleteCheckpointCommitCount(0)
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {
