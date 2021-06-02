@@ -265,6 +265,14 @@ class SQLite {
     // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
     void setCommitEnabled(bool enable);
 
+    // This gets a set of sqlite3 prepared statements from a query string, to allow for the methods here to be called
+    // without actually running a query:
+    // https://www.sqlite.org/c3ref/stmt.html
+    //
+    // For instance, you can determine if a query is read-only with this information. This returns a list as it's
+    // possible that a string contains multiple queries separated by semicolons.
+    // Note: It's up to the caller to free these prepared statements by calling `sqlite3_finalize()` on them.
+    // This returns an sqlite error code. It will stop parsing multiple statements after the first error.
     int getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements);
 
   private:
