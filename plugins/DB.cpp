@@ -46,7 +46,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
-        STHROW("502 Query aborted");
+        STHROW("502 Query Missing Semicolon");
     }
 
     // Get a list of prepared statements from the database.
