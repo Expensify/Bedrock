@@ -14,8 +14,6 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     repeek(false),
     crashIdentifyingValues(*this),
     escalateImmediately(escalateImmediately_),
-    destructionCallback(nullptr),
-    socket(nullptr),
     _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request))
@@ -74,9 +72,6 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
 BedrockCommand::~BedrockCommand() {
     for (auto request : httpsRequests) {
         request->manager.closeTransaction(request);
-    }
-    if (destructionCallback) {
-        (*destructionCallback)();
     }
     _commandCount--;
 }
