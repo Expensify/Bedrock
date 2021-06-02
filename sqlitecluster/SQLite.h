@@ -341,9 +341,6 @@ class SQLite {
         // checkpoints to not more often than every N commits.
         atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
-        atomic<uint64_t> concurrentTransactionCount;
-        atomic<uint64_t> concurrentWriteTransactionCount;
-
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -520,6 +517,4 @@ class SQLite {
     // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
     // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
     mutex _destructorMutex;
-
-    bool _isWriting;
 };
