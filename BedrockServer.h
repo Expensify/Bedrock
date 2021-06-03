@@ -248,7 +248,7 @@ class BedrockServer : public SQLiteServer {
     STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket* s);
+    void handleSocket(Socket* s, bool isControl);
 
   private:
     // The name of the sync thread.
@@ -490,4 +490,9 @@ class BedrockServer : public SQLiteServer {
 
     // This records how many outstanding socket threads there are so we can wait for them to complete before exiting.
     atomic<uint64_t> _outstandingSocketThreads;
+
+    // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
+    // same time a control port command is running (which would indicate that there is a command blocking shutdown -
+    // the current control command).
+    shared_mutex _controlPortExclusionMutex;
 };

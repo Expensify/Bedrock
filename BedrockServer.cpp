@@ -1508,6 +1508,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
+        unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
         if ((socketList.empty() && !_outstandingSocketThreads) || _gracefulShutdownTimeout.ringing()) {
             _lastChance = 0;
 
@@ -2069,7 +2070,7 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
 
             // Start up the thread for this socket.
             _outstandingSocketThreads++;
-            thread(&BedrockServer::handleSocket, this, socket).detach();
+            thread(&BedrockServer::handleSocket, this, socket, &port == _controlPort).detach();
         }
     }
 
@@ -2130,7 +2131,11 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     return command;
 }
 
-void BedrockServer::handleSocket(Socket* s) {
+void BedrockServer::handleSocket(Socket* s, bool isControl) {
+    shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
+    if (isControl) {
+        controlPortLock.lock();
+    }
     // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
