@@ -7,7 +7,7 @@ notifications:
     email:
         on_success: never
 script: ./travis.sh
-dist: xenial
+dist: focal
 deploy:
     provider: releases
     # `api_key` is an encrypted oauth token for rafecolton. See https://docs.travis-ci.com/user/deployment/releases
