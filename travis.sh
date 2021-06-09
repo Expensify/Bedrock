@@ -52,7 +52,7 @@ else
     sudo openssl aes-256-cbc -K $encrypted_f9e02b3c1033_key -iv $encrypted_f9e02b3c1033_iv -in expensify.ca.crt.enc -out /usr/local/share/ca-certificates/expensify.ca.crt -d
     sudo update-ca-certificates
     sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
-    echo "deb [arch=amd64] https://travis:$APT_MIRROR_PASSWORD@apt-mirror.expensify.com:843/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu xenial main" | sudo tee -a /etc/apt/sources.list
+    echo "deb [arch=amd64] https://travis:$APT_MIRROR_PASSWORD@apt-mirror.expensify.com:843/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
 fi
 
 sudo apt-get update -y
