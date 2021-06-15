@@ -1,5 +1,10 @@
 #include "libstuff.h"
-#include <execinfo.h> // for backtrace
+
+#include <execinfo.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
 
 thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
@@ -15,6 +20,9 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext);
 
 // A boolean indicating whether or not we've initialized our signal thread.
 atomic_flag _SSignal_threadInitialized = ATOMIC_FLAG_INIT;
+
+// Set to true to stop the signal thread.
+atomic<bool> _SSignal_threadStopFlag(false);
 
 // The signals we've received since the last time this was cleared.
 atomic<uint64_t> _SSignal_pendingSignalBitMask(0);
@@ -80,7 +88,7 @@ void SInitializeSignals() {
     sigprocmask(SIG_BLOCK, &signals, 0);
 
     // This is the signal action structure we'll use to specify what to listen for.
-    struct sigaction newAction;
+    struct sigaction newAction = {0};
 
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
@@ -104,7 +112,6 @@ void SInitializeSignals() {
     bool threadAlreadyStarted = _SSignal_threadInitialized.test_and_set();
     if (!threadAlreadyStarted) {
         _SSignal_signalThread = thread(_SSignal_signalHandlerThreadFunc);
-        _SSignal_signalThread.detach();
     }
 }
 
@@ -119,10 +126,24 @@ void _SSignal_signalHandlerThreadFunc() {
 
     // Now we wait for any signal to occur.
     while (true) {
+
         // Wait for a signal to appear.
-        int signum = 0;
-        int result = sigwait(&signals, &signum);
-        if (!result) {
+        siginfo_t siginfo = {0};
+        struct timespec timeout;
+        timeout.tv_sec = 1;
+        timeout.tv_nsec = 0;
+        int result = -1;
+        while (result == -1) {
+            result = sigtimedwait(&signals, &siginfo, &timeout);
+            if (_SSignal_threadStopFlag) {
+                // Done.
+                SINFO("Stopping signal handler thread.");
+                return;
+            }
+        }
+        int signum = siginfo.si_signo;
+
+        if (result > 0) {
             // Do the same handling for these functions here as any other thread.
             if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
                 _SSignal_StackTrace(signum, nullptr, nullptr);
@@ -132,6 +153,16 @@ void _SSignal_signalHandlerThreadFunc() {
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
             }
         }
+    }
+}
+
+void SStopSignalThread() {
+    _SSignal_threadStopFlag = true;
+    if (_SSignal_threadInitialized.test_and_set()) {
+        // Send ourselves a singnal to interrupt our thread.
+        SINFO("Joining signal thread.");
+        _SSignal_signalThread.join();
+        _SSignal_threadInitialized.clear();
     }
 }
 

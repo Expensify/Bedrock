@@ -1,4 +1,5 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct StatusHandlingCommandsTest : tpunit::TestFixture {
     StatusHandlingCommandsTest()
@@ -55,7 +56,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
             follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
         });
 
-        leader.startServer(true);
+        leader.startServer(false);
         slowQueryThread.join();
         healthCheckThread.join();
 

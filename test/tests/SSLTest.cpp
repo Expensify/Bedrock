@@ -1,4 +1,7 @@
+#include <unistd.h>
+
 #include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
 
@@ -18,7 +21,7 @@ struct SSLTest : tpunit::TestFixture {
             STHROW("Couldn't get CWD");
         }
 
-        tester = new BedrockTester(_threadID, {
+        tester = new BedrockTester({
             {"-plugins", string(cwd) + "/clustertest/testplugin/testplugin.so"},
         });
     }

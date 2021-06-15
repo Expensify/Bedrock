@@ -1,3 +1,4 @@
+#include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
 struct ReadTest : tpunit::TestFixture {
@@ -11,9 +12,13 @@ struct ReadTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setup() { tester = new BedrockTester(_threadID); }
+    void setup() {
+        tester = new BedrockTester();
+    }
 
-    void tearDown() { delete tester; }
+    void tearDown() {
+        delete tester;
+    }
 
     void simpleRead() {
         SData status("Query");

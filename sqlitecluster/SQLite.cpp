@@ -1,5 +1,10 @@
-#include <libstuff/libstuff.h>
 #include "SQLite.h"
+
+#include <linux/limits.h>
+#include <string.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SQResult.h>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
@@ -30,12 +35,21 @@ string SQLite::initializeFilename(const string& filename) {
 }
 
 SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
-    static map<string, SharedData*> sharedDataLookupMap;
+    static struct SharedDataLookupMapType {
+        map<string, SharedData*> m;
+        ~SharedDataLookupMapType() {
+            for (auto& p : m) {
+                delete(p.second);
+            }
+            m.clear();
+        }
+    } sharedDataLookupMap;
+
     static mutex instantiationMutex;
     lock_guard<mutex> lock(instantiationMutex);
-    auto sharedDataIterator = sharedDataLookupMap.find(filename);
-    if (sharedDataIterator == sharedDataLookupMap.end()) {
-        SharedData* sharedData = new SharedData();
+    auto sharedDataIterator = sharedDataLookupMap.m.find(filename);
+    if (sharedDataIterator == sharedDataLookupMap.m.end()) {
+        SharedData* sharedData = new SharedData(); // This is never deleted.
 
         // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
@@ -55,7 +69,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         }
 
         // Insert our SharedData object into the global map.
-        sharedDataLookupMap.emplace(filename, sharedData);
+        sharedDataLookupMap.m.emplace(filename, sharedData);
         return *sharedData;
     } else {
         // Otherwise, use the existing one.
@@ -254,7 +268,20 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (pageCount >= fullCheckpointPageMin.load()) {
-        // If we get here, then full checkpoints are enabled, and we have enough pages in the WAL file to perform one.
+        if (object->_sharedData.commitCount <= object->_sharedData.lastCompleteCheckpointCommitCount + 100) {
+            SINFO("[checkpoint] Ready for complete checkpoint but skipping because less than 100 commits since last complete checkpoint.");
+            return SQLITE_OK;
+        }
+
+        int dbInUse = 0;
+        int useCheckResult = sqlite3_file_control(db, "main", SQLITE_FCNTL_EXTERNAL_READER, (void*)&dbInUse);
+        if (useCheckResult == SQLITE_OK && dbInUse) {
+            SINFO("Skipping complete checkpoint because external transaction in progress.");
+            return SQLITE_OK;
+        }
+
+        // If we get here, then full checkpoints are enabled, we have enough pages in the WAL file to perform one, and
+        // nothing else is stopping us from running one.
         SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
 
         // This thread will run independently. We capture the variables we need here and pass them by value.
@@ -300,11 +327,10 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                     break;
                 } else {
                     SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
-                    object->_sharedData.checkpointRequired(*object);
+                    object->_sharedData.checkpointRequired();
                 }
 
                 if (count == 0) {
-
                     // Time and run the checkpoint operation.
                     uint64_t checkpointStart = STimeNow();
                     SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
@@ -317,7 +343,11 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
                           << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
 
                     // We're done. Anyone can start a new transaction.
-                    object->_sharedData.checkpointComplete(*object);
+                    object->_sharedData.checkpointComplete();
+
+                    // Update our count so we don't re-run this too often.
+                    object->_sharedData.lastCompleteCheckpointCommitCount.store(object->_sharedData.commitCount);
+
                     break;
                 }
 
@@ -1101,7 +1131,8 @@ _commitEnabled(true),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
-})
+}),
+lastCompleteCheckpointCommitCount(0)
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {
@@ -1119,17 +1150,17 @@ void SQLite::SharedData::removeCheckpointListener(SQLite::CheckpointRequiredList
     _checkpointListeners.erase(&listener);
 }
 
-void SQLite::SharedData::checkpointRequired(SQLite& db) {
+void SQLite::SharedData::checkpointRequired() {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     for (auto listener : _checkpointListeners) {
-        listener->checkpointRequired(db);
+        listener->checkpointRequired();
     }
 }
 
-void SQLite::SharedData::checkpointComplete(SQLite& db) {
+void SQLite::SharedData::checkpointComplete() {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     for (auto listener : _checkpointListeners) {
-        listener->checkpointComplete(db);
+        listener->checkpointComplete();
     }
 }
 

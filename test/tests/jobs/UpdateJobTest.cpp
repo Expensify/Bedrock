@@ -1,3 +1,5 @@
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
@@ -12,7 +14,7 @@ struct UpdateJobTest : tpunit::TestFixture {
     BedrockTester* tester;
 
     void setupClass() {
-        tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
     }
 
     void tearDownClass() {

@@ -1,4 +1,8 @@
 #include "PortMap.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <iostream>
 
 PortMap::PortMap(uint16_t from) : _from(from)
     {}

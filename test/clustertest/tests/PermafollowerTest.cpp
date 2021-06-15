@@ -1,4 +1,5 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct PermafollowerTest : tpunit::TestFixture {
     PermafollowerTest()
@@ -19,15 +20,15 @@ struct PermafollowerTest : tpunit::TestFixture {
         BedrockTester& node5 = tester.getTester(5);
 
         // make sure the whole cluster is up
-        ASSERT_TRUE(node0.waitForStates({"LEADING", "MASTERING"}));
-        ASSERT_TRUE(node1.waitForStates({"FOLLOWING", "SLAVING"}));
-        ASSERT_TRUE(node2.waitForStates({"FOLLOWING", "SLAVING"}));
-        ASSERT_TRUE(node3.waitForStates({"FOLLOWING", "SLAVING"}));
-        ASSERT_TRUE(node4.waitForStates({"FOLLOWING", "SLAVING"}));
-        ASSERT_TRUE(node5.waitForStates({"FOLLOWING", "SLAVING"}));
+        ASSERT_TRUE(node0.waitForState("LEADING"));
+        ASSERT_TRUE(node1.waitForState("FOLLOWING"));
+        ASSERT_TRUE(node2.waitForState("FOLLOWING"));
+        ASSERT_TRUE(node3.waitForState("FOLLOWING"));
+        ASSERT_TRUE(node4.waitForState("FOLLOWING"));
+        ASSERT_TRUE(node5.waitForState("FOLLOWING"));
 
         // Confirm permafollower priority is correct
-        ASSERT_TRUE(node5.waitForStatusTerm("Priority", "0", 5'000'000, true));
+        ASSERT_TRUE(node5.waitForStatusTerm("Priority", "0", 5'000'000));
 
         // Shut down less than half the full peers
         tester.stopNode(1);

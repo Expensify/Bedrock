@@ -1,4 +1,8 @@
+#include <cstring>
+
 #include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {

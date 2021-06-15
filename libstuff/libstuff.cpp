@@ -1,6 +1,15 @@
 // --------------------------------------------------------------------------
 // libstuff.cpp
 // --------------------------------------------------------------------------
+// C library
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <execinfo.h>
+#include <sys/un.h>
+#include <cxxabi.h>
+#include <sys/ioctl.h>
+
 #include "libstuff.h"
 #include <sys/stat.h>
 #include <zlib.h>
@@ -9,6 +18,11 @@
 #include <mbedtls/base64.h>
 #include <mbedtls/sha1.h>
 #include <mbedtls/sha256.h>
+
+#include <libstuff/SQResult.h>
+#include <libstuff/SData.h>
+#include <libstuff/SFastBuffer.h>
+#include <libstuff/sqlite3.h>
 
 // Additional headers
 #include <netdb.h>
@@ -24,6 +38,8 @@
 #define MSG_NOSIGNAL 0
 #endif
 #endif
+
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 // Common error definitions
 #define S_errno errno
@@ -58,6 +74,8 @@
 #define S_EHOSTUNREACH EHOSTUNREACH
 #define S_EALREADY EALREADY
 #define S_EPIPE EPIPE
+
+#define S_COOKIE_SEPARATOR ((char)0xFF)
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
@@ -255,6 +273,11 @@ string SToHex(const string& value) {
     }
     return working;
 }
+
+string SToHex(uint32_t value) {
+    return SToHex(value, 8);
+}
+
 // --------------------------------------------------------------------------
 uint64_t SFromHex(const string& value) {
     // Convert one digit at a time
@@ -664,10 +687,9 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
     return (!component.empty());
 }
 
-// --------------------------------------------------------------------------
-SData SParseCommandLine(int argc, char* argv[]) {
+STable SParseCommandLine(int argc, char* argv[]) {
     // Just walk across and find the pairs, then put the remainder on a list in the method
-    SData results;
+    STable results;
     string name;
     for (int c = 1; c < argc; ++c) {
         // Does this look like a name or value?
@@ -676,11 +698,6 @@ SData SParseCommandLine(int argc, char* argv[]) {
             // We're not already processing a name, either start or add
             if (isName) {
                 name = argv[c];
-            } else {
-                list<string> valueList;
-                SParseList(results.methodLine, valueList);
-                valueList.push_back(argv[c]);
-                results.methodLine = SComposeList(valueList);
             }
         } else {
             // Processing a name, do we have a value or another name?
@@ -697,8 +714,10 @@ SData SParseCommandLine(int argc, char* argv[]) {
     }
 
     // If any leftover name, just set empty
-    if (!name.empty())
+    if (!name.empty()) {
         results[name] = "";
+    }
+
     return results;
 }
 
@@ -1017,7 +1036,10 @@ int _SDecodeURIChar(const char* buffer, int length, string& out) {
     return 3;
 }
 
-// --------------------------------------------------------------------------
+bool SParseURI(const string& uri, string& host, string& path) {
+    return SParseURI(uri.c_str(), (int)uri.size(), host, path);
+}
+
 bool SParseURI(const char* buffer, int length, string& host, string& path) {
     // Clear the output
     host.clear();
@@ -1052,7 +1074,10 @@ bool SParseURI(const char* buffer, int length, string& host, string& path) {
     return true; // Success
 }
 
-// --------------------------------------------------------------------------
+bool SParseURIPath(const string& uri, string& path, STable& nameValueMap) {
+    return SParseURIPath(uri.c_str(), (int)uri.size(), path, nameValueMap);
+}
+
 bool SParseURIPath(const char* buffer, int length, string& path, STable& nameValueMap) {
     // Clear the output
     path.clear();
@@ -2558,7 +2583,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
         if (!skipWarn) {
-            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            if (error == SQLITE_READONLY) {
+                // We make this exception because the `DB` plugin specifically tests query for read/write by attempting
+                // them in `peek`. They should fail in `peek` and get escalated to `process` and we don't need a
+                // million warnings for that.
+                SINFO("Attempted to write to a read-only DB, should escalate to `process`.");
+            } else {
+                SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            }
         }
     }
 
@@ -2601,7 +2633,8 @@ string SGetCurrentExceptionName()
     // exception name.
     int status = 0;
     size_t length = 1000;
-    char buffer[length] = {0};
+    char buffer[length];
+    memset(buffer, 0, length);
 
     // Demangle the name of the current exception.
     // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
@@ -2646,3 +2679,295 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     // Matched all parts, valid syntax
     return true;
 }
+
+bool SREMatch(const string& regExp, const string& s) {
+    return pcrecpp::RE(regExp).FullMatch(s);
+}
+
+bool SREMatch(const string& regExp, const string& s, string& match) {
+    return pcrecpp::RE(regExp).FullMatch(s, &match);
+}
+
+SStopwatch::SStopwatch() {
+    start();
+    alarmDuration.store(0);
+}
+
+SStopwatch::SStopwatch(uint64_t alarm) {
+    startTime.store(0);
+    alarmDuration.store(alarm);
+}
+
+uint64_t SStopwatch::elapsed() {
+    return STimeNow() - startTime.load();
+}
+
+uint64_t SStopwatch::ringing() {
+    return alarmDuration.load() && (elapsed() > alarmDuration.load());
+}
+
+void SStopwatch::start() {
+    startTime.store(STimeNow());
+}
+
+bool SStopwatch::ding() {
+    if (!ringing())
+        return false;
+    start();
+    return true;
+}
+
+void SLogLevel(int level) {
+    _g_SLogMask = LOG_UPTO(level);
+    setlogmask(_g_SLogMask);
+}
+
+SAutoThreadPrefix::SAutoThreadPrefix(const SData& request) {
+    // Retain the old prefix
+    oldPrefix = SThreadLogPrefix;
+    const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
+    SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
+}
+
+SAutoThreadPrefix::SAutoThreadPrefix(const string& rID) {
+    oldPrefix = SThreadLogPrefix;
+    const string requestID = rID.empty() ? "xxxxxx" : rID;
+    SLogSetThreadPrefix(requestID + " ");
+}
+
+SAutoThreadPrefix::~SAutoThreadPrefix() {
+    SLogSetThreadPrefix(oldPrefix);
+}
+
+float SToFloat(const string& val) {
+    return (float)atof(val.c_str());
+}
+
+int SToInt(const string& val) {
+    return atoi(val.c_str());
+}
+
+int64_t SToInt64(const string& val) {
+    return atoll(val.c_str());
+}
+
+uint64_t SToUInt64(const string& val) {
+    return strtoull(val.c_str(), NULL, 10);
+}
+
+bool SContains(const list<string>& valueList, const char* value) {
+    return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end();
+}
+
+bool SContains(const string& haystack, const string& needle) {
+    return haystack.find(needle) != string::npos;
+}
+
+bool SContains(const string& haystack, char needle) {
+    return haystack.find(needle) != string::npos;
+}
+
+bool SContains(const STable& nameValueMap, const string& name) {
+    return (nameValueMap.find(name) != nameValueMap.end());
+}
+
+bool SIEquals(const string& lhs, const string& rhs) {
+    return !strcasecmp(lhs.c_str(), rhs.c_str());
+}
+
+bool SEndsWith(const string& haystack, const string& needle) {
+    if (needle.size() > haystack.size())
+        return false;
+    else
+        return (haystack.substr(haystack.size() - needle.size()) == needle);
+}
+
+string SStripAllBut(const string& lhs, const string& chars) {
+    return SStrip(lhs, chars, true);
+}
+
+string SStripNonNum(const string& lhs) {
+    return SStripAllBut(lhs, "0123456789");
+}
+
+string SEscape(const string& lhs, const string& unsafe, char escaper) {
+    return SEscape(lhs.c_str(), unsafe, escaper);
+}
+
+string SUnescape(const string& lhs, char escaper) {
+    return SUnescape(lhs.c_str(), escaper);
+}
+
+string SStripTrim(const string& lhs) {
+    return STrim(SStrip(lhs));
+}
+
+string SBefore(const string& value, const string& needle) {
+    size_t pos = value.find(needle);
+    if (pos == string::npos)
+        return "";
+    else
+        return value.substr(0, pos);
+}
+
+string SAfter(const string& value, const string& needle) {
+    size_t pos = value.find(needle);
+    if (pos == string::npos)
+        return "";
+    else
+        return value.substr(pos + needle.size());
+}
+
+string SAfterLastOf(const string& value, const string& needle) {
+    size_t pos = value.find_last_of(needle);
+    if (pos == string::npos)
+        return "";
+    else
+        return value.substr(pos + 1);
+}
+
+string SAfterUpTo(const string& value, const string& after, const string& upTo) {
+    return (SBefore(SAfter(value, after), upTo));
+}
+
+void SAppend(string& lhs, const void* rhs, int num) {
+    size_t oldSize = lhs.size();
+    lhs.resize(oldSize + num);
+    memcpy(&lhs[oldSize], rhs, num);
+}
+
+void SAppend(string& lhs, const string& rhs) {
+    lhs += rhs;
+}
+
+int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content) {
+    return SParseHTTP(buffer.c_str(), (int)buffer.size(), methodLine, nameValueMap, content);
+}
+
+string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content) {
+    string buffer;
+    SComposeHTTP(buffer, methodLine, nameValueMap, content);
+    return buffer;
+}
+
+string SComposeHost(const string& host, int port) {
+    return (host + ":" + SToStr(port));
+}
+
+bool SHostIsValid(const string& host) {
+    string domain;
+    uint16_t port = 0;
+    return SParseHost(host, domain, port);
+}
+
+string SGetDomain(const string& host) {
+    string domain;
+    uint16_t ignore;
+    if (SParseHost(host, domain, ignore))
+        return domain;
+    else
+        return host;
+}
+
+string SDecodeURIComponent(const string& value) {
+    return SDecodeURIComponent(value.c_str(), (int)value.size());
+}
+
+bool SParseList(const string& value, list<string>& valueList, char separator) {
+    return SParseList(value.c_str(), valueList, separator);
+}
+
+list<string> SParseList(const string& value, char separator) {
+    list<string> valueList;
+    SParseList(value, valueList, separator);
+    return valueList;
+}
+
+string SGetJSONArrayFront(const string& jsonArray) {
+    list<string> l = SParseJSONArray(jsonArray);
+    return l.empty() ? "" : l.front();
+};
+
+string SToStr(const sockaddr_in& addr) {
+    return SToStr(inet_ntoa(addr.sin_addr)) + ":" + SToStr(ntohs(addr.sin_port));
+}
+
+ostream& operator<<(ostream& os, const sockaddr_in& addr) {
+    return os << SToStr(addr);
+}
+
+string SQ(const char* val) {
+    return "'" + SEscape(val, "'", '\'') + "'";
+}
+
+string SQ(const string& val) {
+    return SQ(val.c_str());
+}
+
+string SQ(int val) {
+    return SToStr(val);
+}
+
+string SQ(unsigned val) {
+    return SToStr(val);
+}
+
+string SQ(uint64_t val) {
+    return SToStr(val);
+}
+
+string SQ(int64_t val) {
+    return SToStr(val);
+}
+
+string SQ(double val) {
+    return SToStr(val);
+}
+
+int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
+    SQResult ignore;
+    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
+}
+
+string SUNQUOTED_TIMESTAMP(uint64_t when) {
+    return SComposeTime("%Y-%m-%d %H:%M:%S", when);
+}
+
+string STIMESTAMP(uint64_t when) {
+    return SQ(SUNQUOTED_TIMESTAMP(when));
+}
+
+string SUNQUOTED_CURRENT_TIMESTAMP() {
+    return SUNQUOTED_TIMESTAMP(STimeNow());
+}
+
+string SCURRENT_TIMESTAMP() {
+    return STIMESTAMP(STimeNow());
+}
+
+bool STableComp::operator()(const string& s1, const string& s2) const {
+    return lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(), nocase_compare());
+}
+
+bool STableComp::nocase_compare::operator()(const unsigned char& c1, const unsigned char& c2) const {
+    return tolower(c1) < tolower(c2);
+}
+
+SString::SString() {
+}
+
+SString& SString::operator=(const char& from) {
+    string::operator=(from);
+    return *this;
+}
+
+SString& SString::operator=(const unsigned char& from) {
+    string::operator=(from);
+    return *this;
+}
+
+SString& SString::operator=(const bool from) {
+    string::operator=(from ? "true" : "false");
+    return *this;
+}
+

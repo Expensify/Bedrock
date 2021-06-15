@@ -1,3 +1,6 @@
+#include <iostream>
+
+#include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 
@@ -18,7 +21,6 @@ void sigclean(int sig) {
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
-    BedrockTester::globalArgs = args;
 
     // Catch sigint.
     signal(SIGINT, sigclean);
@@ -70,12 +72,6 @@ int main(int argc, char* argv[]) {
     } else {
         include.erase("Perf");
         exclude.insert("Perf");
-    }
-
-    if (args.isSet("-duplicateRequests")) {
-        // Duplicate every request N times.
-        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
-        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
     }
 
     // Set the defaults for the servers that each BedrockTester will start.

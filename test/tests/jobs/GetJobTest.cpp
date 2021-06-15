@@ -1,3 +1,8 @@
+#include <iostream>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
 bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, string timestampString) {
@@ -41,7 +46,7 @@ struct GetJobTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {

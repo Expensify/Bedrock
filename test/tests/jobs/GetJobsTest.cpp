@@ -1,6 +1,10 @@
+#include <time.h>
+#include <unistd.h>
+
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
-#include <time.h>
 
 // Get the difference in seconds between a and b
 uint64_t absoluteDiff(time_t a, time_t b) {
@@ -31,7 +35,7 @@ struct GetJobsTest : tpunit::TestFixture {
     static constexpr auto jobName = "TestJobName";
     void getJobs() {
         // Create a tester.
-        BedrockTester tester(_threadID, {{"-plugins", "Jobs,DB"}}, {});
+        BedrockTester tester({{"-plugins", "Jobs,DB"}}, {});
 
         // Create some jobs.
         vector<string> repeatModifiers = {

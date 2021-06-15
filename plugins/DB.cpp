@@ -1,5 +1,9 @@
 #include "DB.h"
-#include "BedrockServer.h"
+
+#include <string.h>
+
+#include <BedrockServer.h>
+#include <libstuff/SQResult.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -60,30 +64,21 @@ bool BedrockDBCommand::peek(SQLite& db) {
         STHROW("502 Query aborted");
     }
 
-    if (SStartsWith(upperQuery, "SELECT ")) {
-        // Seems to be read-only
-        SINFO("Query appears to be read-only, peeking.");
-    } else {
-        if (shouldRequireWhere &&
-           (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
-           !SContains(upperQuery, " WHERE ")) {
-            SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
-            STHROW("502 Query aborted");
-        }
-
-        // Assume it's read/write
-        SINFO("Query appears to be read/write, queuing for processing.");
-        return false;
-    }
-
     // Attempt the read-only query
     SQResult result;
     int preChangeCount = db.getChangeCount();
     if (!db.read(query, result)) {
-        // Query failed
-        SALERT("Query failed: '" << query << "'");
-        response["error"] = db.getLastError();
-        STHROW("502 Query failed");
+        if (shouldRequireWhere &&
+            (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
+            !SContains(upperQuery, " WHERE ")) {
+            SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
+            STHROW("502 Query aborted");
+        }
+
+        // Assume it's write or bad query, escalating it to process
+        // If it's a bad query, it will fail in the process too
+        SINFO("Query appears to be read/write, queuing for processing.");
+        return false;
     }
 
     // Verify it didn't change anything -- assert because if we did, we did so

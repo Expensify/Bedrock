@@ -4,6 +4,9 @@
 #include <sqlitecluster/SQLiteServer.h>
 #include <test/lib/BedrockTester.h>
 
+#include <unistd.h>
+#include <cstring>
+
 class SQLiteNodeTester {
   public:
     static SQLiteNode::Peer* getSyncPeer(SQLiteNode& node) {

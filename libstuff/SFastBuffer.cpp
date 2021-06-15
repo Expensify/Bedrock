@@ -1,4 +1,6 @@
-#include <libstuff/libstuff.h>
+#include "SFastBuffer.h"
+
+#include <cstring>
 
 SFastBuffer::SFastBuffer() : front(0) {
 }

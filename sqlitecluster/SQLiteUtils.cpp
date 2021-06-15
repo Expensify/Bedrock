@@ -1,5 +1,8 @@
-#include <libstuff/libstuff.h>
 #include "SQLiteUtils.h"
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SRandom.h>
+#include <sqlitecluster/SQLite.h>
 
 int64_t SQLiteUtils::getRandomID(SQLite& db, const string& tableName, const string& column) {
     int64_t newID = 0;

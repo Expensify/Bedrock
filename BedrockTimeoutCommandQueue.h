@@ -1,5 +1,10 @@
-#include <libstuff/libstuff.h>
+#pragma once
+#include <list>
+#include <map>
+#include <memory>
+
 #include <BedrockCommand.h>
+#include <libstuff/SSynchronizedQueue.h>
 
 class BedrockTimeoutCommandQueue : public SSynchronizedQueue<unique_ptr<BedrockCommand>> {
   public:

@@ -1,6 +1,9 @@
-#include <libstuff/libstuff.h>
-#include <test/clustertest/BedrockClusterTester.h>
+#include <iostream>
 #include <unistd.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
+#include <test/lib/BedrockTester.h>
 
 /*
  * This is based on the 'test' application in the parent directory to this one, but specifically aims to test the
@@ -37,12 +40,6 @@ int main(int argc, char* argv[]) {
     list<string> after;
     int threads = 1;
     int repeatCount = 1;
-
-    if (args.isSet("-duplicateRequests")) {
-        // Duplicate every request N times.
-        cout << "Setting load testing to: " << SToInt(args["-duplicateRequests"]) << endl;
-        BedrockTester::mockRequestMode = SToInt(args["-duplicateRequests"]);
-    }
 
     if (args.isSet("-repeatCount")) {
         repeatCount = max(1, SToInt(args["-repeatCount"]));

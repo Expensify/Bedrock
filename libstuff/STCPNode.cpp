@@ -1,5 +1,11 @@
-#include "libstuff.h"
-#include <execinfo.h> // for backtrace
+#include "STCPNode.h"
+
+#include <execinfo.h>
+
+#include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
 
@@ -43,21 +49,16 @@ const string& STCPNode::stateName(STCPNode::State state) {
 }
 
 STCPNode::State STCPNode::stateFromName(const string& name) {
-    string normalizedName = SToUpper(name);
-
-    // Accept both old and new state names, but map them all to the new states.
-    // We can delete the old names once the entire cluster is using the new names.
+    const string normalizedName = SToUpper(name);
     static map<string, State> lookup = {
         {"SEARCHING", SEARCHING},
         {"SYNCHRONIZING", SYNCHRONIZING},
         {"WAITING", WAITING},
         {"STANDINGUP", STANDINGUP},
         {"LEADING", LEADING},
-        {"MASTERING", LEADING},
         {"STANDINGDOWN", STANDINGDOWN},
         {"SUBSCRIBING", SUBSCRIBING},
         {"FOLLOWING", FOLLOWING},
-        {"SLAVING", FOLLOWING},
     };
     auto it = lookup.find(normalizedName);
     if (it == lookup.end()) {

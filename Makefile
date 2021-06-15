@@ -1,20 +1,36 @@
-# Set the compiler, if it's not set by the environment.
-ifndef GXX
-	GXX = g++-9
+# If $CC and $CXX are defined as environment variables, those will be used here. However, if they aren't then GNU make
+# automatically defines them as `cc` and `g++`. Ultimately, we'd like those names to work, or the environment variables
+# to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
+# can be removed when that is resolved.
+ifeq ($(CC),cc)
+CC = gcc-9
+endif
+ifeq ($(CXX),g++)
+CXX = g++-9
 endif
 
-ifndef CC
-	CC = gcc-9
+# Set the optimization level from the environment, or default to -O2.
+ifndef BEDROCK_OPTIM_COMPILE_FLAG
+	BEDROCK_OPTIM_COMPILE_FLAG = -O2
 endif
 
-GIT_REVISION = $(shell git rev-parse --short HEAD)
+# Pull some variables from the git repo itself. Note that this means this build does not work if Bedrock isn't
+# contained in a git repo.
+GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse HEAD | grep -o '^.\{10\}')
 PROJECT = $(shell git rev-parse --show-toplevel)
-INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
-CXXFLAGS = -g -std=c++17 -fpic -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -DGIT_REVISION=$(GIT_REVISION) $(INCLUDE)
-LDFLAGS +=-Wl,-Bsymbolic-functions -Wl,-z,relro
 
-# We'll stick object and dependency files in here so we don't need to look at them.
+# Set our include paths. We need this for the pre-processor to use to generate dependencies.
+INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+
+# Set our standard C++ compiler flags
+CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security $(GIT_REVISION) $(INCLUDE)
+
+# All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
+
+# We use the same library paths and required libraries for all binaries.
+LIBPATHS =-L$(PROJECT) -Lmbedtls/library
+LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
 
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin
@@ -23,20 +39,7 @@ INTERMEDIATEDIR = .build
 all: bedrock test clustertest
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
-
-testplugin:
-	cd test/clustertest/testplugin && $(MAKE)
-
-# Set up our precompiled header. This makes building *way* faster (roughly twice as fast).
-# Including it here causes it to be generated.
-# Depends on one of our mbedtls files, to make sure the submodule gets pulled and built.
-PRECOMPILE_D =libstuff/libstuff.d
-PRECOMPILE_INCLUDE =-include libstuff/libstuff.h
-libstuff/libstuff.h.gch libstuff/libstuff.d: libstuff/libstuff.h mbedtls/library/libmbedcrypto.a
-	$(GXX) $(CXXFLAGS) -MD -MF libstuff/libstuff.d -MT libstuff/libstuff.h.gch -c libstuff/libstuff.h
-ifneq ($(MAKECMDGOALS),clean)
--include  libstuff/libstuff.d
-endif
+testplugin: test/clustertest/testplugin/testplugin.so
 
 clean:
 	rm -rf $(INTERMEDIATEDIR)
@@ -45,93 +48,95 @@ clean:
 	rm -rf bedrock
 	rm -rf test/test
 	rm -rf test/clustertest/clustertest
-	rm -rf libstuff/libstuff.d
+	rm -rf test/clustertest/testplugin/testplugin.so
+	# The following two lines are unused but will remove old files that are no longer needed.
+	rm -rf libstuff/libstuff.d 
 	rm -rf libstuff/libstuff.h.gch
 	# If we've never run `make`, `mbedtls/Makefile` does not exist. Add a `test
 	# -f` check and `|| true` so it doesn't cause `make clean` to exit nonzero
 	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
-	cd test/clustertest/testplugin && $(MAKE) clean
 
-# The mbedtls libraries are all built the same way.
+# Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
-	cd mbedtls && git checkout -q 04a049bda1ceca48060b57bc4bcf5203ce591421
-	cd mbedtls && $(MAKE) no_test && touch library/libmbedcrypto.a && touch library/libmbedtls.a && touch library/libmbedx509.a
+	cd mbedtls && git checkout -q v2.26.0
+	cd mbedtls && $(MAKE) no_test
 
-# Ok, that's the end of our magic PCH code. The only other mention of it is in the build line where we include it.
-
-# We're going to build a shared library from every CPP file in this directory or it's children.
+# We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
+# We then transform those file names into a list of object file name and dependency file names.
 STUFFCPP = $(shell find libstuff -name '*.cpp')
-STUFFC = $(shell find libstuff -name '*.c')
-STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(STUFFC:%.c=$(INTERMEDIATEDIR)/%.o)
+STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# The same for libbedrock.
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for the main binary (which is just adding main.cpp)
 BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for our tests.
 TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
+# And the same for the cluster tests (manually adding one file from `test`)
 CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path "test/main.cpp")
 CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-# Our static libraries just depend on their object files.
+# And the same for the test plugin.
+TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp
+TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+
+# Rules to build our two static libraries.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
 libbedrock.a: $(LIBBEDROCKOBJ)
 	ar crv $@ $(LIBBEDROCKOBJ)
 
-# We use the same library paths and required libraries for both binaries.
-LIBPATHS =-Lmbedtls/library -L$(PROJECT)
-LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
-
-# The prerequisites for both binaries are the same. We only include one of the mbedtls libs to avoid building three
-# times in parallel.
+# The prerequisites for all binaries are the same. We only include one of the mbedtls libs to avoid building three
+# times in parallel if it's out of date.
 BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
-	echo $(BEDROCKOBJ)
-	$(GXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
-	$(GXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
-	$(GXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
-# Make dependency files from cpp files, putting them in $INTERMEDIATEDIR.
-# This is the same as making the object files, both dependencies and object files are built together. The only
-# difference is that here, the fie passed as `-MF` is the target, and the output file is a modified version of that,
-# where for the object file rule, the reverse is true.
-$(INTERMEDIATEDIR)/%.d: %.cpp $(PRECOMPILE_D)
+# The rule to build TestPlugin
+test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
+	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
+ 
+# This builds both the dependencies and the object file from the cpp.
+# We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
+# which many of our cpp files will reference.
+$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp mbedtls/library/libmbedcrypto.a
 	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MD -MF $@ $(PRECOMPILE_INCLUDE) -o $(INTERMEDIATEDIR)/$*.o -c $<
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
-# .o files depend on .d files to prevent simultaneous jobs from trying to create both.
-$(INTERMEDIATEDIR)/%.o: %.cpp $(INTERMEDIATEDIR)/%.d
-	@mkdir -p $(dir $@)
-	$(GXX) $(CXXFLAGS) -MD -MF $(INTERMEDIATEDIR)/$*.d $(PRECOMPILE_INCLUDE) -o $@ -c $<
-
-# Build c files. This is basically just for sqlite, so we don't bother with dependencies for it.
+# Build c files. This is just for sqlite, so we don't bother with dependencies for it.
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) -O2 $(BEDROCK_OPTIM_COMPILE_FLAG) -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
+	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fpic -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
 
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
 ifneq ($(MAKECMDGOALS),clean)
--include $(STUFFDEP)
 -include $(LIBBEDROCKDEP)
+-include $(STUFFDEP)
+-include $(TESTDEP)
+-include $(CLUSTERTESTDEP)
 -include $(BEDROCKDEP)
-#-include $(TESTDEP)
-#-include $(CLUSTERTESTDEP)
+-include $(TESTPLUGINTDEP)
 endif

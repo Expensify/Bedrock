@@ -1,4 +1,7 @@
+#include <unistd.h>
+
 #include <libstuff/libstuff.h>
+#include <libstuff/SData.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
 
@@ -14,7 +17,7 @@ struct ChainedHTTPTest : tpunit::TestFixture {
         if (!getcwd(cwd, sizeof(cwd))) {
             STHROW("Couldn't get CWD");
         }
-        BedrockTester tester(_threadID, {
+        BedrockTester tester({
             {"-plugins", string(cwd) + "/clustertest/testplugin/testplugin.so"},
         });
 

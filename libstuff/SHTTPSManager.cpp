@@ -1,6 +1,10 @@
-#include "libstuff.h"
+#include "SHTTPSManager.h"
+
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
+#include <libstuff/libstuff.h>
+#include <libstuff/SX509.h>
+#include <sqlitecluster/SQLiteNode.h>
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
@@ -221,6 +225,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     Socket* s = openSocket(host, x509);
     if (!s) {
         delete transaction;
+        delete x509;
         return _createErrorTransaction();
     }
 

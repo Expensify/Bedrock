@@ -1,4 +1,5 @@
-#include "../BedrockClusterTester.h"
+#include <libstuff/SData.h>
+#include <test/clustertest/BedrockClusterTester.h>
 
 struct EscalateTest : tpunit::TestFixture {
     EscalateTest() : tpunit::TestFixture("EscalateTest", TEST(EscalateTest::test)) { }
@@ -28,5 +29,6 @@ struct EscalateTest : tpunit::TestFixture {
         auto results = brtester.executeWaitMultipleData({status});
         ASSERT_EQUAL(results.size(), 1);
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
+        SFileDelete(cmd["tempFile"]);
     }
 } __EscalateTest;

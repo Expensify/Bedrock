@@ -1,6 +1,12 @@
-#include <libstuff/libstuff.h>
+#include "SRandom.h"
 
+#ifdef VALGRIND
+// random_device breaks valgrind.
+mt19937_64 SRandom::_generator = mt19937_64();
+#else
 mt19937_64 SRandom::_generator = mt19937_64(random_device()());
+#endif
+
 uniform_int_distribution<uint64_t> SRandom::_distribution64 = uniform_int_distribution<uint64_t>();
 
 uint64_t SRandom::limitedRand64(uint64_t minNum, uint64_t maxNum) {

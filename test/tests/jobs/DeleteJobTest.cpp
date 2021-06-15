@@ -1,3 +1,5 @@
+#include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
 struct DeleteJobTest : tpunit::TestFixture {
@@ -13,7 +15,7 @@ struct DeleteJobTest : tpunit::TestFixture {
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester(_threadID, {{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
     // Reset the jobs table
     void tearDown() {
