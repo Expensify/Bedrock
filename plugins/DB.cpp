@@ -28,7 +28,7 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
     // in the method line as follows:
     //
     //      Query: ...sql...
-  query(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"])
+  query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
 {
 }
 
@@ -43,64 +43,60 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (query.size() < 1 || query.size() > BedrockPlugin::MAX_SIZE_QUERY) {
         STHROW("402 Missing query");
     }
-    BedrockPlugin::verifyAttributeBool(request, "nowhere",  false);
 
-    // See if it's read-only (and thus safely peekable) or read-write
-    // (and thus requires processing).
-    //
-    // **NOTE: This isn't intended to be foolproof, and attempts to err on the
-    //         side of caution (eg, assuming read-write unless clearly read-
-    //         only).  A not-so-clever client could easily bypass this.  But
-    //         that same person could also easily wreck havoc in a bunch of
-    //         other ways, too.  That said, the worst-case scenario is that a
-    //         read-write command is mis-classified as read-only and executed in
-    //         the peek, but even then we'll detect it after the fact and shut
-    //         the node down.
-    const string& upperQuery = SToUpper(STrim(query));
-    bool shouldRequireWhere = !request.test("nowhere");
-
-    if (!SEndsWith(upperQuery, ";")) {
+    if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
-        STHROW("502 Query aborted");
+        STHROW("502 Query Missing Semicolon");
+    }
+
+    // Get a list of prepared statements from the database.
+    list<sqlite3_stmt*> statements;
+    int prepareResult = db.getPreparedStatements(query, statements);
+
+    // Check each one to see if it's a write, and then release it.
+    bool write = false;
+    for (sqlite3_stmt* statement : statements) {
+        if (!sqlite3_stmt_readonly(statement)) {
+            write = true;
+        }
+        sqlite3_finalize(statement);
+    }
+
+    // If we got any errors while preparing, we're calling this a bad command.
+    if (prepareResult != SQLITE_OK) {
+        STHROW("402 Bad query");
+    }
+
+    // If anything was a write, escalate to `process`.
+    if (write) {
+        return false;
     }
 
     // Attempt the read-only query
     SQResult result;
-    int preChangeCount = db.getChangeCount();
     if (!db.read(query, result)) {
-        if (shouldRequireWhere &&
-            (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
-            !SContains(upperQuery, " WHERE ")) {
-            SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
-            STHROW("502 Query aborted");
-        }
-
-        // Assume it's write or bad query, escalating it to process
-        // If it's a bad query, it will fail in the process too
-        SINFO("Query appears to be read/write, queuing for processing.");
-        return false;
+        STHROW("402 Bad query");
     }
 
-    // Verify it didn't change anything -- assert because if we did, we did so
-    // outside of a replicated transaction and that's REALLY bad.
-    if (preChangeCount != db.getChangeCount()) {
-        // This database is fucked -- we made a change outside of a transaction
-        // so we can't roll back, and outside of a *distributed* transaction so
-        // now it's out of sync with the rest of the cluster.  This database
-        // needs to be destroyed and recovered from a peer.
-        SERROR("Read query actually managed to write; database is corrupt "
-               << "and must be recovered from backup or peer.  Offending query: '" << query << "'");
-    }
-
-    // Worked!  What format do we want the output?
+    // Worked! Set the output and return.
     response.content = result.serialize(request["Format"]);
-    return true; // Successfully peeked
+
+    return true;
 }
 
 void BedrockDBCommand::process(SQLite& db) {
     if (db.getUpdateNoopMode()) {
         SINFO("Query run in mocked request, just ignoring.");
         return;
+    }
+    BedrockPlugin::verifyAttributeBool(request, "nowhere",  false);
+
+    const string upperQuery = SToUpper(query);
+    if (!request.test("nowhere") &&
+        (SStartsWith(upperQuery, "UPDATE") || SStartsWith(upperQuery, "DELETE")) &&
+        !SContains(upperQuery, " WHERE ")) {
+        SALERT("Query aborted, it has no 'where' clause: '" << query << "'");
+        STHROW("502 Query aborted");
     }
 
     // Attempt the query
@@ -111,8 +107,7 @@ void BedrockDBCommand::process(SQLite& db) {
         STHROW("502 Query failed");
     }
 
-    // Worked!  Let's save the last inserted row id
-    const string& upperQuery = SToUpper(STrim(query));
+    // Worked! Let's save the last inserted row id
     if (SStartsWith(upperQuery, "INSERT ")) {
         response["lastInsertRowID"] = SToStr(db.getLastInsertRowID());
     }
