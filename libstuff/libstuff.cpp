@@ -2583,14 +2583,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
         if (!skipWarn) {
-            if (error == SQLITE_READONLY) {
-                // We make this exception because the `DB` plugin specifically tests query for read/write by attempting
-                // them in `peek`. They should fail in `peek` and get escalated to `process` and we don't need a
-                // million warnings for that.
-                SINFO("Attempted to write to a read-only DB, should escalate to `process`.");
-            } else {
-                SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
-            }
+            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 

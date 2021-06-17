@@ -7,7 +7,6 @@ struct WriteTest : tpunit::TestFixture {
                               BEFORE_CLASS(WriteTest::setup),
                               TEST(WriteTest::insert),
                               TEST(WriteTest::parallelInsert),
-                              TEST(WriteTest::failedInsertNoSemiColon),
                               TEST(WriteTest::failedDeleteNoWhere),
                               TEST(WriteTest::deleteNoWhereFalse),
                               TEST(WriteTest::deleteNoWhereTrue),
@@ -84,13 +83,6 @@ struct WriteTest : tpunit::TestFixture {
         string secondLine = response.substr(response.find('\n') + 1);
         int val = SToInt(secondLine);
         ASSERT_EQUAL(val, numCommands);
-    }
-
-    void failedInsertNoSemiColon() {
-        SData query("Query");
-        query["writeConsistency"] = "ASYNC";
-        query["query"] = "INSERT INTO foo VALUES ( RANDOM() )";
-        tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
     void failedDeleteNoWhere() {

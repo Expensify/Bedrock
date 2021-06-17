@@ -1122,6 +1122,34 @@ void SQLite::setCommitEnabled(bool enable) {
     _sharedData.setCommitEnabled(enable);
 }
 
+int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements) {
+    // We need a pointer to a prepared statement.
+    sqlite3_stmt* ppStmt = nullptr;
+
+    // And a pointer to the remainder of the query string (which is relevant if we're passed a string with multiple
+    // statements). It starts at the beginning of the query.
+    const char* pzTail = query.c_str();
+
+    // Now loop as long as pzTail doesn't point at a null terminator.
+    while (*pzTail != 0) {
+        // Run prepare on the query.
+        int result = sqlite3_prepare_v3(_db, pzTail, -1, 0, &ppStmt, &pzTail);
+
+        // If it generated a statement, add it to our list.
+        if (ppStmt != nullptr) {
+            statements.push_back(ppStmt);
+        }
+
+        // If it was an errror, return early. We only generate more statements if the preceding ones succeed.
+        if (result != SQLITE_OK) {
+            return result;
+        }
+    }
+
+    // If we made it through the whole thing, we're done.
+    return SQLITE_OK;
+}
+
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 currentTransactionCount(0),
