@@ -108,10 +108,10 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node2.waitForState("LEADING", 5'000'000));
 
         // secondary leader should catch up first and go LEADING, wait up to 30s
-        ASSERT_TRUE(node1.waitForState("LEADING", 30'000'000));
+        ASSERT_TRUE(node1.waitForState("LEADING", 60'000'000));
 
         // when primary leader catches up it should go LEADING, wait up to 30s
-        ASSERT_TRUE(node0.waitForState("LEADING", 30'000'000));
+        ASSERT_TRUE(node0.waitForState("LEADING", 60'000'000));
 
     }
 
