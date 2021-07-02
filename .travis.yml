@@ -8,6 +8,7 @@ notifications:
 script: ./travis.sh
 os: linux
 dist: focal
+language: cpp
 vm:
   size: 2x-large
 before_script:
