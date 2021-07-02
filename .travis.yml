@@ -10,7 +10,7 @@ os: linux
 dist: focal
 language: cpp
 vm:
-  size: 2x-large
+  size: x-large
 before_script:
   - nproc
   - free -m
