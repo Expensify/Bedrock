@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "regex": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "iostream": "cpp",
+        "iosfwd": "cpp",
+        "*.tcc": "cpp",
+        "cstdio": "cpp",
+        "thread": "cpp",
+        "bitset": "cpp",
+        "ostream": "cpp",
+        "atomic": "cpp"
+    }
+}
