@@ -32,7 +32,7 @@ struct LeadingTest : tpunit::TestFixture {
         // Get the status from each node.
         bool success = false;
         int count = 0;
-        while (count++ < 50) {
+        while (count++ < 100) {
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
 
