@@ -32,7 +32,7 @@ struct LeadingTest : tpunit::TestFixture {
         // Get the status from each node.
         bool success = false;
         int count = 0;
-        while (count++ < 100) {
+        while (count++ < 50) {
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
 
@@ -178,7 +178,7 @@ struct LeadingTest : tpunit::TestFixture {
                 break;
             }
             tries++;
-            if (tries > 6000) {
+            if (tries > 10000) {
                 STHROW("Timed out waiting for synchronizing and then leader.");
             }
             usleep(10'000); // 1/100th of a second
