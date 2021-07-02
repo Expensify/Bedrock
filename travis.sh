@@ -79,6 +79,8 @@ cd ..
 travis_time_finish
 travis_fold end test_bedrock
 
+sleep 1
+
 travis_fold start test_bedrock_cluster
 travis_time_start
 cd test/clustertest
