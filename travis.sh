@@ -67,14 +67,14 @@ ${CXX} --version
 
 travis_fold start build_bedrock
 travis_time_start
-make -j8
+make -j32
 travis_time_finish
 travis_fold end build_bedrock
 
 travis_fold start test_bedrock
 travis_time_start
 cd test
-./test -threads 8
+./test -threads 32
 cd ..
 travis_time_finish
 travis_fold end test_bedrock
@@ -82,7 +82,7 @@ travis_fold end test_bedrock
 travis_fold start test_bedrock_cluster
 travis_time_start
 cd test/clustertest
-./clustertest -threads 8
+./clustertest -threads 32
 cd ../..
 travis_time_finish
 travis_fold end test_bedrock_cluster
