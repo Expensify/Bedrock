@@ -154,6 +154,14 @@ class BedrockCommand : public SQLiteCommand {
     // Record the state we were acting under in the last call to `peek` or `process`.
     SQLiteNode::State lastPeekedOrProcessedInState = SQLiteNode::UNKNOWN;
 
+    // If someone is waiting for this command to complete, this will be called in the destructor.
+    function<void()>* destructionCallback;
+
+    // The socket that this command was read from. Can be null if the command didn't come from a client socket (i.e.,
+    // it was escalated to leader or generated internally) or if it was a `fire and forget` command for which no client
+    // is awaiting a reply.
+    STCPManager::Socket* socket;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;

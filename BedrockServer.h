@@ -243,6 +243,13 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
+    // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
+    // will not be managed by that poll loop, instead, it starts a new thread.
+    STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
+
+    // This is the thread that handles a new socket, parses a command, and queues it for work.
+    void handleSocket(Socket* s, bool isControl);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -255,21 +262,6 @@ class BedrockServer : public SQLiteServer {
 
     // Each time we read a new request from a client, we give it a unique ID.
     uint64_t _requestCount;
-
-    // Each time we read a command off a socket, we put the socket in this map, so that we can respond to it when the
-    // command completes. We remove the socket from the map when we reply to the command, even if the socket is still
-    // open. It will be re-inserted in this set when another command is read from it.
-    map <uint64_t, Socket*> _socketIDMap;
-
-    // The above _socketIDMap is modified by multiple threads, so we lock this mutex around operations that access it.
-    // We don't need to lock around access to the base class's `socketList` because we carefully control access to it
-    // to the main thread.
-    // The only functions that access `socketList` are prePoll, postPoll, openSocket, and closeSocket, in STCPManager,
-    // and acceptSocket in STCPServer.
-    // prePoll and postPoll are only ever called by the main thread.
-    // openSocket is never called by bedrockServer (it is called in SHTTPSManager and STCPNode).
-    // closeSocket and acceptSocket are only called inside postPoll.
-    recursive_mutex _socketIDMutex;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
@@ -483,4 +475,24 @@ class BedrockServer : public SQLiteServer {
     // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
     // so that the state can't change for the lifetime of that call, from the view of that function.
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
+
+    // Setup a new command from a bare request.
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
+
+    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
+    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
+    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
+    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
+    atomic<uint64_t> _lastChance;
+
+    // This is a monotonically incrementing integer just used to uniquely identify socket threads.
+    atomic<uint64_t> _socketThreadNumber;
+
+    // This records how many outstanding socket threads there are so we can wait for them to complete before exiting.
+    atomic<uint64_t> _outstandingSocketThreads;
+
+    // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
+    // same time a control port command is running (which would indicate that there is a command blocking shutdown -
+    // the current control command).
+    shared_mutex _controlPortExclusionMutex;
 };
