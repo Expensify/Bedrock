@@ -178,7 +178,7 @@ struct LeadingTest : tpunit::TestFixture {
                 break;
             }
             tries++;
-            if (tries > 6000) {
+            if (tries > 10000) {
                 STHROW("Timed out waiting for synchronizing and then leader.");
             }
             usleep(10'000); // 1/100th of a second
