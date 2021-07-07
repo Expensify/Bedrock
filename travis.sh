@@ -4,8 +4,25 @@ set -e
 export CXX=g++-9
 export CC=gcc-9
 
+
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
+
+# Configure ccache settings for travis.
+export PATH=/usr/lib/ccache:$PATH
+/usr/sbin/update-ccache-symlinks
+
+export CCACHE_COMPILERCHECK="mtime"
+
+# We have include_file_ctime and include_file_mtime since travis never modifies the header file during execution
+# and travis shouldn't care about ctime and mtime between new branches.
+export CCACHE_SLOPPINESS="pch_defines,time_macros,include_file_ctime,include_file_mtime"
+export CCACHE_MAXSIZE="5G"
+
+# ccache recommends a compression level of 5 or less for faster compilations.
+# Compression speeds up the tar and untar of the cache between travis runs.
+export CCACHE_COMPRESS="true"
+export CCACHE_COMPRESSLEVEL="1"
 
 travis_time_start() {
   travis_timer_id=$(printf %08x $(( RANDOM * RANDOM )))
