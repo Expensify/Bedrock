@@ -4,7 +4,6 @@ set -e
 export CXX=g++-9
 export CC=gcc-9
 
-
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
 

@@ -8,6 +8,8 @@ notifications:
         on_success: never
 script: ./travis.sh
 dist: focal
+os: linux
+language: cpp
 cache:
   - ccache: true
 deploy:

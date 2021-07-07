@@ -117,16 +117,16 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
 
-
+# All of the following files (BedrockServer, main, MySQL) require GIT_REVISION so we will pass that variable into the compiler for these.
 $(INTERMEDIATEDIR)/BedrockServer.d $(INTERMEDIATEDIR)/BedrockServer.o: BedrockServer.cpp
-	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/BedrockServer.d -MT $(INTERMEDIATEDIR)/BedrockServer.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/BedrockServer.o -c $<
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/BedrockServer.d -MT $(INTERMEDIATEDIR)/BedrockServer.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/BedrockServer.o -c BedrockServer.cpp
 
 $(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp
-	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/main.d -MT $(INTERMEDIATEDIR)/main.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/main.o -c $<
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/main.d -MT $(INTERMEDIATEDIR)/main.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/main.o -c main.cpp
 
 $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/MySQL.cpp
 	@mkdir -p $(dir $@)
-	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/plugins/MySQL.d -MT $(INTERMEDIATEDIR)/plugins/MySQL.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/plugins/MySQL.o -c $<
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/plugins/MySQL.d -MT $(INTERMEDIATEDIR)/plugins/MySQL.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/plugins/MySQL.o -c plugins/MySQL.cpp
 
 # This builds both the dependencies and the object file from the cpp.
 # We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
