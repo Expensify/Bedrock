@@ -8,12 +8,15 @@ notifications:
 script: ./travis.sh
 os: linux
 dist: focal
+os: linux
 language: cpp
 vm:
   size: 2x-large
 before_script:
   - nproc
   - free -m
+cache:
+  - ccache: true
 deploy:
   provider: releases
   # `token` is an encrypted oauth token for rafecolton. See https://docs.travis-ci.com/user/deployment/releases
