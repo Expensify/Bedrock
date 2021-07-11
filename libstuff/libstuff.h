@@ -522,6 +522,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 // File stuff
 // --------------------------------------------------------------------------
 // Basic file loading and saving
+bool SFileCreate(const string& path);
 bool SFileExists(const string& path);
 bool SFileLoad(const string& path, string& buffer);
 string SFileLoad(const string& path);

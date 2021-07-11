@@ -309,10 +309,16 @@ int main(int argc, char* argv[]) {
 
     // Reset the database if requested
     if (args.isSet("-clean")) {
-        // Remove it
         SDEBUG("Resetting database");
+
+        // Remove it
         string db = args["-db"];
         unlink(db.c_str());
+
+        if (!SFileExists(db)) {
+            // Touch file.
+            SASSERT(SFileCreate(db));
+        }
     } else if (args.isSet("-bootstrap")) {
         // Allow for bootstraping a node with no database file in place.
         SINFO("Loading in bootstrap mode, skipping check for database existance.");
