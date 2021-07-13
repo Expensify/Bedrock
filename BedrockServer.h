@@ -6,6 +6,10 @@
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
+#define SC_ONE "ONE"
+#define SC_QUORUM "QUORUM"
+#define SC_ASYNC "ASYNC"
+
 class BedrockServer : public SQLiteServer {
   public:
 
@@ -483,4 +487,8 @@ class BedrockServer : public SQLiteServer {
     // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
     // so that the state can't change for the lifetime of that call, from the view of that function.
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
+
+    // These allow for the ability to startup with -syncType while specifying ONE/ASYNC/QUORUM
+    bool _isSyncSet;
+    int _syncType;
 };
