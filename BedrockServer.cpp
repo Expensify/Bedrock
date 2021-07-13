@@ -1626,7 +1626,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         string query = STrim(SToUpper(command->request["query"]));
                         if (SStartsWith(SToUpper(query),"INSERT") || SStartsWith(SToUpper(query),"DELETE") || SStartsWith(SToUpper(query),"UPDATE")) {
                             command->writeConsistency = (SQLiteNode::ConsistencyLevel)_syncType;
-                            SINFO("Forcing " << syncType << " consistency for command " << command->request.methodLine);
+                            SINFO("Forcing " << _syncType << " consistency for command " << command->request.methodLine);
                         }
                     }
 
