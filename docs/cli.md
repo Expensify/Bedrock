@@ -30,6 +30,8 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-readThreads    <#>         Number of read threads to start (min 1, defaults to 1)
 	-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to enable/disable)
 	-maxJournalSize <#commits>  Number of commits to retainin the historical journal (default 1000000)
+    -syncType       <value>     Selective synchronization (QUORUM, ONE, ASYNC) and (defaults to QUORUM)
+    -synchronous    <value>     Set the PRAGMA schema.synchronous
 
 	Quick Start Tips:
 	-----------------

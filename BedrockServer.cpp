@@ -6,6 +6,7 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <string.h>
 
 #include <bedrockVersion.h>
 #include <BedrockCore.h>
@@ -1338,6 +1339,20 @@ BedrockServer::BedrockServer(const SData& args_)
                      ref(_leaderVersion),
                      ref(_syncNodeQueuedCommands),
                      ref(*this));
+
+    // Add syncType arg. If no -syncType specified, default to QUORUM
+    _isSyncSet = args.isSet("-syncType");
+    _syncType = -1;
+    if (_isSyncSet) {
+        string cmd = args["-syncType"];
+        if ( strcasecmp(cmd.c_str(),SC_ONE) == 0) {
+            _syncType = SQLiteNode::ONE;
+        } else if (strcasecmp(cmd.c_str(),SC_ASYNC) == 0) {
+            _syncType = SQLiteNode::ASYNC;
+        } else if (strcasecmp(cmd.c_str(),SC_QUORUM) == 0) {
+            _syncType = SQLiteNode::QUORUM;
+        }
+    }
 }
 
 BedrockServer::~BedrockServer() {
@@ -1605,6 +1620,15 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                     // Create a command.
                     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
+
+                    // Check if -syncType is set and query starts with INSERT/DELETE/UPDATE
+                    if (_isSyncSet && command->request.methodLine.compare("QUERY")) {
+                        string query = STrim(SToUpper(command->request["query"]));
+                        if (SStartsWith(SToUpper(query),"INSERT") || SStartsWith(SToUpper(query),"DELETE") || SStartsWith(SToUpper(query),"UPDATE")) {
+                            command->writeConsistency = (SQLiteNode::ConsistencyLevel)_syncType;
+                            SINFO("Forcing " << syncType << " consistency for command " << command->request.methodLine);
+                        }
+                    }
 
                     if (command->writeConsistency != SQLiteNode::QUORUM
                         && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
