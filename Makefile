@@ -23,7 +23,7 @@ PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security $(GIT_REVISION) $(INCLUDE)
+CXXFLAGS = -g -std=c++17 -fpic $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security $(INCLUDE)
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
@@ -50,7 +50,7 @@ clean:
 	rm -rf test/clustertest/clustertest
 	rm -rf test/clustertest/testplugin/testplugin.so
 	# The following two lines are unused but will remove old files that are no longer needed.
-	rm -rf libstuff/libstuff.d 
+	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
 	# If we've never run `make`, `mbedtls/Makefile` does not exist. Add a `test
 	# -f` check and `|| true` so it doesn't cause `make clean` to exit nonzero
@@ -116,7 +116,18 @@ test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 # The rule to build TestPlugin
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
 	$(CXX) $(CXXFLAGS) $(INCLUDE) $(TESTPLUGINOBJ) $(LIBPATHS) -shared -o $@
- 
+
+# All of the following files (BedrockServer, main, MySQL) require GIT_REVISION so we will pass that variable into the compiler for these.
+$(INTERMEDIATEDIR)/BedrockServer.d $(INTERMEDIATEDIR)/BedrockServer.o: BedrockServer.cpp
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/BedrockServer.d -MT $(INTERMEDIATEDIR)/BedrockServer.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/BedrockServer.o -c BedrockServer.cpp
+
+$(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/main.d -MT $(INTERMEDIATEDIR)/main.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/main.o -c main.cpp
+
+$(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/MySQL.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/plugins/MySQL.d -MT $(INTERMEDIATEDIR)/plugins/MySQL.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/plugins/MySQL.o -c plugins/MySQL.cpp
+
 # This builds both the dependencies and the object file from the cpp.
 # We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
 # which many of our cpp files will reference.

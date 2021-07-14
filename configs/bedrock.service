@@ -9,13 +9,13 @@ Requires=bedrock_prerequisites.service
 
 [Service]
 EnvironmentFile=/etc/bedrock/bedrock.conf
-PIDFile=/var/run/bedrock.pid
+PIDFile=/run/bedrock.pid
 
 Type=forking
 
 ExecStart=/usr/sbin/bedrock \
         -fork \
-        -pidFile /var/run/bedrock.pid \
+        -pidFile /run/bedrock.pid \
         -nodeName ${THISNODE} \
         -db ${BEDROCK_DB_PATH} \
         -serverHost ${SERVER_HOST} \
