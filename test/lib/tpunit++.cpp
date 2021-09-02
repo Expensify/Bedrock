@@ -395,7 +395,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
 
           // Dump the test buffer if the test included any log lines.
           f->printTestBuffer();
-          printf("\xE2\x9D\x8C %s\n", t->_name);
+          printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s\n", t->_name);
           tpunit_detail_stats()._failures++;
           tpunit_detail_stats()._failureNames.emplace(t->_name);
        }
