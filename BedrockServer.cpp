@@ -734,6 +734,7 @@ void BedrockServer::sync(const SData& args,
 
     // We're really done, store our flag so main() can be aware.
     server._syncThreadComplete.store(true);
+
 }
 
 void BedrockServer::worker(SQLitePool& dbPool,
@@ -2031,6 +2032,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         }
         if (blockingPlugins.size()) {
             response.methodLine = "401 Attaching prevented by " + SComposeList(blockingPlugins);
+        } else if (_shutdownState.load() != RUNNING) {
+            response.methodLine = "401 Attaching prevented by server not ready";
         } else {
             response.methodLine = "204 ATTACHING";
             _detach = false;
