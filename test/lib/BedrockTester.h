@@ -60,7 +60,7 @@ class BedrockTester {
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    string executeWaitVerifyContent(SData request, const string& expectedResult = "200", bool control = false);
+    string executeWaitVerifyContent(SData request, const string& expectedResult = "200", bool control = false, uint64_t retryTimeoutUS = 0);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
