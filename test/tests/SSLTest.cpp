@@ -41,8 +41,8 @@ struct SSLTest : tpunit::TestFixture {
             request["Host"] = url.first;
             request["Connection"] = "Close";
             request["passthrough"] = "true";
-            vector<SData> results = tester->executeWaitMultipleData({request}, 1);
-            ASSERT_TRUE(SStartsWith(results[0].methodLine, url.second));
+            // Note: the fake URL is known to periodically time out. (after 60s) Give it enough time for one retry.
+            tester->executeWaitVerifyContent({request}, url.second, false, 70'000'000);
         }
     }
 } __SSLTest;
