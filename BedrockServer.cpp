@@ -2031,6 +2031,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         }
         if (blockingPlugins.size()) {
             response.methodLine = "401 Attaching prevented by " + SComposeList(blockingPlugins);
+        // Wait to confirm that we're in the final _shutdownState "RUNNING" before reattaching
+        } else if (_shutdownState.load() != RUNNING) {
+            response.methodLine = "401 Attaching prevented by server not ready";
         } else {
             response.methodLine = "204 ATTACHING";
             _detach = false;
