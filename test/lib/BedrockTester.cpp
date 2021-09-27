@@ -250,16 +250,30 @@ void BedrockTester::stopServer(int signal) {
     }
 }
 
-string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control) {
-    auto results = executeWaitMultipleData({request}, 1, control);
+string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
+    uint64_t start = STimeNow();
+    vector<SData> results;
+    do {
+        results = executeWaitMultipleData({request}, 1, control);
+
+        if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
+            // good, got the result we wanted
+            break;
+        }
+        usleep(100'000);
+
+    } while(STimeNow() < start + retryTimeoutUS);
+
     if (results.size() == 0) {
         STHROW("No result.");
     }
+
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STable temp;
         temp["originalMethod"] = results[0].methodLine;
         STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'.", temp);
     }
+
     return results[0].content;
 }
 
