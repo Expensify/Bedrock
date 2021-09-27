@@ -387,7 +387,8 @@ struct CreateJobTest : tpunit::TestFixture {
         nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(jobData[0][0], "QUEUED");
-        ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 10);
+        // Test for accurate delta between lastRun and nextRun (should be 10s) with a 1s accuracy margin
+        ASSERT_TRUE(9 <= difftime(nextRunTime, lastRunTime) && difftime(nextRunTime, lastRunTime) <= 11);
     }
 
     void retryWithMalformedValue() {
