@@ -126,9 +126,13 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               tpunit_detail_do_methods(fixture->_before_classes);
-               tpunit_detail_do_tests(fixture);
-               tpunit_detail_do_methods(fixture->_after_classes);
+               try {
+                   tpunit_detail_do_methods(fixture->_before_classes);
+                   tpunit_detail_do_tests(fixture);
+                   tpunit_detail_do_methods(fixture->_after_classes);
+               } catch (...) {
+                   cout << "Uncaught exception in test" << fixture->_name << endl;
+               }
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -213,9 +217,13 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                    if (!f->_multiThreaded) {
                        printf("--------------\n");
                    }
-                   tpunit_detail_do_methods(f->_before_classes);
-                   tpunit_detail_do_tests(f);
-                   tpunit_detail_do_methods(f->_after_classes);
+                   try {
+                       tpunit_detail_do_methods(f->_before_classes);
+                       tpunit_detail_do_tests(f);
+                       tpunit_detail_do_methods(f->_after_classes);
+                   } catch (...) {
+                       cout << "Uncaught exception in test" << f->_name << endl;
+                   }
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -244,9 +252,13 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               tpunit_detail_do_methods(fixture->_before_classes);
-               tpunit_detail_do_tests(fixture);
-               tpunit_detail_do_methods(fixture->_after_classes);
+               try {
+                   tpunit_detail_do_methods(fixture->_before_classes);
+                   tpunit_detail_do_tests(fixture);
+                   tpunit_detail_do_methods(fixture->_after_classes);
+               } catch (...) {
+                   cout << "Uncaught exception in test" << fixture->_name << endl;
+               }
 
                continue; // Don't bother checking the rest of the tests.
             }
