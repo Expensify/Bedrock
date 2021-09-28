@@ -213,8 +213,9 @@ string BedrockTester::startServer(bool wait) {
             // Give up after a minute. This will fail the remainder of the test, but won't hang indefinitely.
             if (startTime + 60'000'000 < STimeNow()) {
                 cout << "startServer(): ran out of time waiting for server to start" << endl;
-                break;
+		STHROW("Timed out waiting for server to start");
             }
+
             if (needSocket) {
                 int socket = 0;
                 socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
@@ -233,6 +234,7 @@ string BedrockTester::startServer(bool wait) {
             if (result[0].methodLine == "200 OK") {
                 return result[0].content;
             }
+
             // This will happen if the server's not up yet. We'll just try again.
             usleep(100000); // 0.1 seconds.
             continue;
