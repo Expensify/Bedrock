@@ -370,7 +370,11 @@ void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m
        }
        (*m->_this.*m->_addr)();
     } catch(const std::exception& e) {
-       lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
+       try {
+           lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
+       } catch( const std::exception& ex) {
+           tpunit_detail_exception(m->_this, m, ex.what());
+       }
        tpunit_detail_exception(m->_this, m, e.what());
     } catch(ShutdownException se) {
        // Just re-throw, this exception is special and indicates that a test wants its thread to quit.
