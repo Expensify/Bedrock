@@ -308,10 +308,11 @@ bool TestPluginCommand::peek(SQLite& db) {
         fileAppend(request["tempFile"], statString);
         return false;
     } else if (request.methodLine == "get") {
+        response["num"] = request["num"] + " resp";
         response.methodLine = "200 OK";
-        size_t payload = SRandom::rand64() % 1000;
+        //size_t payload = SRandom::rand64() % 1000;
         string s;
-        for (size_t i = 0; i < payload; i++) {
+        for (size_t i = 0; i < 20000; i++) {
             s += 'A';
         }
         response.content = s;

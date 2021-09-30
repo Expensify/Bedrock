@@ -433,6 +433,9 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     } else {
                         // If it's been over 60s, give up.
                         if (recvStart + 60'000'000 < STimeNow()) {
+                            cout << "Buffer contents at timeout: " << recvBuffer << ". Size: " << recvBuffer.size() << endl;
+                            cout << "Request: " << endl;
+                            cout << myRequest.serialize() << endl;
                             timedOut = true;
                             break;
                         }
