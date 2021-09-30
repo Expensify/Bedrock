@@ -45,6 +45,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
     void slow()
     {
+        /*
         // Send some write commands to each node in the cluster.
         for (int h = 0; h <= 4; h++) {
             for (int i : {0, 1, 2}) {
@@ -82,6 +83,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         }
 
         ASSERT_TRUE(success);
+        */
     }
 
     void spam()
@@ -89,17 +91,22 @@ struct ConflictSpamTest : tpunit::TestFixture {
         recursive_mutex m;
         atomic<int> totalRequestFailures(0);
 
+        // Set server 2 to a different version.
+        tester->getTester(2).stopServer();
+        tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
+        tester->getTester(2).startServer();
+
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
-        for (int i : {0, 1, 2}) {
+        for (int i : {2}) {
             threads.emplace_back([this, i, &totalRequestFailures, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
-                int numCommands = 200;
+                int numCommands = 2000;
                 for (int j = 0; j < numCommands; j++) {
-                    SData query("idcollision b2");
+                    SData query("testescalate");
                     query["writeConsistency"] = "ASYNC";
                     int cmdNum = cmdID.fetch_add(1);
                     query["value"] = "sent-" + to_string(cmdNum);

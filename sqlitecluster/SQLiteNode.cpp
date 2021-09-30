@@ -306,6 +306,7 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
     SData escalate("ESCALATE_RESPONSE");
     escalate["ID"] = command.id;
     escalate.content = command.response.serialize();
+    escalate["commandResponseSize"] = to_string(escalate.content.size());
     SINFO("Sending ESCALATE_RESPONSE to " << peer->name << " for " << command.id << ".");
     _sendToPeer(peer, escalate);
 }
@@ -1793,6 +1794,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             _server.cancelCommand(commandID);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
+        // This shouldn't be possible but some indications are that it's happening.
+        if (message.isSet("commandResponseSize") && message["commandResponseSize"] != message["Content-Length"]) {
+            SALERT("Mismatched message lengths! " << message["commandResponseSize"] << ", " << message["Content-Length"]);
+        }
+        if (message.content.size() != SToUInt64(message["Content-Length"])) {
+            SALERT("Mismatched message lengths! " << message.content.size() << ", " << message["Content-Length"]);
+        }
         // ESCALATE_RESPONSE: Sent when the leader processes the ESCALATE.
         if (_state != FOLLOWING) {
             STHROW("not following");

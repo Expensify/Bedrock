@@ -601,6 +601,8 @@ void BedrockServer::sync(const SData& args,
                             // back to the sync thread.
                             SASSERT(command->complete);
                             if (command->initiatingPeerID) {
+                                SINFO("Leader responding to complete read-only escalation, total response size: "
+                                      << command->response.serialize().size() << ", response body size: " << command->response.content.size());
                                 server._finishPeerCommand(command);
                             } else {
                                 server._reply(command);
@@ -899,6 +901,8 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 // client that we can't respond to, so we don't bother sending the response.
                 SASSERT(command->initiatingClientID);
                 if (command->initiatingClientID > 0) {
+                    SINFO("Follower responding to complete escalation, total response size: " << command->response.serialize().size()
+                          << ", response body size: " << command->response.content.size());
                     server._reply(command);
                 }
 
@@ -1116,6 +1120,10 @@ void BedrockServer::worker(SQLitePool& dbPool,
                 if (command->complete) {
                     if (command->initiatingPeerID) {
                         // Escalated command. Send it back to the peer.
+                        if( peekResult != BedrockCore::RESULT::SHOULD_PROCESS) {
+                            SINFO("Leader responding to complete read-only escalation, total response size: "
+                                  << command->response.serialize().size() << ", response body size: " << command->response.content.size());
+                        }
                         server._finishPeerCommand(command);
                     } else {
                         server._reply(command);

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include <libstuff/SQResult.h>
+#include <libstuff/SRandom.h>
 #include <libstuff/SX509.h>
 
 mutex BedrockPlugin_TestPlugin::dataLock;
@@ -94,6 +95,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "generatesegfaultprocess",
         "idcollision",
         "slowprocessquery",
+        "get",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -305,6 +307,15 @@ bool TestPluginCommand::peek(SQLite& db) {
         string statString = "Peeking testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return false;
+    } else if (request.methodLine == "get") {
+        response.methodLine = "200 OK";
+        size_t payload = SRandom::rand64() % 1000;
+        string s;
+        for (size_t i = 0; i < payload; i++) {
+            s += 'A';
+        }
+        response.content = s;
+        return true;
     }
 
     return false;
