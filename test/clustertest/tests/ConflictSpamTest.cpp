@@ -106,7 +106,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 vector<SData> requests;
                 int numCommands = 2000;
                 for (int j = 0; j < numCommands; j++) {
-                    SData query("testescalate");
+                    SData query("get");
                     query["writeConsistency"] = "ASYNC";
                     int cmdNum = cmdID.fetch_add(1);
                     query["value"] = "sent-" + to_string(cmdNum);
