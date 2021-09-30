@@ -1829,7 +1829,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
             command->response = response;
             command->complete = true;
-            SINFO("Sending command back to server");
+            SINFO("Erasing command after escalate response: " << command->request.serialize());
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
