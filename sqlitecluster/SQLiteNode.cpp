@@ -1813,6 +1813,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             STHROW("malformed content");
         }
 
+        SAUTOPREFIX(response);
+
         // Go find the escalated command
         PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
         auto lock = _escalatedCommandMap.scopedLock();
@@ -1827,10 +1829,11 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             }
             command->response = response;
             command->complete = true;
+            SINFO("Sending command back to server");
             _server.acceptCommand(move(command), false);
             _escalatedCommandMap.erase(commandIt);
         } else {
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
+            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring.");
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
         // ESCALATE_RESPONSE: Sent when the leader aborts processing an escalated command. Re-submit to the new leader.

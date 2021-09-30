@@ -309,6 +309,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         return false;
     } else if (request.methodLine == "get") {
         response["num"] = request["num"] + " resp";
+        response["requestID"] = request["requestID"];
         response.methodLine = "200 OK";
         //size_t payload = SRandom::rand64() % 1000;
         string s;

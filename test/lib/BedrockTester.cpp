@@ -324,7 +324,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     // If that failed, we'll continue our main loop and try again.
                     if (socket == -1) {
                         // Return if we've specified to return on failure, or if it's been 20 seconds.
-                        bool timeout = sendStart + 20'000'000 < STimeNow();
+                        bool timeout = sendStart + 5'000'000 < STimeNow();
                         if (returnOnDisconnect || timeout) {
                             if (returnOnDisconnect && errorCode) {
                                 *errorCode = 1;
@@ -432,7 +432,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         break;
                     } else {
                         // If it's been over 60s, give up.
-                        if (recvStart + 10'000'000 < STimeNow()) {
+                        if (recvStart + 5'000'000 < STimeNow()) {
                             cout << "Buffer contents at timeout: " << recvBuffer << ". Size: " << recvBuffer.size() << endl;
                             cout << "Request: " << endl;
                             cout << myRequest.serialize() << endl;

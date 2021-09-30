@@ -65,19 +65,19 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 BedrockTester& brtester = tester->getTester(2);
 
                 // Let's make ourselves 20 commands to spam at each node.
-                vector<SData> requests;
                 while (keepTesting) {
+                    vector<SData> requests;
                     int numCommands = 20;
                     for (int j = 0; j < numCommands; j++) {
-                        SData query("get");
-                        query["writeConsistency"] = "ASYNC";
+                        SData cmd("get");
+                        cmd["writeConsistency"] = "ASYNC";
                         int currentCommand = ++commandNum;
                         if (!(currentCommand % 1000)) {
                             cout << "Command " << currentCommand << endl;
                         }
-                        query["num"] = to_string(currentCommand);
-                        query["requestID"] = "rid" + query["num"] + to_string(SRandom::rand64());
-                        requests.push_back(query);
+                        cmd["num"] = to_string(currentCommand);
+                        cmd["requestID"] = "rid" + cmd["num"] + "_" + to_string(SRandom::rand64());
+                        requests.push_back(cmd);
                     }
 
                     // Ok, send them all!
