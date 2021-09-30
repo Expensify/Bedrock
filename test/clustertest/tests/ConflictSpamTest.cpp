@@ -1,4 +1,5 @@
 #include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ConflictSpamTest : tpunit::TestFixture {
@@ -45,45 +46,6 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
     void slow()
     {
-        /*
-        // Send some write commands to each node in the cluster.
-        for (int h = 0; h <= 4; h++) {
-            for (int i : {0, 1, 2}) {
-                BedrockTester& brtester = tester->getTester(i);
-                SData query("idcollision b");
-                // What if we throw in a few sync commands?
-                query["writeConsistency"] = "ASYNC";
-                int cmdNum = cmdID.fetch_add(1);
-                query["value"] = "sent-" + to_string(cmdNum);
-
-                // Ok, send.
-                string result = brtester.executeWaitVerifyContent(query);
-            }
-        }
-
-        // Now see if they all match. If they don't, give them a few seconds to sync.
-        int tries = 0;
-        bool success = false;
-        while (tries < 10) {
-            vector<string> results(3);
-            for (int i : {0, 1, 2}) {
-                BedrockTester& brtester = tester->getTester(i);
-                SData query("Query");
-                query["writeConsistency"] = "ASYNC";
-                query["query"] = "SELECT id, value FROM test ORDER BY id;";
-                string result = brtester.executeWaitVerifyContent(query);
-                results[i] = result;
-            }
-
-            if (results[0] == results[1] && results[1] == results[2] && results[0].size()) {
-                success = true;
-                break;
-            }
-            sleep(1);
-        }
-
-        ASSERT_TRUE(success);
-        */
     }
 
     void spam()
@@ -110,7 +72,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                     SData query("get");
                     query["writeConsistency"] = "ASYNC";
                     query["num"] = to_string(++commandNum);
-                    query["requestID"] = "rid" + query["num"];
+                    query["requestID"] = "rid" + query["num"] + to_string(SRandom::rand64());
                     requests.push_back(query);
                 }
 
