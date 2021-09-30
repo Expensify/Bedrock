@@ -50,8 +50,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
     void spam()
     {
-        recursive_mutex m;
-        atomic<int> totalRequestFailures(0);
+        atomic<bool> keepTesting(true);
 
         // Set server 2 to a different version.
         tester->getTester(2).stopServer();
@@ -62,36 +61,42 @@ struct ConflictSpamTest : tpunit::TestFixture {
         list<thread> threads;
         atomic<int> commandNum(0);
         for (int i : {0, 1, 2, 3, 4}) {
-            threads.emplace_back([this, i, &totalRequestFailures, &m, &commandNum](){
+            threads.emplace_back([this, i, &keepTesting, &commandNum](){
                 BedrockTester& brtester = tester->getTester(2);
 
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
-                int numCommands = 2000;
-                for (int j = 0; j < numCommands; j++) {
-                    SData query("get");
-                    query["writeConsistency"] = "ASYNC";
-                    query["num"] = to_string(++commandNum);
-                    query["requestID"] = "rid" + query["num"] + to_string(SRandom::rand64());
-                    requests.push_back(query);
-                }
-
-                // Ok, send them all!
-                auto results = brtester.executeWaitMultipleData(requests);
-
-                int failures = 0;
-                for (auto row : results) {
-                    if (SToInt(row.methodLine) != 200) {
-                        cout << "[ConflictSpamTest] Node " << 2 << " Expected 200, got: " << SToInt(row.methodLine) << endl;
-                        cout << "[ConflictSpamTest] " << row.content << endl;
-                        failures++;
+                while (keepTesting) {
+                    int numCommands = 20;
+                    for (int j = 0; j < numCommands; j++) {
+                        SData query("get");
+                        query["writeConsistency"] = "ASYNC";
+                        int currentCommand = ++commandNum;
+                        if (!(currentCommand % 1000)) {
+                            cout << "Command " << currentCommand << endl;
+                        }
+                        query["num"] = to_string(currentCommand);
+                        query["requestID"] = "rid" + query["num"] + to_string(SRandom::rand64());
+                        requests.push_back(query);
                     }
-                    if (row.content.size() != 20000) {
-                        cout << "Wrong response size! " << row.content.size() << ", command num? " << row["num"] << endl;
-                        cout << row.serialize() << endl;
+
+                    // Ok, send them all!
+                    auto results = brtester.executeWaitMultipleData(requests);
+
+                    int failures = 0;
+                    for (auto row : results) {
+                        if (SToInt(row.methodLine) != 200) {
+                            cout << "[ConflictSpamTest] Node " << 2 << " Expected 200, got: " << SToInt(row.methodLine) << endl;
+                            cout << "[ConflictSpamTest] " << row.content << endl;
+                            failures++;
+                        }
+                        if (row.content.size() != 20000) {
+                            cout << "Wrong response size! " << row.content.size() << ", command num? " << row["num"] << endl;
+                            cout << row.serialize() << endl;
+                            keepTesting = false;
+                        }
                     }
                 }
-                totalRequestFailures.fetch_add(failures);
             });
         }
 
