@@ -261,7 +261,7 @@ class BedrockServer : public SQLiteServer {
     BedrockCommandQueue _blockingCommandQueue;
 
     // Each time we read a new request from a client, we give it a unique ID.
-    uint64_t _requestCount;
+    atomic<uint64_t> _requestCount;
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
