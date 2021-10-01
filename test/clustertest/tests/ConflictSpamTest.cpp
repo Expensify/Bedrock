@@ -72,6 +72,9 @@ struct ConflictSpamTest : tpunit::TestFixture {
                         SData cmd("get");
                         cmd["writeConsistency"] = "ASYNC";
                         int currentCommand = ++commandNum;
+                        if (commandNum > 100000) {
+                            keepTesting = false;
+                        }
                         if (!(currentCommand % 1000)) {
                             cout << "Command " << currentCommand << endl;
                         }
