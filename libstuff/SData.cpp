@@ -8,11 +8,43 @@ SData::SData() {
     // Nothing to do here
 }
 
-SData::SData(const STable& from) : nameValueMap(from)
+SData::SData(const STable& from) : nameValueMap(from), movedFrom(false)
 {
 }
 
-SData::SData(const string& fromString) {
+SData::~SData() {
+    if (movedFrom) {
+        SINFO("Destructor for moved-from SData " << this);
+    }
+}
+
+SData::SData(SData&& from) : 
+    methodLine(move(from.methodLine)),
+    nameValueMap(move(from.nameValueMap)),
+    content(move(from.content)),
+    movedFrom(false)
+{
+    from.movedFrom = true;
+    from.nameValueMap.clear();
+    SINFO("SData move constructor on " << (&from));
+}
+
+SData::SData(const SData& from) :
+    methodLine(from.methodLine),
+    nameValueMap(from.nameValueMap),
+    content(from.content),
+    movedFrom(false)
+{
+}
+
+SData& SData::operator=(const SData& from) {
+    methodLine = from.methodLine;
+    nameValueMap = from.nameValueMap;
+    content = from.content;
+    return *this;
+}
+
+SData::SData(const string& fromString) : movedFrom(false){
     if(!SParseHTTP(fromString, methodLine, nameValueMap, content)){
         methodLine = fromString;
     }

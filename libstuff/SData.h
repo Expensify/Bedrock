@@ -14,9 +14,12 @@ struct SData {
     string methodLine;
     STable nameValueMap;
     string content;
+    bool movedFrom;
 
     // Constructors
     SData();
+
+    ~SData();
 
     // Initializes a new SData from a string. If the string provided is not
     // an entire HTTPs like message, the string is used as the methodLine.
@@ -24,6 +27,13 @@ struct SData {
 
     // Allow conversion from STable.
     SData(const STable& from);
+
+    // Copy constructor.
+    SData(const SData& from);
+    SData& operator=(const SData& from);
+
+    // Move constructor.
+    SData(SData&& from);
 
     // Allow forwarding emplacements directly so SData can act like `std::map`.
     template <typename... Ts>

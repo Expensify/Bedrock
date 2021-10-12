@@ -18,6 +18,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
         }
         request["requestID"] = requestID;
     }
+    SINFO("Likely calling SData move constructor");
     return request;
 }
 
