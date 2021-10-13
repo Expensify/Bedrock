@@ -23,7 +23,7 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
         const string jobID = tester.executeWaitVerifyContentTable(createJob)["jobID"];
 
         // Get the job 10 times in a row
-        for (size_t i = 0; i < 10; ++i) {
+        for (size_t i = 0; i <= 10; ++i) {
             SData getJobs("GetJob");
             getJobs["name"] = "infinite-job";
             STable getJobResponse = tester.executeWaitVerifyContentTable(getJobs);
@@ -31,14 +31,17 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
             // Verify we get the job and it is in the RUNQUEUED state
             ASSERT_EQUAL(getJobResponse["jobID"], jobID);
             string state = tester.readDB("SELECT state FROM jobs WHERE jobID = " + SQ(jobID) + ";");
-            ASSERT_EQUAL(state, "RUNQUEUED");
 
-            // Wait for the retryAfter to kick in
-            sleep(2);
+            // Except for the last loop: after the 10th time, it should be FAILED
+            if (i == 10) {
+                ASSERT_EQUAL(state, "FAILED");
+            } else {
+                ASSERT_EQUAL(state, "RUNQUEUED");
+
+                // Wait for the retryAfter to kick in
+                sleep(2);
+            }
         }
 
-        // After the 10th time, it should be FAILED
-        const string state = tester.readDB("SELECT state FROM jobs WHERE jobID = " + SQ(jobID) + ";");
-        ASSERT_EQUAL(state, "FAILED");
     }
 } __InfiniteRetryAfterJobTest;
