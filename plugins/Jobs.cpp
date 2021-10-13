@@ -724,7 +724,12 @@ void BedrockJobsCommand::process(SQLite& db) {
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];
+            job["priority"] = result[c][3];
+            job["retryAfter"] = result[c][4];
             job["created"] = result[c][5];
+            job["repeat"] = result[c][6];
+            job["lastRun"] = result[c][7];
+            job["nextRun"] = result[c][8];
             int64_t parentJobID = SToInt64(result[c][3]);
 
             if (parentJobID) {
@@ -735,10 +740,6 @@ void BedrockJobsCommand::process(SQLite& db) {
 
             // Add jobID to the respective list depending on if retryAfter is set
             if (result[c][4] != "") {
-                job["retryAfter"] = result[c][4];
-                job["repeat"] = result[c][6];
-                job["lastRun"] = result[c][7];
-                job["nextRun"] = result[c][8];
                 retriableJobs.push_back(job);
             } else {
                 nonRetriableJobs.push_back(result[c][0]);

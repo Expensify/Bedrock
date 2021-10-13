@@ -81,6 +81,10 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["priority"], originalJob[0][8]);
+        ASSERT_EQUAL(response["repeat"], originalJob[0][6]);
+        ASSERT_EQUAL(response["nextRun"], originalJob[0][4]);
+        ASSERT_EQUAL(response["lastRun"], originalJob[0][5]);
         SASSERT(!response["created"].empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
@@ -406,7 +410,7 @@ struct GetJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 6);
+        ASSERT_EQUAL(response.size(), 11);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
