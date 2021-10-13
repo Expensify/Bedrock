@@ -77,7 +77,7 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 4);
+        ASSERT_EQUAL(response.size(), 9);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
@@ -126,7 +126,7 @@ struct GetJobTest : tpunit::TestFixture {
 
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 4);
+        ASSERT_EQUAL(response.size(), 9);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
@@ -441,7 +441,7 @@ struct GetJobTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 6);
+        ASSERT_EQUAL(response.size(), 11);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);

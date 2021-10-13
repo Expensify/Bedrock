@@ -646,7 +646,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
-                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                     "AND priority=" + SQ(request.calc("jobPriority")) + " "
@@ -656,7 +656,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
         } else {
             selectQuery =
-                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun FROM ( "
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority FROM ( "
                     "SELECT * FROM ("
                         "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
                         "FROM jobs "
@@ -716,7 +716,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         list<STable> retriableJobs;
         list<string> jobList;
         for (size_t c=0; c<result.size(); ++c) {
-            SASSERT(result[c].size() == 9); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun
+            SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
 
             // Add this object to our output
             STable job;
@@ -724,12 +724,12 @@ void BedrockJobsCommand::process(SQLite& db) {
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];
-            job["priority"] = result[c][3];
             job["retryAfter"] = result[c][4];
             job["created"] = result[c][5];
             job["repeat"] = result[c][6];
             job["lastRun"] = result[c][7];
             job["nextRun"] = result[c][8];
+            job["priority"] = result[c][9];
             int64_t parentJobID = SToInt64(result[c][3]);
 
             if (parentJobID) {
