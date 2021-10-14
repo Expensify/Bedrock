@@ -119,11 +119,7 @@ bool BedrockServer::canStandDown() {
     }
 }
 
-void BedrockServer::syncWrapper(const SData& args,
-                         atomic<SQLiteNode::State>& replicationState,
-                         atomic<string>& leaderVersion,
-                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                         BedrockServer& server)
+void BedrockServer::syncWrapper()
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
@@ -152,7 +148,7 @@ void BedrockServer::syncWrapper(const SData& args,
             SINFO("Bedrock server entering attached state.");
             server._resetServer();
         }
-        sync(args, replicationState, leaderVersion, syncNodeQueuedCommands, server);
+        sync();
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
         if (!server._detach) {
@@ -161,11 +157,7 @@ void BedrockServer::syncWrapper(const SData& args,
     }
 }
 
-void BedrockServer::sync(const SData& args,
-                         atomic<SQLiteNode::State>& replicationState,
-                         atomic<string>& leaderVersion,
-                         BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                         BedrockServer& server)
+void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
@@ -213,14 +205,7 @@ void BedrockServer::sync(const SData& args,
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(worker,
-                                      ref(dbPool),
-                                      ref(replicationState),
-                                      ref(leaderVersion),
-                                      ref(syncNodeQueuedCommands),
-                                      ref(server._completedCommands),
-                                      ref(server),
-                                      threadId);
+        workerThreadList.emplace_back(&BedrockServer::worker, this);
     }
 
     // Now we jump into our main command processing loop.
@@ -737,13 +722,7 @@ void BedrockServer::sync(const SData& args,
     server._syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(SQLitePool& dbPool,
-                           atomic<SQLiteNode::State>& replicationState,
-                           atomic<string>& leaderVersion,
-                           BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                           BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
-                           BedrockServer& server,
-                           int threadId)
+void BedrockServer::worker()
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
@@ -1334,12 +1313,7 @@ BedrockServer::BedrockServer(const SData& args_)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = thread(syncWrapper,
-                     ref(args),
-                     ref(_replicationState),
-                     ref(_leaderVersion),
-                     ref(_syncNodeQueuedCommands),
-                     ref(*this));
+    _syncThread = thread(&BedrockServer::syncWrapper, this);
 }
 
 BedrockServer::~BedrockServer() {

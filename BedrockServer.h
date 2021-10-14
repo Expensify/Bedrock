@@ -306,27 +306,13 @@ class BedrockServer : public SQLiteServer {
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
-    static void sync(const SData& args,
-                     atomic<SQLiteNode::State>& replicationState,
-                     atomic<string>& leaderVersion,
-                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                     BedrockServer& server);
+    static void sync();
 
     // Wraps the sync thread main function to make it easy to add exception handling.
-    static void syncWrapper(const SData& args,
-                     atomic<SQLiteNode::State>& replicationState,
-                     atomic<string>& leaderVersion,
-                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                     BedrockServer& server);
+    static void syncWrapper();
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SQLitePool& dbPool,
-                       atomic<SQLiteNode::State>& _replicationState,
-                       atomic<string>& leaderVersion,
-                       BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                       BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
-                       BedrockServer& server,
-                       int threadId);
+    static void worker(SQLitePool& dbPool, int threadId);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
