@@ -721,7 +721,7 @@ void BedrockServer::sync()
     // Release the current DB pool, and zero out our pointer.
     // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
     // sync thread.
-    _dbPool.release();
+    _dbPool = nullptr;
 
     // We're really done, store our flag so main() can be aware.
     _syncThreadComplete.store(true);
