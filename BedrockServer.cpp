@@ -184,13 +184,13 @@ void BedrockServer::sync()
     SQLite& db = dbPool.getBase();
 
     // Initialize the command processor.
-    BedrockCore core(db, server);
+    BedrockCore core(db, *this);
 
     // And the sync node.
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    atomic_store(&_syncNode, make_shared<SQLiteNode>(server, dbPool, args["-nodeName"], args["-nodeHost"],
+    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
 
@@ -205,7 +205,7 @@ void BedrockServer::sync()
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(&BedrockServer::worker, this);
+        workerThreadList.emplace_back(&BedrockServer::worker, this, ref(*this), threadId);
     }
 
     // Now we jump into our main command processing loop.
@@ -349,8 +349,8 @@ void BedrockServer::sync()
         SQLiteNode::State preUpdateState = _syncNode->getState();
         while (_syncNode->update()) {}
         SQLiteNode::State nodeState = _syncNode->getState();
-        replicationState.store(nodeState);
-        leaderVersion.store(_syncNode->getLeaderVersion());
+        _replicationState.store(nodeState);
+        _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If anything was in the stand down queue, move it back to the main queue.
         if (nodeState != SQLiteNode::STANDINGDOWN) {
@@ -681,15 +681,15 @@ void BedrockServer::sync()
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
-    replicationState.store(_syncNode->getState());
-    if (replicationState.load() > SQLiteNode::WAITING) {
+    _replicationState.store(_syncNode->getState());
+    if (_replicationState.load() > SQLiteNode::WAITING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Sync thread exiting in state " << replicationState.load() << ". Setting to SEARCHING.");
-        replicationState.store(SQLiteNode::SEARCHING);
+        SWARN("Sync thread exiting in state " << _replicationState.load() << ". Setting to SEARCHING.");
+        _replicationState.store(SQLiteNode::SEARCHING);
     } else {
-        SINFO("Sync thread exiting, setting state to: " << replicationState.load());
+        SINFO("Sync thread exiting, setting state to: " << _replicationState.load());
     }
 
     // Wait for the worker threads to finish.
@@ -722,7 +722,7 @@ void BedrockServer::sync()
     _syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker()
+void BedrockServer::worker(SQLitePool& dbPool, int threadId)
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
@@ -730,7 +730,7 @@ void BedrockServer::worker()
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
     SQLiteScopedHandle dbScope(dbPool, dbPool.getIndex());
     SQLite& db = dbScope.db();
-    BedrockCore core(db, server);
+    BedrockCore core(db, *this);
 
     // Command to work on. This default command is replaced when we find work to do.
     unique_ptr<BedrockCommand> command(nullptr);
@@ -778,7 +778,7 @@ void BedrockServer::worker()
             if (core.isTimedOut(command)) {
                 if (command->initiatingPeerID) {
                     // Escalated command. Give it back to the sync thread to respond.
-                    _syncNodeCompletedCommands.push(move(command));
+                    _completedCommands.push(move(command));
                 } else {
                     _reply(command);
                 }
@@ -793,7 +793,7 @@ void BedrockServer::worker()
                 command->complete = true;
                 if (command->initiatingPeerID) {
                     // Escalated command. Give it back to the sync thread to respond.
-                    _syncNodeCompletedCommands.push(move(command));
+                    _completedCommands.push(move(command));
                 } else {
                     _reply(command);
                 }
@@ -809,9 +809,9 @@ void BedrockServer::worker()
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
             while (_upgradeInProgress ||
-                   (replicationState.load() != SQLiteNode::LEADING &&
-                    replicationState.load() != SQLiteNode::FOLLOWING &&
-                    replicationState.load() != SQLiteNode::STANDINGDOWN)
+                   (_replicationState.load() != SQLiteNode::LEADING &&
+                    _replicationState.load() != SQLiteNode::FOLLOWING &&
+                    _replicationState.load() != SQLiteNode::STANDINGDOWN)
             ) {
                 // Make sure that the node isn't shutting down, leaving us in an endless loop.
                 if (_shutdownState.load() != RUNNING) {
@@ -832,7 +832,7 @@ void BedrockServer::worker()
             // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
             // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
             // our state right before we commit.
-            SQLiteNode::State state = replicationState.load();
+            SQLiteNode::State state = _replicationState.load();
 
             // If we're following, any incomplete commands can be immediately escalated to leader. This saves the work
             // of a `peek` operation, but more importantly, it skips any delays that might be introduced by waiting in
@@ -1040,10 +1040,10 @@ void BedrockServer::worker()
                             // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
                             // possible with or without a mutex for this, so we've removed it for the sake of
                             // simplicity.
-                            if (replicationState.load() != SQLiteNode::LEADING &&
-                                replicationState.load() != SQLiteNode::STANDINGDOWN) {
+                            if (_replicationState.load() != SQLiteNode::LEADING &&
+                                _replicationState.load() != SQLiteNode::STANDINGDOWN) {
                                 SALERT("Node State changed from LEADING to "
-                                       << SQLiteNode::stateName(replicationState.load())
+                                       << SQLiteNode::stateName(_replicationState.load())
                                        << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
