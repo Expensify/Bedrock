@@ -317,7 +317,7 @@ void BedrockServer::sync()
         _syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
-        syncNodeQueuedCommands.prePoll(fdm);
+        _syncNodeQueuedCommands.prePoll(fdm);
         _completedCommands.prePoll(fdm);
 
         // Wait for activity on any of those FDs, up to a timeout.
@@ -340,7 +340,7 @@ void BedrockServer::sync()
             AutoTimerTime postPollTime(postPollTimer);
             _postPollPlugins(fdm, nextActivity);
             _syncNode->postPoll(fdm, nextActivity);
-            syncNodeQueuedCommands.postPoll(fdm);
+            _syncNodeQueuedCommands.postPoll(fdm);
             _completedCommands.postPoll(fdm);
         }
 
@@ -390,7 +390,7 @@ void BedrockServer::sync()
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
                     command = unique_ptr<BedrockCommand>(nullptr);
-                    command = syncNodeQueuedCommands.pop();
+                    command = _syncNodeQueuedCommands.pop();
                     if (command->initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
                         _commandQueue.push(move(command));
@@ -491,9 +491,9 @@ void BedrockServer::sync()
                 // probably indicates a bug (or a follower disk failure).
                 if (command) {
                     SINFO("requeueing command " << command->request.methodLine
-                          << " after failed sync commit. Sync thread has " << syncNodeQueuedCommands.size()
+                          << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                           << " queued commands.");
-                    syncNodeQueuedCommands.push(move(command));
+                    _syncNodeQueuedCommands.push(move(command));
                 } else {
                     SERROR("Unexpected sync thread commit state.");
                 }
@@ -535,9 +535,9 @@ void BedrockServer::sync()
             // potentially infinite, as we can add new commands to the list as we iterate across it (coming from
             // workers), and we will need to break and read from the network to see what to do next at some point.
             // Additionally, in exceptional cases, if we get stuck in this loop for more than 64k commands, we can hit
-            // the internal limit of the buffer for the pipe inside syncNodeQueuedCommands, and writes there will
+            // the internal limit of the buffer for the pipe inside _syncNodeQueuedCommands, and writes there will
             // block, and this can cause deadlocks in various places. This is cleared every time we run `postPoll` for
-            // syncNodeQueuedCommands, which occurs when break out of this loop, so we do so periodically to avoid
+            // _syncNodeQueuedCommands, which occurs when break out of this loop, so we do so periodically to avoid
             // this.
             // TODO: We could potentially make writes to the pipe in the queue non-blocking and help to mitigate that
             // part of this issue as well.
@@ -549,12 +549,12 @@ void BedrockServer::sync()
                 command = unique_ptr<BedrockCommand>(nullptr);
 
                 // Get the next sync node command to work on.
-                command = syncNodeQueuedCommands.pop();
+                command = _syncNodeQueuedCommands.pop();
 
                 // We got a command to work on! Set our log prefix to the request ID.
                 SAUTOPREFIX(command->request);
                 SINFO("Sync thread dequeued command " << command->request.methodLine << ". Sync thread has "
-                      << syncNodeQueuedCommands.size() << " queued commands.");
+                      << _syncNodeQueuedCommands.size() << " queued commands.");
 
                 if (command->timeout() < STimeNow()) {
                     SINFO("Command '" << command->request.methodLine << "' timed out in sync thread queue, sending back to main queue.");
@@ -660,7 +660,7 @@ void BedrockServer::sync()
                 SINFO("Escalated 1000 commands without hitting the end of the queue. Breaking.");
             }
         } catch (const out_of_range& e) {
-            // syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
+            // _syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
     } while (!_syncNode->shutdownComplete() && !_gracefulShutdownTimeout.ringing());
@@ -778,7 +778,7 @@ void BedrockServer::worker()
             if (core.isTimedOut(command)) {
                 if (command->initiatingPeerID) {
                     // Escalated command. Give it back to the sync thread to respond.
-                    syncNodeCompletedCommands.push(move(command));
+                    _syncNodeCompletedCommands.push(move(command));
                 } else {
                     _reply(command);
                 }
@@ -793,7 +793,7 @@ void BedrockServer::worker()
                 command->complete = true;
                 if (command->initiatingPeerID) {
                     // Escalated command. Give it back to the sync thread to respond.
-                    syncNodeCompletedCommands.push(move(command));
+                    _syncNodeCompletedCommands.push(move(command));
                 } else {
                     _reply(command);
                 }
@@ -838,8 +838,8 @@ void BedrockServer::worker()
             // of a `peek` operation, but more importantly, it skips any delays that might be introduced by waiting in
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
-                SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << syncNodeQueuedCommands.size() << " queued commands.");
-                syncNodeQueuedCommands.push(move(command));
+                SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
+                _syncNodeQueuedCommands.push(move(command));
                 continue;
             }
 
@@ -1007,9 +1007,9 @@ void BedrockServer::worker()
 
                         // We're not handling a writable command anymore.
                         SINFO("Sending non-parallel command " << command->request.methodLine
-                              << " to sync thread. Sync thread has " << syncNodeQueuedCommands.size()
+                              << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
                               << " queued commands.");
-                        syncNodeQueuedCommands.push(move(command));
+                        _syncNodeQueuedCommands.push(move(command));
 
                         // Done with this command, look for the next one.
                         break;
