@@ -126,18 +126,18 @@ void BedrockServer::syncWrapper()
 
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
-        if (server._detach) {
+        if (_detach) {
             // If we're set detached, we assume we'll be re-attached eventually, and then be `RUNNING`.
             SINFO("Bedrock server entering detached state.");
-            server._shutdownState.store(RUNNING);
+            _shutdownState.store(RUNNING);
 
             // Detach any plugins now
-            for (auto plugin : server.plugins) {
+            for (auto plugin : plugins) {
                 plugin.second->onDetach();
             }
-            server._pluginsDetached = true;
-            while (server._detach) {
-                if (server.shutdownWhileDetached) {
+            _pluginsDetached = true;
+            while (_detach) {
+                if (shutdownWhileDetached) {
                     SINFO("Bedrock server exiting from detached state.");
                     return;
                 }
@@ -146,12 +146,12 @@ void BedrockServer::syncWrapper()
                 sleep(1);
             }
             SINFO("Bedrock server entering attached state.");
-            server._resetServer();
+            _resetServer();
         }
         sync();
 
         // Now that we've run the sync thread, we can exit if it hasn't set _detach again.
-        if (!server._detach) {
+        if (!_detach) {
             break;
         }
     }
