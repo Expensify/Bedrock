@@ -354,7 +354,7 @@ struct CreateJobTest : tpunit::TestFixture {
             try {
                 // Let it repeat until it works or we run out of retries.
                 response = tester->executeWaitVerifyContentTable(command);
-                ASSERT_EQUAL(response["data"], "{\"originalNextRun\":\"" + originalJob[0][4] + "\"}");
+                ASSERT_EQUAL(response["data"], "{\"retryAfterCount\":1,\"originalNextRun\":\"" + originalJob[0][4] + "\"}");
                 ASSERT_EQUAL(response["jobID"], jobID);
                 ASSERT_EQUAL(response["name"], jobName);
             } catch (...) {
@@ -468,7 +468,7 @@ struct CreateJobTest : tpunit::TestFixture {
                 usleep(100'000);
                 continue;
             }
-            ASSERT_EQUAL(response["data"], "{}");
+            ASSERT_EQUAL(response["data"], "{\"retryAfterCount\":1}");
             ASSERT_EQUAL(response["jobID"], jobID);
             ASSERT_EQUAL(response["name"], jobName);
             assertionsChecked = true;

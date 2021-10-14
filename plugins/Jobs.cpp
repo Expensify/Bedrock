@@ -770,6 +770,11 @@ void BedrockJobsCommand::process(SQLite& db) {
                 job["cancelledChildJobs"] = SComposeJSONArray(cancelledChildJobArray);
             }
 
+            STable jobData = SParseJSONObject(job["data"]);
+            if (SToInt(jobData["retryAfterCount"]) >= 10) {
+                // We will fail this job, don't return it.
+                continue;
+            }
             jobList.push_back(SComposeJSONObject(job));
         }
 
@@ -787,16 +792,28 @@ void BedrockJobsCommand::process(SQLite& db) {
         if (!retriableJobs.empty()) {
             for (auto job : retriableJobs) {
                 SINFO("Updating job with retryAfter " << job["jobID"]);
+                STable jobData = SParseJSONObject(job["data"]);
+                if (SToInt(jobData["retryAfterCount"]) >= 10) {
+                    SINFO("Job " << job["jobID"] << " has retried 10 times, marking it as FAILED.");
+                    string failQuery = "UPDATE jobs "
+                                       "SET state='FAILED' "
+                                       "WHERE jobID = " + SQ(job["jobID"]) + ";";
+                    if (!db.writeIdempotent(failQuery)) {
+                        STHROW("502 Update failed");
+                    }
+                    continue;
+                }
                 string currentTime = SUNQUOTED_CURRENT_TIMESTAMP();
                 string retryAfterDateTime = "DATETIME(" + SQ(currentTime) + ", " + SQ(job["retryAfter"]) + ")";
                 string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], currentTime, job["repeat"]);
                 string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
                 bool isRepeatBasedOnScheduledTime = SToUpper(job["repeat"]).find("SCHEDULED") != string::npos;
                 string updateQuery = "UPDATE jobs "
-                                     "SET state='RUNQUEUED', "
-                                         "lastRun=" + SQ(currentTime) + ", " +
-                                         "nextRun=" + nextRunDateTime + " " +
-                                         (isRepeatBasedOnScheduledTime ? ", data=JSON_SET(data, '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": "") +
+                                     "SET state = 'RUNQUEUED', "
+                                         "lastRun = " + SQ(currentTime) + ", " +
+                                         "nextRun = " + nextRunDateTime + ", " +
+                                         "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
+                                         (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.writeIdempotent(updateQuery)) {
                     STHROW("502 Update failed");
@@ -807,7 +824,13 @@ void BedrockJobsCommand::process(SQLite& db) {
         // Format the results as is appropriate for what was requested
         if (SIEquals(requestVerb, "GetJob")) {
             // Single response
-            SASSERT(jobList.size() == 1);
+            if (jobList.size() != 1) {
+                if (jobList.size() > 1) {
+                    STHROW("500 More than 1 job to return, how is this possible?");
+                }
+                response.content = "{}";
+                return;
+            }
             response.content = jobList.front();
         } else {
             // Multiple responses
@@ -1001,6 +1024,11 @@ void BedrockJobsCommand::process(SQLite& db) {
             if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
+        }
+
+        // Reset the retryAfterCount (set by GetJob(s)).
+        if (!db.writeIdempotent("UPDATE jobs SET data = JSON_REMOVE(data, '$.retryAfterCount') WHERE jobID=" + SQ(jobID) + ";")) {
+            STHROW("502 Failed to update job retryAfterCount");
         }
 
         // If we are finishing a job that has child jobs, set its state to paused.
