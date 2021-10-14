@@ -482,5 +482,7 @@ class BedrockServer : public SQLiteServer {
     // the current control command).
     shared_mutex _controlPortExclusionMutex;
 
+    // A pointer to the current pool of DB handles we can use. Only valid during the lifetime of the sync thread, and
+    // destroyed when it does not exist. This releases all DB handles so we can take backups.
     unique_ptr<SQLitePool> _dbPool;
 };
