@@ -180,8 +180,8 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    SQLitePool dbPool(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
-    SQLite& db = dbPool.getBase();
+    _dbPool = make_unique<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
     BedrockCore core(db, *this);
@@ -190,7 +190,7 @@ void BedrockServer::sync()
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, dbPool, args["-nodeName"], args["-nodeHost"],
+    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, *_dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
 
@@ -205,7 +205,7 @@ void BedrockServer::sync()
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(&BedrockServer::worker, this, ref(dbPool), threadId);
+        workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
     }
 
     // Now we jump into our main command processing loop.
@@ -718,17 +718,25 @@ void BedrockServer::sync()
     // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
 
+    // Release the current DB pool, and zero out our pointer.
+    // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
+    // sync thread.
+    _dbPool.release();
+
     // We're really done, store our flag so main() can be aware.
     _syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(SQLitePool& dbPool, int threadId)
+void BedrockServer::worker(int threadId)
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-    SQLiteScopedHandle dbScope(dbPool, dbPool.getIndex());
+    if (!_dbPool) {
+        SERROR("Can't run a worker with no DB pool");
+    }
+    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
     SQLite& db = dbScope.db();
     BedrockCore core(db, *this);
 
