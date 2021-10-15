@@ -311,7 +311,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Prepare our plugins for `poll` (for instance, in case they're making HTTP requests).
-        _prePollPlugins(fdm);
+        _prePollCommands(fdm);
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _syncNode->prePoll(fdm);
@@ -338,7 +338,7 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            _postPollPlugins(fdm, nextActivity);
+            _postPollCommands(fdm, nextActivity);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
             _completedCommands.postPoll(fdm);
@@ -605,6 +605,14 @@ void BedrockServer::sync()
                         // If we just started a new HTTPS request, save it for later.
                         if (command->httpsRequests.size()) {
                             waitForHTTPS(move(command));
+
+                            // TODO:
+                            // Move the HTTPS loop into the worker, so that the worker can poll on its own requests.
+                            // This is the first step toward linear workers that run start->finish without being
+                            // interrupted and bounced back and forth between a bunch of queues.
+                            //
+                            // The follow-up to that is to allow direct escalations from workers to leader, which can
+                            // be done as a simple HTTPS request for the exact same command.
 
                             // Move on to the next command until this one finishes.
                             core.rollback();
@@ -1885,15 +1893,15 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     return !db.getUncommittedQuery().empty();
 }
 
-void BedrockServer::_prePollPlugins(fd_map& fdm) {
-    for (auto plugin : plugins) {
-        for (auto manager : plugin.second->httpsManagers) {
-            manager->prePoll(fdm);
-        }
+void BedrockServer::_prePollCommands(fd_map& fdm) {
+    for (auto& p : _outstandingHTTPSRequests) {
+        auto transaction = p.first;
+        list<STCPManager::Socket*> socketList = {transaction->s};
+        transaction->manager.prePoll(fdm, socketList);
     }
 }
 
-void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
+void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     // Only pass timeouts for transactions belonging to timed out commands.
     uint64_t now = STimeNow();
     map<SHTTPSManager::Transaction*, uint64_t> transactionTimeouts;
@@ -1909,22 +1917,21 @@ void BedrockServer::_postPollPlugins(fd_map& fdm, uint64_t nextActivity) {
             timeoutIt++;
         }
     }
-
-    for (auto plugin : plugins) {
-        for (auto manager : plugin.second->httpsManagers) {
-            list<SHTTPSManager::Transaction*> completedHTTPSRequests;
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
-                // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
-            } else {
-                // Otherwise, use the default timeout.
-                manager->postPoll(fdm, nextActivity, completedHTTPSRequests, transactionTimeouts);
-            }
-
-            // Move any fully completed commands back to the main queue.
-            finishWaitingForHTTPS(completedHTTPSRequests);
+    for (auto& p : _outstandingHTTPSRequests) {
+        auto transaction = p.first;
+        list<SHTTPSManager::Transaction*> completedHTTPSRequests;
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        list<STCPManager::Socket*> socketList = {transaction->s};
+        if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
+            // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
+            transaction->manager.postPoll(fdm, socketList, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
+        } else {
+            // Otherwise, use the default timeout.
+            transaction->manager.postPoll(fdm, socketList, nextActivity, completedHTTPSRequests, transactionTimeouts);
         }
+
+        // Move any fully completed commands back to the main queue.
+        finishWaitingForHTTPS(completedHTTPSRequests);
     }
 }
 

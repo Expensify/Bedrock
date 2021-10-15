@@ -9,10 +9,10 @@
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 STCPManager::~STCPManager() {
-    SASSERTWARN(socketList.empty());
+    //SASSERTWARN(socketList.empty());
 }
 
-void STCPManager::prePoll(fd_map& fdm) {
+void STCPManager::prePoll(fd_map& fdm, list<Socket*> socketList) {
     // Add all the sockets
     for (Socket* socket : socketList) {
         // Make sure it's not closed
@@ -75,7 +75,7 @@ void STCPManager::prePoll(fd_map& fdm) {
     }
 }
 
-void STCPManager::postPoll(fd_map& fdm) {
+void STCPManager::postPoll(fd_map& fdm, list<Socket*> socketList) {
     // Walk across the sockets
     for (Socket* socket : socketList) {
         // Update this socket
@@ -217,7 +217,7 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
-    socketList.remove(socket);
+    //socketList.remove(socket);
 
     delete socket;
 }
@@ -253,9 +253,9 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, re
 
     if (listMutexPtr) {
         lock_guard<recursive_mutex> lock(*listMutexPtr);
-        socketList.push_back(socket);
+        //socketList.push_back(socket);
     } else {
-        socketList.push_back(socket);
+        //socketList.push_back(socket);
     }
     return socket;
 }

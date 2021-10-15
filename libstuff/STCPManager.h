@@ -70,8 +70,8 @@ struct STCPManager {
     virtual ~STCPManager();
 
     // Updates all managed sockets
-    void prePoll(fd_map& fdm);
-    void postPoll(fd_map& fdm);
+    void prePoll(fd_map& fdm, list<Socket*> socketList);
+    void postPoll(fd_map& fdm, list<Socket*> socketList);
 
     // Opens outgoing socket
     Socket* openSocket(const string& host, SX509* x509 = nullptr, recursive_mutex* listMutexPtr = nullptr);
@@ -83,5 +83,5 @@ struct STCPManager {
     void closeSocket(Socket* socket);
 
     // Attributes
-    list<Socket*> socketList;
+    //list<Socket*> socketList;
 };

@@ -32,13 +32,13 @@ class SStandaloneHTTPSManager : public STCPManager {
     virtual ~SStandaloneHTTPSManager();
 
     // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
-    void prePoll(fd_map& fdm);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests);
+    void prePoll(fd_map& fdm, list<STCPManager::Socket*>& socketList);
+    void postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity);
+    void postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<Transaction*>& completedRequests);
 
 
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS = (5 * 60 * 1000));
+    void postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS = (5 * 60 * 1000));
     Socket* openSocket(const string& host, SX509* x509 = nullptr);
     void closeSocket(Socket* socket);
 

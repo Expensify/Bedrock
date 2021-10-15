@@ -81,7 +81,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
 
 void STCPServer::prePoll(fd_map& fdm) {
     // Call the base class
-    STCPManager::prePoll(fdm);
+    STCPManager::prePoll(fdm, socketList);
 
     // Add the ports
     lock_guard <decltype(portListMutex)> lock(portListMutex);
@@ -93,5 +93,5 @@ void STCPServer::prePoll(fd_map& fdm) {
 void STCPServer::postPoll(fd_map& fdm) {
     // Process all the existing sockets.
     // FIXME: Detect port failure
-    STCPManager::postPoll(fdm);
+    STCPManager::postPoll(fdm, socketList);
 }

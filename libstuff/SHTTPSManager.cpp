@@ -91,28 +91,28 @@ void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
     STCPManager::closeSocket(socket);
 }
 
-void SStandaloneHTTPSManager::prePoll(fd_map& fdm) {
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<STCPManager::Socket*>& socketList) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
-    return STCPManager::prePoll(fdm);
+    return STCPManager::prePoll(fdm, socketList);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity) {
     list<SStandaloneHTTPSManager::Transaction*> completedRequests;
     map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
+    postPoll(fdm, socketList, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
     map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
+    postPoll(fdm, socketList, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
 
     // Let the base class do its thing
-    STCPManager::postPoll(fdm);
+    STCPManager::postPoll(fdm, socketList);
 
     // Update each of the active requests
     uint64_t timeout = timeoutMS * 1000;

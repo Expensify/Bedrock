@@ -298,8 +298,8 @@ class BedrockServer : public SQLiteServer {
     bool _upgradeDB(SQLite& db);
 
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
-    void _prePollPlugins(fd_map& fdm);
-    void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
+    void _prePollCommands(fd_map& fdm);
+    void _postPollCommands(fd_map& fdm, uint64_t nextActivity);
 
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();

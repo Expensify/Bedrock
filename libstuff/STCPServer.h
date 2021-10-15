@@ -37,6 +37,8 @@ struct STCPServer : public STCPManager {
     // Attributes
     list<Port> portList;
 
+    list<STCPManager::Socket*> socketList;
+
     // Protect access to to the port list when multiple threads insert and delete from it.
     mutex portListMutex;
 };
