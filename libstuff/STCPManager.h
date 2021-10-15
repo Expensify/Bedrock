@@ -74,7 +74,7 @@ struct STCPManager {
     void postPoll(fd_map& fdm, list<Socket*> socketList);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = nullptr, recursive_mutex* listMutexPtr = nullptr);
+    Socket* openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
     void shutdownSocket(Socket* socket, int how = SHUT_RDWR);

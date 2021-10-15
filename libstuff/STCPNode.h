@@ -118,9 +118,6 @@ struct STCPNode : public STCPServer {
         // Reset a peer, as if disconnected and starting the connection over.
         void reset();
 
-        // Close the peer's socket. Thread-safe.
-        void closeSocket(STCPManager* manager);
-
         // Send a message to this peer. Thread-safe.
         void sendMessage(const SData& message);
 

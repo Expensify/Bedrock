@@ -238,7 +238,7 @@ STCPManager::Socket::~Socket() {
     }
 }
 
-STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, recursive_mutex* listMutexPtr) {
+STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
     // Try to open the socket
     SASSERT(SHostIsValid(host));
     int s = S_socket(host, true, false, false);
@@ -251,12 +251,6 @@ STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509, re
     socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
     SASSERT(!x509 || socket->ssl);
 
-    if (listMutexPtr) {
-        lock_guard<recursive_mutex> lock(*listMutexPtr);
-        //socketList.push_back(socket);
-    } else {
-        //socketList.push_back(socket);
-    }
     return socket;
 }
 

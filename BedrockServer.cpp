@@ -1346,6 +1346,7 @@ BedrockServer::~BedrockServer() {
             // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
             Socket* s = *socketIt++;
             closeSocket(s);
+            socketList.remove(s);
         }
     }
     if (_outstandingSocketThreads) {
@@ -1509,6 +1510,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 while(socketList.size()) {
                     auto s = socketList.front();
                     closeSocket(s);
+                    socketList.remove(s);
                 }
             }
 

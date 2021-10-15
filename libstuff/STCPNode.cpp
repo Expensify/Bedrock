@@ -20,9 +20,11 @@ STCPNode::~STCPNode() {
         closeSocket(socket);
     }
     acceptedSocketList.clear();
+
     for (Peer* peer : peerList) {
         // Shut down the peer
-        peer->closeSocket(this);
+        closeSocket(peer->socket);
+        socketList.remove(peer->socket);
         delete peer;
     }
 }
@@ -170,6 +172,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                       << socket->recvBuffer << "', send='" << socket->sendBufferCopy() << "'");
             }
             closeSocket(socket);
+            socketList.remove(socket);
             acceptedSocketList.erase(socketIt);
         }
     }
@@ -266,7 +269,8 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 _onDisconnect(peer);
                 if (peer->socket->connectFailure)
                     peer->failedConnections++;
-                peer->closeSocket(this);
+                closeSocket(peer->socket);
+                socketList.remove(peer->socket);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect.load());
@@ -285,6 +289,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 PINFO("Retrying the connection");
                 peer->reset();
                 peer->socket = openSocket(peer->host);
+                socketList.push_back(peer->socket);
                 if (peer->socket) {
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
@@ -356,16 +361,6 @@ void STCPNode::Peer::sendMessage(const SData& message) {
         socket->send(message.serialize());
     } else {
         SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
-    }
-}
-
-void STCPNode::Peer::closeSocket(STCPManager* manager) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
-    if (socket) {
-        manager->closeSocket(socket);
-        socket = nullptr;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
     }
 }
 
