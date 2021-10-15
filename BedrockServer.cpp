@@ -1917,9 +1917,10 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
             timeoutIt++;
         }
     }
+
+    list<SHTTPSManager::Transaction*> completedHTTPSRequests;
     for (auto& p : _outstandingHTTPSRequests) {
         auto transaction = p.first;
-        list<SHTTPSManager::Transaction*> completedHTTPSRequests;
         auto _syncNodeCopy = atomic_load(&_syncNode);
         list<STCPManager::Socket*> socketList = {transaction->s};
         if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
@@ -1931,8 +1932,8 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         }
 
         // Move any fully completed commands back to the main queue.
-        finishWaitingForHTTPS(completedHTTPSRequests);
     }
+    finishWaitingForHTTPS(completedHTTPSRequests);
 }
 
 void BedrockServer::_beginShutdown(const string& reason, bool detach) {
