@@ -23,8 +23,10 @@ STCPNode::~STCPNode() {
 
     for (Peer* peer : peerList) {
         // Shut down the peer
-        closeSocket(peer->socket);
-        socketList.remove(peer->socket);
+        if (peer->socket) {
+            closeSocket(peer->socket);
+            socketList.remove(peer->socket);
+        }
         delete peer;
     }
 }
