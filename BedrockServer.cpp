@@ -2204,9 +2204,15 @@ void BedrockServer::handleSocket(Socket* s, bool isControl) {
                 // Make a command from our request.
                 unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), s);
 
-                // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
-                // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
-                if (!_handleIfStatusOrControlCommand(command)) {
+                if (!command) {
+                    // If we couldn't build a command, this was some sort of unusual exception case (like trying to
+                    // schedule a command in the future while shutting down). We can just give up.
+                    SINFO("No command from request, closing socket.");
+                    s->state = Socket::CLOSED;
+                    ::shutdown(s->s, SHUT_RDWR);
+                } else if (!_handleIfStatusOrControlCommand(command)) {
+                    // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
+                    // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
                     // If the command has a socket (it's this socket) then we need to wait for it to finish before
                     // we can dequeue the next command, so that the responses all end up delivered in order.
                     // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
