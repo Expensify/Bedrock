@@ -243,11 +243,6 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
-    // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
-    // will not be managed by that poll loop, instead, it starts a new thread.
-    // TODO: That socket list is going away. Fix the comment.
-    STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
-
     // This is the thread that handles a new socket, parses a command, and queues it for work.
     void handleSocket(Socket&& s, bool isControl);
 
@@ -285,7 +280,7 @@ class BedrockServer : public SQLiteServer {
     bool _suppressCommandPortManualOverride;
 
     // This is a map of open listening ports to the plugin objects that created them.
-    map<Port*, BedrockPlugin*> _portPluginMap;
+    map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
 
     // The server version. This may be fake if the arguments contain a `versionOverride` value.
     string _version;
@@ -381,8 +376,8 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
-    Port* _controlPort;
-    Port* _commandPort;
+    unique_ptr<Port> _controlPort;
+    unique_ptr<Port> _commandPort;
 
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;

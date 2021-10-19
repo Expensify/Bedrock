@@ -1433,7 +1433,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             string portHost = plugin.second->getPort();
             if (!portHost.empty()) {
                 bool alreadyOpened = false;
-                for (auto pluginPorts : _portPluginMap) {
+                for (auto& pluginPorts : _portPluginMap) {
                     if (pluginPorts.second == plugin.second) {
                         // We've already got this one.
                         alreadyOpened = true;
@@ -1443,8 +1443,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Open the port and associate it with the plugin
                 if (!alreadyOpened) {
                     SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
-                    Port* port = openPort(portHost);
-                    _portPluginMap[port] = plugin.second;
+                    _portPluginMap[openPort(portHost)] = plugin.second;
                 }
             }
         }
@@ -1597,11 +1596,8 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
     if (suppress) {
         // Close the command port, and all plugin's ports. Won't reopen.
         SHMMM("Suppressing command port");
-        if (!portList.empty()) {
-            closePorts({_controlPort});
-            _portPluginMap.clear();
-            _commandPort = nullptr;
-        }
+        _commandPort = nullptr;
+        _portPluginMap.clear();
     } else {
         // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
         SHMMM("Clearing command port suppression");
@@ -1931,10 +1927,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
         // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
         // detaching. It needs to keep listening.
-        if (_detach) {
-            closePorts({_controlPort});
-        } else {
-            closePorts();
+        _commandPort = nullptr;
+        if (!_detach) {
             _controlPort = nullptr;
         }
         _portPluginMap.clear();
@@ -2004,47 +1998,47 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_acceptSockets() {
-    Socket* s = nullptr;
-    Port* acceptPort = nullptr;
-    while ((s = acceptUnlistedSocket(acceptPort))) {
-        if (SContains(_portPluginMap, acceptPort)) {
-            BedrockPlugin* plugin = _portPluginMap[acceptPort];
-            // Allow the plugin to process this
-            SINFO("Plugin '" << plugin->getName() << "' accepted a socket from '" << s->addr << "'");
-            plugin->onPortAccept(s);
-
-            // Remember that this socket is owned by this plugin.
-            s->data = plugin;
-        }
+    // Make a list of ports to accept on.
+    // We'll check the control port, command port, and any plugin ports for new connections.
+    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPort, _controlPort};
+    for (auto& p : _portPluginMap) {
+        portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
     }
-}
 
-STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& portOut) {
-    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
-    portOut = 0;
-    Socket* socket = nullptr;
+    // Try each port.
+    for (auto portWrapper : portList) {
+        const unique_ptr<Port>& port = portWrapper.get();
+        // Skip null ports (if the command or control port are closed).
+        if (!port) {
+            continue;
+        }
 
-    // See if we can accept on any port
-    lock_guard <decltype(portListMutex)> lock(portListMutex);
-    for (Port& port : portList) {
-        // Try to accept on the port and wrap in a socket
-        sockaddr_in addr;
-        int s = S_accept(port.s, addr, true); // Note that this sets the newly accepted socket to be blocking.
-        if (s > 0) {
-            SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
+        // Accept as many sockets as we can.
+        while (true) {
+            sockaddr_in addr;
+            int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
+
+            // If we got an error or no socket, done accepting for now.
+            if (s <= 0) {
+                break;
+            }
+
+            // Otherwise create the object for this new socket.
+            SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
             Socket socket(s, Socket::CONNECTED);
             socket.addr = addr;
 
-            // Record what port it was accepted on
-            portOut = &port;
+            // If it came from a plugin, record that.
+            auto plugin = _portPluginMap.find(port);
+            if (plugin != _portPluginMap.end()) {
+                socket.data = plugin->second;
+            }
 
-            // Start up the thread for this socket.
+            // And start up this socket's thread.
             _outstandingSocketThreads++;
-            thread(&BedrockServer::handleSocket, this, move(socket), &port == _controlPort).detach();
+            thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort).detach();
         }
     }
-
-    return socket;
 }
 
 unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket) {

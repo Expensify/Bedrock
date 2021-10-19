@@ -5,10 +5,14 @@
 struct STCPServer : public STCPManager {
 
     // Stores information about a port
-    struct Port {
+    class Port {
+      public:
+        Port(int _s, string _host);
+        ~Port();
+
         // Attributes
-        int s;
-        string host;
+        const int s;
+        const string host;
     };
 
     // Listens on a given port and accepts sockets, and shuts them down
@@ -18,28 +22,18 @@ struct STCPServer : public STCPManager {
     virtual ~STCPServer();
 
     // Begins listening on a new port
-    Port* openPort(const string& host);
-
-    // Closes all open ports, allowing for exceptions.
-    void closePorts(list<Port*> except = {});
+    unique_ptr<Port> openPort(const string& host);
 
     // Tries to accept a new incoming socket
-    Socket* acceptSocket(Port*& port);
-    Socket* acceptSocket() {
-        Port* ignore;
-        return acceptSocket(ignore);
-    }
+    Socket* acceptSocket(unique_ptr<Port>& port);
 
     // Updates all managed ports and sockets
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm);
 
     // Attributes
-    list<Port> portList;
+    unique_ptr<Port> port;
 
     // Do we need a mutex protecting this? Depends.
     list<STCPManager::Socket*> socketList;
-
-    // Protect access to to the port list when multiple threads insert and delete from it.
-    mutex portListMutex;
 };
