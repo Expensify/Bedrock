@@ -62,10 +62,6 @@ class SStandaloneHTTPSManager : public STCPManager {
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
-
-    // SStandaloneHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
-    // multiple threads can add/remove from them.
-    recursive_mutex _listMutex;
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {

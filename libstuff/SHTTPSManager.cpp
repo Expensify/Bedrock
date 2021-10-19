@@ -69,29 +69,20 @@ SStandaloneHTTPSManager::Socket* SStandaloneHTTPSManager::openSocket(const strin
 
 void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
     // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
     STCPManager::closeSocket(socket);
 }
 
 void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList) {
     // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    list<STCPManager::Socket*> socketList;
     for (auto& t : transactionList) {
-        socketList.push_back(t->s);
+        return STCPManager::prePoll(fdm, *t->s);
     }
-    return STCPManager::prePoll(fdm, socketList);
 }
 
 void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, uint64_t timeoutMS) {
-    SAUTOLOCK(_listMutex);
-    list<STCPManager::Socket*> socketList;
     for (auto& t : transactionList) {
-        socketList.push_back(t->s);
+        STCPManager::postPoll(fdm, *t->s);
     }
-
-    // Let the base class do its thing
-    STCPManager::postPoll(fdm, socketList);
 
     // Update each of the active requests
     uint64_t timeout = timeoutMS * 1000;
@@ -177,7 +168,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
-    SAUTOLOCK(_listMutex);
     return transaction;
 }
 
@@ -211,7 +201,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    SAUTOLOCK(_listMutex);
     return transaction;
 }
 

@@ -245,10 +245,11 @@ class BedrockServer : public SQLiteServer {
 
     // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
     // will not be managed by that poll loop, instead, it starts a new thread.
+    // TODO: That socket list is going away. Fix the comment.
     STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket* s, bool isControl);
+    void handleSocket(Socket&& s, bool isControl);
 
   private:
     // The name of the sync thread.
@@ -445,7 +446,7 @@ class BedrockServer : public SQLiteServer {
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 
     // Setup a new command from a bare request.
-    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s);
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on

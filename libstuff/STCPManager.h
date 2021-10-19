@@ -22,6 +22,7 @@ struct STCPManager {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
+        Socket(Socket&& from);
         ~Socket();
         // Attributes
         int s;
@@ -71,8 +72,8 @@ struct STCPManager {
 
     // Updates all managed sockets
     // TODO: Actually explain what these do.
-    void prePoll(fd_map& fdm, list<Socket*> socketList);
-    void postPoll(fd_map& fdm, list<Socket*> socketList);
+    static void prePoll(fd_map& fdm, Socket& socket);
+    static void postPoll(fd_map& fdm, Socket& socket);
 
     // Opens outgoing socket
     Socket* openSocket(const string& host, SX509* x509 = nullptr);

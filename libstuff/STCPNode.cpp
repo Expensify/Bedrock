@@ -108,8 +108,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Accept any new peers
     Socket* socket = nullptr;
-    while ((socket = acceptSocket()))
+    while ((socket = acceptSocket())) {
         acceptedSocketList.push_back(socket);
+    }
 
     // Process the incoming sockets
     list<Socket*>::iterator nextSocketIt = acceptedSocketList.begin();

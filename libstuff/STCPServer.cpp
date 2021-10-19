@@ -66,6 +66,7 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
             socket = new Socket(s, Socket::CONNECTED);
             socket->addr = addr;
+            // Pretty sure these leak.
             socketList.push_back(socket);
 
             // Try to read immediately
@@ -81,7 +82,9 @@ STCPManager::Socket* STCPServer::acceptSocket(Port*& portOut) {
 
 void STCPServer::prePoll(fd_map& fdm) {
     // Call the base class
-    STCPManager::prePoll(fdm, socketList);
+    for (auto& s : socketList) {
+        STCPManager::prePoll(fdm, *s);
+    }
 
     // Add the ports
     lock_guard <decltype(portListMutex)> lock(portListMutex);
@@ -93,5 +96,7 @@ void STCPServer::prePoll(fd_map& fdm) {
 void STCPServer::postPoll(fd_map& fdm) {
     // Process all the existing sockets.
     // FIXME: Detect port failure
-    STCPManager::postPoll(fdm, socketList);
+    for (auto& s : socketList) {
+        STCPManager::postPoll(fdm, *s);
+    }
 }

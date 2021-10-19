@@ -1340,15 +1340,6 @@ BedrockServer::~BedrockServer() {
     }
     SINFO("Threads closed.");
 
-    if (socketList.size()) {
-        SWARN("Still have " << socketList.size() << " entries in socketList.");
-        for (list<Socket*>::iterator socketIt = socketList.begin(); socketIt != socketList.end();) {
-            // Shut it down and go to the next (because closeSocket will invalidate this iterator otherwise)
-            Socket* s = *socketIt++;
-            closeSocket(s);
-            socketList.remove(s);
-        }
-    }
     if (_outstandingSocketThreads) {
         SWARN("Shutting down with " << _outstandingSocketThreads << " socket threads remaining.");
     }
@@ -1501,20 +1492,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
-        if ((socketList.empty() && !_outstandingSocketThreads) || _gracefulShutdownTimeout.ringing()) {
-            _lastChance = 0;
-
-            // We empty the socket list here, we will no longer allow new requests to come in, as the sync node can
-            // shutdown any time after here, and we'll have no way to handle new requests.
-            if (socketList.size()) {
-                SINFO("Killing " << socketList.size() << " remaining sockets at graceful shutdown timeout.");
-                while(socketList.size()) {
-                    auto s = socketList.front();
-                    closeSocket(s);
-                    socketList.remove(s);
-                }
-            }
-
+        if (!_outstandingSocketThreads || _gracefulShutdownTimeout.ringing()) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
         if (_outstandingSocketThreads) {
@@ -2054,22 +2032,22 @@ STCPManager::Socket* BedrockServer::acceptUnlistedSocket(STCPServer::Port*& port
         int s = S_accept(port.s, addr, true); // Note that this sets the newly accepted socket to be blocking.
         if (s > 0) {
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port.host << "'");
-            socket = new Socket(s, Socket::CONNECTED);
-            socket->addr = addr;
+            Socket socket(s, Socket::CONNECTED);
+            socket.addr = addr;
 
             // Record what port it was accepted on
             portOut = &port;
 
             // Start up the thread for this socket.
             _outstandingSocketThreads++;
-            thread(&BedrockServer::handleSocket, this, socket, &port == _controlPort).detach();
+            thread(&BedrockServer::handleSocket, this, move(socket), &port == _controlPort).detach();
         }
     }
 
     return socket;
 }
 
-unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket* s) {
+unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket) {
     SAUTOPREFIX(request);
 
     bool fireAndForget = false;
@@ -2081,7 +2059,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         if (_shutdownState.load() != RUNNING) {
             response["Connection"] = "close";
         }
-        s->send(response.serialize());
+        socket.send(response.serialize());
         fireAndForget = true;
         
         // If we're shutting down, discard this command, we won't wait for the future.
@@ -2094,7 +2072,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     }
 
     // Get the source ip of the command.
-    char *ip = inet_ntoa(s->addr.sin_addr);
+    char *ip = inet_ntoa(socket.addr.sin_addr);
     if (ip != "127.0.0.1"s) {
         // We only add this if it's not localhost because existing code expects commands that come from
         // localhost to have it blank.
@@ -2104,7 +2082,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
     SINFO("Deserialized command " << command->request.methodLine);
-    command->socket = fireAndForget ? nullptr : s;
+    command->socket = fireAndForget ? nullptr : &socket;
 
     if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
         command->writeConsistency = SQLiteNode::QUORUM;
@@ -2118,12 +2096,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // And we and keep track of the client that initiated this command, so we can respond later, except
     // if we received connection:forget in which case we don't respond later
-    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : s->id;
+    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : socket.id;
 
     return command;
 }
 
-void BedrockServer::handleSocket(Socket* s, bool isControl) {
+void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
     shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
     if (isControl) {
         controlPortLock.lock();
@@ -2135,7 +2113,7 @@ void BedrockServer::handleSocket(Socket* s, bool isControl) {
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
     // waits for it to get processed, deserializes another, etc, until the socket gets closed.
     // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
-    while (s->state != STCPManager::Socket::CLOSED) {
+    while (socket.state != STCPManager::Socket::CLOSED) {
         // We are going to call `poll` in a loop with only this one socket as a file descriptor.
         // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
         // It may be waiting for it's own data before it can send us a request, or it may have just forgotten to
@@ -2145,68 +2123,68 @@ void BedrockServer::handleSocket(Socket* s, bool isControl) {
         // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
         // until we get some data or a disconnection.
         int pollResult = 0;
-        struct pollfd pollStruct = { s->s, POLLIN, 0 };
+        struct pollfd pollStruct = { socket.s, POLLIN, 0 };
 
         // As long as `poll` returns 0 we've timed out, indicating that we're still waiting for something to happen. In
         // that case, we'll loop again *unless* we're shutting down.
         while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
             if (_shutdownState != RUNNING) {
                 SINFO("Socket thread exiting because no data and shutting down.");
-                s->state = Socket::CLOSED;
-                ::shutdown(s->s, SHUT_RDWR);
+                socket.state = Socket::CLOSED;
+                ::shutdown(socket.s, SHUT_RDWR);
                 break;
             } 
         }
 
         // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
-        if (s->state != STCPManager::Socket::CLOSED) {
+        if (socket.state != STCPManager::Socket::CLOSED) {
             if (pollResult < 0) {
                 // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
                 SINFO("Poll failed: " << strerror(errno));
-                s->state = Socket::CLOSED;
-                ::shutdown(s->s, SHUT_RDWR);
+                socket.state = Socket::CLOSED;
+                ::shutdown(socket.s, SHUT_RDWR);
             } else {
                 // We've either got new data, or an error on the socket. Let's determine which by trying to read.
-                if (!s->recv()) {
+                if (!socket.recv()) {
                     // If reading failed, then the socket was closed.
-                    s->state = Socket::CLOSED;
-                    ::shutdown(s->s, SHUT_RDWR);
+                    socket.state = Socket::CLOSED;
+                    ::shutdown(socket.s, SHUT_RDWR);
                 }
             }
         }
 
         // Now, if the socket hasn't been closed, we'll try to handle the new data on it appropriately.
-        if (s->state == STCPManager::Socket::CONNECTED) {
+        if (socket.state == STCPManager::Socket::CONNECTED) {
             // If there's a request, we'll dequeue it.
             SData request;
 
             // If the socket is owned by a plugin, we let the plugin populate our request.
-            BedrockPlugin* plugin = static_cast<BedrockPlugin*>(s->data);
+            BedrockPlugin* plugin = static_cast<BedrockPlugin*>(socket.data);
             if (plugin) {
                 // Call the plugin's handler.
-                plugin->onPortRecv(s, request);
+                plugin->onPortRecv(&socket, request);
                 if (!request.empty()) {
                     // If it populated our request, then we'll save the plugin name so we can handle the response.
                     request["plugin"] = plugin->getName();
                 }
             } else {
                 // Otherwise, handle any default request.
-                int requestSize = request.deserialize(s->recvBuffer);
-                s->recvBuffer.consumeFront(requestSize);
+                int requestSize = request.deserialize(socket.recvBuffer);
+                socket.recvBuffer.consumeFront(requestSize);
             }
 
             // If we have a populated request, from either a plugin or our default handling, we'll queue up the
             // command.
             if (!request.empty()) {
                 // Make a command from our request.
-                unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), s);
+                unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), socket);
 
                 if (!command) {
                     // If we couldn't build a command, this was some sort of unusual exception case (like trying to
                     // schedule a command in the future while shutting down). We can just give up.
                     SINFO("No command from request, closing socket.");
-                    s->state = Socket::CLOSED;
-                    ::shutdown(s->s, SHUT_RDWR);
+                    socket.state = Socket::CLOSED;
+                    ::shutdown(socket.s, SHUT_RDWR);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
                     // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
                     // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
@@ -2264,21 +2242,20 @@ void BedrockServer::handleSocket(Socket* s, bool isControl) {
             } else {
                 // If we weren't able to deserialize a complete request, and we're shutting down, give up.
                 if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
-                    SINFO("Closing socket " << s->id << " with incomplete data and no pending command: shutting down.");
+                    SINFO("Closing socket " << socket.id << " with incomplete data and no pending command: shutting down.");
                 }
             }
-        } else if (s->state == STCPManager::Socket::SHUTTINGDOWN || s->state == STCPManager::Socket::CLOSED) {
+        } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
             // Do nothing here except prevent the warning below from firing. This loop should exit on the next
             // iteration.
         } else {
-            SWARN("Socket in unhandled state: " << s->state);
+            SWARN("Socket in unhandled state: " << socket.state);
         }
     }
 
     // At this point out socket is closed and we can clean up.
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
-    delete s;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 }
 
