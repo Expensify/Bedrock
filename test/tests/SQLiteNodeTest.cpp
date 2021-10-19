@@ -47,7 +47,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         strcpy(filename, filenameTemplate);
         int fd = mkstemp(filename);
         close(fd);
-        SQLitePool dbPool(10, filename, 1000000, 5000, 0);
+        shared_ptr<SQLitePool> dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
         TestServer server("");
         string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
         SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
