@@ -40,7 +40,7 @@ class SQLiteNode : public STCPNode {
     };
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name, const string& host,
+    SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
                const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
     ~SQLiteNode();
 
@@ -114,7 +114,7 @@ class SQLiteNode : public STCPNode {
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
     // replication threads as required. It's passed in via the constructor.
-    SQLitePool& _dbPool;
+    shared_ptr<SQLitePool> _dbPool;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()

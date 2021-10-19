@@ -93,12 +93,12 @@ const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString
     return peerList;
 }
 
-SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& name,
+SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const bool useParallelReplication)
     : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
-      _db(_dbPool.getBase()),
+      _db(_dbPool->getBase()),
       _state(UNKNOWN),
       _commitState(CommitState::UNINITIALIZED),
       _server(server),
@@ -130,8 +130,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, SQLitePool& dbPool, const string& n
     _changeState(SEARCHING);
 
     // Make sure we get notified when the DB needs to checkpoint.
-    _dbPool.getBase().addCheckpointListener(_localCommitNotifier);
-    _dbPool.getBase().addCheckpointListener(_leaderCommitNotifier);
+    _dbPool->getBase().addCheckpointListener(_localCommitNotifier);
+    _dbPool->getBase().addCheckpointListener(_leaderCommitNotifier);
 }
 
 SQLiteNode::~SQLiteNode() {
@@ -140,8 +140,8 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 
     // Don't notify these, they won't exist anymore.
-    _dbPool.getBase().removeCheckpointListener(_localCommitNotifier);
-    _dbPool.getBase().removeCheckpointListener(_leaderCommitNotifier);
+    _dbPool->getBase().removeCheckpointListener(_localCommitNotifier);
+    _dbPool->getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
@@ -149,7 +149,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
     SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
 
     // Allow the DB handle to be returned regardless of how this function exits.
-    SQLiteScopedHandle dbScope(node._dbPool, sqlitePoolIndex);
+    SQLiteScopedHandle dbScope(*node._dbPool, sqlitePoolIndex);
     SQLite& db = dbScope.db();
 
     bool goSearchingOnExit = false;
@@ -1661,7 +1661,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 AutoTimerTime time(_multiReplicationThreadSpawn);
-                thread(replicate, ref(*this), peer, message, _dbPool.getIndex(false)).detach();
+                thread(replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
                 SINFO("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {
