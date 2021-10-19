@@ -34,31 +34,13 @@ SStandaloneHTTPSManager::SStandaloneHTTPSManager(const string& pem, const string
 }
 
 SStandaloneHTTPSManager::~SStandaloneHTTPSManager() {
-    SAUTOLOCK(_listMutex);
-
-    // Clean up outstanding transactions
-    SASSERTWARN(_activeTransactionList.empty());
-    while (!_activeTransactionList.empty()) {
-        closeTransaction(_activeTransactionList.front());
-    }
-    SASSERTWARN(_completedTransactionList.empty());
-    while (!_completedTransactionList.empty()) {
-        closeTransaction(_completedTransactionList.front());
-    }
 }
 
 void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction == nullptr) {
         return;
     }
-    SAUTOLOCK(_listMutex);
 
-    // Clean up the socket and done
-    _activeTransactionList.remove(transaction);
-    _completedTransactionList.remove(transaction);
-    if (transaction->s) {
-        closeSocket(transaction->s);
-    }
     transaction->s = nullptr;
     delete transaction;
 }
@@ -91,33 +73,41 @@ void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
     STCPManager::closeSocket(socket);
 }
 
-void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<STCPManager::Socket*>& socketList) {
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList) {
     // Just call the base class function but in a thread-safe way.
     SAUTOLOCK(_listMutex);
+    list<STCPManager::Socket*> socketList;
+    for (auto& t : transactionList) {
+        socketList.push_back(t->s);
+    }
     return STCPManager::prePoll(fdm, socketList);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity) {
     list<SStandaloneHTTPSManager::Transaction*> completedRequests;
     map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, socketList, nextActivity, completedRequests, transactionTimeouts);
+    postPoll(fdm, transactionList, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
     map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, socketList, nextActivity, completedRequests, transactionTimeouts);
+    postPoll(fdm, transactionList, nextActivity, completedRequests, transactionTimeouts);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& socketList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
+    list<STCPManager::Socket*> socketList;
+    for (auto& t : transactionList) {
+        socketList.push_back(t->s);
+    }
 
     // Let the base class do its thing
     STCPManager::postPoll(fdm, socketList);
 
     // Update each of the active requests
     uint64_t timeout = timeoutMS * 1000;
-    list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
-    while (nextIt != _activeTransactionList.end()) {
+    list<Transaction*>::iterator nextIt = transactionList.begin();
+    while (nextIt != transactionList.end()) {
         // Did we get any responses?
         list<Transaction*>::iterator activeIt = nextIt++;
         Transaction* active = *activeIt;
@@ -170,8 +160,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<STCPManager::Socket*>& 
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
                   << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
-            _activeTransactionList.erase(activeIt);
-            _completedTransactionList.push_back(active);
             completedRequests.push_back(active);
         }
     }
@@ -202,7 +190,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     transaction->response = 503;
     transaction->finished = STimeNow();
     SAUTOLOCK(_listMutex);
-    _completedTransactionList.push_front(transaction);
     return transaction;
 }
 
@@ -237,7 +224,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
     return transaction;
 }
 

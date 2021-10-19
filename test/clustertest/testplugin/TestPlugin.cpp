@@ -488,6 +488,5 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
 
     // Keep track of the transaction.
     SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
     return transaction;
 }

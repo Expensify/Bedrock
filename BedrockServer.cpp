@@ -310,8 +310,10 @@ void BedrockServer::sync()
         // activity. Once any of them has activity (or the timeout ends), poll will return.
         fd_map fdm;
 
-        // Prepare our plugins for `poll` (for instance, in case they're making HTTP requests).
-        _prePollCommands(fdm);
+        // Prepare our commands for `poll` (for instance, in case they're making HTTP requests).
+        for (auto& command : _outstandingHTTPSCommands) {
+            command->prePoll(fdm);
+        }
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _syncNode->prePoll(fdm);
@@ -1412,6 +1414,7 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
+    // TODO: Base class method should get called directly (maybe it needs to be virtual).
     STCPServer::prePoll(fdm);
 }
 
@@ -1895,14 +1898,6 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     return !db.getUncommittedQuery().empty();
 }
 
-void BedrockServer::_prePollCommands(fd_map& fdm) {
-    for (auto& p : _outstandingHTTPSRequests) {
-        auto transaction = p.first;
-        list<STCPManager::Socket*> socketList = {transaction->s};
-        transaction->manager.prePoll(fdm, socketList);
-    }
-}
-
 void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     // Only pass timeouts for transactions belonging to timed out commands.
     uint64_t now = STimeNow();
@@ -1924,13 +1919,13 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     for (auto& p : _outstandingHTTPSRequests) {
         auto transaction = p.first;
         auto _syncNodeCopy = atomic_load(&_syncNode);
-        list<STCPManager::Socket*> socketList = {transaction->s};
+        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
         if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
             // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
-            transaction->manager.postPoll(fdm, socketList, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
+            transaction->manager.postPoll(fdm, transactionList, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
         } else {
             // Otherwise, use the default timeout.
-            transaction->manager.postPoll(fdm, socketList, nextActivity, completedHTTPSRequests, transactionTimeouts);
+            transaction->manager.postPoll(fdm, transactionList, nextActivity, completedHTTPSRequests, transactionTimeouts);
         }
 
         // Move any fully completed commands back to the main queue.

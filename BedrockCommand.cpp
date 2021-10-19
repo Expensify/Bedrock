@@ -220,3 +220,16 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 }
+
+void BedrockCommand::prePoll(fd_map& fdm)
+{
+    for (auto& transaction : httpsRequests) {
+        // If we could not invert this, and just pass `httpsRequests` directly to prePoll, that'd be great.
+        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
+        transaction->manager.prePoll(fdm, transactionList);
+    }
+}
+
+void BedrockCommand::postPost(fd_map& fdm, uint64_t nextActivity)
+{
+}

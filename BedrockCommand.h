@@ -112,6 +112,9 @@ class BedrockCommand : public SQLiteCommand {
     // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
     virtual bool onlyProcessOnSyncThread() { return false; }
 
+    void prePoll(fd_map& fdm);
+    void postPost(fd_map& fdm, uint64_t nextActivity);
+
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
     // for the sake of determining whether they're likely to cause a crash.
     // i.e., if this command has set this to {userID, reportList}, and the server crashes while processing this
