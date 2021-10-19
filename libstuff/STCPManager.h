@@ -79,20 +79,17 @@ struct STCPManager {
 
     static unique_ptr<Port> openPort(const string& host);
 
-    // Cleans up outstanding sockets
-    virtual ~STCPManager();
-
     // Updates all managed sockets
     // TODO: Actually explain what these do.
     static void prePoll(fd_map& fdm, Socket& socket);
     static void postPoll(fd_map& fdm, Socket& socket);
 
     // Opens outgoing socket
-    Socket* openSocket(const string& host, SX509* x509 = nullptr);
+    static Socket* openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
-    void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
+    static void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
 
     // Hard terminate a socket
-    void closeSocket(Socket* socket);
+    static void closeSocket(Socket* socket);
 };

@@ -8,9 +8,6 @@
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
-STCPManager::~STCPManager() {
-}
-
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
 // Add all the sockets
     // Make sure it's not closed
