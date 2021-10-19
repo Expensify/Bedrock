@@ -219,6 +219,20 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* 
     sentBytes(0), recvBytes(0)
 { }
 
+STCPManager::Socket::Socket(const string& host, SX509* x509)
+  : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509),
+    sentBytes(0), recvBytes(0)
+{
+    SASSERT(SHostIsValid(host));
+    s = S_socket(host, true, false, false);
+    if (s < 0) {
+        STHROW("Couldn't open socket to " + host);
+    }
+    ssl = x509 ? SSSLOpen(s, x509) : nullptr;
+    SASSERT(!x509 || ssl);
+}
+
 STCPManager::Socket::Socket(Socket&& from)
   : s(from.s),
     addr(from.addr),
@@ -250,22 +264,6 @@ STCPManager::Socket::~Socket() {
     if (_x509) {
         SX509Close(_x509);
     }
-}
-
-STCPManager::Socket* STCPManager::openSocket(const string& host, SX509* x509) {
-    // Try to open the socket
-    SASSERT(SHostIsValid(host));
-    int s = S_socket(host, true, false, false);
-    if (s < 0) {
-        return 0;
-    }
-
-    // Create a new socket
-    Socket* socket = new Socket(s, Socket::CONNECTING, x509);
-    socket->ssl = x509 ? SSSLOpen(socket->s, x509) : 0;
-    SASSERT(!x509 || socket->ssl);
-
-    return socket;
 }
 
 void STCPManager::Socket::resetCounters() {

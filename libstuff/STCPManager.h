@@ -21,6 +21,7 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
+        Socket(const string& host, SX509* x509 = nullptr);
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
         Socket(Socket&& from);
         ~Socket();
@@ -83,9 +84,6 @@ struct STCPManager {
     static void postPoll(fd_map& fdm, Socket& socket);
 
     static unique_ptr<Port> openPort(const string& host);
-
-    // Opens outgoing socket
-    static Socket* openSocket(const string& host, SX509* x509 = nullptr);
 
     // Gracefully shuts down a socket
     static void shutdownSocket(Socket* socket, int how = SHUT_RDWR);

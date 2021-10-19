@@ -324,9 +324,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Try again
                 PINFO("Retrying the connection");
                 peer->reset();
-                peer->socket = openSocket(peer->host);
-                socketList.push_back(peer->socket);
-                if (peer->socket) {
+                try {
+                    peer->socket = new Socket(peer->host);
+                    socketList.push_back(peer->socket);
+
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
                     SData login("NODE_LOGIN");
@@ -334,9 +335,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     peer->socket->send(login.serialize());
                     _sendPING(peer);
                     _onConnect(peer);
-                } else {
+                } catch (const SException& exception) {
                     // Failed to open -- try again later
-                    SWARN("Failed to open socket '" << peer->host << "', trying again in 60s");
+                    SWARN(exception.what());
                     peer->failedConnections++;
                     peer->nextReconnect = STimeNow() + STIME_US_PER_M;
                 }

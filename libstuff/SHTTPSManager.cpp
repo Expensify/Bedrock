@@ -182,8 +182,10 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    Socket* s = openSocket(host, x509);
-    if (!s) {
+    Socket* s = nullptr;
+    try {
+        s = new Socket(host, x509);
+    } catch (const SException& exception) {
         delete transaction;
         delete x509;
         return _createErrorTransaction();
