@@ -70,6 +70,7 @@ struct STCPManager {
     virtual ~STCPManager();
 
     // Updates all managed sockets
+    // TODO: Actually explain what these do.
     void prePoll(fd_map& fdm, list<Socket*> socketList);
     void postPoll(fd_map& fdm, list<Socket*> socketList);
 
@@ -81,7 +82,4 @@ struct STCPManager {
 
     // Hard terminate a socket
     void closeSocket(Socket* socket);
-
-    // Attributes
-    //list<Socket*> socketList;
 };

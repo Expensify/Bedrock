@@ -9,7 +9,6 @@
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 STCPManager::~STCPManager() {
-    //SASSERTWARN(socketList.empty());
 }
 
 void STCPManager::prePoll(fd_map& fdm, list<Socket*> socketList) {
@@ -217,7 +216,6 @@ void STCPManager::closeSocket(Socket* socket) {
     // Clean up this socket
     SASSERT(socket);
     SDEBUG("Closing socket '" << socket->addr << "'");
-    //socketList.remove(socket);
 
     delete socket;
 }
