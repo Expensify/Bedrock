@@ -460,7 +460,9 @@ class BedrockServer : public SQLiteServer {
     // the current control command).
     shared_mutex _controlPortExclusionMutex;
 
-    // A pointer to the current pool of DB handles we can use. Only valid during the lifetime of the sync thread, and
-    // destroyed when it does not exist. This releases all DB handles so we can take backups.
-    unique_ptr<SQLitePool> _dbPool;
+    // A pointer to the current pool of DB handles we can use. This is created by the sync thread and destroyed when it
+    // exits. However, because the syncNode stores this, and it's possible for socket threads to hold a handle to the
+    // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
+    // destroy the pool at shutdown.
+    shared_ptr<SQLitePool> _dbPool;
 };

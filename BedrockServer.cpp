@@ -180,7 +180,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_unique<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -190,7 +190,7 @@ void BedrockServer::sync()
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, *_dbPool, args["-nodeName"], args["-nodeHost"],
+    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
 
@@ -729,6 +729,7 @@ void BedrockServer::sync()
     // Release the current DB pool, and zero out our pointer.
     // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
     // sync thread.
+    // If there are socket threads in existance, they can be looking at this through a syncThread copy.
     _dbPool = nullptr;
 
     // We're really done, store our flag so main() can be aware.
