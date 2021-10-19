@@ -113,7 +113,7 @@ class BedrockCommand : public SQLiteCommand {
     virtual bool onlyProcessOnSyncThread() { return false; }
 
     void prePoll(fd_map& fdm);
-    void postPost(fd_map& fdm, uint64_t nextActivity);
+    void postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS);
 
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
     // for the sake of determining whether they're likely to cause a crash.

@@ -230,6 +230,12 @@ void BedrockCommand::prePoll(fd_map& fdm)
     }
 }
 
-void BedrockCommand::postPost(fd_map& fdm, uint64_t nextActivity)
+void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
 {
+    for (auto& transaction : httpsRequests) {
+        transaction->timeoutAt = _timeout;
+        // Same as above.
+        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
+        transaction->manager.postPoll(fdm, transactionList, nextActivity, maxWaitMS);
+    }
 }

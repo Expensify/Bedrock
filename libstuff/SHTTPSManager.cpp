@@ -83,18 +83,7 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<SStandaloneHTTPSManager:
     return STCPManager::prePoll(fdm, socketList);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity) {
-    list<SStandaloneHTTPSManager::Transaction*> completedRequests;
-    map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, transactionList, nextActivity, completedRequests, transactionTimeouts);
-}
-
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
-    map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, transactionList, nextActivity, completedRequests, transactionTimeouts);
-}
-
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, uint64_t timeoutMS) {
     SAUTOLOCK(_listMutex);
     list<STCPManager::Socket*> socketList;
     for (auto& t : transactionList) {
@@ -122,8 +111,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager
         uint64_t now = STimeNow();
         uint64_t elapsed = now - timeoutFromTime;
         int size = active->fullResponse.deserialize(active->s->recvBuffer);
-        auto timeoutIt = transactionTimeouts.find(active);
-        bool specificallyTimedOut = timeoutIt != transactionTimeouts.end() && timeoutIt->second < now;
+        bool specificallyTimedOut = active->timeoutAt < now;
         if (size) {
             // Consume how much we read.
             active->s->recvBuffer.consumeFront(size);
@@ -160,7 +148,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager
             // Switch lists
             SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
                   << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
-            completedRequests.push_back(active);
         }
     }
 }
@@ -169,6 +156,7 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     s(nullptr),
     created(STimeNow()),
     finished(0),
+    timeoutAt(0),
     response(0),
     manager(manager_),
     isDelayedSend(0),

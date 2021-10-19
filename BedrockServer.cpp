@@ -311,9 +311,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Prepare our commands for `poll` (for instance, in case they're making HTTP requests).
-        for (auto& command : _outstandingHTTPSCommands) {
-            command->prePoll(fdm);
-        }
+        _prePollCommands(fdm);
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _syncNode->prePoll(fdm);
@@ -1898,39 +1896,43 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     return !db.getUncommittedQuery().empty();
 }
 
+void BedrockServer::_prePollCommands(fd_map& fdm) {
+    lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
+    for (auto& command : _outstandingHTTPSCommands) {
+        command->prePoll(fdm);
+    }
+}
+
 void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
-    // Only pass timeouts for transactions belonging to timed out commands.
-    uint64_t now = STimeNow();
-    map<SHTTPSManager::Transaction*, uint64_t> transactionTimeouts;
-    {
-        lock_guard<mutex> lock(_httpsCommandMutex);
-        auto timeoutIt = _outstandingHTTPSCommands.begin();
-        while (timeoutIt != _outstandingHTTPSCommands.end() && (*timeoutIt)->timeout() < now) {
-            // Add all the transactions for this command, even if some are already complete, they'll just get ignored.
-            SAUTOPREFIX((*timeoutIt)->request);
-            for (auto transaction : (*timeoutIt)->httpsRequests) {
-                transactionTimeouts[transaction] = (*timeoutIt)->timeout();
-            }
-            timeoutIt++;
-        }
-    }
+    lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
 
-    list<SHTTPSManager::Transaction*> completedHTTPSRequests;
-    for (auto& p : _outstandingHTTPSRequests) {
-        auto transaction = p.first;
+    // Because we modify this list as we walk across it, we use an iterator to our current position.
+    auto it = _outstandingHTTPSCommands.begin();
+    while (it != _outstandingHTTPSCommands.end()) {
+        auto& command = *it;
+
+        // By default, we can poll up to 5 min.
+        uint64_t maxWaitMs = 5 * 60 * 1'000;
         auto _syncNodeCopy = atomic_load(&_syncNode);
-        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
         if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
-            // If we're shutting down or standing down, we can't wait minutes for HTTPS requests. They get 5s.
-            transaction->manager.postPoll(fdm, transactionList, nextActivity, completedHTTPSRequests, transactionTimeouts, 5000);
-        } else {
-            // Otherwise, use the default timeout.
-            transaction->manager.postPoll(fdm, transactionList, nextActivity, completedHTTPSRequests, transactionTimeouts);
+            // But if we're trying to shut down, we give up after 5 seconds.
+            maxWaitMs = 5'000;
         }
+        command->postPoll(fdm, nextActivity, maxWaitMs);
 
-        // Move any fully completed commands back to the main queue.
+        // If it finished all it's requests, put it back in the main queue.
+        if (command->areHttpsRequestsComplete()) {
+            SINFO("All HTTPS requests complete, returning to main queue.");
+            // Because set's contain only `const` data, they can't be moved-from without these weird `extract`
+            // semantics. This invalidates our iterator, so we save the one we want before we break it.
+            auto nextIt = next(it);
+            _commandQueue.push(move(_outstandingHTTPSCommands.extract(it).value()));
+            it = nextIt;
+        } else {
+            // otherwise just move on to the next command.
+            it++;
+        }
     }
-    finishWaitingForHTTPS(completedHTTPSRequests);
 }
 
 void BedrockServer::_beginShutdown(const string& reason, bool detach) {
@@ -2283,69 +2285,7 @@ void BedrockServer::handleSocket(Socket* s, bool isControl) {
 void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
     SAUTOPREFIX(command->request);
     lock_guard<mutex> lock(_httpsCommandMutex);
-
-    // If the command has outstanding HTTPS requests, we'll need to save a plain pointer to it.
-    BedrockCommand* commandPtr = 0;
-    for (auto request : command->httpsRequests) {
-        if (!request->response) {
-            // This request is outstanding, save it, and if we haven't saved the pointer to the command, do so now.
-            if (!commandPtr) {
-                // Un-uniquify the unique_ptr. I don't love this, but it works better with the code we've already got.
-                commandPtr = command.get();
-                command.release();
-            }
-            _outstandingHTTPSRequests.emplace(make_pair(request, commandPtr));
-        }
-    }
-
-    // If we had any outstanding requests, we save the command pointer.
-    if (commandPtr) {
-        auto result = _outstandingHTTPSCommands.insert(commandPtr);
-        if (!result.second) {
-            SWARN("Failed to insert command with pending request, likely leaked!");
-        }
-    } else {
-        // This is a warn even though it should work, because it's an unexpected case, and likely would have failed in
-        // the previous version of this code, so we're curious if it ever happens.
-        SWARN("Tried to wait for HTTPS for command, but no pending requests. Returning to main queue.");
-        _commandQueue.push(move(command));
-    }
-}
-
-int BedrockServer::finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests) {
-    lock_guard<mutex> lock(_httpsCommandMutex);
-    int commandsCompleted = 0;
-    for (auto transaction : completedHTTPSRequests) {
-        SAUTOPREFIX(transaction->requestID);
-        auto transactionIt = _outstandingHTTPSRequests.find(transaction);
-        if (transactionIt == _outstandingHTTPSRequests.end()) {
-            // We should never be looking for a transaction in this list that isn't there.
-            SWARN("Couldn't locate transaction in _outstandingHTTPSRequests. Skipping.");
-            continue;
-        }
-        auto commandPtr = transactionIt->second;
-
-        // It's possible that we've already completed this command (imagine if completedHTTPSRequests contained more
-        // than one request for the same command, the first one we looked at will have finished the command), so if we
-        // can't find it in _outstandingHTTPSCommands, it must be done.
-        auto commandPtrIt = _outstandingHTTPSCommands.find(commandPtr);
-        if (commandPtrIt != _outstandingHTTPSCommands.end()) {
-            // I guess it's still here! Is it done?
-            if (commandPtr->areHttpsRequestsComplete()) {
-                // If so, add it back to the main queue, erase its entry in _outstandingHTTPSCommands, and delete it.
-                SINFO("All HTTPS requests complete, returning to main queue.");
-                _commandQueue.push(unique_ptr<BedrockCommand>(commandPtr));
-                _outstandingHTTPSCommands.erase(commandPtrIt);
-                commandsCompleted++;
-            }
-        } else {
-            SINFO("Command not found, possibly completed on previous request.");
-        }
-
-        // Now we can erase the transaction, as it's no longer outstanding.
-        _outstandingHTTPSRequests.erase(transactionIt);
-    }
-    return commandsCompleted;
+    _outstandingHTTPSCommands.insert(move(command));
 }
 
 const atomic<SQLiteNode::State>& BedrockServer::getState() const {
