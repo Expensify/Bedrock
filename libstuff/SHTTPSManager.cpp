@@ -62,11 +62,6 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-SStandaloneHTTPSManager::Socket* SStandaloneHTTPSManager::openSocket(const string& host, SX509* x509) {
-    // Just call the base class function but in a thread-safe way.
-    return STCPManager::openSocket(host, x509);
-}
-
 void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
     // Just call the base class function but in a thread-safe way.
     STCPManager::closeSocket(socket);

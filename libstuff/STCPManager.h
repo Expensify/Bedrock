@@ -77,12 +77,12 @@ struct STCPManager {
         const string host;
     };
 
-    static unique_ptr<Port> openPort(const string& host);
-
     // Updates all managed sockets
     // TODO: Actually explain what these do.
     static void prePoll(fd_map& fdm, Socket& socket);
     static void postPoll(fd_map& fdm, Socket& socket);
+
+    static unique_ptr<Port> openPort(const string& host);
 
     // Opens outgoing socket
     static Socket* openSocket(const string& host, SX509* x509 = nullptr);
