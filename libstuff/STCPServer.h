@@ -29,6 +29,7 @@ struct STCPServer : public STCPManager {
 
     // Updates all managed ports and sockets
     void prePoll(fd_map& fdm);
+    void prePollPort(fd_map& fdm, const unique_ptr<Port>& port) const;
     void postPoll(fd_map& fdm);
 
     // Attributes

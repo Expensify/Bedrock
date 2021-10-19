@@ -50,8 +50,10 @@ void STCPServer::prePoll(fd_map& fdm) {
     for (auto& s : socketList) {
         STCPManager::prePoll(fdm, *s);
     }
+    prePollPort(fdm, port);
+}
 
-    // Add the ports
+void STCPServer::prePollPort(fd_map& fdm, const unique_ptr<Port>& port) const {
     if (port) {
         SFDset(fdm, port->s, SREADEVTS);
     }

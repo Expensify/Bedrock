@@ -1404,6 +1404,12 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
+    prePollPort(fdm, _commandPort);
+    prePollPort(fdm, _controlPort);
+    for (const auto& p : _portPluginMap) {
+        prePollPort(fdm, p.first);
+    }
+
     // TODO: Base class method should get called directly (maybe it needs to be virtual).
     STCPServer::prePoll(fdm);
 }
