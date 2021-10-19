@@ -67,6 +67,18 @@ struct STCPManager {
         uint64_t recvBytes;
     };
 
+    class Port {
+      public:
+        Port(int _s, string _host);
+        ~Port();
+
+        // Attributes
+        const int s;
+        const string host;
+    };
+
+    static unique_ptr<Port> openPort(const string& host);
+
     // Cleans up outstanding sockets
     virtual ~STCPManager();
 

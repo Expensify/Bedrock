@@ -350,3 +350,22 @@ bool STCPManager::Socket::recv() {
     }
     return result;
 }
+
+unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host) {
+    // Open a port on the requested host
+    SASSERT(SHostIsValid(host));
+    int s = S_socket(host, true, true, false);
+    SASSERT(s >= 0);
+    return make_unique<Port>(s, host);
+}
+
+STCPManager::Port::Port(int _s, string _host) : s(_s), host(_host)
+{
+}
+
+STCPManager::Port::~Port()
+{
+    if (s != -1) {
+        ::close(s);
+    }
+}

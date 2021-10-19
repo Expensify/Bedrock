@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libstuff/STCPServer.h>
+#include <libstuff/STCPmanager.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -43,7 +43,7 @@ class AutoTimerTime {
     AutoTimer& _t;
 };
 
-struct STCPNode : public STCPServer {
+struct STCPNode : public STCPManager {
     // Possible states of a node in a DB cluster
     enum State {
         UNKNOWN,
@@ -62,6 +62,7 @@ struct STCPNode : public STCPServer {
     // Updates all peers
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
+    Socket* acceptSocket();
 
     // Represents a single peer in the database cluster
     class Peer {
@@ -142,6 +143,9 @@ struct STCPNode : public STCPServer {
         static bool isPermafollower(const STable& params);
     };
 
+    // Do we need a mutex protecting this? Depends.
+    list<STCPManager::Socket*> socketList;
+
     // Begins listening for connections on a given port
     STCPNode(const string& name, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_ = STIME_US_PER_M);
     virtual ~STCPNode();
@@ -178,6 +182,8 @@ struct STCPNode : public STCPServer {
     AutoTimer _deserializeTimer;
     AutoTimer _sConsumeFrontTimer;
     AutoTimer _sAppendTimer;
+
+    unique_ptr<Port> port;
 };
 
 // serialization for Responses.

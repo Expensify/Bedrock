@@ -1234,11 +1234,11 @@ void BedrockServer::_resetServer() {
     }
 }
 
-BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(""), args(args_), _replicationState(SQLiteNode::LEADING)
+BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING)
 {}
 
 BedrockServer::BedrockServer(const SData& args_)
-  : SQLiteServer(""), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+  : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
@@ -1404,23 +1404,20 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
-    prePollPort(fdm, _commandPort);
-    prePollPort(fdm, _controlPort);
-    for (const auto& p : _portPluginMap) {
-        prePollPort(fdm, p.first);
+    // Add all our ports. There are no sockets directly managed here.
+    if (_commandPort) {
+        SFDset(fdm, _commandPort->s, SREADEVTS);
     }
-
-    // TODO: Base class method should get called directly (maybe it needs to be virtual).
-    STCPServer::prePoll(fdm);
+    if (_controlPort) {
+        SFDset(fdm, _controlPort->s, SREADEVTS);
+    }
+    for (const auto& p : _portPluginMap) {
+        SFDset(fdm, p.first->s, SREADEVTS);
+    }
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    // Let the base class do its thing. We lock around this because we allow worker threads to modify the sockets (by
-    // writing to them, but this can truncate send buffers).
-    {
-        STCPServer::postPoll(fdm);
-    }
-
+    // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
     if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) &&

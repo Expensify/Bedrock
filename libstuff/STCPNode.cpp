@@ -10,8 +10,13 @@
 #define SLOGPREFIX "{" << name << "} "
 
 STCPNode::STCPNode(const string& name_, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), peerList(_peerList), _deserializeTimer("STCPNode::deserialize"),
-      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append") {
+    : STCPManager(), name(name_), recvTimeout(recvTimeout_), peerList(_peerList), _deserializeTimer("STCPNode::deserialize"),
+      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append")
+{
+    // Initialize
+    if (!host.empty()) {
+        port = openPort(host);
+    }
 }
 
 STCPNode::~STCPNode() {
@@ -94,21 +99,49 @@ uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
     return 0;
 }
 
+STCPManager::Socket* STCPNode::acceptSocket() {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    Socket* socket = nullptr;
+
+    // Try to accept on the port and wrap in a socket
+    sockaddr_in addr;
+    int s = S_accept(port->s, addr, false);
+    if (s > 0) {
+        // Received a socket, wrap
+        SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+        socket = new Socket(s, Socket::CONNECTED);
+        socket->addr = addr;
+        // Pretty sure these leak.
+        socketList.push_back(socket);
+
+        // Try to read immediately
+        S_recvappend(socket->s, socket->recvBuffer);
+    }
+
+    return socket;
+}
+
 void STCPNode::prePoll(fd_map& fdm) {
-    // Let the base class do its thing
-    return STCPServer::prePoll(fdm);
+    if (port) {
+        SFDset(fdm, port->s, SREADEVTS);
+    }
+    for (auto& s : socketList) {
+        STCPManager::prePoll(fdm, *s);
+    }
 }
 
 void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
     {
         AutoTimerTime appendTime(_sAppendTimer);
-        STCPServer::postPoll(fdm);
+        for (auto& s : socketList) {
+            STCPManager::postPoll(fdm, *s);
+        }
     }
 
     // Accept any new peers
     Socket* socket = nullptr;
-    while ((socket = acceptSocket(port))) {
+    while ((socket = acceptSocket())) {
         acceptedSocketList.push_back(socket);
     }
 
