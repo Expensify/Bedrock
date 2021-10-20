@@ -1,7 +1,7 @@
 #pragma once
 class SQLiteCommand;
 
-#include <libstuff/STCPmanager.h>
+#include <libstuff/STCPManager.h>
 
 // This is an abstract class to define the interface for a "server" that a SQLiteNode can communicate with to process
 // commands it receives.
