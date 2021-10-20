@@ -32,10 +32,10 @@ class SStandaloneHTTPSManager : public STCPManager {
     SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SStandaloneHTTPSManager();
 
-    void prePoll(fd_map& fdm, Transaction& transactionList);
+    void prePoll(fd_map& fdm, Transaction& transaction);
 
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
-    void postPoll(fd_map& fdm, Transaction& transactionList, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
+    void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
