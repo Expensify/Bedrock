@@ -2370,7 +2370,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
     if (peer->socket) {
         // Reset
         SHMMM("Reconnecting to '" << peer->name << "'");
-        shutdownSocket(peer->socket);
+        peer->socket->shutdown();
         peer->loggedIn = false;
     }
 }

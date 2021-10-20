@@ -39,6 +39,7 @@ struct STCPManager {
         bool send();
         bool send(const string& buffer);
         bool recv();
+        void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
         string logString;
 
@@ -84,10 +85,4 @@ struct STCPManager {
     static void postPoll(fd_map& fdm, Socket& socket);
 
     static unique_ptr<Port> openPort(const string& host);
-
-    // Gracefully shuts down a socket
-    static void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
-
-    // Hard terminate a socket
-    static void closeSocket(Socket* socket);
 };

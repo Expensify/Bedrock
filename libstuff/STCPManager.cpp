@@ -82,8 +82,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
 
         // Mark any sockets that the other end disconnected as closed.
         if (SFDAnySet(fdm, socket.s, POLLHUP)) {
-            socket.state.store(Socket::CLOSED);
-            ::shutdown(socket.s, SHUT_RDWR);
+            socket.shutdown(Socket::CLOSED);
         }
 
         // Tagged as writable; check SO_ERROR to see if the connect failed
@@ -161,8 +160,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
                     SWARN("Dirty shutdown of SSL socket '" << socket.addr << "' (" << socket.sendBufferCopy().size()
                                                            << " bytes remain)");
                 }
-                socket.state.store(Socket::CLOSED);
-                ::shutdown(socket.s, SHUT_RDWR);
+                socket.shutdown(Socket::CLOSED);
             }
         } else {
             // Not SSL -- only send if we have something to send
@@ -171,7 +169,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
                 if (!socket.send()) {
                     // Done trying to send
                     SHMMM("Unable to finish sending to '" << socket.addr << "' on shutdown, clearing.");
-                    ::shutdown(socket.s, SHUT_RDWR);
+                    socket.shutdown();
                     socket.setSendBuffer("");
                 }
             }
@@ -183,8 +181,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
                 if (!socket.recv()) {
                     // Done shutting down
                     SDEBUG("Graceful shutdown of socket '" << socket.addr << "'");
-                    socket.state.store(Socket::CLOSED);
-                    ::shutdown(socket.s, SHUT_RDWR);
+                    socket.shutdown(Socket::CLOSED);
                 }
             }
         }
@@ -197,20 +194,10 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
     }
 }
 
-void STCPManager::shutdownSocket(Socket* socket, int how) {
-    // Send the shutdown and note
-    SASSERT(socket);
-    SDEBUG("Shutting down socket '" << socket->addr << "' (" << how << ")");
-    ::shutdown(socket->s, how);
-    socket->state.store(Socket::SHUTTINGDOWN);
-}
-
-void STCPManager::closeSocket(Socket* socket) {
-    // Clean up this socket
-    SASSERT(socket);
-    SDEBUG("Closing socket '" << socket->addr << "'");
-
-    delete socket;
+void STCPManager::Socket::shutdown(Socket::State toState) {
+    SDEBUG("Shutting down socket '" << addr << "'");
+    ::shutdown(s, SHUT_RDWR);
+    state.store(toState);
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)

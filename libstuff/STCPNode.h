@@ -103,6 +103,7 @@ struct STCPNode : public STCPManager {
 
         // Constructor.
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+        ~Peer();
 
         // Atomically set commit and hash.
         void setCommit(uint64_t count, const string& hashString);

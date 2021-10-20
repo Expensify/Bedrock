@@ -62,11 +62,6 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
-    // Just call the base class function but in a thread-safe way.
-    STCPManager::closeSocket(socket);
-}
-
 void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList) {
     // Just call the base class function but in a thread-safe way.
     for (auto& t : transactionList) {

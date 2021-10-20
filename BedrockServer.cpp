@@ -1572,7 +1572,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
         if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
-            shutdownSocket(command->socket, SHUT_RDWR);
+            command->socket->shutdown();
         }
     } else {
         // This is the case for a fire-and-forget command, such as one set to run in the future. If `Connection:
@@ -2128,8 +2128,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
         while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
             if (_shutdownState != RUNNING) {
                 SINFO("Socket thread exiting because no data and shutting down.");
-                socket.state = Socket::CLOSED;
-                ::shutdown(socket.s, SHUT_RDWR);
+                socket.shutdown(Socket::CLOSED);
                 break;
             } 
         }
@@ -2139,14 +2138,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
             if (pollResult < 0) {
                 // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
                 SINFO("Poll failed: " << strerror(errno));
-                socket.state = Socket::CLOSED;
-                ::shutdown(socket.s, SHUT_RDWR);
+                socket.shutdown(Socket::CLOSED);
             } else {
                 // We've either got new data, or an error on the socket. Let's determine which by trying to read.
                 if (!socket.recv()) {
                     // If reading failed, then the socket was closed.
-                    socket.state = Socket::CLOSED;
-                    ::shutdown(socket.s, SHUT_RDWR);
+                    socket.shutdown(Socket::CLOSED);
                 }
             }
         }
@@ -2181,8 +2178,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
                     // If we couldn't build a command, this was some sort of unusual exception case (like trying to
                     // schedule a command in the future while shutting down). We can just give up.
                     SINFO("No command from request, closing socket.");
-                    socket.state = Socket::CLOSED;
-                    ::shutdown(socket.s, SHUT_RDWR);
+                    socket.shutdown(Socket::CLOSED);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
                     // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
                     // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.

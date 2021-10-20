@@ -22,14 +22,13 @@ STCPNode::STCPNode(const string& name_, const string& host, const vector<Peer*> 
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
     for (Socket* socket : acceptedSocketList) {
-        closeSocket(socket);
+        delete socket;
     }
     acceptedSocketList.clear();
 
     for (Peer* peer : peerList) {
         // Shut down the peer
         if (peer->socket) {
-            closeSocket(peer->socket);
             socketList.remove(peer->socket);
         }
         delete peer;
@@ -207,9 +206,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), recv='"
                       << socket->recvBuffer << "', send='" << socket->sendBufferCopy() << "'");
             }
-            closeSocket(socket);
             socketList.remove(socket);
             acceptedSocketList.erase(socketIt);
+            delete socket;
         }
     }
 
@@ -286,7 +285,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
                     peer->socket->send(reconnect.serialize());
-                    shutdownSocket(peer->socket);
+                    peer->socket->shutdown();
                     break;
                 }
                 break;
@@ -303,9 +302,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                                         << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
                 _onDisconnect(peer);
-                if (peer->socket->connectFailure)
+                if (peer->socket->connectFailure) {
                     peer->failedConnections++;
-                closeSocket(peer->socket);
+                }
                 socketList.remove(peer->socket);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
@@ -373,6 +372,12 @@ STCPNode::Peer::Peer(const string& name_, const string& host_, const STable& par
     hash()
 { }
 
+STCPNode::Peer::~Peer() {
+    if (socket) {
+        delete socket;
+    }
+}
+
 bool STCPNode::Peer::connected() const {
     lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
@@ -383,6 +388,9 @@ void STCPNode::Peer::reset() {
     latency = 0;
     loggedIn = false;
     priority = 0;
+    if (socket) {
+        delete socket;
+    }
     socket = nullptr;
     state = SEARCHING;
     standupResponse = Response::NONE;
