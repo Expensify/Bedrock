@@ -63,10 +63,18 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
 }
 
 void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction) {
+    if (!transaction.s || transaction.finished) {
+        // If there's no socket, or we're done, skip.
+        return;
+    }
     STCPManager::prePoll(fdm, *transaction.s);
 }
 
 void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
+    if (!transaction.s || transaction.finished) {
+        // If there's no socket, or we're done, skip.
+        return;
+    }
     STCPManager::postPoll(fdm, *transaction.s);
 
     uint64_t timeout = timeoutMS * 1000;
