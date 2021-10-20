@@ -62,74 +62,62 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-void SStandaloneHTTPSManager::prePoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList) {
-    // Just call the base class function but in a thread-safe way.
-    for (auto& t : transactionList) {
-        return STCPManager::prePoll(fdm, *t->s);
-    }
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction) {
+    STCPManager::prePoll(fdm, *transaction.s);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, list<SStandaloneHTTPSManager::Transaction*>& transactionList, uint64_t& nextActivity, uint64_t timeoutMS) {
-    for (auto& t : transactionList) {
-        STCPManager::postPoll(fdm, *t->s);
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
+    STCPManager::postPoll(fdm, *transaction.s);
+
+    uint64_t timeout = timeoutMS * 1000;
+    SAUTOPREFIX(transaction.requestID);
+    if (transaction.isDelayedSend && !transaction.sentTime) {
+        // This transaction was created, queued, and then meant to be sent later.
+        // As such we'll use STimeNow() as it's "created" time for time.
+        SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
+        transaction.sentTime = STimeNow();
+    }
+    uint64_t timeoutFromTime = transaction.sentTime ? transaction.sentTime : transaction.created;
+    uint64_t now = STimeNow();
+    uint64_t elapsed = now - timeoutFromTime;
+    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    bool specificallyTimedOut = transaction.timeoutAt < now;
+    if (size) {
+        // Consume how much we read.
+        transaction.s->recvBuffer.consumeFront(size);
+
+        // 200OK or any content?
+        transaction.finished = now;
+        if (SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
+            // Pass the transaction down to the subclass.
+            if (_onRecv(&transaction)) {
+                // If true, then the transaction was closed in onRecv.
+                return;
+            }
+            SASSERT(transaction.response);
+        } else {
+            // Error, failed to authenticate or receive a valid server response.
+            SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
+            transaction.response = 500;
+        }
+    } else if (transaction.s->state.load() > Socket::CONNECTED || elapsed > timeout || specificallyTimedOut) {
+        // Net problem. Did this transaction end in an inconsistent state?
+        SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
+        transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        if (transaction.response == 501) {
+            SHMMM("SStandaloneHTTPSManager: '" << transaction.fullRequest.methodLine
+                  << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
+        }
+    } else {
+        // Haven't timed out yet, let the caller know how long until we do.
+        nextActivity = min(nextActivity, timeoutFromTime + timeout);
     }
 
-    // Update each of the active requests
-    uint64_t timeout = timeoutMS * 1000;
-    list<Transaction*>::iterator nextIt = transactionList.begin();
-    while (nextIt != transactionList.end()) {
-        // Did we get any responses?
-        list<Transaction*>::iterator activeIt = nextIt++;
-        Transaction* active = *activeIt;
-        SAUTOPREFIX(active->requestID);
-        if (active->isDelayedSend && !active->sentTime) {
-            // This transaction was created, queued, and then meant to be sent later.
-            // As such we'll use STimeNow() as it's "created" time for time.
-            SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
-            active->sentTime = STimeNow();
-        }
-        uint64_t timeoutFromTime = active->sentTime ? active->sentTime : active->created;
-        uint64_t now = STimeNow();
-        uint64_t elapsed = now - timeoutFromTime;
-        int size = active->fullResponse.deserialize(active->s->recvBuffer);
-        bool specificallyTimedOut = active->timeoutAt < now;
-        if (size) {
-            // Consume how much we read.
-            active->s->recvBuffer.consumeFront(size);
-
-            // 200OK or any content?
-            active->finished = now;
-            if (SContains(active->fullResponse.methodLine, " 200 ") || active->fullResponse.content.size()) {
-                // Pass the transaction down to the subclass.
-                if (_onRecv(active)) {
-                    // If true, then the transaction was closed in onRecv.
-                    continue;
-                }
-                SASSERT(active->response);
-            } else {
-                // Error, failed to authenticate or receive a valid server response.
-                SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
-                active->response = 500;
-            }
-        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout || specificallyTimedOut) {
-            // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
-            active->response = active->s->sendBufferEmpty() ? 501 : 500;
-            if (active->response == 501) {
-                SHMMM("SStandaloneHTTPSManager: '" << active->fullRequest.methodLine
-                      << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
-            }
-        } else {
-            // Haven't timed out yet, let the caller know how long until we do.
-            nextActivity = min(nextActivity, timeoutFromTime + timeout);
-        }
-
-        // If we're done, remove from the active and add to completed
-        if (active->response) {
-            // Switch lists
-            SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
-                  << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
-        }
+    // If we're done, remove from the active and add to completed
+    if (transaction.response) {
+        // Switch lists
+        SINFO("Completed request '" << transaction.fullRequest.methodLine << "' to '" << transaction.fullRequest["Host"]
+              << "' with response '" << transaction.response << "' in '" << elapsed / 1000 << "'ms");
     }
 }
 

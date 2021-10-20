@@ -224,18 +224,15 @@ void BedrockCommand::finalizeTimingInfo() {
 void BedrockCommand::prePoll(fd_map& fdm)
 {
     for (auto& transaction : httpsRequests) {
-        // If we could not invert this, and just pass `httpsRequests` directly to prePoll, that'd be great.
-        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
-        transaction->manager.prePoll(fdm, transactionList);
+        transaction->manager.prePoll(fdm, *transaction);
     }
 }
 
 void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
 {
     for (auto& transaction : httpsRequests) {
+        // TODO: We should be able to set this at the creation of the transaction.
         transaction->timeoutAt = _timeout;
-        // Same as above.
-        list<SStandaloneHTTPSManager::Transaction*> transactionList = {transaction};
-        transaction->manager.postPoll(fdm, transactionList, nextActivity, maxWaitMS);
+        transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS);
     }
 }
