@@ -474,7 +474,7 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = nullptr;
     try {
-        s =new Socket(host, x509);
+        s = new Socket(host, x509);
     } catch (const SException& e) {
         return _createErrorTransaction();
     }

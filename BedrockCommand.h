@@ -112,7 +112,11 @@ class BedrockCommand : public SQLiteCommand {
     // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
     virtual bool onlyProcessOnSyncThread() { return false; }
 
+    // Add any sockets that this command has opened (not the socket the client sent it on, but any outgoing sockets
+    // it's opened itself) to a fd_map so that they can be polled for activity.
     void prePoll(fd_map& fdm);
+
+    // Handle any activity on those sockets that was noted in poll.
     void postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS);
 
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"

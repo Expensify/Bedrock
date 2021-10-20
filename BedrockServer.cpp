@@ -605,7 +605,6 @@ void BedrockServer::sync()
                         // If we just started a new HTTPS request, save it for later.
                         if (command->httpsRequests.size()) {
                             waitForHTTPS(move(command));
-
                             // TODO:
                             // Move the HTTPS loop into the worker, so that the worker can poll on its own requests.
                             // This is the first step toward linear workers that run start->finish without being
