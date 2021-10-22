@@ -226,6 +226,8 @@ bool TestPluginCommand::peek(SQLite& db) {
             db.read(query, result);
         }
         return true;
+    } else if (SStartsWith(request.methodLine, "idcollision")) {
+        usleep(1001); // for TimingTest to not get 0 values.
     } else if (SStartsWith(request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
         // when there's a blocking command and leader needs to stand down, to verify the timeout for that works.
@@ -364,6 +366,7 @@ void TestPluginCommand::process(SQLite& db) {
         // Done.
         return;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
+        usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
