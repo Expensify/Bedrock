@@ -72,60 +72,60 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Tran
 
 void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
     if (!transaction.s || transaction.finished) {
-        // If there's no socket, or we're done, skip.
+        // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
+        // have finished (because commands may finish one transaction but not another), or transactions that have not
+        // started yet and have no socket (for instance, Stripe's rate limiting means sockets are built asynchronously
+        // after the commands are created).
+        //
+        // TODO: We may want to be able to time out these transactions regardless, for instance at shutdown. We wont
+        // hit the command timeouts in peek and process until there's no outstanding network requests for the command.
         return;
     }
+    SAUTOPREFIX(transaction.requestID);
+
+    // Do the postPoll on the socket
     STCPManager::postPoll(fdm, *transaction.s);
 
-    uint64_t timeout = timeoutMS * 1000;
-    SAUTOPREFIX(transaction.requestID);
-    if (transaction.isDelayedSend && !transaction.sentTime) {
-        // This transaction was created, queued, and then meant to be sent later.
-        // As such we'll use STimeNow() as it's "created" time for time.
-        SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
-        transaction.sentTime = STimeNow();
-    }
-    uint64_t timeoutFromTime = transaction.sentTime ? transaction.sentTime : transaction.created;
+    //See if we got a response.
     uint64_t now = STimeNow();
-    uint64_t elapsed = now - timeoutFromTime;
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    bool specificallyTimedOut = transaction.timeoutAt < now;
     if (size) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
-
-        // 200OK or any content?
         transaction.finished = now;
+
+        // This is supposed to check for a "200 OK" response, which it does very poorly. It also checks for message
+        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response shoudl
+        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
+        // the existing behavior, which is an exercise for later.
         if (SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
             // Pass the transaction down to the subclass.
-            if (_onRecv(&transaction)) {
-                // If true, then the transaction was closed in onRecv.
-                return;
-            }
-            SASSERT(transaction.response);
+            _onRecv(&transaction);
         } else {
-            // Error, failed to authenticate or receive a valid server response.
+            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
             SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = 500;
         }
-    } else if (transaction.s->state.load() > Socket::CONNECTED || elapsed > timeout || specificallyTimedOut) {
-        // Net problem. Did this transaction end in an inconsistent state?
-        SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
-        transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
-        if (transaction.response == 501) {
-            SHMMM("SStandaloneHTTPSManager: '" << transaction.fullRequest.methodLine
-                  << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
-        }
     } else {
-        // Haven't timed out yet, let the caller know how long until we do.
-        nextActivity = min(nextActivity, timeoutFromTime + timeout);
-    }
-
-    // If we're done, remove from the active and add to completed
-    if (transaction.response) {
-        // Switch lists
-        SINFO("Completed request '" << transaction.fullRequest.methodLine << "' to '" << transaction.fullRequest["Host"]
-              << "' with response '" << transaction.response << "' in '" << elapsed / 1000 << "'ms");
+        // If we don't have a response, we need to check for a timeout, or a disconnection.
+        // The disconnection check is straightforward, we just check the socket state.
+        // The timeout is a little less so, because we have two different ways to time out:
+        //
+        // 1. If it's been more than `timeoutMS` since the last time we sent any data on our socket. This number can
+        //    change with each call to this function, because we shorten our timeouts at shutdown to avoid holding up
+        //    the whole server on a single stuck network request.
+        // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
+        if ((transaction.s->state.load() > Socket::CONNECTED) ||
+            (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
+            (now > transaction.timeoutAt)) {
+            SWARN("TYLER Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+            transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        } else {
+            // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
+            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
+            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt - now;
+            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
+        }
     }
 }
 
@@ -136,7 +136,6 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     timeoutAt(0),
     response(0),
     manager(manager_),
-    isDelayedSend(0),
     sentTime(0),
     requestID(SThreadLogPrefix)
 {

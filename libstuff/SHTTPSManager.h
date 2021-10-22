@@ -22,7 +22,6 @@ class SStandaloneHTTPSManager : public STCPManager {
         int response;
         STable values;
         SStandaloneHTTPSManager& manager;
-        bool isDelayedSend;
         uint64_t sentTime;
         const string requestID;
     };

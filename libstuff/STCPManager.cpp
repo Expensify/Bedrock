@@ -279,8 +279,10 @@ bool STCPManager::Socket::send() {
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
-    sentBytes += (oldSize - sendBuffer.size());
-    lastSendTime = STimeNow();
+    if (oldSize - sendBuffer.size()) {
+        sentBytes += oldSize - sendBuffer.size();
+        lastSendTime = STimeNow();
+    }
     return result;
 }
 
