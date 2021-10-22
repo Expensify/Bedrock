@@ -12,9 +12,3 @@ sqlitecluster/sqlitecluster
 libstuff/libstuff.d
 libstuff/libstuff.h.gch
 .idea
-
-*.[do]
-perftest/perftest
-*.db
-*.db-wal
-*.db-shm
