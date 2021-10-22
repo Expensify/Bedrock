@@ -72,7 +72,7 @@ else
 fi
 
 sudo apt-get update -y
-sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-9 g++-9
+sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-9 g++-9 libnuma-dev
 
 travis_time_finish
 travis_fold end build_bedrock
