@@ -1,33 +1,11 @@
 #include "SData.h"
 
 #include <libstuff/SFastBuffer.h>
-#include <iostream>
 
 const string SData::placeholder;
 
 SData::SData() {
     // Nothing to do here
-}
-
-SData::SData(const SData& from)
-  : methodLine(from.methodLine),
-  nameValueMap(from.nameValueMap),
-  content(from.content)
-{
-    if (nameValueMap.find("value") != nameValueMap.end()) {
-        cout << "Copied SData value:" << nameValueMap["value"] << endl;
-        SLogStackTrace();
-    }
-}
-
-SData::SData(SData&& from)
-  : methodLine(move(from.methodLine)),
-  nameValueMap(move(from.nameValueMap)),
-  content(move(from.content))
-{
-    if (nameValueMap.find("value") != nameValueMap.end()) {
-        cout << "Moved SData value:" << nameValueMap["value"] << endl;
-    }
 }
 
 SData::SData(const STable& from) : nameValueMap(from)
@@ -38,13 +16,6 @@ SData::SData(const string& fromString) {
     if(!SParseHTTP(fromString, methodLine, nameValueMap, content)){
         methodLine = fromString;
     }
-}
-
-SData& SData::operator=(const SData& from) {
-    methodLine = from.methodLine;
-    nameValueMap = from.nameValueMap;
-    content = from.content;
-    return *this;
 }
 
 string& SData::operator[](const string& name) {
@@ -133,10 +104,11 @@ int SData::deserialize(const string& fromString) {
 int SData::deserialize(const char* buffer, size_t length) {
     auto result = SParseHTTP(buffer, length, methodLine, nameValueMap, content);
 
-    // Why do this? It's to enable these values to be parsed quickly with simdjson.
+    // Why do this? It's to enable these values to be parsed quickly with simdjson, which requires up to 32 bytes of
+    // space at the end of the string so that it can run on chunks bigger than a single character, while guaranteeing
+    // not to go out-of-bounds on memory.
     for (auto& p: nameValueMap) {
         if (p.second[0] == '{' || p.second[0] == '[') {
-            cout << "Expanding capacity for " << p.first << ":" << p.second << " from " << p.second.capacity() << " to " << (p.second.size() + 32) << endl;
             p.second.reserve(p.second.size() + 32);
         }
     }
