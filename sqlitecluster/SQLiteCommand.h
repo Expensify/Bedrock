@@ -30,8 +30,12 @@ class SQLiteCommand {
     // need to  respond to them.
     string id;
 
+  private:
+    unique_ptr<SData> _requestPtr;
+
+  public:
     // Original request, immutable.
-    const SData request;
+    const SData& request;
 
     // Accumulated response content
     STable jsonContent;
@@ -65,7 +69,7 @@ class SQLiteCommand {
     SQLiteCommand();
 
     // Move constructor.
-    SQLiteCommand(SQLiteCommand&& from) = default;
+    SQLiteCommand(SQLiteCommand&& from);
 
     // Default move assignment operator.
     SQLiteCommand& operator=(SQLiteCommand&& from) = default;

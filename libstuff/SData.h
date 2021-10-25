@@ -17,6 +17,10 @@ struct SData {
 
     // Constructors
     SData();
+    SData(const SData& from);
+    SData(SData&& from);
+
+    SData& operator=(const SData& from);
 
     // Initializes a new SData from a string. If the string provided is not
     // an entire HTTPs like message, the string is used as the methodLine.
