@@ -2087,7 +2087,25 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
-    int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
+    int loops = 1;
+
+    // We wait a maximum of 100ms before we check for signals, and repeat until we get to (more or less) our actual
+    // timeout.
+    if (timeoutVal > 100) {
+        loops = timeoutVal / 100;
+        timeoutVal = 100;
+    }
+
+    int returnValue = 0;
+    for (int i = 0; i < loops; i++) {
+        // returnValue will be 0 on a timeout.
+        returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
+
+        // If a signal was raised or we got some data, return.
+        if (returnValue || SGetSignals()) {
+            break;
+        }
+    }
 
     // And write our returned events back to our original structure.
     for (pollfd pfd : pollvec) {

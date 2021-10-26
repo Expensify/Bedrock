@@ -136,8 +136,14 @@ void _SSignal_signalHandlerThreadFunc() {
         while (result == -1) {
             result = sigtimedwait(&signals, &siginfo, &timeout);
             if (_SSignal_threadStopFlag) {
+                string signalString;
+                if (result == -1) {
+                    signalString = strerror(errno);
+                } else {
+                    signalString = strsignal(result);
+                }
                 // Done.
-                SINFO("Stopping signal handler thread.");
+                SINFO("Stopping signal handler thread. (" << signalString << ")");
                 return;
             }
         }
@@ -159,8 +165,9 @@ void _SSignal_signalHandlerThreadFunc() {
 void SStopSignalThread() {
     _SSignal_threadStopFlag = true;
     if (_SSignal_threadInitialized.test_and_set()) {
-        // Send ourselves a singnal to interrupt our thread.
-        SINFO("Joining signal thread.");
+        // Send ourselves a signal to interrupt our thread.
+        pthread_kill(_SSignal_signalThread.native_handle(), SIGTERM);
+        SINFO("Joining signal thread with SIGTERM.");
         _SSignal_signalThread.join();
         _SSignal_threadInitialized.clear();
     }

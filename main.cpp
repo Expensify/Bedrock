@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
             const uint64_t now = STimeNow();
             auto timeBeforePoll = chrono::steady_clock::now();
             S_poll(fdm, max(nextActivity, now) - now);
-            nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
+            nextActivity = STimeNow() + 1'000'000;
             auto timeAfterPoll = chrono::steady_clock::now();
             server.postPoll(fdm, nextActivity);
             auto timeAfterPostPoll = chrono::steady_clock::now();

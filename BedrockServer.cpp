@@ -328,7 +328,7 @@ void BedrockServer::sync()
         }
 
         // And set our next timeout for 1 second from now.
-        nextActivity = STimeNow() + STIME_US_PER_S;
+        nextActivity = STimeNow() + 1'000'000;
 
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
@@ -760,7 +760,7 @@ void BedrockServer::worker(int threadId)
             command = unique_ptr<BedrockCommand>(nullptr);
 
             // And get another one.
-            command = commandQueue.get(1000000);
+            command = commandQueue.get(100'000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " in worker, "
