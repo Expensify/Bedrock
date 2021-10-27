@@ -521,6 +521,12 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
+
+    if (_sharedData._checkpointThreadBusy.load() && _enableCheckpointInterrupt) {
+        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
+        throw checkpoint_required_error();
+    }
+
     _queryCount++;
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
@@ -602,6 +608,12 @@ bool SQLite::writeUnmodified(const string& query) {
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
+
+    if (_sharedData._checkpointThreadBusy.load() && _enableCheckpointInterrupt) {
+        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
+        throw checkpoint_required_error();
+    }
+
     _queryCache.clear();
     _queryCount++;
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
