@@ -521,17 +521,19 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
+    bool queryResult = false;
     _queryCount++;
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
         _cacheHits++;
-        return true;
-    }
-    _isDeterministicQuery = true;
-    bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_isDeterministicQuery && queryResult) {
-        _queryCache.emplace(make_pair(query, result));
+        queryResult = true;
+    } else {
+        _isDeterministicQuery = true;
+        queryResult = !SQuery(_db, "read only query", query, result);
+        if (_isDeterministicQuery && queryResult) {
+            _queryCache.emplace(make_pair(query, result));
+        }
     }
     _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
@@ -556,6 +558,11 @@ void SQLite::_checkInterruptErrors(const string& error) {
             resetTiming();
             errorCode = 1;
         }
+    }
+
+    if (!_abandonForCheckpoint && _sharedData._checkpointThreadBusy.load() && _enableCheckpointInterrupt) {
+        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint - not set in interrupt handler");
+        _abandonForCheckpoint = true;
     }
 
     if (_abandonForCheckpoint) {
@@ -1148,6 +1155,12 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 
     // If we made it through the whole thing, we're done.
     return SQLITE_OK;
+}
+
+void SQLite::setQueryOnly(bool enabled) {
+    SQResult result;
+    string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
+    SQuery(_db, "set query_only", query, result);
 }
 
 SQLite::SharedData::SharedData() :
