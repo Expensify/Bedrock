@@ -7,8 +7,10 @@
 
 bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, string timestampString) {
     uint64_t testTime = startTimestamp;
+    list<string> stamps;
     while (true) {
         string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
+        stamps.push_back(testTimeString);
         if (timestampString == testTimeString) {
             return true;
         }
@@ -21,6 +23,10 @@ bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, s
             // this is the last possible test.
             testTime = endTimestamp;
         }
+    }
+    cout << "FAILED: " << startTimestamp << ", " << endTimestamp << ", " << timestampString << endl;
+    for (auto& a : stamps) {
+        cout << a << endl;
     }
     return false;
 }
