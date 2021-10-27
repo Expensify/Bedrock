@@ -94,6 +94,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "generatesegfaultprocess",
         "idcollision",
         "slowprocessquery",
+        "slowmultiquery",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -212,6 +213,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         }
         return false; // Not complete.
     } else if (SStartsWith(request.methodLine, "slowquery")) {
+        SINFO("Peeking slowquery");
         int size = 100000000;
         int count = 1;
         if (request.isSet("size")) {
@@ -226,7 +228,15 @@ bool TestPluginCommand::peek(SQLite& db) {
             db.read(query, result);
         }
         return true;
-    } else if (SStartsWith(request.methodLine, "httpstimeout")) {
+    } else if (SStartsWith(request.methodLine, "slowmultiquery")) {
+        SINFO("Peeking slowmultiquery");
+        SQResult result;
+        for (int i = 0; i < 10'000; i++) {
+            db.read("SELECT 1;", result);
+            usleep(10'000);
+        }
+        return true;
+    }  else if (SStartsWith(request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
         // when there's a blocking command and leader needs to stand down, to verify the timeout for that works.
         // It *does* eventually connect and return, so that we can also verify that the leftover command gets cleaned

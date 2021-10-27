@@ -99,11 +99,18 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 vector<SData> requests;
                 int numCommands = 200;
                 for (int j = 0; j < numCommands; j++) {
-                    SData query("idcollision b2");
-                    query["writeConsistency"] = "ASYNC";
-                    int cmdNum = cmdID.fetch_add(1);
-                    query["value"] = "sent-" + to_string(cmdNum);
-                    requests.push_back(query);
+                    if (i == 0 && j == 25) {
+                        // Make a slow command and verify it gets interrupted for a checkpoint.
+                        SData query("slowmultiquery");
+                        query["requestID"] = "TEST-INT";
+                        requests.push_back(query);
+                    } else {
+                        SData query("idcollision b2");
+                        query["writeConsistency"] = "ASYNC";
+                        int cmdNum = cmdID.fetch_add(1);
+                        query["value"] = "sent-" + to_string(cmdNum);
+                        requests.push_back(query);
+                    }
                 }
 
                 // Ok, send them all!
