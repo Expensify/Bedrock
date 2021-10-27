@@ -521,7 +521,6 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
-
     bool queryResult = false;
     _queryCount++;
     auto foundQuery = _queryCache.find(query);
@@ -610,7 +609,6 @@ bool SQLite::writeUnmodified(const string& query) {
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
-
     _queryCache.clear();
     _queryCount++;
     SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
