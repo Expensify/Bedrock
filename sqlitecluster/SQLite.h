@@ -275,6 +275,9 @@ class SQLite {
     // This returns an sqlite error code. It will stop parsing multiple statements after the first error.
     int getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements);
 
+    // Set this DB handle to be query-only to prevent accidental writes in places we don't expect them.
+    void setQueryOnly(bool enabled);
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
