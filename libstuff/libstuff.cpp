@@ -2938,6 +2938,10 @@ string SCURRENT_TIMESTAMP() {
     return STIMESTAMP(STimeNow());
 }
 
+string SCURRENT_DATE() {
+    return SCURRENT_TIMESTAMP().substr(1, 10);
+}
+
 bool STableComp::operator()(const string& s1, const string& s2) const {
     return lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(), nocase_compare());
 }

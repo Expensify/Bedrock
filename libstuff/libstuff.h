@@ -592,6 +592,7 @@ string STIMESTAMP(uint64_t when);
 string SUNQUOTED_CURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP_MS();
+string SCURRENT_DATE();
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff

@@ -1,4 +1,5 @@
 #include <cstring>
+#include <regex>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
@@ -29,7 +30,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testFirstOfMonth))
+                                    TEST(LibStuff::testFirstOfMonth),
+                                    TEST(LibStuff::testCurrentDate))
     { }
 
     void testEncryptDecrpyt() {
@@ -632,5 +634,9 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
+    }
+
+    void testCurrentDate() {
+        ASSERT_TRUE(std::regex_match(SCURRENT_DATE(), std::regex("\\d{4}-\\d{2}-\\d{2}")));
     }
 } __LibStuff;
