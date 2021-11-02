@@ -1887,7 +1887,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     ///   know it.  Not cool!
     ///
     if (peer->socket && peer->socket->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating follower died before receiving response to escalation: " << peer->socket->sendBufferCopy());
+        PWARN("Initiating follower died before receiving response to escalation");
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
