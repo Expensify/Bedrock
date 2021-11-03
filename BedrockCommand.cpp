@@ -196,8 +196,21 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
+    // This is a hack to support Auth's old `Get` format where we have a `returnValueList` of items to return rather
+    // than a specific name. The timing profile of every version of this command is wildly different and it's impossible
+    // to reason about which ones cause performance issues when they're all globbed together.
+    // In the future, let's find a better way to do this. For now, this gets us the data we need.
+    string methodName = request.methodLine + (request.isSet("returnValueList") ? "_" + request["returnValueList"] : ""s);
+
+    // This makes these look like valid command names given all our existing log handling.
+    for (size_t i = 0; i < methodName.size(); i++) {
+        if (methodName[i] == ',') {
+            methodName[i] = '_';
+        }
+    }
+
     // Log all this info.
-    SINFO("command '" << request.methodLine << "' timing info (ms): "
+    SINFO("command '" << methodName << "' timing info (ms): "
           << peekTotal/1000 << " (" << peekCount << "), "
           << processTotal/1000 << " (" << processCount << "), "
           << commitWorkerTotal/1000 << ", "
