@@ -2654,7 +2654,10 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     list<string> parts = SParseList(SToUpper(modifier));
     for (const string& part : parts) {
         // Simple regexp validation
-        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE|SECOND)S?$", part)) {
+        if (SREMatch("^(\\+|-)\\d{1,8} (SECOND)S?$", part)) {
+            continue;
+        }
+        if (SREMatch("^(\\+|-)\\d{1,3} (YEAR|MONTH|DAY|HOUR|MINUTE)S?$", part)) {
             continue;
         }
         if (SREMatch("^START OF (DAY|MONTH|YEAR)$", part)) {
