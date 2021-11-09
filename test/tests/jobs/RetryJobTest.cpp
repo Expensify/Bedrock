@@ -300,7 +300,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        command["delay"] = "1000";
+        command["delay"] = "100000000";
         tester->executeWaitVerifyContent(command, "402 Malformed delay");
     }
 
