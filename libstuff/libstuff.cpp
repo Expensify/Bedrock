@@ -2563,7 +2563,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     string sqlToLog = sql;
     if ((int64_t)elapsed > warnThreshold) {
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
-        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("<REDACTED_AUTHTOKEN>", &sqlToLog);
+        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
         SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
     }
 
