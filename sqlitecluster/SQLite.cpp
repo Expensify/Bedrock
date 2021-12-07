@@ -55,8 +55,12 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         SQResult result;
         sharedData->wal2 = _wal2;
         if (sharedData->wal2) {
-            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
-            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = wal2;", result));
+            // if it's missing or anything but `wal2`, set it to wal2.
+            SQuery(db, "", "PRAGMA journal_mode;", result);
+            if (!result.rows.size() || result.rows[0][0] != "wal2") {
+                SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
+                SASSERT(!SQuery(db, "", "PRAGMA journal_mode = wal2;", result));
+            }
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
