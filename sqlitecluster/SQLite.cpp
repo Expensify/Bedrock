@@ -34,7 +34,7 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool _wal2) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
         ~SharedDataLookupMapType() {
@@ -51,9 +51,16 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
         SharedData* sharedData = new SharedData(); // This is never deleted.
 
+        // If wal2 is enabled, make the required changes.
+        SQResult result;
+        sharedData->wal2 = _wal2;
+        if (sharedData->wal2) {
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = wal2;", result));
+        }
+
         // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
-        SQResult result;
         SASSERT(!SQuery(db, "getting commit count", query, result));
         uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
         sharedData->commitCount = commitCount;
@@ -153,7 +160,7 @@ uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journa
     return max - min;
 }
 
-void SQLite::commonConstructorInitialization() {
+void SQLite::commonConstructorInitialization(bool wal2) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_cacheSize > 0);
@@ -165,7 +172,8 @@ void SQLite::commonConstructorInitialization() {
     }
 
     // WAL is what allows simultaneous read/writing.
-    SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
+    string walMode = "wal"s + (wal2 ? "2" : "");
+    SASSERT(!SQuery(_db, ("enabling write ahead logging (" + walMode + ")").c_str(), "PRAGMA journal_mode = " + walMode + ";"));
 
     if (_mmapSizeGB) {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
@@ -197,12 +205,12 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled, bool wal2) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, wal2)),
     _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _pageLoggingEnabled(pageLoggingEnabled),
@@ -210,7 +218,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(wal2);
 }
 
 SQLite::SQLite(const SQLite& from) :
@@ -226,7 +234,7 @@ SQLite::SQLite(const SQLite& from) :
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(_sharedData.wal2);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
