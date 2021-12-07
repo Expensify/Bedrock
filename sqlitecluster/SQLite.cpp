@@ -273,6 +273,12 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
     SQLite* object = static_cast<SQLite*>(data);
     object->_sharedData._currentPageCount.store(pageCount);
+
+    if (object->sharedData.wal2) {
+        SINFO("[checkpoint] skipping straight to passive checkpoint in wal2 mode.");
+        return;
+    }
+
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (pageCount >= fullCheckpointPageMin.load()) {
