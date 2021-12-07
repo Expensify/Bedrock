@@ -274,9 +274,9 @@ int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int 
     SQLite* object = static_cast<SQLite*>(data);
     object->_sharedData._currentPageCount.store(pageCount);
 
-    if (object->sharedData.wal2) {
+    if (object->_sharedData.wal2) {
         SINFO("[checkpoint] skipping straight to passive checkpoint in wal2 mode.");
-        return;
+        return SQLITE_OK;
     }
 
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
