@@ -60,10 +60,13 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         bool dbCurrentlyWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
+        string walType = sharedData->wal2 ? "wal2" : "wal";
         if (dbCurrentlyWAL2 != sharedData->wal2) {
-            string walType = sharedData->wal2 ? "wal2" : "wal";
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = " + walType + ";", result));
+            SINFO("Set wal mode to: " << walType);
+        } else {
+            SINFO("wal mode unchanged: " << walType);
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
