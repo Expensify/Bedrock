@@ -306,27 +306,13 @@ class BedrockServer : public SQLiteServer {
 
     // This is the function that launches the sync thread, which will bring up the SQLiteNode for this server, and then
     // start the worker threads.
-    static void sync(const SData& args,
-                     atomic<SQLiteNode::State>& replicationState,
-                     atomic<string>& leaderVersion,
-                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                     BedrockServer& server);
+    void sync();
 
     // Wraps the sync thread main function to make it easy to add exception handling.
-    static void syncWrapper(const SData& args,
-                     atomic<SQLiteNode::State>& replicationState,
-                     atomic<string>& leaderVersion,
-                     BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                     BedrockServer& server);
+    void syncWrapper();
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    static void worker(SQLitePool& dbPool,
-                       atomic<SQLiteNode::State>& _replicationState,
-                       atomic<string>& leaderVersion,
-                       BedrockTimeoutCommandQueue& syncNodeQueuedCommands,
-                       BedrockTimeoutCommandQueue& syncNodeCompletedCommands,
-                       BedrockServer& server,
-                       int threadId);
+    void worker(int threadId);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
@@ -495,4 +481,10 @@ class BedrockServer : public SQLiteServer {
     // same time a control port command is running (which would indicate that there is a command blocking shutdown -
     // the current control command).
     shared_mutex _controlPortExclusionMutex;
+
+    // A pointer to the current pool of DB handles we can use. This is created by the sync thread and destroyed when it
+    // exits. However, because the syncNode stores this, and it's possible for socket threads to hold a handle to the
+    // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
+    // destroy the pool at shutdown.
+    shared_ptr<SQLitePool> _dbPool;
 };
