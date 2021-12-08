@@ -175,6 +175,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     // leading but were following when we peeked, we may try to read HTTPS requests we never made).
     if ((command->lastPeekedOrProcessedInState != SQLiteNode::LEADING && command->lastPeekedOrProcessedInState != SQLiteNode::STANDINGDOWN) ||
         (_server.getState() != SQLiteNode::LEADING && _server.getState() != SQLiteNode::STANDINGDOWN)) {
+        SINFO("Server no longer LEADING or STANDINGDOWN, can't process command");
         return RESULT::SERVER_NOT_LEADING;
     }
     command->lastPeekedOrProcessedInState = _server.getState();

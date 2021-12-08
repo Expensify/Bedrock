@@ -816,7 +816,7 @@ void BedrockServer::worker(int threadId)
                 continue;
             }
 
-            // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
+            // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup or shutdown.
             while (_upgradeInProgress ||
                    (_replicationState.load() != SQLiteNode::LEADING &&
                     _replicationState.load() != SQLiteNode::FOLLOWING &&
@@ -824,7 +824,7 @@ void BedrockServer::worker(int threadId)
             ) {
                 // Make sure that the node isn't shutting down, leaving us in an endless loop.
                 if (_shutdownState.load() != RUNNING) {
-                    SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
+                    SWARN("Got a command but node is shutting down. Discarding command '"
                           << command->request.methodLine << "'.");
                     return;
                 }
@@ -1079,10 +1079,10 @@ void BedrockServer::worker(int threadId)
                         // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                         // of this block.
                     } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
-                        // We won't write regardless.
+                        // Server not leading, we won't write regardless.
                         core.rollback();
 
-                        // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
+                        // If there are outstanding HTTPS requests, we can't just re-queue this command, we would
                         // potentially run the same HTTPS requests twice.
                         if (command->httpsRequests.size()) {
                             SALERT("Server stopped leading while running command with HTTPS requests!");
@@ -1090,9 +1090,17 @@ void BedrockServer::worker(int threadId)
                             _reply(command);
                             break;
                         } else {
+                            // If we're shutting down, we can't recover from the current state changes. Abandon command.
+                            if(_shutdownState.load() != RUNNING) {
+                                SINFO("State changed before 'processCommand' and we're shutting down. Abandoning " << command->request.methodLine << ".");
+                                command->response.methodLine = "500 Leader stopped leading";
+                                command->complete = true;
+                            // If we're not shutting down, we can likely recover from the current state changes.
                             // Allow for an extra retry and start from the top, like with ABANDONED_FOR_CHECKPOINT.
-                            SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
-                            ++retry;
+                            } else {
+                                SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
+                                ++retry;
+                            }
                         }
                     } else {
                         SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
