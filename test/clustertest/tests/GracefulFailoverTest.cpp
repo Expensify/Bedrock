@@ -132,7 +132,9 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Bring leader back up.
         tester->getTester(0).startServer();
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
-        sleep(15);
+
+        // Give the spammers time to spam the new leader.
+        sleep(3);
 
         // Now let's  stop a follower and make sure everything keeps working.
         tester->stopNode(2);
@@ -216,6 +218,12 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         allresults->clear();
         allresults->resize(60);
         done.store(false);
+
+        // Verify everything was either a 202 or a 756.
+        for (auto& p : *counts) {
+            ASSERT_TRUE(p.first == "202" || p.first == "756");
+            cout << "[FailoverTimeoutTest] method: " << p.first << ", count: " << p.second << endl;
+        }
 
         delete counts;
         delete threads;
