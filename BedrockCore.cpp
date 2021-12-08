@@ -93,7 +93,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             }
 
             // Make sure no writes happen while in peek command
-            _db.read("PRAGMA query_only = true;");
+            _db.setQueryOnly(true);
 
             // Peek.
             command->reset(BedrockCommand::STAGE::PEEK);
@@ -103,7 +103,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!completed) {
                 SINFO("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
                 _db.resetTiming();
-                _db.read("PRAGMA query_only = false;");
+                _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;
             }
 
@@ -160,14 +160,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     _db.resetTiming();
 
     // Reset, we can write now.
-    while (true) {
-        try {
-            _db.read("PRAGMA query_only = false;");
-            break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            // just try again
-        }
-    }
+    _db.setQueryOnly(false);
 
     // Done.
     return returnValue;
