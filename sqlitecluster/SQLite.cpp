@@ -51,16 +51,19 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
         SharedData* sharedData = new SharedData(); // This is never deleted.
 
-        // If wal2 is enabled, make the required changes.
-        SQResult result;
+        // Save the intended wal2 setting for this DB.
         sharedData->wal2 = _wal2;
-        if (sharedData->wal2) {
-            // if it's missing or anything but `wal2`, set it to wal2.
-            SQuery(db, "", "PRAGMA journal_mode;", result);
-            if (!result.rows.size() || result.rows[0][0] != "wal2") {
-                SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
-                SASSERT(!SQuery(db, "", "PRAGMA journal_mode = wal2;", result));
-            }
+
+        // Look up the existing wal setting for this DB.
+        SQResult result;
+        SQuery(db, "", "PRAGMA journal_mode;", result);
+        bool dbCurrentlyWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
+
+        // If the intended wal setting doesn't match the existing wal setting, change it.
+        if (dbCurrentlyWAL2 != sharedData->wal2) {
+            string walType = sharedData->wal2 ? "wal2" : "wal";
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = " + walType + ";", result));
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
