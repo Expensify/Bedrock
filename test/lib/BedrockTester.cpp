@@ -61,7 +61,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
-        {"-wal2", ""},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
@@ -490,8 +489,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
-        // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, false, true);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1);
     }
     return *_db;
 }
