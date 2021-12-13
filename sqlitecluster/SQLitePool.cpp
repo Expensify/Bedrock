@@ -9,10 +9,9 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int minJournalTables,
                        const string& synchronous,
                        int64_t mmapSizeGB,
-                       bool pageLoggingEnabled,
-                       bool wal2)
+                       bool pageLoggingEnabled)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled, wal2),
+  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, pageLoggingEnabled),
   _objects(_maxDBs, nullptr)
 {
 }
