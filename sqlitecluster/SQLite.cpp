@@ -34,7 +34,7 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool _wal2) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool enableWAL2) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
         ~SharedDataLookupMapType() {
@@ -52,16 +52,16 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         SharedData* sharedData = new SharedData(); // This is never deleted.
 
         // Save the intended wal2 setting for this DB.
-        sharedData->wal2 = _wal2;
+        sharedData->wal2 = enableWAL2;
 
         // Look up the existing wal setting for this DB.
         SQResult result;
         SQuery(db, "", "PRAGMA journal_mode;", result);
-        bool dbCurrentlyWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
+        bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
         string walType = sharedData->wal2 ? "wal2" : "wal";
-        if (dbCurrentlyWAL2 != sharedData->wal2) {
+        if (isDBCurrentlyUsingWAL2 != sharedData->wal2) {
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = " + walType + ";", result));
             SINFO("Set wal mode to: " << walType);
@@ -170,7 +170,7 @@ uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journa
     return max - min;
 }
 
-void SQLite::commonConstructorInitialization(bool wal2) {
+void SQLite::commonConstructorInitialization(bool enableWAL2) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_cacheSize > 0);
@@ -182,7 +182,7 @@ void SQLite::commonConstructorInitialization(bool wal2) {
     }
 
     // WAL is what allows simultaneous read/writing.
-    string walMode = "wal"s + (wal2 ? "2" : "");
+    string walMode = enableWAL2 ? "wal2" : "wal";
     SASSERT(!SQuery(_db, ("enabling write ahead logging (" + walMode + ")").c_str(), "PRAGMA journal_mode = " + walMode + ";"));
 
     if (_mmapSizeGB) {
@@ -215,12 +215,12 @@ void SQLite::commonConstructorInitialization(bool wal2) {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled, bool wal2) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled, bool enableWAL2) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames, wal2)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, enableWAL2)),
     _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _pageLoggingEnabled(pageLoggingEnabled),
@@ -228,7 +228,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
-    commonConstructorInitialization(wal2);
+    commonConstructorInitialization(enableWAL2);
 }
 
 SQLite::SQLite(const SQLite& from) :
