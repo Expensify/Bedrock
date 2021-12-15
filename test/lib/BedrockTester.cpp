@@ -107,9 +107,11 @@ BedrockTester::~BedrockTester() {
     if (_serverPID) {
         stopServer();
     }
+
     SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
     SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
     SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
+    SFileExists((_args["-db"] + "-wal2").c_str()) && unlink((_args["-db"] + "-wal2").c_str());
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
