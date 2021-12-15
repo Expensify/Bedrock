@@ -75,7 +75,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false, bool enableWAL2 = false);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
@@ -354,6 +354,9 @@ class SQLite {
         // checkpoints to not more often than every N commits.
         atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
+        // True if we should use wal2 mode.
+        atomic<bool> wal2 = false;
+
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -370,11 +373,11 @@ class SQLite {
 
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);
-    static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames);
+    static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool enableWAL2);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
-    void commonConstructorInitialization();
+    void commonConstructorInitialization(bool enableWAL2);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
