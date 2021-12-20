@@ -10,6 +10,7 @@
 #include <libstuff/SFastBuffer.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/tpunit++.hpp>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -65,6 +66,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
+        {"-testName", tpunit::currentTestName},
     };
 
     // Set defaults.
