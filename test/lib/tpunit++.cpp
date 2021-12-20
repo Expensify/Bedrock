@@ -217,7 +217,12 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                    }
                    {
                        lock_guard<mutex> lock(currentTestNameMutex);
-                       currentTestName = f->_name;
+                       if (f->_name) {
+                           currentTestName = f->_name;
+                       } else {
+                           cout << "test has no name???" << endl;
+                           currentTestName = "UNSPECIFIED";
+                       }
                    }
                    tpunit_detail_do_methods(f->_before_classes);
                    tpunit_detail_do_tests(f);
