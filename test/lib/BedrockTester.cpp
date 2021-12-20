@@ -47,6 +47,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         _testers.insert(this);
     }
 
+    string currentTestName;
+    {
+        lock_guard<mutex> lock(tpunit::currentTestNameMutex);
+        currentTestName = tpunit::currentTestName;
+    }
+
     map <string, string> defaultArgs = {
         {"-db", getTempFileName()},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -66,7 +72,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
-        {"-testName", tpunit::currentTestName},
+        {"-testName", currentTestName},
     };
 
     // Set defaults.

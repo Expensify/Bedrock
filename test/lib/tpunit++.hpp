@@ -188,8 +188,8 @@ using namespace std;
 
 namespace tpunit {
     // Make the current test name in the current thread globally accessible.
-    // Note that this is not synchronized.
     extern thread_local string currentTestName;
+    extern thread_local mutex currentTestNameMutex;
 
     // Doesn't do anything except allow us to detect when the program wants to shutdown.
     class ShutdownException{};
