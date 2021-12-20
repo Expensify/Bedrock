@@ -5,6 +5,8 @@
 using namespace tpunit;
 
 bool tpunit::TestFixture::exitFlag = false;
+thread_local string tpunit::currentTestName;
+thread_local mutex tpunit::currentTestNameMutex;
 
 tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
     : _this(obj)
@@ -212,6 +214,15 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                    // At this point, we know this test should run.
                    if (!f->_multiThreaded) {
                        printf("--------------\n");
+                   }
+                   {
+                       lock_guard<mutex> lock(currentTestNameMutex);
+                       if (f->_name) {
+                           currentTestName = f->_name;
+                       } else {
+                           cout << "test has no name???" << endl;
+                           currentTestName = "UNSPECIFIED";
+                       }
                    }
                    tpunit_detail_do_methods(f->_before_classes);
                    tpunit_detail_do_tests(f);
