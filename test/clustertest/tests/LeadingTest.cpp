@@ -11,7 +11,7 @@ struct LeadingTest : tpunit::TestFixture {
                               TEST(LeadingTest::failover),
                               // Disabled for speed. Enable to test stand down timeout.
                               // TEST(LeadingTest::standDownTimeout),
-                              TEST(LeadingTest::restoreMaster),
+                              TEST(LeadingTest::restoreLeader),
                               TEST(LeadingTest::synchronizing)
                              ) { }
 
@@ -57,13 +57,13 @@ struct LeadingTest : tpunit::TestFixture {
     void failover()
     {
         tester->stopNode(0);
-        BedrockTester& newMaster = tester->getTester(1);
+        BedrockTester& newLeader = tester->getTester(1);
 
         int count = 0;
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
-            string response = newMaster.executeWaitVerifyContent(cmd);
+            string response = newLeader.executeWaitVerifyContent(cmd);
             STable json = SParseJSONObject(response);
             if (json["state"] == "LEADING") {
                 success = true;
@@ -80,13 +80,13 @@ struct LeadingTest : tpunit::TestFixture {
     // The only point of this test is to verify that a new leader comes up even if the old one has a stuck HTTPS
     // request. It's slow so is disabled.
     void standDownTimeout() {
-        BedrockTester& newMaster = tester->getTester(1);
+        BedrockTester& newLeader = tester->getTester(1);
         SData cmd("httpstimeout");
         cmd["Connection"] = "forget";
-        auto result = newMaster.executeWaitVerifyContent(cmd, "202");
+        auto result = newLeader.executeWaitVerifyContent(cmd, "202");
     }
 
-    void restoreMaster()
+    void restoreLeader()
     {
         tester->startNode(0);
 
