@@ -1406,7 +1406,8 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
     // here so that the caller can know that he did something wrong rather
     // than having his job sit unprocessed in the queue forever. Hopefully
     // we can remove this restriction in the future.
-    if (priority != 0 && priority != 250 && priority != 500 && priority != 750 && priority != 850 && priority != 1000) {
+    list<int64_t> validPriorities = {0, 250, 500, 750, 850, 1000};
+    if (!SContains(validPriorities, priority)) {
         STHROW("402 Invalid priority value");
     }
 }
