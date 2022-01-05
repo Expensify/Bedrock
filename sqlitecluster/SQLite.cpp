@@ -17,6 +17,10 @@ atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are ass
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
+sqlite3* SQLite::getDBHandle() {
+    return _db;
+}
+
 string SQLite::initializeFilename(const string& filename) {
     // Canonicalize our filename and save that version.
     if (filename == ":memory:") {

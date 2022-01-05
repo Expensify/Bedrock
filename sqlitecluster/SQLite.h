@@ -90,6 +90,8 @@ class SQLite {
     // Returns the canonicalized filename for this database
     const string& getFilename() { return _filename; }
 
+    sqlite3* getDBHandle();
+
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
     bool read(const string& query, SQResult& result);
