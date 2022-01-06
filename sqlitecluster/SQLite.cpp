@@ -17,6 +17,10 @@ atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are ass
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
+sqlite3* SQLite::getDBHandle() {
+    return _db;
+}
+
 string SQLite::initializeFilename(const string& filename) {
     // Canonicalize our filename and save that version.
     if (filename == ":memory:") {
@@ -34,7 +38,7 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool enableWAL2) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
         ~SharedDataLookupMapType() {
@@ -51,9 +55,26 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
         SharedData* sharedData = new SharedData(); // This is never deleted.
 
+        // Save the intended wal2 setting for this DB.
+        sharedData->wal2 = enableWAL2;
+
+        // Look up the existing wal setting for this DB.
+        SQResult result;
+        SQuery(db, "", "PRAGMA journal_mode;", result);
+        bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
+
+        // If the intended wal setting doesn't match the existing wal setting, change it.
+        string walType = sharedData->wal2 ? "wal2" : "wal";
+        if (isDBCurrentlyUsingWAL2 != sharedData->wal2) {
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
+            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = " + walType + ";", result));
+            SINFO("Set wal mode to: " << walType);
+        } else {
+            SINFO("wal mode unchanged: " << walType);
+        }
+
         // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
-        SQResult result;
         SASSERT(!SQuery(db, "getting commit count", query, result));
         uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
         sharedData->commitCount = commitCount;
@@ -153,7 +174,7 @@ uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journa
     return max - min;
 }
 
-void SQLite::commonConstructorInitialization() {
+void SQLite::commonConstructorInitialization(bool enableWAL2) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_cacheSize > 0);
@@ -165,7 +186,8 @@ void SQLite::commonConstructorInitialization() {
     }
 
     // WAL is what allows simultaneous read/writing.
-    SASSERT(!SQuery(_db, "enabling write ahead logging", "PRAGMA journal_mode = WAL;"));
+    string walMode = enableWAL2 ? "wal2" : "wal";
+    SASSERT(!SQuery(_db, ("enabling write ahead logging (" + walMode + ")").c_str(), "PRAGMA journal_mode = " + walMode + ";"));
 
     if (_mmapSizeGB) {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
@@ -197,12 +219,12 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled, bool enableWAL2) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, enableWAL2)),
     _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _pageLoggingEnabled(pageLoggingEnabled),
@@ -210,7 +232,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(enableWAL2);
 }
 
 SQLite::SQLite(const SQLite& from) :
@@ -226,7 +248,7 @@ SQLite::SQLite(const SQLite& from) :
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(_sharedData.wal2);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
@@ -265,6 +287,12 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
     SQLite* object = static_cast<SQLite*>(data);
     object->_sharedData._currentPageCount.store(pageCount);
+
+    if (object->_sharedData.wal2) {
+        SINFO("[checkpoint] skipping straight to passive checkpoint in wal2 mode.");
+        return SQLITE_OK;
+    }
+
     // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
     // size for a full checkpoint.
     if (pageCount >= fullCheckpointPageMin.load()) {
@@ -521,17 +549,19 @@ string SQLite::read(const string& query) {
 
 bool SQLite::read(const string& query, SQResult& result) {
     uint64_t before = STimeNow();
+    bool queryResult = false;
     _queryCount++;
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
         _cacheHits++;
-        return true;
-    }
-    _isDeterministicQuery = true;
-    bool queryResult = !SQuery(_db, "read only query", query, result);
-    if (_isDeterministicQuery && queryResult) {
-        _queryCache.emplace(make_pair(query, result));
+        queryResult = true;
+    } else {
+        _isDeterministicQuery = true;
+        queryResult = !SQuery(_db, "read only query", query, result);
+        if (_isDeterministicQuery && queryResult) {
+            _queryCache.emplace(make_pair(query, result));
+        }
     }
     _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
@@ -556,6 +586,11 @@ void SQLite::_checkInterruptErrors(const string& error) {
             resetTiming();
             errorCode = 1;
         }
+    }
+
+    if (!_abandonForCheckpoint && _sharedData._checkpointThreadBusy.load() && _enableCheckpointInterrupt) {
+        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint - not set in interrupt handler");
+        _abandonForCheckpoint = true;
     }
 
     if (_abandonForCheckpoint) {
@@ -1148,6 +1183,12 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 
     // If we made it through the whole thing, we're done.
     return SQLITE_OK;
+}
+
+void SQLite::setQueryOnly(bool enabled) {
+    SQResult result;
+    string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
+    SQuery(_db, "set query_only", query, result);
 }
 
 SQLite::SharedData::SharedData() :

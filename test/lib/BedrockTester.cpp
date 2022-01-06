@@ -10,6 +10,7 @@
 #include <libstuff/SFastBuffer.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/tpunit++.hpp>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -46,6 +47,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         _testers.insert(this);
     }
 
+    string currentTestName;
+    {
+        lock_guard<mutex> lock(tpunit::currentTestNameMutex);
+        currentTestName = tpunit::currentTestName;
+    }
+
     map <string, string> defaultArgs = {
         {"-db", getTempFileName()},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -61,9 +68,11 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
+        {"-wal2", ""},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
+        {"-testName", currentTestName},
     };
 
     // Set defaults.
@@ -107,9 +116,11 @@ BedrockTester::~BedrockTester() {
     if (_serverPID) {
         stopServer();
     }
+
     SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
     SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
     SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
+    SFileExists((_args["-db"] + "-wal2").c_str()) && unlink((_args["-db"] + "-wal2").c_str());
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
@@ -489,7 +500,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1);
+        // Assumes wal2 mode.
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, false, true);
     }
     return *_db;
 }

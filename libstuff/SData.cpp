@@ -98,11 +98,22 @@ string SData::serialize() const {
 }
 
 int SData::deserialize(const string& fromString) {
-    return (SParseHTTP(fromString, methodLine, nameValueMap, content));
+    return deserialize(fromString.c_str(), fromString.size());
 }
 
 int SData::deserialize(const char* buffer, size_t length) {
-    return (SParseHTTP(buffer, length, methodLine, nameValueMap, content));
+    auto result = SParseHTTP(buffer, length, methodLine, nameValueMap, content);
+
+    // Why do this? It's to enable these values to be parsed quickly with simdjson, which requires up to 32 bytes of
+    // space at the end of the string so that it can run on chunks bigger than a single character, while guaranteeing
+    // not to go out-of-bounds on memory.
+    for (auto& p: nameValueMap) {
+        if (p.second[0] == '{' || p.second[0] == '[') {
+            p.second.reserve(p.second.size() + 32);
+        }
+    }
+
+    return result;
 }
 
 SData SData::create(const string& fromString) {
