@@ -9,7 +9,6 @@
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
-// Add all the sockets
     // Make sure it's not closed
     if (socket.state.load() != Socket::CLOSED) {
         // Check and see if it looks like we're still valid.
@@ -70,7 +69,6 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
 }
 
 void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
-// Walk across the sockets
     // Update this socket
     switch (socket.state.load()) {
     case Socket::CONNECTING: {

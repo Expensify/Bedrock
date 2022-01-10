@@ -118,7 +118,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         if ((transaction.s->state.load() > Socket::CONNECTED) ||
             (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
             (now > transaction.timeoutAt)) {
-            SWARN("TYLER Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+            SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
             transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
