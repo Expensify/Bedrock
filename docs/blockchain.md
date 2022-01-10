@@ -22,7 +22,7 @@ Under the hood it works like this:
 
 * So when a server connects to the cluster, it broadcasts its most recent `id` and `hash`, and then any two servers can confirm that they agree on the history up to that point.  And since all queries are committed in the same order, that means that the two servers are confident that they have the same exact database.
 
-* In the event two servers disagree on what hash corresponds to a given `id`, they know that they have "forked" at some point in the past, and simply refuse to communicate any futher.  This means in a "split brain" scenario, those subsets of the cluster that agree will connect to each other, and refuse to connect to the others.  (And then our Paxos-based election scheme will ensure that only one of "splits" will stand up a new master, because the others do not have quorum.)
+* In the event two servers disagree on what hash corresponds to a given `id`, they know that they have "forked" at some point in the past, and simply refuse to communicate any futher.  This means in a "split brain" scenario, those subsets of the cluster that agree will connect to each other, and refuse to connect to the others.  (And then our Paxos-based election scheme will ensure that only one of "splits" will stand up a new leader, because the others do not have quorum.)
 
 * After two nodes have connected and confirm they agree on the history up to a point, then if one has more data than the other, it will download each commit and apply it in turn -- every time confirming that it still agrees with the hash of the peer.
 

@@ -47,6 +47,6 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 
 	- Put each Bedrock node on a different server.
 
-	- Assign each node a different priority (greater than 0).  The highest priority node will be the 'master', which will coordinate distributed transactions.
+	- Assign each node a different priority (greater than 0).  The highest priority node will be the 'leader', which will coordinate distributed transactions.
 
 

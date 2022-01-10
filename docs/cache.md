@@ -96,7 +96,7 @@ Finally, Bedrock::Cache works particularly well with the standard Bedrock `Conne
     barv3
 
 ## Using the cache in PHP
-If you're using PHP, we've handily provided a client interface in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/master/src/Cache.php) library.  It works pretty much as you'd expect:
+If you're using PHP, we've handily provided a client interface in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/main/src/Cache.php) library.  It works pretty much as you'd expect:
 
     // Connect to Bedrock
     $bedrock = new Bedrock();

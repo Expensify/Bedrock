@@ -140,7 +140,7 @@ That causes Bedrock::Jobs to instantly respond to the other worker that is waiti
     
     {"data":{},"jobID":2,"name":"SendEmail"}
 
-This enables you to build a very efficient, very high performance job queuing engine.  However, there's no need for you to build it yourself -- this is already provided as part of the base Bedrock::Jobs engine in the form of `BedrockWorkerManager`, which is available in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/master/bin/BedrockWorkerManager.php) repo.  `BedrockWorkerManager` (or "BWM" among friends) is a simple PHP command-line application that:
+This enables you to build a very efficient, very high performance job queuing engine.  However, there's no need for you to build it yourself -- this is already provided as part of the base Bedrock::Jobs engine in the form of `BedrockWorkerManager`, which is available in the [Bedrock-PHP](https://github.com/Expensify/Bedrock-PHP/blob/main/bin/BedrockWorkerManager.php) repo.  `BedrockWorkerManager` (or "BWM" among friends) is a simple PHP command-line application that:
 
 1. Waits for resources to free up
 2. Waits for a job
