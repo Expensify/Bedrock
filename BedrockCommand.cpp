@@ -233,3 +233,24 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 }
+
+void BedrockCommand::prePoll(fd_map& fdm)
+{
+    for (auto& transaction : httpsRequests) {
+        transaction->manager.prePoll(fdm, *transaction);
+    }
+}
+
+void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
+{
+    for (auto& transaction : httpsRequests) {
+        // If nothing else has set the timeout for this request (i.e., a HTTPS manager that expects to receive a
+        // response in a particular time), we will set the timeout here to match the timeout of the command so that we
+        // can't go "too long" waiting for a response.
+        // TODO: We should be able to set this at the creation of the transaction.
+        if (!transaction->timeoutAt) {
+            transaction->timeoutAt = _timeout;
+        }
+        transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS);
+    }
+}
