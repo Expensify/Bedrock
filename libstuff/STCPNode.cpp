@@ -10,19 +10,27 @@
 #define SLOGPREFIX "{" << name << "} "
 
 STCPNode::STCPNode(const string& name_, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_)
-    : STCPServer(host), name(name_), recvTimeout(recvTimeout_), peerList(_peerList), _deserializeTimer("STCPNode::deserialize"),
-      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append") {
+    : STCPManager(), name(name_), recvTimeout(recvTimeout_), peerList(_peerList), _deserializeTimer("STCPNode::deserialize"),
+      _sConsumeFrontTimer("STCPNode::SConsumeFront"), _sAppendTimer("STCPNode::append")
+{
+    // Initialize
+    if (!host.empty()) {
+        port = openPort(host);
+    }
 }
 
 STCPNode::~STCPNode() {
     // Clean up all the sockets and peers
     for (Socket* socket : acceptedSocketList) {
-        closeSocket(socket);
+        delete socket;
     }
     acceptedSocketList.clear();
+
     for (Peer* peer : peerList) {
         // Shut down the peer
-        peer->closeSocket(this);
+        if (peer->socket) {
+            socketList.remove(peer->socket);
+        }
         delete peer;
     }
 }
@@ -90,22 +98,51 @@ uint64_t STCPNode::getIDByPeer(STCPNode::Peer* peer) {
     return 0;
 }
 
+STCPManager::Socket* STCPNode::acceptSocket() {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    Socket* socket = nullptr;
+
+    // Try to accept on the port and wrap in a socket
+    sockaddr_in addr;
+    int s = S_accept(port->s, addr, false);
+    if (s > 0) {
+        // Received a socket, wrap
+        SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+        socket = new Socket(s, Socket::CONNECTED);
+        socket->addr = addr;
+        // Pretty sure these leak.
+        socketList.push_back(socket);
+
+        // Try to read immediately
+        S_recvappend(socket->s, socket->recvBuffer);
+    }
+
+    return socket;
+}
+
 void STCPNode::prePoll(fd_map& fdm) {
-    // Let the base class do its thing
-    return STCPServer::prePoll(fdm);
+    if (port) {
+        SFDset(fdm, port->s, SREADEVTS);
+    }
+    for (auto& s : socketList) {
+        STCPManager::prePoll(fdm, *s);
+    }
 }
 
 void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
     {
         AutoTimerTime appendTime(_sAppendTimer);
-        STCPServer::postPoll(fdm);
+        for (auto& s : socketList) {
+            STCPManager::postPoll(fdm, *s);
+        }
     }
 
     // Accept any new peers
     Socket* socket = nullptr;
-    while ((socket = acceptSocket()))
+    while ((socket = acceptSocket())) {
         acceptedSocketList.push_back(socket);
+    }
 
     // Process the incoming sockets
     list<Socket*>::iterator nextSocketIt = acceptedSocketList.begin();
@@ -169,8 +206,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), recv='"
                       << socket->recvBuffer << "', send='" << socket->sendBufferCopy() << "'");
             }
-            closeSocket(socket);
+            socketList.remove(socket);
             acceptedSocketList.erase(socketIt);
+            delete socket;
         }
     }
 
@@ -246,7 +284,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     SData reconnect("RECONNECT");
                     reconnect["Reason"] = e.what();
                     peer->socket->send(reconnect.serialize());
-                    shutdownSocket(peer->socket);
+                    peer->socket->shutdown();
                     break;
                 }
                 break;
@@ -263,9 +301,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                                         << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
                 _onDisconnect(peer);
-                if (peer->socket->connectFailure)
+                if (peer->socket->connectFailure) {
                     peer->failedConnections++;
-                peer->closeSocket(this);
+                }
+                socketList.remove(peer->socket);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect.load());
@@ -283,8 +322,10 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // Try again
                 PINFO("Retrying the connection");
                 peer->reset();
-                peer->socket = openSocket(peer->host);
-                if (peer->socket) {
+                try {
+                    peer->socket = new Socket(peer->host);
+                    socketList.push_back(peer->socket);
+
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
                     SData login("NODE_LOGIN");
@@ -292,9 +333,9 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     peer->socket->send(login.serialize());
                     _sendPING(peer);
                     _onConnect(peer);
-                } else {
+                } catch (const SException& exception) {
                     // Failed to open -- try again later
-                    SWARN("Failed to open socket '" << peer->host << "', trying again in 60s");
+                    SWARN(exception.what());
                     peer->failedConnections++;
                     peer->nextReconnect = STimeNow() + STIME_US_PER_M;
                 }
@@ -330,6 +371,12 @@ STCPNode::Peer::Peer(const string& name_, const string& host_, const STable& par
     hash()
 { }
 
+STCPNode::Peer::~Peer() {
+    if (socket) {
+        delete socket;
+    }
+}
+
 bool STCPNode::Peer::connected() const {
     lock_guard<decltype(_stateMutex)> lock(_stateMutex);
     return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
@@ -340,6 +387,9 @@ void STCPNode::Peer::reset() {
     latency = 0;
     loggedIn = false;
     priority = 0;
+    if (socket) {
+        delete socket;
+    }
     socket = nullptr;
     state = SEARCHING;
     standupResponse = Response::NONE;
@@ -355,16 +405,6 @@ void STCPNode::Peer::sendMessage(const SData& message) {
         socket->send(message.serialize());
     } else {
         SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
-    }
-}
-
-void STCPNode::Peer::closeSocket(STCPManager* manager) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
-    if (socket) {
-        manager->closeSocket(socket);
-        socket = nullptr;
-    } else {
-        SWARN("Peer " << name << " has no socket.");
     }
 }
 

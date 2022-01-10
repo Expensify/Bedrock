@@ -1,13 +1,12 @@
 #pragma once
 class SQLiteCommand;
 
+#include <libstuff/STCPManager.h>
+
 // This is an abstract class to define the interface for a "server" that a SQLiteNode can communicate with to process
 // commands it receives.
-class SQLiteServer : public STCPServer {
+class SQLiteServer : public STCPManager {
   public:
-    // Constructor initializes underlying STCPServer.
-    SQLiteServer(const string& host) : STCPServer(host) { }
-
     // An SQLiteNode will call this to pass a command to a server for processing. The isNew flag is set if this is the
     // first time this command has been sent to this server, as opposed to being an existing command, such as one that
     // was previously escalated.
