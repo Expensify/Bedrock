@@ -226,6 +226,8 @@ bool TestPluginCommand::peek(SQLite& db) {
             db.read(query, result);
         }
         return true;
+    } else if (SStartsWith(request.methodLine, "idcollision")) {
+        usleep(1001); // for TimingTest to not get 0 values.
     } else if (SStartsWith(request.methodLine, "httpstimeout")) {
         // This command doesn't actually make the connection for 35 seconds, allowing us to use it to test what happens
         // when there's a blocking command and leader needs to stand down, to verify the timeout for that works.
@@ -364,6 +366,7 @@ void TestPluginCommand::process(SQLite& db) {
         // Done.
         return;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
+        usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
@@ -472,8 +475,10 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    Socket* s = openSocket(host, x509);
-    if (!s) {
+    Socket* s = nullptr;
+    try {
+        s = new Socket(host, x509);
+    } catch (const SException& e) {
         return _createErrorTransaction();
     }
 
@@ -487,7 +492,5 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
     //transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
     return transaction;
 }

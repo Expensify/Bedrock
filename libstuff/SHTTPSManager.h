@@ -16,12 +16,12 @@ class SStandaloneHTTPSManager : public STCPManager {
         STCPManager::Socket* s;
         uint64_t created;
         uint64_t finished;
+        uint64_t timeoutAt;
         SData fullRequest;
         SData fullResponse;
         int response;
         STable values;
         SStandaloneHTTPSManager& manager;
-        bool isDelayedSend;
         uint64_t sentTime;
         const string requestID;
     };
@@ -31,16 +31,10 @@ class SStandaloneHTTPSManager : public STCPManager {
     SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt);
     virtual ~SStandaloneHTTPSManager();
 
-    // STCPServer API. Except for postPoll, these are just threadsafe wrappers around base class functions.
-    void prePoll(fd_map& fdm);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests);
-
+    void prePoll(fd_map& fdm, Transaction& transaction);
 
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, list<Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS = (5 * 60 * 1000));
-    Socket* openSocket(const string& host, SX509* x509 = nullptr);
-    void closeSocket(Socket* socket);
+    void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
@@ -65,13 +59,6 @@ class SStandaloneHTTPSManager : public STCPManager {
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
-
-    list<Transaction*> _activeTransactionList;
-    list<Transaction*> _completedTransactionList;
-
-    // SStandaloneHTTPSManager operations are thread-safe, we lock around any accesses to our transaction lists, so that
-    // multiple threads can add/remove from them.
-    recursive_mutex _listMutex;
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {
