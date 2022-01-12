@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libstuff/STCPManager.h>
+#include <libstuff/STCPServer.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -43,7 +43,7 @@ class AutoTimerTime {
     AutoTimer& _t;
 };
 
-struct STCPNode : public STCPManager {
+struct STCPNode : public STCPServer {
     // Possible states of a node in a DB cluster
     enum State {
         UNKNOWN,
@@ -62,7 +62,6 @@ struct STCPNode : public STCPManager {
     // Updates all peers
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
-    Socket* acceptSocket();
 
     // Represents a single peer in the database cluster
     class Peer {
@@ -103,7 +102,6 @@ struct STCPNode : public STCPManager {
 
         // Constructor.
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
-        ~Peer();
 
         // Atomically set commit and hash.
         void setCommit(uint64_t count, const string& hashString);
@@ -119,6 +117,9 @@ struct STCPNode : public STCPManager {
 
         // Reset a peer, as if disconnected and starting the connection over.
         void reset();
+
+        // Close the peer's socket. Thread-safe.
+        void closeSocket(STCPManager* manager);
 
         // Send a message to this peer. Thread-safe.
         void sendMessage(const SData& message);
@@ -143,9 +144,6 @@ struct STCPNode : public STCPManager {
         // For initializing the permafollower value from the params list.
         static bool isPermafollower(const STable& params);
     };
-
-    // Do we need a mutex protecting this? Depends.
-    list<STCPManager::Socket*> socketList;
 
     // Begins listening for connections on a given port
     STCPNode(const string& name, const string& host, const vector<Peer*> _peerList, const uint64_t recvTimeout_ = STIME_US_PER_M);
@@ -183,8 +181,6 @@ struct STCPNode : public STCPManager {
     AutoTimer _deserializeTimer;
     AutoTimer _sConsumeFrontTimer;
     AutoTimer _sAppendTimer;
-
-    unique_ptr<Port> port;
 };
 
 // serialization for Responses.

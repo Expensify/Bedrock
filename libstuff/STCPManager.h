@@ -21,9 +21,7 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, SX509* x509 = nullptr);
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
-        Socket(Socket&& from);
         ~Socket();
         // Attributes
         int s;
@@ -39,7 +37,6 @@ struct STCPManager {
         bool send();
         bool send(const string& buffer);
         bool recv();
-        void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
         string logString;
 
@@ -69,20 +66,22 @@ struct STCPManager {
         uint64_t recvBytes;
     };
 
-    class Port {
-      public:
-        Port(int _s, string _host);
-        ~Port();
-
-        // Attributes
-        const int s;
-        const string host;
-    };
+    // Cleans up outstanding sockets
+    virtual ~STCPManager();
 
     // Updates all managed sockets
-    // TODO: Actually explain what these do.
-    static void prePoll(fd_map& fdm, Socket& socket);
-    static void postPoll(fd_map& fdm, Socket& socket);
+    void prePoll(fd_map& fdm);
+    void postPoll(fd_map& fdm);
 
-    static unique_ptr<Port> openPort(const string& host);
+    // Opens outgoing socket
+    Socket* openSocket(const string& host, SX509* x509 = nullptr, recursive_mutex* listMutexPtr = nullptr);
+
+    // Gracefully shuts down a socket
+    void shutdownSocket(Socket* socket, int how = SHUT_RDWR);
+
+    // Hard terminate a socket
+    void closeSocket(Socket* socket);
+
+    // Attributes
+    list<Socket*> socketList;
 };

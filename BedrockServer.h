@@ -243,8 +243,12 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
+    // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
+    // will not be managed by that poll loop, instead, it starts a new thread.
+    STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
+
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket&& s, bool isControl);
+    void handleSocket(Socket* s, bool isControl);
 
   private:
     // The name of the sync thread.
@@ -280,7 +284,7 @@ class BedrockServer : public SQLiteServer {
     bool _suppressCommandPortManualOverride;
 
     // This is a map of open listening ports to the plugin objects that created them.
-    map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
+    map<Port*, BedrockPlugin*> _portPluginMap;
 
     // The server version. This may be fake if the arguments contain a `versionOverride` value.
     string _version;
@@ -294,9 +298,8 @@ class BedrockServer : public SQLiteServer {
     bool _upgradeDB(SQLite& db);
 
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
-    // TODO: Can we kill `nextActivity`?
-    void _prePollCommands(fd_map& fdm);
-    void _postPollCommands(fd_map& fdm, uint64_t nextActivity);
+    void _prePollPlugins(fd_map& fdm);
+    void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
 
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();
@@ -376,21 +379,40 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
-    unique_ptr<Port> _controlPort;
-    unique_ptr<Port> _commandPort;
+    Port* _controlPort;
+    Port* _commandPort;
 
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;
 
+    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
+    // their HTTPS requests finish and move them back to the main queue.
+    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
+
+    // Comparison class to sort command pointers based on their timeout rather than pointer address. This lets us keep
+    // commands ordered such that the first ones to time out are at the front.
+    struct compareCommandByTimeout {
+        bool operator() (BedrockCommand* a, BedrockCommand* b) const {
+            if (a->timeout() == b->timeout()) {
+                // Tiebreaker so that two commands with the same timeout don't appear equivalent.
+                return a < b;
+            }
+            return a->timeout() < b->timeout();
+        }
+    };
 
     // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
     // copy of each command, even if it has multiple requests. Sorted with the above `compareCommandByTimeout`.
-    set<unique_ptr<BedrockCommand>> _outstandingHTTPSCommands;
+    set<BedrockCommand*, compareCommandByTimeout> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.
     void waitForHTTPS(unique_ptr<BedrockCommand>&& command);
+
+    // Takes a list of completed HTTPS requests, and move those commands back to the main queue (as long as they don't
+    // have any other incomplete requests).
+    int finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests);
 
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
     void _finishPeerCommand(unique_ptr<BedrockCommand>& command);
@@ -441,7 +463,7 @@ class BedrockServer : public SQLiteServer {
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 
     // Setup a new command from a bare request.
-    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s);
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
