@@ -41,6 +41,7 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
         return;
     }
 
+    delete transaction->s;
     transaction->s = nullptr;
     delete transaction;
 }
@@ -93,6 +94,9 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
+
+        // Shut down the socket, we're done with it.
+        transaction.s->shutdown(Socket::CLOSED);
 
         // This is supposed to check for a "200 OK" response, which it does very poorly. It also checks for message
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
