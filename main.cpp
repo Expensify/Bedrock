@@ -77,6 +77,28 @@ void BackupDB(const string& dbPath) {
     }
 }
 
+set<string> checkSQLiteExtensions(SData& args) {
+    list<string> extensions = SParseList(args["-sqliteExtensions"]);
+
+    // This will return the list of all extensions loaded
+    set <string> postProcessedNames;
+
+    // Fully loading the extension requires a db handle, so we will wait to
+    // load the extension until SQLite::commonConstructorInitialization. All we
+    // do here is verify that the files exist.
+    for (string extensionPath : extensions) {
+        // TODO:
+        // * verify file path exists
+        // * attempt to load in a try/catch
+        if (!SFileExists(extensionPath)) {
+            SERROR("Tried to load SQLite extension " << extensionPath << " but the file does not exist.");
+        }
+
+        postProcessedNames.emplace(extensionPath);
+    }
+
+    return postProcessedNames;
+}
 
 set<string> loadPlugins(SData& args) {
     list<string> plugins = SParseList(args["-plugins"]);
@@ -305,7 +327,13 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
 
+    // Bedrock plugins
     args["-plugins"] = SComposeList(loadPlugins(args));
+
+    // Check SQLite extensions to ensure the files exist. Accepts a
+    // comma-delimited list of full paths to compiled SQLite extensions
+    // compiled into .so files
+    args["-sqliteExtensions"] = SComposeList(checkSQLiteExtensions(args));
 
     // Reset the database if requested
     if (args.isSet("-clean")) {

@@ -216,10 +216,26 @@ void SQLite::commonConstructorInitialization(bool enableWAL2) {
     } else {
         DBINFO("Using SQLite default PRAGMA synchronous");
     }
+
+    // Load SQLite extensions
+    for (string extension : _sqliteExtensions) {
+        // FIXME: Is this the right way to pass errorMessage?
+        char* errorMessage;
+        if (sqlite3_load_extension(_db, extension.c_str(), 0, &errorMessage) != SQLITE_OK) {
+            // TODO: What is the correct way to do this?
+            // If an error occurs and pzErrMsg is not 0, then the
+            // sqlite3_load_extension() interface shall attempt to fill
+            // *pzErrMsg with error message text stored in memory obtained from
+            // sqlite3_malloc(). The calling function should free this memory
+            // by calling sqlite3_free().
+            SERROR("Unable to load extension " << extension << " - error: " << errorMessage);
+        }
+    }
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled, bool enableWAL2) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB,
+               bool pageLoggingEnabled, bool enableWAL2, set <string> sqliteExtensions) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
@@ -230,7 +246,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _pageLoggingEnabled(pageLoggingEnabled),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
-    _mmapSizeGB(mmapSizeGB)
+    _mmapSizeGB(mmapSizeGB),
+    _sqliteExtensions(sqliteExtensions)
 {
     commonConstructorInitialization(enableWAL2);
 }
@@ -247,6 +264,7 @@ SQLite::SQLite(const SQLite& from) :
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
+    _sqliteExtensions(from._sqliteExtensions)
 {
     commonConstructorInitialization(_sharedData.wal2);
 }

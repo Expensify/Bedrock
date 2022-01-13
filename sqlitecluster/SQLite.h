@@ -75,12 +75,13 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false, bool enableWAL2 = false);
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false,
+           bool enableWAL2 = false, set<string> sqliteExtensions);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
         SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
-    
+
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
@@ -367,7 +368,7 @@ class SQLite {
 
         // set of objects listening for checkpoints.
         set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
-        
+
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., inserting checkpoint listeners, updating _committedTransactions, etc.
         recursive_mutex _internalStateMutex;
@@ -535,4 +536,7 @@ class SQLite {
     // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
     // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
     mutex _destructorMutex;
+
+    // A set of strings, where each is the full path to a .so file for an SQLite extension
+    set <string> _sqliteExtensions;
 };
