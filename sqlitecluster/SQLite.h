@@ -76,7 +76,7 @@ class SQLite {
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
            const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false,
-           bool enableWAL2 = false, set<string> sqliteExtensions);
+           bool enableWAL2 = false, set<string> sqliteExtensions = {});
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :

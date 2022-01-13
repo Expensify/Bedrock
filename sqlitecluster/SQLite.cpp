@@ -263,7 +263,7 @@ SQLite::SQLite(const SQLite& from) :
     _pageLoggingEnabled(from._pageLoggingEnabled),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
-    _mmapSizeGB(from._mmapSizeGB)
+    _mmapSizeGB(from._mmapSizeGB),
     _sqliteExtensions(from._sqliteExtensions)
 {
     commonConstructorInitialization(_sharedData.wal2);
