@@ -357,7 +357,7 @@ class SQLite {
         atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
         // True if we should use wal2 mode.
-        atomic<bool> wal2 = false;
+        atomic<bool> wal2 = true;
 
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
