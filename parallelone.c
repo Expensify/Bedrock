@@ -20,12 +20,12 @@
 **
 **    SELECT * FROM parallelone('{
 **       "tasks":[
-**         { "dbname":"/home/www/logs/log-20210101.db",
+**         { "dbfile":"/home/www/logs/log-20210101.db",
 **           "query": "SELECT ... FROM ... ORDER BY ..." },
-**         { "dbname":"/home/www/logs/log-20210101.db",
+**         { "dbfile":"/home/www/logs/log-20210101.db",
 **           "query": "SELECT ... FROM ... ORDER BY ..." },
 **         ...
-**         { "dbname":"/home/www/logs/log-20220101.db",
+**         { "dbfile":"/home/www/logs/log-20220101.db",
 **           "query": "SELECT ... FROM ... ORDER BY ..." }
 **        ]
 **    }');
@@ -100,7 +100,7 @@
 **
 ** Usually each "task" requires two JSON values:
 **
-**      "dbname"       The name of the database file to open and query.
+**      "dbfile"       The name of the database file to open and query.
 **      "query"        A single SELECT statement to run against that database.
 **
 ** But for testing and debugging purposes, you can alternatively specify:
@@ -169,7 +169,7 @@ struct POneTask {
   POneRow *pCurrent;      /* Current row */
   int iTaskId;            /* Task ID */
   int bThreaded;          /* True for threaded tasks */
-  
+
   /***** Fields accessible by the child thread only *****/
   sqlite3 *dbChld;        /* Copy of db, copied outside the mutex */
   char *zDbName;          /* Name of the database file in which to run query */
@@ -436,7 +436,7 @@ static void pqueueBalanceDownward(POneCursor *pCur, int idx){
     pCur->apTask[parent] = pCur->apTask[idx];
     pCur->apTask[idx] = pTemp;
     idx = parent;
-  }    
+  }
 }
 
 /*
@@ -511,7 +511,7 @@ static int ptaskDelete(POneTask *pTask, POneCursor *pCur){
     }else{
       sqlite3_free(pTask->zErrMsg);
     }
-  }   
+  }
   sqlite3_free(pTask->zDbName);
   sqlite3_free(pTask->zSql);
   sqlite3_free(pTask->zData);
@@ -580,7 +580,7 @@ static void *pchildMain(void *pArg){
   POneTask *pTask = (POneTask*)pArg;
   int rc;
   sqlite3_stmt *pStmt;
-  
+
   /* Open the database */
   pTask->dbChld = 0;
   rc = sqlite3_open_v2(pTask->zDbName, &pTask->dbChld, SQLITE_OPEN_READONLY,0);
@@ -688,7 +688,7 @@ static int ptaskNewFromFileAndQuery(
 ** It just leaves pCurrent set to NULL.
 **
 ** The child thread stores content in the POneTask.pRow list.  This
-** function runs in the main thread and transfers content from 
+** function runs in the main thread and transfers content from
 ** POneTask.pRow over into POneTask.pCurrent.  All content that has
 ** accumulated in POneTask.pRow is transferred over to pCurrent, all
 ** in one go.  Typically, the child will have generated multiple rows
@@ -881,7 +881,7 @@ static int parallelOneNext(sqlite3_vtab_cursor *cur){
     }
   }
   pqueueBalanceUpward(pCur, 0);
-    
+
   pCur->iRowid++;
   return rc;
 }
@@ -950,7 +950,7 @@ static int parallelOneEof(sqlite3_vtab_cursor *cur){
 ** objects, and starts up child threads.
 */
 static int parallelOneFilter(
-  sqlite3_vtab_cursor *pVtabCursor, 
+  sqlite3_vtab_cursor *pVtabCursor,
   int idxNum, const char *idxStr,
   int argc, sqlite3_value **argv
 ){
@@ -983,7 +983,7 @@ static int parallelOneFilter(
   }
 
 
-  /* Process the tasks: array from zSpec */  
+  /* Process the tasks: array from zSpec */
   zSql = sqlite3_mprintf(
     "SELECT\n"
     "  json_extract(x.value,'$.dbfile') AS dbfile,\n"
@@ -1076,7 +1076,7 @@ static int parallelOneBestIndex(
 }
 
 /*
-** This following structure defines all the methods for the 
+** This following structure defines all the methods for the
 ** virtual table.
 */
 static sqlite3_module parallelOneModule = {
@@ -1110,8 +1110,8 @@ static sqlite3_module parallelOneModule = {
 __declspec(dllexport)
 #endif
 int sqlite3_parallelone_init(
-  sqlite3 *db, 
-  char **pzErrMsg, 
+  sqlite3 *db,
+  char **pzErrMsg,
   const sqlite3_api_routines *pApi
 ){
   int rc = SQLITE_OK;
