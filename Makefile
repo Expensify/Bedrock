@@ -49,6 +49,7 @@ clean:
 	rm -rf test/test
 	rm -rf test/clustertest/clustertest
 	rm -rf test/clustertest/testplugin/testplugin.so
+	rm -f parallelone.so
 	# The following two lines are unused but will remove old files that are no longer needed.
 	rm -rf libstuff/libstuff.d
 	rm -rf libstuff/libstuff.h.gch
@@ -141,13 +142,19 @@ $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fpic -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
 
+# Build parallelone shared object file
+parallelone.so: parallelone.c
+	$(CC) -shared -fPIC parallelone.c -o $@
+
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
 ifneq ($(MAKECMDGOALS),clean)
+ifneq ($(MAKECMDGOALS),parallelone.so)
 -include $(LIBBEDROCKDEP)
 -include $(STUFFDEP)
 -include $(TESTDEP)
 -include $(CLUSTERTESTDEP)
 -include $(BEDROCKDEP)
 -include $(TESTPLUGINTDEP)
+endif
 endif
