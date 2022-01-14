@@ -217,19 +217,36 @@ void SQLite::commonConstructorInitialization(bool enableWAL2) {
         DBINFO("Using SQLite default PRAGMA synchronous");
     }
 
+    // If there are any extensions to load, enable extension loading
+    if (!_sqliteExtensions.empty()) {
+        if (sqlite3_enable_load_extension(_db, 1) != SQLITE_OK) {
+            SERROR("Error enabling extension loading");
+        }
+        SINFO("Extension loading enabled.");
+    }
+
     // Load SQLite extensions
     for (string extension : _sqliteExtensions) {
-        // FIXME: Is this the right way to pass errorMessage?
-        char* errorMessage;
+        char* errorMessage = NULL;
         if (sqlite3_load_extension(_db, extension.c_str(), 0, &errorMessage) != SQLITE_OK) {
-            // TODO: What is the correct way to do this?
-            // If an error occurs and pzErrMsg is not 0, then the
-            // sqlite3_load_extension() interface shall attempt to fill
-            // *pzErrMsg with error message text stored in memory obtained from
-            // sqlite3_malloc(). The calling function should free this memory
-            // by calling sqlite3_free().
-            SERROR("Unable to load extension " << extension << " - error: " << errorMessage);
+            // Assign the message to a local string so we can free the memory
+            // sqlite allocated to the message.
+            // TODO: Is this usage correct?
+            string messageString = string(errorMessage);
+            sqlite3_free(errorMessage);
+            SERROR("Unable to load extension " << extension << " - error: " << messageString);
         }
+
+        SINFO("Successfully loaded extension " << extension);
+    }
+
+    // If there were any extensions to load, enable extension loading
+    if (!_sqliteExtensions.empty()) {
+        if (sqlite3_enable_load_extension(_db, 0) != SQLITE_OK) {
+            SERROR("Error disabling extension loading");
+        }
+
+        SINFO("Disabled extension loading.");
     }
 }
 

@@ -81,7 +81,7 @@ set<string> checkSQLiteExtensions(SData& args) {
     list<string> extensions = SParseList(args["-sqliteExtensions"]);
 
     // This will return the list of all extensions loaded
-    set <string> postProcessedNames;
+    set<string> postProcessedNames;
 
     // Fully loading the extension requires a db handle, so we will wait to
     // load the extension until SQLite::commonConstructorInitialization. All we
