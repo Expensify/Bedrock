@@ -87,9 +87,6 @@ set<string> checkSQLiteExtensions(SData& args) {
     // load the extension until SQLite::commonConstructorInitialization. All we
     // do here is verify that the files exist.
     for (string extensionPath : extensions) {
-        // TODO:
-        // * verify file path exists
-        // * attempt to load in a try/catch
         if (!SFileExists(extensionPath)) {
             SERROR("Tried to load SQLite extension " << extensionPath << " but the file does not exist.");
         }
