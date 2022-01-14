@@ -57,7 +57,7 @@
 #define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateName(_state) << "} "
 
 // Initializations for static vars.
-const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
+const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 1;
 const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
