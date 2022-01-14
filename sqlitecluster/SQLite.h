@@ -16,13 +16,6 @@ class SQLite {
         uint64_t _time;
     };
 
-    class checkpoint_required_error : public exception {
-      public :
-        checkpoint_required_error() {};
-        virtual ~checkpoint_required_error() {};
-        const char* what() const noexcept { return "checkpoint_required"; }
-    };
-
     // We can get a SQLITE_CONSTRAINT error in a write command for two reasons. One is a legitimate error caused
     // by a user trying to insert two rows with the same key. The other is in multi-threaded replication, when
     // transactions start in a different order on a follower than they did on the leader. Consider this example case:
@@ -55,18 +48,6 @@ class SQLite {
     // left shifted by 8 bits, see SQLITE_ERROR_MISSING_COLLSEQ in sqlite.h for an example), we left shift by 16 for
     // this to avoid any overlap.
     static const int COMMIT_DISABLED = (1 << 16) | 1;
-
-    // Abstract base class for objects that need to be notified when we set `checkpointRequired` and then when that
-    // checkpoint is complete. Why do we need to notify anyone that we're going to do a checkpoint? Because restart
-    // checkpoints can't run simultaneously with any other transactions, and thus will block new transactions and wait
-    // for all current transactions to finish, but all current transactions may not finish gracefully on their own, and
-    // may need to be interrupted by another mechanism. This allows an object with this behavior (blocking during a
-    // transaction) to be notified that it needs to either finish or abandon the transaction.
-    class CheckpointRequiredListener {
-      public:
-        virtual void checkpointRequired() = 0;
-        virtual void checkpointComplete() = 0;
-    };
 
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
     //                   created. If some value larger than -1 is passed, then journals `journal0000 through
@@ -223,11 +204,6 @@ class SQLite {
     // Reset timing after finishing a timed operation.
     void resetTiming();
 
-    // Register and deregister listeners for checkpoint operations. See the comments on `CheckpointRequiredListener`
-    // above for why checkpoint listeners are useful.
-    void addCheckpointListener(CheckpointRequiredListener& listener);
-    void removeCheckpointListener(CheckpointRequiredListener& listener);
-
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
     // transactions can be replicated out to peers.
@@ -239,9 +215,6 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist = nullptr;
 
-    // Call before starting a transaction to make sure we don't interrupt a checkpoint operation.
-    void waitForCheckpoint();
-
     // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
     static atomic<int> passiveCheckpointPageMin;
@@ -249,13 +222,6 @@ class SQLite {
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
-
-    // Calling this before starting a transaction will prevent the next transaction from being interrupted by a restart
-    // checkpoint and restarting. This causes a potential performance issue so only do this if it's *really important*
-    // that this transaction isn't interrupted. The primary reason for adding this was to enable slow but very
-    // infrequent transactions to complete, even though they take longer than the typical interval between restart
-    // checkpoints to complete, thus causing an endless cycle of interrupted transactions.
-    void disableCheckpointInterruptForNextTransaction() { _enableCheckpointInterrupt = false; }
 
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
@@ -287,12 +253,6 @@ class SQLite {
       public:
         // Constructor.
         SharedData();
-
-        // Add and remove and call checkpoint listeners in a thread-safe way.
-        void addCheckpointListener(CheckpointRequiredListener& listener);
-        void removeCheckpointListener(CheckpointRequiredListener& listener);
-        void checkpointRequired();
-        void checkpointComplete();
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
@@ -328,33 +288,10 @@ class SQLite {
         // during a transaction).
         recursive_mutex commitLock;
 
-        // This mutex prevents any thread starting a new transaction when locked. The checkpoint thread will lock it
-        // when required to make sure it can get exclusive use of the DB.
-        shared_timed_mutex blockNewTransactionsMutex;
-
-        // These three variables let us notify the checkpoint thread when a transaction ends (or starts, but it will
-        // have blocked any new ones from starting by locking blockNewTransactionsMutex).
-        mutex notifyWaitMutex;
-        condition_variable blockNewTransactionsCV;
-        atomic<int> currentTransactionCount;
-
-        // TODO: These should be private or renamed.
-        // This is the count of current pages waiting to be check pointed. This potentially changes with every wal callback
-        // we need to store it across callbacks so we can check if the full check point thread still needs to run.
-        atomic<int> _currentPageCount;
-
-
-        // Used as a flag to prevent starting multiple checkpoint threads simultaneously.
-        atomic<int> _checkpointThreadBusy;
-
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
 
         SPerformanceTimer _commitLockTimer;
-
-        // We keep track of the commitCount at each complete checkpoint, so that we can throttle the frequency of
-        // checkpoints to not more often than every N commits.
-        atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
         // True if we should use wal2 mode.
         atomic<bool> wal2 = true;
@@ -365,9 +302,6 @@ class SQLite {
         map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
         map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
-        // set of objects listening for checkpoints.
-        set<SQLite::CheckpointRequiredListener*> _checkpointListeners;
-        
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., inserting checkpoint listeners, updating _committedTransactions, etc.
         recursive_mutex _internalStateMutex;
@@ -485,8 +419,6 @@ class SQLite {
     uint64_t _timeoutLimit = 0;
     uint64_t _timeoutStart;
     uint64_t _timeoutError;
-    bool _abandonForCheckpoint = false;
-    bool _enableCheckpointInterrupt = true;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
@@ -530,9 +462,4 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
-
-    // This is a bit of a weird construct. We lock this in the destructor for an SQLite object because we spawn a
-    // separate thread to do checkpoints, and that thread needs this object to exist until it finishes, so we lock
-    // until that thread completes. This can go away when we no longer have dedicated checkpoint threads.
-    mutex _destructorMutex;
 };

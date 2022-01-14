@@ -261,14 +261,6 @@ int SQLite::_progressHandlerCallback(void* arg) {
 
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
-    } else if (sqlite->_sharedData._checkpointThreadBusy.load()) {
-        if (sqlite->_enableCheckpointInterrupt) {
-            SINFO("[checkpoint] Abandoning transaction to unblock checkpoint");
-            sqlite->_abandonForCheckpoint = true;
-            return 2;
-        } else {
-            SHMMM("[checkpoint] Not unblocking transaction for checkpoint because _enableCheckpointInterrupt disabled.");
-        }
     }
     return 0;
 }
@@ -285,109 +277,6 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
 }
 
 int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
-    SQLite* object = static_cast<SQLite*>(data);
-    object->_sharedData._currentPageCount.store(pageCount);
-
-    if (object->_sharedData.wal2) {
-        SINFO("[checkpoint] skipping straight to passive checkpoint in wal2 mode.");
-        return SQLITE_OK;
-    }
-
-    // Try a passive checkpoint if full checkpoints aren't enabled, *or* if the page count is less than the required
-    // size for a full checkpoint.
-    if (pageCount >= fullCheckpointPageMin.load()) {
-        if (object->_sharedData.commitCount <= object->_sharedData.lastCompleteCheckpointCommitCount + 100) {
-            SINFO("[checkpoint] Ready for complete checkpoint but skipping because less than 100 commits since last complete checkpoint.");
-            return SQLITE_OK;
-        }
-
-        int dbInUse = 0;
-        int useCheckResult = sqlite3_file_control(db, "main", SQLITE_FCNTL_EXTERNAL_READER, (void*)&dbInUse);
-        if (useCheckResult == SQLITE_OK && dbInUse) {
-            SINFO("Skipping complete checkpoint because external transaction in progress.");
-            return SQLITE_OK;
-        }
-
-        // If we get here, then full checkpoints are enabled, we have enough pages in the WAL file to perform one, and
-        // nothing else is stopping us from running one.
-        SINFO("[checkpoint] " << pageCount << " pages behind, beginning complete checkpoint.");
-
-        // This thread will run independently. We capture the variables we need here and pass them by value.
-        string filename = object->_filename;
-        string dbNameCopy = dbName;
-        int alreadyCheckpointing = object->_sharedData._checkpointThreadBusy.fetch_add(1);
-        if (alreadyCheckpointing) {
-            SINFO("[checkpoint] Not starting checkpoint thread. It's already running.");
-            return SQLITE_OK;
-        }
-        SDEBUG("[checkpoint] starting thread with count: " << object->_sharedData._currentPageCount.load());
-
-        // We pass `destructorLock` into the thread to block the SQLite object's destructor from running while
-        // the checkpoint is still using that object. The lock is created in the parent thread, and then passed
-        // by move to the checkpoint thread, guaranteeing that there's no race here in returning from
-        // _sqliteWALCallback before we've acquired the lock. This does not protect in the opposite direction: if you
-        // destroy an SQLite while `_sqliteWALCallback` is running (i.e., inside a call to `SQLite::write()`, then
-        // things will still break.
-        thread([object, filename, dbNameCopy, destructorLock = unique_lock<mutex>(object->_destructorMutex)]() {
-            SInitialize("checkpoint");
-            uint64_t start = STimeNow();
-
-            // Lock the mutex that keeps anyone from starting a new transaction.
-            unique_lock<decltype(object->_sharedData.blockNewTransactionsMutex)> transactionLock(object->_sharedData.blockNewTransactionsMutex);
-
-            while (1) {
-                // Lock first, this prevents anyone from updating the count while we're operating here.
-                unique_lock<mutex> lock(object->_sharedData.notifyWaitMutex);
-
-                // Now that we have the lock, check the count. If there are no outstanding transactions, we can
-                // checkpoint immediately, and then we'll return.
-                int count = object->_sharedData.currentTransactionCount.load();
-
-                // Lets re-check if we still need a full check point, it could be that a passive check point runs
-                // after we have started this loop and check points a large chunk or all of the pages we were trying
-                // to check point here. That means that this thread is now blocking new transactions waiting to run a
-                // full check point for no reason. We wait for the page count to be less than half of the required amount
-                // to prevent bouncing off of this check every loop. If that's the case, just break out of the this loop
-                // and wait for the next full check point to be required.
-                int pageCount = object->_sharedData._currentPageCount.load();
-                if (pageCount < (fullCheckpointPageMin.load() / 2)) {
-                    SINFO("[checkpoint] Page count decreased below half the threshold, count is now " << pageCount << ", exiting full checkpoint loop.");
-                    break;
-                } else {
-                    SINFO("[checkpoint] Waiting on " << count << " remaining transactions.");
-                    object->_sharedData.checkpointRequired();
-                }
-
-                if (count == 0) {
-                    // Time and run the checkpoint operation.
-                    uint64_t checkpointStart = STimeNow();
-                    SINFO("[checkpoint] Waited " << ((checkpointStart - start) / 1000)
-                          << "ms for pending transactions. Starting complete checkpoint.");
-                    int walSizeFrames = 0;
-                    int framesCheckpointed = 0;
-                    int result = sqlite3_wal_checkpoint_v2(object->_db, dbNameCopy.c_str(), SQLITE_CHECKPOINT_RESTART, &walSizeFrames, &framesCheckpointed);
-                    SINFO("[checkpoint] restart checkpoint complete. Result: " << result << ". Total frames checkpointed: "
-                          << framesCheckpointed << " of " << walSizeFrames
-                          << " in " << ((STimeNow() - checkpointStart) / 1000) << "ms.");
-
-                    // We're done. Anyone can start a new transaction.
-                    object->_sharedData.checkpointComplete();
-
-                    // Update our count so we don't re-run this too often.
-                    object->_sharedData.lastCompleteCheckpointCommitCount.store(object->_sharedData.commitCount);
-
-                    break;
-                }
-
-                // There are outstanding transactions (or we would have hit `break` above), so we'll wait until
-                // someone says the count has changed, and try again.
-                object->_sharedData.blockNewTransactionsCV.wait(lock);
-            }
-
-            // Allow the next checkpointer.
-            object->_sharedData._checkpointThreadBusy.store(0);
-        }).detach();
-    }
     return SQLITE_OK;
 }
 
@@ -405,8 +294,6 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
 }
 
 SQLite::~SQLite() {
-    lock_guard<mutex> lock(_destructorMutex);
-    // Now we can clean up our own data.
     // First, rollback any incomplete transaction.
     if (!_uncommittedQuery.empty()) {
         SINFO("Rolling back in destructor.");
@@ -421,10 +308,6 @@ SQLite::~SQLite() {
     DBINFO("Database closed.");
 }
 
-void SQLite::waitForCheckpoint() {
-    shared_lock<decltype(_sharedData.blockNewTransactionsMutex)> lock(_sharedData.blockNewTransactionsMutex);
-}
-
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         _sharedData.commitLock.lock();
@@ -434,14 +317,8 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     SASSERT(!_insideTransaction);
     SASSERT(_uncommittedHash.empty());
     SASSERT(_uncommittedQuery.empty());
-    {
-        unique_lock<mutex> lock(_sharedData.notifyWaitMutex);
-        _sharedData.currentTransactionCount++;
-    }
-    _sharedData.blockNewTransactionsCV.notify_one();
 
     // Reset before the query, as it's possible the query sets these.
-    _abandonForCheckpoint = false;
     _autoRolledBack = false;
 
     SDEBUG("[concurrent] Beginning transaction");
@@ -574,8 +451,7 @@ void SQLite::_checkInterruptErrors(const string& error) {
     int errorCode = 0;
     uint64_t time = 0;
 
-    // First check timeout. we want this to override the others, so we can't get stuck in an endless loop where we do
-    // something like throw `checkpoint_required_error` forever and never notice that the command has timed out.
+    // Check timeout.
     if (_timeoutLimit) {
         uint64_t now = STimeNow();
         if (now > _timeoutLimit) {
@@ -588,15 +464,6 @@ void SQLite::_checkInterruptErrors(const string& error) {
         }
     }
 
-    if (!_abandonForCheckpoint && _sharedData._checkpointThreadBusy.load() && _enableCheckpointInterrupt) {
-        SINFO("[checkpoint] Abandoning transaction to unblock checkpoint - not set in interrupt handler");
-        _abandonForCheckpoint = true;
-    }
-
-    if (_abandonForCheckpoint) {
-        errorCode = 2;
-    }
-
     // If we had an interrupt error, and were inside a transaction, and autocommit is now on, we have been auto-rolled
     // back, we won't need to actually do a rollback for this transaction.
     if (errorCode && _insideTransaction && sqlite3_get_autocommit(_db)) {
@@ -604,14 +471,8 @@ void SQLite::_checkInterruptErrors(const string& error) {
         _autoRolledBack = true;
     }
 
-    // Reset this regardless of which error (or both) occurred. If we handled a timeout, this is still done, we don't
-    // need to abandon this later.
-    _abandonForCheckpoint = false;
-
     if (errorCode == 1) {
         throw timeout_error("timeout in "s + error, time);
-    } else if (errorCode == 2) {
-        throw checkpoint_required_error();
     }
 
     // Otherwise, no error.
@@ -818,23 +679,13 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        // Notify the checkpoint thread (if there is one) that it might be able to run now.
-        {
-            unique_lock<mutex> lock(_sharedData.notifyWaitMutex);
-            _sharedData.currentTransactionCount--;
-        }
-        _sharedData.blockNewTransactionsCV.notify_one();
-
         // See if we can checkpoint without holding the commit lock.
-        if (!_sharedData._checkpointThreadBusy) {
-            int walSizeFrames = 0;
-            int framesCheckpointed = 0;
-            uint64_t start = STimeNow();
-            int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
-            SINFO("[checkpoint] passive checkpoint complete with " << _sharedData._currentPageCount
-                  << " pages in WAL file. Result: " << result << ". Total frames checkpointed: "
-                  << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
-        }
+        int walSizeFrames = 0;
+        int framesCheckpointed = 0;
+        uint64_t start = STimeNow();
+        int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
+        SINFO("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
+              << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
               << " served from cache.");
@@ -849,9 +700,6 @@ int SQLite::commit(const string& description) {
             SINFO("Commit failed, waiting for rollback.");
         }
     }
-
-    // Reset this to the default on any completion of the transaction, successful or not.
-    _enableCheckpointInterrupt = true;
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
@@ -901,11 +749,6 @@ void SQLite::rollback() {
             _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
-        {
-            unique_lock<mutex> lock(_sharedData.notifyWaitMutex);
-            _sharedData.currentTransactionCount--;
-        }
-        _sharedData.blockNewTransactionsCV.notify_one();
     } else {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
@@ -914,9 +757,6 @@ void SQLite::rollback() {
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
-
-    // Reset this to the default on any completion of the transaction, successful or not.
-    _enableCheckpointInterrupt = true;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
@@ -1145,14 +985,6 @@ uint64_t SQLite::getDBCountAtStart() const {
     return _dbCountAtStart;
 }
 
-void SQLite::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    _sharedData.addCheckpointListener(listener);
-}
-
-void SQLite::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    _sharedData.removeCheckpointListener(listener);
-}
-
 void SQLite::setCommitEnabled(bool enable) {
     _sharedData.setCommitEnabled(enable);
 }
@@ -1193,44 +1025,16 @@ void SQLite::setQueryOnly(bool enabled) {
 
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
-currentTransactionCount(0),
-_currentPageCount(0),
-_checkpointThreadBusy(0),
 _commitEnabled(true),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
-}),
-lastCompleteCheckpointCommitCount(0)
+})
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {
     lock_guard<decltype(commitLock)> lock(commitLock);
     _commitEnabled = enable;
-}
-
-void SQLite::SharedData::addCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _checkpointListeners.insert(&listener);
-}
-
-void SQLite::SharedData::removeCheckpointListener(SQLite::CheckpointRequiredListener& listener) {
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _checkpointListeners.erase(&listener);
-}
-
-void SQLite::SharedData::checkpointRequired() {
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    for (auto listener : _checkpointListeners) {
-        listener->checkpointRequired();
-    }
-}
-
-void SQLite::SharedData::checkpointComplete() {
-    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    for (auto listener : _checkpointListeners) {
-        listener->checkpointComplete();
-    }
 }
 
 void SQLite::SharedData::incrementCommit(const string& commitHash) {

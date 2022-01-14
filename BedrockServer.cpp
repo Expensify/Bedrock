@@ -571,8 +571,6 @@ void BedrockServer::sync()
 
                 // And now we'll decide how to handle it.
                 if (nodeState == SQLiteNode::LEADING || nodeState == SQLiteNode::STANDINGDOWN) {
-                    db.waitForCheckpoint();
-
                     // We peek commands here in the sync thread to be able to run peek and process as part of the same
                     // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
                     // have changed in the meantime.
@@ -955,9 +953,6 @@ void BedrockServer::worker(int threadId)
             // We'll retry on conflict up to this many times.
             int retry = _maxConflictRetries.load();
             while (retry) {
-                // Block if a checkpoint is happening so we don't interrupt it.
-                db.waitForCheckpoint();
-
                 // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
                 // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
