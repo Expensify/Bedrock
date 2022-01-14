@@ -68,7 +68,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
         {"-cacheSize", "1000"},
-        {"-wal2", ""},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},

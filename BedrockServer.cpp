@@ -181,7 +181,7 @@ void BedrockServer::sync()
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
     // TODO: I thought args["-sqliteExtensions"] is already a set here, so I don't think making it a set is correct...
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"), args.isSet("-wal2"), set<string>{args["-sqliteExtensions"]});
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"), !args.isSet("-legacyWAL"), set<string>{args["-sqliteExtensions"]});
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.

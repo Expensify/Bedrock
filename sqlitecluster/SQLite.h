@@ -75,8 +75,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false,
-           bool enableWAL2 = false, set<string> sqliteExtensions = {});
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false, bool enableWAL2 = true, set<string> sqliteExtensions = {});
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
@@ -358,7 +357,7 @@ class SQLite {
         atomic<uint64_t> lastCompleteCheckpointCommitCount;
 
         // True if we should use wal2 mode.
-        atomic<bool> wal2 = false;
+        atomic<bool> wal2 = true;
 
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
