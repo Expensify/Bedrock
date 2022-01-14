@@ -18,4 +18,5 @@ class BedrockDBCommand : public BedrockCommand {
 
   private:
     const string query;
+    const bool parallel = false;
 };

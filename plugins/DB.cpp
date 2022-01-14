@@ -28,7 +28,8 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
     // in the method line as follows:
     //
     //      Query: ...sql...
-  query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
+  query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"])),
+  parallel(request.isSet("parallel") ? request["parallel"] == "true" : false)
 {
 }
 
@@ -47,6 +48,14 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
         STHROW("502 Query Missing Semicolon");
+    }
+
+    // If `parallel: true` was passed, confirm that the parallelone.so extension was loaded
+    if (parallel) {
+        // TODO:
+        // * check for parallelone.so
+        // * prepare the query a different way?
+        SINFO("RAFE: parallel requested");
     }
 
     // Get a list of prepared statements from the database.
