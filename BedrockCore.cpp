@@ -85,9 +85,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.startTiming(timeout);
 
         try {
-            if (request.test("disableCheckpointInterrupt")) {
-                _db.disableCheckpointInterruptForNextTransaction();
-            }
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
@@ -142,10 +139,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         command->repeek = false;
         returnValue = RESULT::SHOULD_PROCESS;
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
-    } catch (const SQLite::checkpoint_required_error& e) {
-        command->repeek = false;
-        returnValue = RESULT::ABANDONED_FOR_CHECKPOINT;
-        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
     } catch (...) {
         command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
@@ -194,10 +187,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         // Time in US.
         _db.startTiming(timeout);
         if (!_db.insideTransaction()) {
-            if (request.test("disableCheckpointInterrupt")) {
-                _db.disableCheckpointInterruptForNextTransaction();
-            }
-
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
             // case we need to open a new transaction.
@@ -256,13 +245,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         _handleCommandException(command, e);
         _db.rollback();
         needsCommit = false;
-    } catch (const SQLite::checkpoint_required_error& e) {
-        _db.rollback();
-        _db.setUpdateNoopMode(false);
-        _db.resetTiming();
-        command->complete = false;
-        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
-        return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch (const SQLite::constraint_error& e) {
         SWARN("Unique Constraints Violation, command: " << request.methodLine);
         command->response.methodLine = "400 Unique Constraints Violation";

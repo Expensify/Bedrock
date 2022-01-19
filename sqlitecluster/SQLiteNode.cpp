@@ -128,20 +128,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
 
     // Get this party started
     _changeState(SEARCHING);
-
-    // Make sure we get notified when the DB needs to checkpoint.
-    _dbPool->getBase().addCheckpointListener(_localCommitNotifier);
-    _dbPool->getBase().addCheckpointListener(_leaderCommitNotifier);
 }
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
-
-    // Don't notify these, they won't exist anymore.
-    _dbPool->getBase().removeCheckpointListener(_localCommitNotifier);
-    _dbPool->getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
@@ -182,10 +174,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                 } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
                     SINFO("_localCommitNotifier.waitFor canceled early, returning.");
                     return;
-                } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Waiting for checkpoint.");
-                    db.waitForCheckpoint();
-                    continue;
                 } else {
                     SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
                 }
@@ -220,11 +208,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                                 SINFO("Replication canceled mid-transaction, stopping.");
                                 db.rollback();
                                 break;
-                            } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                                SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                                db.rollback();
-                                db.waitForCheckpoint();
-                                continue;
                             }
                         }
 
@@ -249,11 +232,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         SINFO("Replication canceled mid-transaction, stopping.");
                         db.rollback();
                         break;
-                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                        SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                        db.rollback();
-                        db.waitForCheckpoint();
-                        continue;
                     }
 
                     // Leader says it has committed this transaction, so we can too.
@@ -2251,7 +2229,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         // because the second try will be blocked on the checkpoint.
         while (true) {
             try {
-                _db.waitForCheckpoint();
                 if (!_db.beginTransaction()) {
                     STHROW("failed to begin transaction");
                 }
@@ -2272,9 +2249,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
                 // **FIXME: Remove the above line once we can automatically handle?
                 _db.rollback();
                 throw e;
-            } catch (const SQLite::checkpoint_required_error& e) {
-                _db.rollback();
-                SINFO("[checkpoint] Retrying synchronize after checkpoint.");
             }
         }
 
@@ -2460,9 +2434,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            SINFO("Waiting for checkpoint");
-            db.waitForCheckpoint();
-            SINFO("Done waiting for checkpoint");
             // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
             // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
             // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
@@ -2485,9 +2456,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 }
@@ -2535,9 +2503,6 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 
@@ -2684,7 +2649,6 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            _db.waitForCheckpoint();
             if (!_db.beginTransaction()) {
                 STHROW("failed to begin transaction");
             }
@@ -2716,9 +2680,6 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            _db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 
