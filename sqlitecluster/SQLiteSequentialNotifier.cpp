@@ -111,27 +111,6 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
     }
 }
 
-void SQLiteSequentialNotifier::checkpointRequired() {
-    lock_guard<mutex> lock(_internalStateMutex);
-    _globalResult = RESULT::CHECKPOINT_REQUIRED;
-    for (auto& p : _valueToPendingThreadMap) {
-        lock_guard<mutex> lock(p.second->waitingThreadMutex);
-        p.second->result = RESULT::CHECKPOINT_REQUIRED;
-        auto start = STimeNow();
-        p.second->waitingThreadConditionVariable.notify_all();
-        SINFO("[checkpoint] Notified all threads waiting on a checkpoint in " << ((STimeNow() - start) / 1000) << "ms");
-    }
-    _valueToPendingThreadMap.clear();
-    if (_valueToPendingThreadMapNoCurrentTransaction.size()) {
-        SINFO("[checkpoint] Not unblocking " << _valueToPendingThreadMapNoCurrentTransaction.size() << " threads waiting with no transaction.");
-    }
-}
-
-void SQLiteSequentialNotifier::checkpointComplete() {
-    lock_guard<mutex> lock(_internalStateMutex);
-    _globalResult = RESULT::UNKNOWN;
-}
-
 void SQLiteSequentialNotifier::reset() {
     lock_guard<mutex> lock(_internalStateMutex);
     _globalResult = RESULT::UNKNOWN;
