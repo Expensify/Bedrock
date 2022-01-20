@@ -30,7 +30,7 @@ INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
 LIBPATHS =-L$(PROJECT) -Lmbedtls/library
-LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz
+LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
 
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin
@@ -139,7 +139,7 @@ $(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp mbedtls/library/libmbedcryp
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fpic -Wno-unused-but-set-variable -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
+	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fpic -Wno-unused-but-set-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -o $@ -c $<
 
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
