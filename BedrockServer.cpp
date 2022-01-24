@@ -1208,6 +1208,8 @@ bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_resetServer() {
+    lock_guard<mutex> lock(_portMutex);
+
     _requestCount = 0;
     _replicationState = SQLiteNode::SEARCHING;
     _upgradeInProgress = false;
@@ -1311,7 +1313,10 @@ BedrockServer::BedrockServer(const SData& args_)
 
     // Allow sending control commands when the server's not LEADING/FOLLOWING.
     SINFO("Opening control port on '" << args["-controlPort"] << "'");
-    _controlPort = openPort(args["-controlPort"]);
+    {
+        lock_guard<mutex> lock(_portMutex);
+        _controlPort = openPort(args["-controlPort"]);
+    }
 
     // If we're bootstraping this node we need to go into detached mode here.
     // The syncWrapper will handle this for us.
@@ -1398,6 +1403,8 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
+    lock_guard<mutex> lock(_portMutex);
+
     // Add all our ports. There are no sockets directly managed here.
     if (_commandPort) {
         SFDset(fdm, _commandPort->s, SREADEVTS);
@@ -1416,6 +1423,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     SQLiteNode::State state = _replicationState.load();
     if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) &&
         _shutdownState.load() == RUNNING) {
+        lock_guard<mutex> lock(_portMutex);
+
         // Open the port
         if (!_commandPort) {
             SINFO("Ready to process commands, opening command port on '" << args["-serverHost"] << "'");
@@ -1594,8 +1603,11 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
     if (suppress) {
         // Close the command port, and all plugin's ports. Won't reopen.
         SHMMM("Suppressing command port");
-        _commandPort = nullptr;
-        _portPluginMap.clear();
+        {
+            lock_guard<mutex> lock(_portMutex);
+            _commandPort = nullptr;
+            _portPluginMap.clear();
+        }
     } else {
         // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
         SHMMM("Clearing command port suppression");
@@ -1925,12 +1937,15 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
         // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
         // detaching. It needs to keep listening.
-        _commandPort = nullptr;
-        if (!_detach) {
-            _controlPort = nullptr;
+        {
+            lock_guard<mutex> lock(_portMutex);
+            _commandPort = nullptr;
+            if (!_detach) {
+                _controlPort = nullptr;
+            }
+            _portPluginMap.clear();
+            _commandPort = nullptr;
         }
-        _portPluginMap.clear();
-        _commandPort = nullptr;
         _shutdownState.store(START_SHUTDOWN);
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
               << ", blocking commands queued: " << _blockingCommandQueue.size());
@@ -2006,6 +2021,11 @@ void BedrockServer::_acceptSockets() {
     // Try each port.
     for (auto portWrapper : portList) {
         const unique_ptr<Port>& port = portWrapper.get();
+
+        // Lock _portMutex so suppressing the port does not cause it to be null
+        // in the middle of this function.
+        lock_guard<mutex> lock(_portMutex);
+
         // Skip null ports (if the command or control port are closed).
         if (!port) {
             continue;
@@ -2053,7 +2073,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         }
         socket.send(response.serialize());
         fireAndForget = true;
-        
+
         // If we're shutting down, discard this command, we won't wait for the future.
         if (_shutdownState.load() != RUNNING) {
             SINFO("Not queuing future command '" << request.methodLine << "' while shutting down.");
