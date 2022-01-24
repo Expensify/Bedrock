@@ -21,7 +21,6 @@
  */
 #pragma once
 
-#include <atomic>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -188,7 +187,6 @@ using namespace std;
 #endif
 
 namespace tpunit {
-
     // Make the current test name in the current thread globally accessible.
     extern thread_local string currentTestName;
     extern thread_local mutex currentTestNameMutex;
@@ -209,9 +207,9 @@ namespace tpunit {
          struct perFixtureStats {
             perFixtureStats();
 
-            static thread_local int _threadAssertions;
-            static thread_local int _threadExceptions;
-            static thread_local int _threadTraces;
+            static thread_local int _assertions;
+            static thread_local int _exceptions;
+            static thread_local int _traces;
          };
 
          perFixtureStats  _stats;

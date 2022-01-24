@@ -8,9 +8,9 @@ bool tpunit::TestFixture::exitFlag = false;
 thread_local string tpunit::currentTestName;
 thread_local mutex tpunit::currentTestNameMutex;
 
-thread_local int tpunit::TestFixture::perFixtureStats::_threadAssertions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_threadExceptions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_threadTraces = 0;
+thread_local int tpunit::TestFixture::perFixtureStats::_assertions = 0;
+thread_local int tpunit::TestFixture::perFixtureStats::_exceptions = 0;
+thread_local int tpunit::TestFixture::perFixtureStats::_traces = 0;
 
 tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
     : _this(obj)
@@ -347,19 +347,19 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
 
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   assertion #%i at %s:%i\n", ++f->_stats._threadAssertions, _file, _line);
+    printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
     f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   exception #%i from %s with cause: %s\n", ++f->_stats._threadExceptions, _method->_name, _message);
+    printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
     f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   trace #%i at %s:%i: %s\n", ++f->_stats._threadTraces, _file, _line, _message);
+    printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
     f->printTestBuffer();
 }
 
@@ -395,8 +395,8 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     while(t) {
         testThreads.push_back(thread([t, f]() {
             recursive_mutex& m = *(f->_mutex);
-            f->_stats._threadAssertions = 0;
-            f->_stats._threadExceptions = 0;
+            f->_stats._assertions = 0;
+            f->_stats._exceptions = 0;
             f->testOutputBuffer = "";
             tpunit_detail_do_methods(f->_befores);
             tpunit_detail_do_method(t);
@@ -405,7 +405,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
             // No new assertions or exceptions. This not currently synchronized correctly. They can cause tests that
             // passed to appear failed when another test failed while this test was running. They cannot cause failed
             // tests to appear to have passed.
-            if(!f->_stats._threadAssertions && !f->_stats._threadExceptions) {
+            if(!f->_stats._assertions && !f->_stats._exceptions) {
                 lock_guard<recursive_mutex> lock(m);
                 printf("\xE2\x9C\x85 %s\n", t->_name);
                 tpunit_detail_stats()._passes++;
