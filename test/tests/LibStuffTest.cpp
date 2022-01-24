@@ -6,7 +6,7 @@
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {
-    LibStuff() : tpunit::TestFixture("LibStuff",
+    LibStuff() : tpunit::TestFixture(true, "LibStuff",
                                     TEST(LibStuff::testEncryptDecrpyt),
                                     TEST(LibStuff::testSHMACSHA1),
                                     TEST(LibStuff::testSHMACSHA256),
