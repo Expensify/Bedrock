@@ -2006,10 +2006,16 @@ void BedrockServer::_acceptSockets() {
     // Try each port.
     for (auto portWrapper : portList) {
         const unique_ptr<Port>& port = portWrapper.get();
+
+        // Lock here.
+
         // Skip null ports (if the command or control port are closed).
         if (!port) {
             continue;
         }
+
+        // Make this take long enough that we're likely to hit the broken case.
+        usleep(1000);
 
         // Accept as many sockets as we can.
         while (true) {
