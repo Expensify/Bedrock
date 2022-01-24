@@ -207,9 +207,9 @@ namespace tpunit {
          struct perFixtureStats {
             perFixtureStats();
 
-            int _assertions;
-            int _exceptions;
-            int _traces;
+            static thread_local int _assertions;
+            static thread_local int _exceptions;
+            static thread_local int _traces;
          };
 
          perFixtureStats  _stats;
@@ -274,6 +274,24 @@ namespace tpunit {
                                   m20, m21, m22, m23, m24, m25, m26, m27, m28, m29,
                                   m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
                                   m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, name) { }
+
+         TestFixture(bool parallel, const char* name,
+                     method* m0,      method* m1  = 0, method* m2  = 0, method* m3  = 0, method* m4  = 0,
+                     method* m5  = 0, method* m6  = 0, method* m7  = 0, method* m8  = 0, method* m9  = 0,
+                     method* m10 = 0, method* m11 = 0, method* m12 = 0, method* m13 = 0, method* m14 = 0,
+                     method* m15 = 0, method* m16 = 0, method* m17 = 0, method* m18 = 0, method* m19 = 0,
+                     method* m20 = 0, method* m21 = 0, method* m22 = 0, method* m23 = 0, method* m24 = 0,
+                     method* m25 = 0, method* m26 = 0, method* m27 = 0, method* m28 = 0, method* m29 = 0,
+                     method* m30 = 0, method* m31 = 0, method* m32 = 0, method* m33 = 0, method* m34 = 0,
+                     method* m35 = 0, method* m36 = 0, method* m37 = 0, method* m38 = 0, method* m39 = 0,
+                     method* m40 = 0, method* m41 = 0, method* m42 = 0, method* m43 = 0, method* m44 = 0,
+                     method* m45 = 0, method* m46 = 0, method* m47 = 0, method* m48 = 0, method* m49 = 0)
+                     : TestFixture( m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
+                                  m10, m11, m12, m13, m14, m15, m16, m17, m18, m19,
+                                  m20, m21, m22, m23, m24, m25, m26, m27, m28, m29,
+                                  m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
+                                  m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, name, parallel) { }
+
          /**
           * Base constructor to register methods with the test fixture. A test
           * fixture can register up to 50 methods.
@@ -290,7 +308,7 @@ namespace tpunit {
                      method* m35 = 0, method* m36 = 0, method* m37 = 0, method* m38 = 0, method* m39 = 0,
                      method* m40 = 0, method* m41 = 0, method* m42 = 0, method* m43 = 0, method* m44 = 0,
                      method* m45 = 0, method* m46 = 0, method* m47 = 0, method* m48 = 0, method* m49 = 0,
-                     const char* name = 0);
+                     const char* name = 0, bool parallel = false);
 
          ~TestFixture();
 
@@ -342,6 +360,8 @@ namespace tpunit {
          static void tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message);
 
          const char* _name;
+
+         bool _parallel = false;
 
       private:
 
