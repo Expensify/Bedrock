@@ -376,6 +376,7 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
+    mutex _portMutex;
     unique_ptr<Port> _controlPort;
     unique_ptr<Port> _commandPort;
 
