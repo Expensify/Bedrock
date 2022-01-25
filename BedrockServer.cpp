@@ -2014,6 +2014,11 @@ void BedrockServer::_acceptSockets() {
     // Make a list of ports to accept on.
     // We'll check the control port, command port, and any plugin ports for new connections.
     list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPort, _controlPort};
+
+    // Lock _portMutex so suppressing the port does not cause it to be null
+    // in the middle of this function.
+    lock_guard<mutex> lock(_portMutex);
+
     for (auto& p : _portPluginMap) {
         portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
     }
@@ -2021,10 +2026,6 @@ void BedrockServer::_acceptSockets() {
     // Try each port.
     for (auto portWrapper : portList) {
         const unique_ptr<Port>& port = portWrapper.get();
-
-        // Lock _portMutex so suppressing the port does not cause it to be null
-        // in the middle of this function.
-        lock_guard<mutex> lock(_portMutex);
 
         // Skip null ports (if the command or control port are closed).
         if (!port) {
