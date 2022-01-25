@@ -8,6 +8,10 @@ bool tpunit::TestFixture::exitFlag = false;
 thread_local string tpunit::currentTestName;
 thread_local mutex tpunit::currentTestNameMutex;
 
+thread_local int tpunit::TestFixture::perFixtureStats::_assertions = 0;
+thread_local int tpunit::TestFixture::perFixtureStats::_exceptions = 0;
+thread_local int tpunit::TestFixture::perFixtureStats::_traces = 0;
+
 tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
     : _this(obj)
     , _addr(addr)
@@ -30,10 +34,8 @@ tpunit::TestFixture::stats::stats()
     {}
 
 tpunit::TestFixture::perFixtureStats::perFixtureStats()
-    : _assertions(0)
-    , _exceptions(0)
-    , _traces(0)
-    {}
+{
+}
 
 tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
                          method* m5,  method* m6,  method* m7,  method* m8,  method* m9,
@@ -45,8 +47,9 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                          method* m35, method* m36, method* m37, method* m38, method* m39,
                          method* m40, method* m41, method* m42, method* m43, method* m44,
                          method* m45, method* m46, method* m47, method* m48, method* m49,
-                         const char* name)
-  : _name(name)
+                         const char* name, bool parallel)
+  : _name(name),
+    _parallel(parallel)
 {
     tpunit_detail_fixture_list()->push_back(this);
 
@@ -342,7 +345,6 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
            ((lhs_u.c[lsb] > rhs_u.c[lsb]) ? lhs_u.c[lsb] - rhs_u.c[lsb] : rhs_u.c[lsb] - lhs_u.c[lsb]) <= ulps;
 }
 
-// TODO: These three functions need to be updated to act on the current TestFixture.
 void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
@@ -389,28 +391,43 @@ void tpunit::TestFixture::tpunit_detail_do_methods(tpunit::TestFixture::method* 
 
 void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     method* t = f->_tests;
-    recursive_mutex& m = *(f->_mutex);
+    list<thread> testThreads;
     while(t) {
-       int _prev_assertions = f->_stats._assertions;
-       int _prev_exceptions = f->_stats._exceptions;
-       f->testOutputBuffer = "";
-       tpunit_detail_do_methods(f->_befores);
-       tpunit_detail_do_method(t);
-       tpunit_detail_do_methods(f->_afters);
-       if(_prev_assertions == f->_stats._assertions && _prev_exceptions == f->_stats._exceptions) {
-          lock_guard<recursive_mutex> lock(m);
-          printf("\xE2\x9C\x85 %s\n", t->_name);
-          tpunit_detail_stats()._passes++;
-       } else {
-          lock_guard<recursive_mutex> lock(m);
+        testThreads.push_back(thread([t, f]() {
+            recursive_mutex& m = *(f->_mutex);
+            f->_stats._assertions = 0;
+            f->_stats._exceptions = 0;
+            f->testOutputBuffer = "";
+            tpunit_detail_do_methods(f->_befores);
+            tpunit_detail_do_method(t);
+            tpunit_detail_do_methods(f->_afters);
 
-          // Dump the test buffer if the test included any log lines.
-          f->printTestBuffer();
-          printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s\n", t->_name);
-          tpunit_detail_stats()._failures++;
-          tpunit_detail_stats()._failureNames.emplace(t->_name);
-       }
-       t = t->_next;
+            // No new assertions or exceptions. This not currently synchronized correctly. They can cause tests that
+            // passed to appear failed when another test failed while this test was running. They cannot cause failed
+            // tests to appear to have passed.
+            if(!f->_stats._assertions && !f->_stats._exceptions) {
+                lock_guard<recursive_mutex> lock(m);
+                printf("\xE2\x9C\x85 %s\n", t->_name);
+                tpunit_detail_stats()._passes++;
+            } else {
+                lock_guard<recursive_mutex> lock(m);
+
+                // Dump the test buffer if the test included any log lines.
+                f->printTestBuffer();
+                printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s\n", t->_name);
+                tpunit_detail_stats()._failures++;
+                tpunit_detail_stats()._failureNames.emplace(t->_name);
+            }
+        }));
+        if (!f->_parallel) {
+            // If it's not set to parallel, we finish each test in order.
+            testThreads.front().join();
+            testThreads.clear();
+        }
+        t = t->_next;
+    }
+    for (auto& thread : testThreads) {
+        thread.join();
     }
 }
 
