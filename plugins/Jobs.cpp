@@ -1105,7 +1105,9 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         // If this is set to repeat, get the nextRun value
         string safeNewNextRun = "";
-        if (!repeat.empty()) {
+        bool ignoreRepeat = request.test("ignoreRepeat");
+        SINFO("MEEP IGNORE REPEAT" << ignoreRepeat);
+        if (!repeat.empty() && !ignoreRepeat) {
             // For all jobs, the last time at which they were scheduled is the currently stored 'nextRun' time
             string lastScheduled = nextRun;
 
