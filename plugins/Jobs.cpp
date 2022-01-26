@@ -953,12 +953,12 @@ void BedrockJobsCommand::process(SQLite& db) {
 
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat] )
         //
         //     Re-queues a RUNNING job.
         //     The nextRun logic for the job is decided in the following way
-        //      - If the job is configured to "repeat" it will schedule
-        //     the job for the next repeat time.
+        //      - If the job is configured to "repeat", and we are not passed
+        //     an ignoreRepeat param, it will schedule the job for the next repeat time.
         //     - Else, if "nextRun" is set, it will schedule the job to run at that time
         //     - Else, if "delay" is set, it will schedule the job to run in "delay" seconds
         //
@@ -969,12 +969,13 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - jobID       - ID of the job to requeue
-        //     - delay       - Number of seconds to wait before retrying
-        //     - nextRun     - datetime of next scheduled run
-        //     - name        - An arbitrary string identifier (case insensitive)
-        //     - data        - Data to associate with this job
-        //     - jobPriority - The new priority to set for this job
+        //     - jobID        - ID of the job to requeue
+        //     - delay        - Number of seconds to wait before retrying
+        //     - nextRun      - datetime of next scheduled run
+        //     - name         - An arbitrary string identifier (case insensitive)
+        //     - data         - Data to associate with this job
+        //     - jobPriority  - The new priority to set for this job
+        //     - ignoreRepeat - Ignore the job's repeat param when figuring out when to retry the job
         //
         // - FinishJob( jobID, [data] )
         //
@@ -1105,8 +1106,10 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         // If this is set to repeat, get the nextRun value
         string safeNewNextRun = "";
+
+        // If passed ignoreRepeat, we want to fall back to the logic of using nextRun or delay instead of the jobs
+        // repeat param
         bool ignoreRepeat = request.test("ignoreRepeat");
-        SINFO("MEEP IGNORE REPEAT" << ignoreRepeat);
         if (!repeat.empty() && !ignoreRepeat) {
             // For all jobs, the last time at which they were scheduled is the currently stored 'nextRun' time
             string lastScheduled = nextRun;
