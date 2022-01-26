@@ -23,6 +23,7 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::changePriority),
                               TEST(RetryJobTest::hasRepeatWithNextRun),
                               TEST(RetryJobTest::hasRepeatWithDelay),
+                              TEST(RetryJobTest::hasRepeatWithNextRunIgnoreRepeat),
                               TEST(RetryJobTest::hasDelayAndNextRun),
                               TEST(RetryJobTest::simpleRetryWithHttp),
                               AFTER(RetryJobTest::tearDown),
@@ -254,7 +255,7 @@ struct RetryJobTest : tpunit::TestFixture {
         command["jobID"] = jobID;
         command["delay"] = "5";
         tester->executeWaitVerifyContent(command);
-            
+
         // Get a timestamp from after we update nextRun.
         tester->readDB("SELECT DATETIME();", result);
         string maximumLastRun = result[0][0];
@@ -537,6 +538,36 @@ struct RetryJobTest : tpunit::TestFixture {
         tester->readDB("SELECT lastRun, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_FLOAT_EQUAL(difftime(JobTestHelper::getTimestampForDateTimeString(result[0][1]), JobTestHelper::getTimestampForDateTimeString(result[0][0])), 3600);
+    }
+
+    void hasRepeatWithNextRunIgnoreRepeat() {
+         // Create the job
+         SData command("CreateJob");
+         command["name"] = "job";
+         command["repeat"] = "STARTED, +1 HOUR";
+         STable response = tester->executeWaitVerifyContentTable(command);
+         string jobID = response["jobID"];
+
+         // Get the job
+         command.clear();
+         command.methodLine = "GetJob";
+         command["name"] = "job";
+         tester->executeWaitVerifyContent(command);
+
+         // Retry it
+         command.clear();
+         command.methodLine = "RetryJob";
+         command["jobID"] = jobID;
+         string nextRun = getTimeInFuture(10);
+         command["nextRun"] = nextRun;
+         command["ignoreRepeat"] = "true";
+         tester->executeWaitVerifyContent(command);
+
+         // Confirm nextRun is in 1 hour, not in the given nextRun time
+         SQResult result;
+         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+         ASSERT_EQUAL(result.size(), 1);
+         ASSERT_EQUAL(result[0][0], nextRun);
     }
 
     // nextRun should take precedence over delay
