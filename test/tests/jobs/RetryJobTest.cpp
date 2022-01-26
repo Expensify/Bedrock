@@ -563,7 +563,7 @@ struct RetryJobTest : tpunit::TestFixture {
          command["ignoreRepeat"] = "true";
          tester->executeWaitVerifyContent(command);
 
-         // Confirm nextRun is in 1 hour, not in the given nextRun time
+         // Confirm nextRun is the given nextRun time, not in 1 hour
          SQResult result;
          tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
          ASSERT_EQUAL(result.size(), 1);
