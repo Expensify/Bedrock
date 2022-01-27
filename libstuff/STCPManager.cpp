@@ -291,7 +291,7 @@ bool STCPManager::Socket::send(const string& buffer) {
     if (state.load() < Socket::State::SHUTTINGDOWN) {
         sendBuffer += buffer;
     } else if (!sendBuffer.empty()) {
-        SWARN("Not appending to sendBuffer in socket state " << state.load() << ", tried to send: " << buffer);
+        SWARN("Not appending to sendBuffer in socket state " << state.load());
     }
 
     // Send anything we've got.
