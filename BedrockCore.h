@@ -14,8 +14,7 @@ class BedrockCore : public SQLiteCore {
         SHOULD_PROCESS = 2,
         NEEDS_COMMIT = 3,
         NO_COMMIT_REQUIRED = 4,
-        ABANDONED_FOR_CHECKPOINT = 5,
-        SERVER_NOT_LEADING = 6
+        SERVER_NOT_LEADING = 5
     };
 
     // Automatic timing class that records an entry corresponding to its lifespan.
