@@ -34,6 +34,7 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *delay* - (optional) Number of seconds to wait before retrying. This is ignored if the job is set to repeat or if "nextRun" is set.
    * *name* - (optional) Any arbitrary string name for this job.
    * *data* - (optional) Data to associate with this job
+   * *ignoreRepeat* - (optional) Ignore a job's repeat parameter when calculating when to retry the job
 
 ## Sample Session
 This provides comprehensive functionality for scheduled, recurring, atomically-processed jobs by blocking workers.  For example, first create a job and assign it some data to be used by the worker:
