@@ -72,7 +72,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
         }
     };
 
-    void validate();
+    virtual void validate() override;
 
     protected:
     // Reference to the plugin that owns this object.

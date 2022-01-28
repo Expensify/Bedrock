@@ -2,6 +2,7 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
+#include <sqlitecluster/SQLiteClusterMessenger.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
@@ -329,6 +330,8 @@ class BedrockServer : public SQLiteServer {
     // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
     shared_ptr<SQLiteNode> _syncNode;
+
+    SQLiteClusterMessenger _clusterMessenger;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);

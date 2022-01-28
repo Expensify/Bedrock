@@ -1020,6 +1020,7 @@ void BedrockServer::worker(int threadId)
                         SINFO("Sending non-parallel command " << command->request.methodLine
                               << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
                               << " queued commands.");
+                        _clusterMessenger.sendToLeader(*command);
                         _syncNodeQueuedCommands.push(move(command));
 
                         // Done with this command, look for the next one.
@@ -1230,13 +1231,15 @@ void BedrockServer::_resetServer() {
     }
 }
 
-BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING)
+BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_)
+  : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING),
+    _syncNode(nullptr), _clusterMessenger(_syncNode)
 {}
 
 BedrockServer::BedrockServer(const SData& args_)
   : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
+    _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
     _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0), _outstandingSocketThreads(0)
