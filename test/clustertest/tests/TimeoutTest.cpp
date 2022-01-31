@@ -1,3 +1,4 @@
+#include <BedrockCommand.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -7,6 +8,7 @@ struct TimeoutTest : tpunit::TestFixture {
                               BEFORE_CLASS(TimeoutTest::setup),
                               AFTER_CLASS(TimeoutTest::teardown),
                               TEST(TimeoutTest::test),
+                              TEST(TimeoutTest::longerThanDefaultProcess),
                               TEST(TimeoutTest::testprocess),
                               TEST(TimeoutTest::totalTimeout),
                               TEST(TimeoutTest::quorumHTTPS),
@@ -24,18 +26,32 @@ struct TimeoutTest : tpunit::TestFixture {
 
     void test()
     {
-        // Test write commands.
         BedrockTester& brtester = tester->getTester(0);
 
         // Run one long query.
         SData slow("slowquery");
-        slow["processTimeout"] = "1000"; // 1s
+        slow["timeout"] = "1000"; // 1s
         brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
 
         // And a bunch of faster ones.
         slow["size"] = "10000";
         slow["count"] = "10000";
         brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
+    }
+
+    void longerThanDefaultProcess()
+    {
+        BedrockTester& brtester = tester->getTester(0);
+
+        // Run a (read-only) query that takes longer than the default process timeout, without changing the process
+        // timeout.
+        SData slow("slowquery");
+        slow["size"] = "1000000000";
+        slow["timeout"] = to_string(BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
+        auto start = STimeNow();
+        brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
+        auto end = STimeNow();
+        ASSERT_GREATER_THAN((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
     }
 
     void quorumHTTPS () {
