@@ -2,6 +2,8 @@
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
 
+#include <iostream>
+
 SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
  : _node(node)
 {
@@ -11,16 +13,22 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
 
     // Parse leader from this.
     // TODO: What if we're leader??
-    list<STable> peerData;
+    string leaderAddress;
     auto _nodeCopy = atomic_load(&_node);
     if (_nodeCopy) {
         for (SQLiteNode::Peer* peer : _nodeCopy->peerList) {
-            peerData.emplace_back(peer->getData());
+            auto data = peer->getData();
+            auto stateIt = data.find("state");
+            auto hostIt = data.find("host");
+            if (stateIt != data.end() && hostIt != data.end() && stateIt->second == STCPNode::stateName(STCPNode::LEADING)) {
+                leaderAddress = hostIt->second;
+                break;
+            }
         }
     }
 
-    string url = "http://" + "some address from above"s;
-
+    // SParseURI expects a typical http or https scheme.
+    string url = "http://" + leaderAddress;
     string host, path;
     if (!SParseURI(url, host, path)) {
         return _createErrorTransaction();
@@ -42,6 +50,8 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
 
     transaction->s = s;
     transaction->fullRequest = command.request.serialize();
+
+    command.httpsRequests.push_back(transaction);
 
     // Ship it.
     transaction->s->send(command.request.serialize());

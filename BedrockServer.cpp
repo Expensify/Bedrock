@@ -1017,11 +1017,10 @@ void BedrockServer::worker(int threadId)
                         core.rollback();
 
                         // We're not handling a writable command anymore.
-                        SINFO("Sending non-parallel command " << command->request.methodLine
-                              << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
-                              << " queued commands.");
+                        SINFO("Sending non-parallel command " << command->request.methodLine << " to leader.");
                         _clusterMessenger.sendToLeader(*command);
-                        _syncNodeQueuedCommands.push(move(command));
+                        //_syncNodeQueuedCommands.push(move(command));
+                        waitForHTTPS(move(command));
 
                         // Done with this command, look for the next one.
                         break;
@@ -1910,6 +1909,22 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         // If it finished all it's requests, put it back in the main queue.
         if (command->areHttpsRequestsComplete()) {
             SINFO("All HTTPS requests complete, returning to main queue.");
+
+            // Check if it was an escalation.
+            bool escalation = true;
+            for (auto request : command->httpsRequests) {
+                if (&request->manager != &_clusterMessenger) {
+                    escalation = false;
+                    break;
+                }
+            }
+
+            // If so, it's done.
+            if (escalation) {
+                SINFO("Escalated command complete, marking as such.");
+                command->complete = true;
+            }
+
             // Because set's contain only `const` data, they can't be moved-from without these weird `extract`
             // semantics. This invalidates our iterator, so we save the one we want before we break it.
             auto nextIt = next(it);
