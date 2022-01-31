@@ -46,6 +46,7 @@ struct TimeoutTest : tpunit::TestFixture {
         // Run a (read-only) query that takes longer than the default process timeout, without changing the process
         // timeout.
         SData slow("slowquery");
+        slow["size"] = "1000000000";
         slow["timeout"] = to_string(BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
         auto start = STimeNow();
         brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
