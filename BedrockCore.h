@@ -5,9 +5,9 @@ class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
   public:
-    const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
-    const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
-    const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
+    static const uint64_t DEFAULT_TIMEOUT;
+    static const uint64_t DEFAULT_TIMEOUT_FORGET;
+    static const uint64_t DEFAULT_PROCESS_TIMEOUT;
     BedrockCore(SQLite& db, const BedrockServer& server);
 
     // Automatic timing class that records an entry corresponding to its lifespan.

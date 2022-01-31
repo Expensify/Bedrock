@@ -3,6 +3,10 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
+const uint64_t BedrockCore::DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
+const uint64_t BedrockCore::DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
+const uint64_t BedrockCore::DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
+
 BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) :
 SQLiteCore(db),
 _server(server)
