@@ -29,7 +29,7 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getTimeout(const SData& request) {
+uint64_t BedrockCore::_getTimeout(const SData& request, bool isProcessing) {
 
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
     uint64_t timeout =  DEFAULT_TIMEOUT;
@@ -53,7 +53,7 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
             STHROW("555 Timeout");
         } else {
             // Otherwise, we can return the shorter of our two timeouts.
-            return min(adjustedTimeout, processTimeout);
+            return isProcessing ? min(adjustedTimeout, processTimeout) : adjustedTimeout;
         }
     } catch (const invalid_argument& e) {
         SWARN("Couldn't parse commandExecuteTime: " << request["commandExecuteTime"] << "'.");
@@ -62,7 +62,7 @@ uint64_t BedrockCore::_getTimeout(const SData& request) {
     }
 
     // This only happens if we hit the catch blocks above. Default to a low value.
-    return min(DEFAULT_TIMEOUT, DEFAULT_PROCESS_TIMEOUT);
+    return isProcessing ? min(DEFAULT_TIMEOUT, DEFAULT_PROCESS_TIMEOUT) : DEFAULT_TIMEOUT;
 }
 bool BedrockCore::peekCommand(BedrockCommand& command) {
     AutoTimer timer(command, BedrockCommand::PEEK);
@@ -74,7 +74,7 @@ bool BedrockCore::peekCommand(BedrockCommand& command) {
     // We catch any exception and handle in `_handleCommandException`.
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command.priority);
-        uint64_t timeout = _getTimeout(request);
+        uint64_t timeout = _getTimeout(request, false);
         command.peekCount++;
 
         _db.startTiming(timeout * 1000);
@@ -179,7 +179,7 @@ bool BedrockCore::processCommand(BedrockCommand& command) {
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getTimeout(request);
+        uint64_t timeout = _getTimeout(request, true);
         command.processCount++;
 
         // Time in US.
