@@ -50,9 +50,6 @@ struct TimeoutTest : tpunit::TestFixture {
         auto start = STimeNow();
         brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
         auto end = STimeNow();
-
-        cout << ((end - start) / 1000) << ", " << (BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000) << endl;
-
         ASSERT_GREATER_THAN((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
     }
 
