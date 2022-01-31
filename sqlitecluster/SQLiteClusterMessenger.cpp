@@ -2,8 +2,6 @@
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
 
-#include <iostream>
-
 SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
  : _node(node)
 {
@@ -20,8 +18,9 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
             auto data = peer->getData();
             auto stateIt = data.find("state");
             auto hostIt = data.find("host");
+            auto serverHostIt = data.find("serverHost");
             if (stateIt != data.end() && hostIt != data.end() && stateIt->second == STCPNode::stateName(STCPNode::LEADING)) {
-                leaderAddress = hostIt->second;
+                leaderAddress = serverHostIt->second;
                 break;
             }
         }

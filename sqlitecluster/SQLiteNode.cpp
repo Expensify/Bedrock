@@ -1251,6 +1251,13 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         STHROW("missing Hash");
     }
 
+    // Keep track of any server data on the peer that we're keeping track of locally.
+    for (auto& p : _serverData) {
+        if (message.isSet(p.first)) {
+            peer->serverData[p.first] = message[p.first];
+        }
+    }
+
     peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
     // Classify and process the message
@@ -1962,6 +1969,9 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
+    for (auto& p : _serverData) {
+        messageCopy[p.first] = p.second;
+    }
     peer->socket->send(messageCopy.serialize());
 }
 
@@ -1973,6 +1983,9 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     }
     if (!messageCopy.isSet("Hash")) {
         messageCopy["Hash"] = _db.getCommittedHash();
+    }
+    for (auto& p : _serverData) {
+        messageCopy[p.first] = p.second;
     }
     const string& serializedMessage = messageCopy.serialize();
 
@@ -2805,3 +2818,8 @@ bool SQLiteNode::hasQuorum() {
     }
     return (numFullFollowers * 2 >= numFullPeers);
 }
+
+void SQLiteNode::setData(const string& name, const string& value) {
+    _serverData[name] = value;
+}
+

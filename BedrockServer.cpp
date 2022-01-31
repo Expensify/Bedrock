@@ -14,6 +14,8 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 
+#include <iostream>
+
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLiteNode::UNKNOWN;
@@ -193,6 +195,9 @@ void BedrockServer::sync()
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
+
+    // This makes closing the command port on leader catastrophic. Let's use the control port.
+    _syncNode->setData("serverHost", args["-serverHost"]);
 
     // This should be empty anyway, but let's make sure.
     if (_completedCommands.size()) {
@@ -897,6 +902,8 @@ void BedrockServer::worker(int threadId)
 
                 // This command is done, move on to the next one.
                 continue;
+            } else {
+                //cout << "Command " << command->request.methodLine << "not complete." << endl;
             }
 
             // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
@@ -1018,6 +1025,7 @@ void BedrockServer::worker(int threadId)
 
                         // We're not handling a writable command anymore.
                         SINFO("Sending non-parallel command " << command->request.methodLine << " to leader.");
+                        //cout << "Sending non-parallel command " << command->request.methodLine << "(commandID: " << command->id << ") to leader." << endl;
                         _clusterMessenger.sendToLeader(*command);
                         //_syncNodeQueuedCommands.push(move(command));
                         waitForHTTPS(move(command));
@@ -1909,6 +1917,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         // If it finished all it's requests, put it back in the main queue.
         if (command->areHttpsRequestsComplete()) {
             SINFO("All HTTPS requests complete, returning to main queue.");
+            //cout << "All HTTPS requests complete, returning to main queue." << endl;
 
             // Check if it was an escalation.
             bool escalation = true;
@@ -2290,6 +2299,7 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
     SAUTOPREFIX(command->request);
     lock_guard<mutex> lock(_httpsCommandMutex);
     _outstandingHTTPSCommands.insert(move(command));
+    //cout << "_outstandingHTTPSCommands.size(): " << _outstandingHTTPSCommands.size() << endl;
 }
 
 const atomic<SQLiteNode::State>& BedrockServer::getState() const {

@@ -127,6 +127,8 @@ struct STCPNode : public STCPManager {
         // Get a string name for a Response object.
         static string responseName(Response response);
 
+        map<string, string> serverData;
+
       private:
         // The hash corresponding to commitCount.
         atomic<string> hash;

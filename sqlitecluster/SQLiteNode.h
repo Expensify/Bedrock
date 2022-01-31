@@ -106,6 +106,8 @@ class SQLiteNode : public STCPNode {
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 
+    void setData(const string& name, const string& value);
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
@@ -275,4 +277,6 @@ class SQLiteNode : public STCPNode {
     AutoTimer _legacyReplication;
     AutoTimer _onMessageTimer;
     AutoTimer _escalateTimer;
+
+    map<string, string> _serverData;
 };

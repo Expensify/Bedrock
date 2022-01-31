@@ -460,6 +460,10 @@ STable STCPNode::Peer::getData() const {
     for (auto& p : params) {
         result.emplace(p);
     }
+
+    for (auto& p : serverData) {
+        result.emplace(make_pair(p.first, p.second));
+    }
     return result;
 }
 
