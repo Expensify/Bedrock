@@ -78,7 +78,6 @@ struct STCPNode : public STCPManager {
         // Const (and thus implicitly thread-safe) attributes of this Peer.
         const string name;
         const string host;
-        const string commandPort; // Needs to be added.
         const uint64_t id;
         const STable params;
         const bool permaFollower;
