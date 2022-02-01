@@ -39,6 +39,9 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
     Transaction* transaction = new Transaction(*this);
 
+    // I don't trust this not to ever leak currently, but for the moment, this is OK.
+    _transactionCommands[transaction] = make_pair(&command, STimeNow());
+
     Socket* s = nullptr;
     try {
         s = new Socket(host, nullptr);
@@ -57,4 +60,18 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
 
     // Keep track of the transaction.
     return transaction;
+}
+
+bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
+{
+    transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
+    auto cmdIt = _transactionCommands.find(transaction);
+    if (cmdIt != _transactionCommands.end()) {
+        BedrockCommand* command = cmdIt->second.first;
+        command->response = transaction->fullResponse;
+        command->response["escalationTime"] = to_string(STimeNow() - cmdIt->second.second);
+        command->complete = true;
+        _transactionCommands.erase(cmdIt);
+    }
+    return false;
 }

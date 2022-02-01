@@ -195,7 +195,8 @@ void BedrockServer::sync()
                                                             _version, args.test("-parallelReplication")));
 
     // This makes closing the command port on leader catastrophic. Let's use the control port.
-    _syncNode->setData("serverHost", args["-serverHost"]);
+    // Note: Everything is mis-named because we did this with the command port first.
+    _syncNode->setData("serverHost", args["-controlPort"]);
 
     // This should be empty anyway, but let's make sure.
     if (_completedCommands.size()) {
@@ -1911,22 +1912,6 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         // If it finished all it's requests, put it back in the main queue.
         if (command->areHttpsRequestsComplete()) {
             SINFO("All HTTPS requests complete, returning to main queue.");
-
-            // Check if it was an escalation.
-            bool escalation = true;
-            for (auto request : command->httpsRequests) {
-                if (&request->manager != &_clusterMessenger) {
-                    escalation = false;
-                    break;
-                }
-            }
-
-            // If so, it's done.
-            if (escalation) {
-                SINFO("Escalated command complete, marking as such.");
-                command->response = command->httpsRequests.front()->fullResponse;
-                command->complete = true;
-            }
 
             // Because set's contain only `const` data, they can't be moved-from without these weird `extract`
             // semantics. This invalidates our iterator, so we save the one we want before we break it.

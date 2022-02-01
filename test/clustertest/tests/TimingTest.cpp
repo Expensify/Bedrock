@@ -3,26 +3,16 @@
 
 struct TimingTest : tpunit::TestFixture {
     TimingTest()
-        : tpunit::TestFixture("TimingTest",
-                              BEFORE_CLASS(TimingTest::setup),
-                              AFTER_CLASS(TimingTest::teardown),
-                              TEST(TimingTest::test)) { }
+        : tpunit::TestFixture("Timing", TEST(TimingTest::test)) { }
 
     BedrockClusterTester* tester;
 
-    void setup() {
-        tester = new BedrockClusterTester();
-    }
-
-    void teardown() {
-        delete tester;
-    }
-
     void test()
     {
+        BedrockClusterTester tester;
         // Test write commands.
         for (auto i : {0,1,2}) {
-            BedrockTester& brtester = tester->getTester(i);
+            BedrockTester& brtester = tester.getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("idcollision h");
@@ -97,7 +87,7 @@ struct TimingTest : tpunit::TestFixture {
 
         // Test read commands
         for (auto i : {0,1,2}) {
-            BedrockTester& brtester = tester->getTester(i);
+            BedrockTester& brtester = tester.getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("Query");

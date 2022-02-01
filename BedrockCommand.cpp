@@ -160,7 +160,6 @@ void BedrockCommand::finalizeTimingInfo() {
         {"peekTime",        peekTotal},
         {"processTime",     processTotal},
         {"totalTime",       totalTime},
-        {"escalationTime",  escalationTimeUS},
         {"unaccountedTime", unaccountedTime},
     };
 
