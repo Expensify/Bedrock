@@ -500,8 +500,10 @@ void BedrockJobsCommand::process(SQLite& db) {
                 SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
             }
 
+            const string& currentTime = SCURRENT_TIMESTAMP();
+
             // If no "firstRun" was provided, use right now
-            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
+            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? currentTime : SQ(job["firstRun"]);
 
             // If no data was provided, use an empty object
             const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
@@ -597,7 +599,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
                             SQ(jobIDToUse) + ", " +
-                            SCURRENT_TIMESTAMP() + ", " +
+                            currentTime + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
                             safeFirstRun + ", " +

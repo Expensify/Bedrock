@@ -14,8 +14,7 @@ class BedrockCore : public SQLiteCore {
         SHOULD_PROCESS = 2,
         NEEDS_COMMIT = 3,
         NO_COMMIT_REQUIRED = 4,
-        ABANDONED_FOR_CHECKPOINT = 5,
-        SERVER_NOT_LEADING = 6
+        SERVER_NOT_LEADING = 5
     };
 
     // Automatic timing class that records an entry corresponding to its lifespan.
@@ -65,7 +64,7 @@ class BedrockCore : public SQLiteCore {
     // Gets the amount of time remaining until this command times out. This is the difference between the command's
     // 'timeout' value (or the default timeout, if not set) and the time the command was initially scheduled to run. If
     // this time is already expired, this throws `555 Timeout`
-    uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command);
+    uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
     void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e);
     const BedrockServer& _server;

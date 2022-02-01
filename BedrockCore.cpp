@@ -29,7 +29,7 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command) {
+uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
 
@@ -43,19 +43,19 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     processTimeout *= 1000;
 
     // Already expired.
-    if (adjustedTimeout <= 0 || processTimeout <= 0) {
+    if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
         SALERT("Command " << command->request.methodLine << " timed out after "
                << ((now - command->request.calc64("commandExecuteTime")) / 1000) << "ms.");
         STHROW("555 Timeout");
     }
 
     // Both of these are positive, return the lowest remaining.
-    return min(processTimeout, adjustedTimeout);
+    return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
 }
 
 bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     try {
-        _getRemainingTime(command);
+        _getRemainingTime(command, false);
     } catch (const SException& e) {
         // Yep, timed out.
         _handleCommandException(command, e);
@@ -79,7 +79,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     RESULT returnValue = RESULT::COMPLETE;
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
-        uint64_t timeout = _getRemainingTime(command);
+        uint64_t timeout = _getRemainingTime(command, false);
         command->peekCount++;
 
         _db.startTiming(timeout);
@@ -181,7 +181,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getRemainingTime(command);
+        uint64_t timeout = _getRemainingTime(command, true);
         command->processCount++;
 
         // Time in US.
