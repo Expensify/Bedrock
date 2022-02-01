@@ -7,10 +7,7 @@ SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
 {
 }
 
-SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
-
-    // Parse leader from this.
-    // TODO: What if we're leader??
+bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     string leaderAddress;
     auto _nodeCopy = atomic_load(&_node);
     if (_nodeCopy) {
@@ -29,11 +26,8 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
     // SParseURI expects a typical http or https scheme.
     string url = "http://" + leaderAddress;
     string host, path;
-    if (!SParseURI(url, host, path)) {
-        return _createErrorTransaction();
-    }
-    if (!SContains(host, ":")) {
-        host += ":443";
+    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
+        return false;
     }
 
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
@@ -46,8 +40,9 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
     try {
         s = new Socket(host, nullptr);
     } catch (const SException& exception) {
+        _transactionCommands.erase(transaction);
         delete transaction;
-        return _createErrorTransaction();
+        return false;
     }
 
     transaction->s = s;
@@ -58,8 +53,7 @@ SStandaloneHTTPSManager::Transaction* SQLiteClusterMessenger::sendToLeader(Bedro
     // Ship it.
     transaction->s->send(command.request.serialize());
 
-    // Keep track of the transaction.
-    return transaction;
+    return true;
 }
 
 bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)

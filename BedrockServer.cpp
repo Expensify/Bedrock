@@ -1022,8 +1022,17 @@ void BedrockServer::worker(int threadId)
 
                         // We're not handling a writable command anymore.
                         SINFO("Sending non-parallel command " << command->request.methodLine << " to leader.");
-                        _clusterMessenger.sendToLeader(*command);
-                        waitForHTTPS(move(command));
+                        if (state == SQLiteNode::STANDINGDOWN) {
+                            // TODO: handle this better.
+                            SWARN("Escalating while standing down. Hmm...");
+                        }
+                        if (!_clusterMessenger.sendToLeader(*command)) {
+                            // TODO: Also handle this better?
+                            SINFO("Couldn't escalate command, trying again later.");
+                            commandQueue.push(move(command));
+                        } else {
+                            waitForHTTPS(move(command));
+                        }
 
                         // Done with this command, look for the next one.
                         break;
