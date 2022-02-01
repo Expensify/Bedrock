@@ -3,7 +3,7 @@
 
 struct StatusHandlingCommandsTest : tpunit::TestFixture {
     StatusHandlingCommandsTest()
-        : tpunit::TestFixture("StatusHandlingCommandsTest",
+        : tpunit::TestFixture("StatusHandlingCommands",
                               BEFORE_CLASS(StatusHandlingCommandsTest::setup),
                               AFTER_CLASS(StatusHandlingCommandsTest::teardown),
                               TEST(StatusHandlingCommandsTest::test)) { }

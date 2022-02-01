@@ -3,7 +3,7 @@
 
 struct UpgradeDBTest : tpunit::TestFixture {
     UpgradeDBTest()
-        : tpunit::TestFixture("UpgradeDBTest",
+        : tpunit::TestFixture("UpgradeDB",
                               BEFORE_CLASS(UpgradeDBTest::setup),
                               AFTER_CLASS(UpgradeDBTest::teardown),
                               TEST(UpgradeDBTest::test)) { }

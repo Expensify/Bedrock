@@ -3,7 +3,7 @@
 
 struct MultipleLeaderSyncTest : tpunit::TestFixture {
     MultipleLeaderSyncTest()
-        : tpunit::TestFixture("MultipleLeaderSyncTest",
+        : tpunit::TestFixture("MultipleLeaderSync",
                               TEST(MultipleLeaderSyncTest::test)
                              ) { }
 
