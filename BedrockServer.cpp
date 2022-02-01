@@ -1004,7 +1004,7 @@ void BedrockServer::worker(int threadId)
                         if (!_clusterMessenger.sendToLeader(*command)) {
                             // TODO: Also handle this better?
                             SINFO("Couldn't escalate command, trying again later.");
-                            commandQueue.push(move(command));
+                            _commandQueue.push(move(command));
                         } else {
                             waitForHTTPS(move(command));
                         }
