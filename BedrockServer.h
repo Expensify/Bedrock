@@ -430,10 +430,6 @@ class BedrockServer : public SQLiteServer {
     // Timestamp for the last time we promoted a command to QUORUM.
     atomic<uint64_t> _lastQuorumCommandTime;
 
-    // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
-    // that just needs to be returned to a peer.
-    BedrockTimeoutCommandQueue _completedCommands;
-
     // Whether or not all plugins are detached
     bool _pluginsDetached;
 
