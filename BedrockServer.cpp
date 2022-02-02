@@ -997,13 +997,14 @@ void BedrockServer::worker(int threadId)
                         } else if (state == SQLiteNode::STANDINGDOWN) {
                             SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                             _standDownQueue.push(move(command));
-                        } else if (!_clusterMessenger.sendToLeader(*command)) {
-                            // TODO: Also handle this better?
-                            SWARN("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
-                            _commandQueue.push(move(command));
-                        } else {
+                        } else if (_clusterMessenger.sendToLeader(*command)) {
                             SINFO("Escalating " << command->request.methodLine << " to leader.");
                             waitForHTTPS(move(command));
+                        } else {
+                            // TODO: Something less naive that considers how these failures happen rather than a simple
+                            // endless loop of requeue and retry.
+                            SWARN("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
+                            _commandQueue.push(move(command));
                         }
 
                         // Done with this command, look for the next one.

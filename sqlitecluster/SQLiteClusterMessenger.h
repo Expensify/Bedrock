@@ -10,7 +10,7 @@ class SQLiteClusterMessenger : public SStandaloneHTTPSManager {
     bool sendToLeader(BedrockCommand& command);
     virtual bool _onRecv(Transaction* transaction) override;
 
-    virtual bool handleAllResponses() override { return true; }
+    virtual bool handleAllResponses() override;
 
   private:
     shared_ptr<SQLiteNode>& _node;

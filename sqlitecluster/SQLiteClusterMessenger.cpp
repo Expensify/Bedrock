@@ -65,3 +65,7 @@ bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
     }
     return false;
 }
+
+bool SQLiteClusterMessenger::handleAllResponses() {
+    return true;
+}

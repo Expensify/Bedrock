@@ -278,5 +278,7 @@ class SQLiteNode : public STCPNode {
     AutoTimer _onMessageTimer;
     AutoTimer _escalateTimer;
 
+    // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
+    // port".
     atomic<string> _commandAddress;
 };
