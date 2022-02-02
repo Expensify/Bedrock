@@ -995,17 +995,18 @@ void BedrockServer::worker(int threadId)
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
 
-                        // We're not handling a writable command anymore.
-                        SINFO("Sending non-parallel command " << command->request.methodLine << " to leader.");
-                        if (state == SQLiteNode::STANDINGDOWN) {
-                            // TODO: handle this better.
-                            SWARN("Escalating while standing down. Hmm...");
-                        }
-                        if (!_clusterMessenger.sendToLeader(*command)) {
+                        if (state == SQLiteNode::LEADING) {
+                            SINFO("Sending " << command->request.methodLine << " to sync thread.");
+                            _syncNodeQueuedCommands.push(move(command));
+                        } else if (state == SQLiteNode::STANDINGDOWN) {
+                            SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
+                            _standDownQueue.push(move(command));
+                        } else if (!_clusterMessenger.sendToLeader(*command)) {
                             // TODO: Also handle this better?
-                            SINFO("Couldn't escalate command, trying again later.");
+                            SWARN("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
                             _commandQueue.push(move(command));
                         } else {
+                            SINFO("Escalating " << command->request.methodLine << " to leader.");
                             waitForHTTPS(move(command));
                         }
 
