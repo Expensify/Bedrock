@@ -89,6 +89,7 @@ bool BedrockServer::canStandDown() {
     if (count && count != standDownQueueSize) {
         size_t mainQueueSize = _commandQueue.size();
         size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
+        size_t completedCommandsSize = _completedCommands.size();
 
         // These two aren't all nicely packaged so we need to lock them ourselves.
         size_t outstandingHTTPSCommandsSize = 0;
@@ -105,6 +106,7 @@ bool BedrockServer::canStandDown() {
         SINFO("Can't stand down with " << count << " commands remaining. Queue sizes are: "
               << "mainQueueSize: " << mainQueueSize << ", "
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
+              << "completedCommandsSize: " << completedCommandsSize << ", "
               << "outstandingHTTPSCommandsSize: " << outstandingHTTPSCommandsSize << ", "
               << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
               << "standDownQueueSize: " << standDownQueueSize << ".");
@@ -192,6 +194,7 @@ void BedrockServer::sync()
 
     // Control port and not command port so that followers can still escalate to leader when leader's command port is
     // closed.
+    // TODO: Pass this in the constructor and make it const?
     _syncNode->setCommandAddress(args["-controlPort"]);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
@@ -311,8 +314,9 @@ void BedrockServer::sync()
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _syncNode->prePoll(fdm);
 
-        // Add our command queue to our fd_map.
+        // Add our command queues to our fd_map.
         _syncNodeQueuedCommands.prePoll(fdm);
+        _completedCommands.prePoll(fdm);
 
         // Wait for activity on any of those FDs, up to a timeout.
         const uint64_t now = STimeNow();
@@ -335,6 +339,7 @@ void BedrockServer::sync()
             _postPollCommands(fdm, nextActivity);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
+            _completedCommands.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -497,6 +502,20 @@ void BedrockServer::sync()
         // there could also be other finished work to handle while we wait for that to complete. Let's see if we can
         // handle any of that work.
         try {
+            // If there are any completed commands to respond to, we'll do that first.
+            try {
+                while (true) {
+                    unique_ptr<BedrockCommand> completedCommand = _completedCommands.pop();
+                    SAUTOPREFIX(completedCommand->request);
+                    SASSERT(completedCommand->complete);
+                    SASSERT(completedCommand->initiatingPeerID);
+                    SASSERT(!completedCommand->initiatingClientID);
+                    _finishPeerCommand(completedCommand);
+                }
+            } catch (const out_of_range& e) {
+                // when _completedCommands.pop() throws for running out of commands, we fall out of the loop.
+            }
+
             // We don't start processing a new command until we've completed any existing ones.
             if (committingCommand) {
                 continue;
@@ -752,7 +771,12 @@ void BedrockServer::worker(int threadId)
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command)) {
-                _reply(command);
+                if (command->initiatingPeerID) {
+                    // Escalated command. Give it back to the sync thread to respond.
+                    _completedCommands.push(move(command));
+                } else {
+                    _reply(command);
+                }
                 continue;
             }
 
@@ -762,7 +786,12 @@ void BedrockServer::worker(int threadId)
                 SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
                 command->response.methodLine = "500 Refused";
                 command->complete = true;
-                _reply(command);
+                if (command->initiatingPeerID) {
+                    // Escalated command. Give it back to the sync thread to respond.
+                    _completedCommands.push(move(command));
+                } else {
+                    _reply(command);
+                }
                 continue;
             }
 
