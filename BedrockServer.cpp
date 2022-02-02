@@ -190,9 +190,9 @@ void BedrockServer::sync()
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
 
-    // This makes closing the command port on leader catastrophic. Let's use the control port.
-    // Note: Everything is mis-named because we did this with the command port first.
-    _syncNode->setData("serverHost", args["-controlPort"]);
+    // Control port and not command port so that followers can still escalate to leader when leader's command port is
+    // closed.
+    _syncNode->setCommandAddress(args["-controlPort"]);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -1837,7 +1837,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         if (command->areHttpsRequestsComplete()) {
             SINFO("All HTTPS requests complete, returning to main queue.");
 
-            // Because set's contain only `const` data, they can't be moved-from without these weird `extract`
+            // Because sets contain only `const` data, they can't be moved-from without these weird `extract`
             // semantics. This invalidates our iterator, so we save the one we want before we break it.
             auto nextIt = next(it);
             _commandQueue.push(move(_outstandingHTTPSCommands.extract(it).value()));

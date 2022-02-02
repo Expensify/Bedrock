@@ -12,12 +12,8 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     auto _nodeCopy = atomic_load(&_node);
     if (_nodeCopy) {
         for (SQLiteNode::Peer* peer : _nodeCopy->peerList) {
-            auto data = peer->getData();
-            auto stateIt = data.find("state");
-            auto hostIt = data.find("host");
-            auto serverHostIt = data.find("serverHost");
-            if (stateIt != data.end() && hostIt != data.end() && stateIt->second == STCPNode::stateName(STCPNode::LEADING)) {
-                leaderAddress = serverHostIt->second;
+            if (peer->state == STCPNode::LEADING && !peer->commandAddress.load().empty()) {
+                leaderAddress = peer->commandAddress;
                 break;
             }
         }

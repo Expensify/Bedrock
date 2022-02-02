@@ -328,6 +328,8 @@ class BedrockServer : public SQLiteServer {
     // object.
     shared_ptr<SQLiteNode> _syncNode;
 
+    // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
+    // synchronization.
     SQLiteClusterMessenger _clusterMessenger;
 
     // Functions for checking for and responding to status and control commands.

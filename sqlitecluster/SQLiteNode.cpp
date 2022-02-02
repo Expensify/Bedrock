@@ -1250,12 +1250,8 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     if (!message.isSet("Hash")) {
         STHROW("missing Hash");
     }
-
-    // Keep track of any server data on the peer that we're keeping track of locally.
-    for (auto& p : _serverData) {
-        if (message.isSet(p.first)) {
-            peer->serverData[p.first] = message[p.first];
-        }
+    if (message.isSet("commandAddress")) {
+        peer->commandAddress = message["commandAddress"];
     }
 
     peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
@@ -1969,9 +1965,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
-    for (auto& p : _serverData) {
-        messageCopy[p.first] = p.second;
-    }
+    messageCopy["commandAddress"] = _commandAddress;
     peer->socket->send(messageCopy.serialize());
 }
 
@@ -1984,9 +1978,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     if (!messageCopy.isSet("Hash")) {
         messageCopy["Hash"] = _db.getCommittedHash();
     }
-    for (auto& p : _serverData) {
-        messageCopy[p.first] = p.second;
-    }
+    messageCopy["commandAddress"] = _commandAddress;
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
@@ -2819,7 +2811,7 @@ bool SQLiteNode::hasQuorum() {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-void SQLiteNode::setData(const string& name, const string& value) {
-    _serverData[name] = value;
+void SQLiteNode::setCommandAddress(const string& commandAddress) {
+    _commandAddress = commandAddress;
 }
 

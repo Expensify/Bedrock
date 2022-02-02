@@ -461,9 +461,8 @@ STable STCPNode::Peer::getData() const {
         result.emplace(p);
     }
 
-    for (auto& p : serverData) {
-        result.emplace(make_pair(p.first, p.second));
-    }
+    result["commandAddress"] = commandAddress;
+
     return result;
 }
 
