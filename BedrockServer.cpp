@@ -992,7 +992,8 @@ void BedrockServer::worker(int threadId)
                         core.rollback();
 
                         if (state == SQLiteNode::LEADING) {
-                            SINFO("Sending " << command->request.methodLine << " to sync thread.");
+                            SINFO("Sending non-parallel command " << command->request.methodLine
+                                  << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                             _syncNodeQueuedCommands.push(move(command));
                         } else if (state == SQLiteNode::STANDINGDOWN) {
                             SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
