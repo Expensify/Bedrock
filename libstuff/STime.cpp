@@ -13,7 +13,9 @@ string SComposeTime(const string& format, uint64_t when) {
     // Convert from high-precision time (usec) to standard low-precision time (sec), then format and return
     const time_t loWhen = (time_t)(when / STIME_US_PER_S);
     char buf[256] = {};
-    size_t length = strftime(buf, sizeof(buf), format.c_str(), gmtime(&loWhen));
+    struct tm result = {};
+    gmtime_r(&loWhen, &result);
+    size_t length = strftime(buf, sizeof(buf), format.c_str(), &result);
     return string(buf, length);
 }
 
