@@ -5,8 +5,6 @@ struct TimingTest : tpunit::TestFixture {
     TimingTest()
         : tpunit::TestFixture("Timing", TEST(TimingTest::test)) { }
 
-    BedrockClusterTester* tester;
-
     void test()
     {
         BedrockClusterTester tester;
