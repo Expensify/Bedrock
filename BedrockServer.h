@@ -253,6 +253,9 @@ class BedrockServer : public SQLiteServer {
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
 
+    // These are commands that will be processed in a blacking fashion.
+    BedrockCommandQueue _blockingCommandQueue;
+
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
 
@@ -377,7 +380,7 @@ class BedrockServer : public SQLiteServer {
     unique_ptr<Port> _controlPort;
     unique_ptr<Port> _commandPort;
 
-    // The maximum number of conflicts we'll accept before blocking other threads to commit a command.
+    // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;
