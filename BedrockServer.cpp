@@ -88,6 +88,7 @@ bool BedrockServer::canStandDown() {
     // If we have any commands anywhere but the stand-down queue, let's log that.
     if (count && count != standDownQueueSize) {
         size_t mainQueueSize = _commandQueue.size();
+        size_t blockingQueueSize = _blockingCommandQueue.size();
         size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
         size_t completedCommandsSize = _completedCommands.size();
 
@@ -105,6 +106,7 @@ bool BedrockServer::canStandDown() {
 
         SINFO("Can't stand down with " << count << " commands remaining. Queue sizes are: "
               << "mainQueueSize: " << mainQueueSize << ", "
+              << "blockingQueueSize: " << blockingQueueSize << ", "
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
               << "completedCommandsSize: " << completedCommandsSize << ", "
               << "outstandingHTTPSCommandsSize: " << outstandingHTTPSCommandsSize << ", "
@@ -590,6 +592,10 @@ void BedrockServer::sync()
                         } else if (result == BedrockCore::RESULT::SHOULD_PROCESS) {
                             // This is sort of the "default" case after checking if this command was complete above. If so,
                             // we'll fall through to calling processCommand below.
+                        } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                            SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
+                            _commandQueue.push(move(command));
+                            break;
                         } else {
                             SERROR("peekCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                         }
@@ -636,6 +642,10 @@ void BedrockServer::sync()
                         } else {
                             _reply(command);
                         }
+                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
+                        _commandQueue.push(move(command));
+                        break;
                     } else {
                         SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
@@ -702,6 +712,13 @@ void BedrockServer::sync()
         _commandQueue.clear();
     }
 
+    // Same for the blocking queue.
+    if (_blockingCommandQueue.size()) {
+        SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
+              << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+        _blockingCommandQueue.clear();
+    }
+
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
@@ -718,7 +735,8 @@ void BedrockServer::sync()
 
 void BedrockServer::worker(int threadId)
 {
-    SInitialize("worker" + to_string(threadId));
+    // Worker 0 is the "blockingCommit" thread.
+    SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
     if (!_dbPool) {
@@ -731,26 +749,27 @@ void BedrockServer::worker(int threadId)
     // Command to work on. This default command is replaced when we find work to do.
     unique_ptr<BedrockCommand> command(nullptr);
 
+    // Which command queue do we use? The blockingCommit thread special and does blocking commits from the blocking queue.
+    BedrockCommandQueue& commandQueue = threadId ? _commandQueue : _blockingCommandQueue;
+
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
     while (true) {
         try {
             // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
-                SWARN("Die function called early with no command, probably died in `_commandQueue.get`.");
+                SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
             // Reset this to blank. This releases the existing command and allows it to get cleaned up.
             command = unique_ptr<BedrockCommand>(nullptr);
 
             // And get another one.
-            command = _commandQueue.get(1000000);
-
-            // All commands start as non-blocking, and switch to blocking when they've had too many conflicts.
-            bool blocking = false;
+            command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
-            SINFO("Dequeued command " << command->request.methodLine << " in worker, " << _commandQueue.size() << " commands in queue.");
+            SINFO("Dequeued command " << command->request.methodLine << " in worker, "
+                  << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -940,8 +959,14 @@ void BedrockServer::worker(int threadId)
                 bool calledPeek = false;
                 BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
                 if (command->repeek || !command->httpsRequests.size()) {
-                    peekResult = core.peekCommand(command, blocking);
+                    peekResult = core.peekCommand(command, threadId == 0);
                     calledPeek = true;
+                }
+
+                // This drops us back to the top of the loop.
+                if (peekResult == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                    SINFO("[checkpoint] Re-trying abandoned command (from peek) in worker thread");
+                    continue;
                 }
 
                 if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
@@ -975,7 +1000,7 @@ void BedrockServer::worker(int threadId)
                             } else if (command->repeek) {
                                 // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
                                 // back in the main queue.
-                                _commandQueue.push(move(command));
+                                commandQueue.push(move(command));
                             }
 
                             // Move on to the next command until this one finishes.
@@ -1002,7 +1027,7 @@ void BedrockServer::worker(int threadId)
                     }
 
                     // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    BedrockCore::RESULT result = core.processCommand(command, blocking);
+                    BedrockCore::RESULT result = core.processCommand(command, threadId == 0);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                         // done, and we just need to respond. Before we commit, we need to grab the sync thread
@@ -1038,7 +1063,8 @@ void BedrockServer::worker(int threadId)
                             }
                         }
                         if (commitSuccess) {
-                            SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: " << (blocking ? "true" : "false"));
+                            SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
+                                  << (threadId ? "false" : "true"));
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
                             command->response["commitCount"] = to_string(db.getCommitCount());
@@ -1047,6 +1073,10 @@ void BedrockServer::worker(int threadId)
                             SINFO("Conflict or state change committing " << command->request.methodLine
                                   << " on worker thread with " << retry << " retries remaining.");
                         }
+                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
+                        SINFO("[checkpoint] Re-trying abandoned command (from process) in worker thread");
+                        // Add a retry so that we don't hit out conflict limit for checkpoints.
+                        ++retry;
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                         // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                         // of this block.
@@ -1062,7 +1092,7 @@ void BedrockServer::worker(int threadId)
                             _reply(command);
                             break;
                         } else {
-                            // Allow for an extra retry and start from the top.
+                            // Allow for an extra retry and start from the top, like with ABANDONED_FOR_CHECKPOINT.
                             SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
                             ++retry;
                         }
@@ -1089,9 +1119,8 @@ void BedrockServer::worker(int threadId)
                 --retry;
 
                 if (!retry) {
-                    SINFO("Max retries hit in worker, marking '" << command->request.methodLine << "' as blocking and trying again.");
-                    blocking = true;
-                    retry++;
+                    SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue.");
+                   _blockingCommandQueue.push(move(command));
                 }
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
@@ -1339,9 +1368,33 @@ bool BedrockServer::shutdownComplete() {
     // (_syncThreadComplete) in the next loop or two.
     if (_gracefulShutdownTimeout.ringing()) {
         // Timing out. Log some info and return true.
+        string commandCounts;
+        string blockingCommandCounts;
+        list<pair<string*, BedrockCommandQueue*>> queuesToCount = {
+            {&commandCounts, &_commandQueue},
+            {&blockingCommandCounts, &_blockingCommandQueue}
+        };
+        for (auto queueCountPair : queuesToCount) {
+            map<string, int> commandsInQueue;
+            auto methods = queueCountPair.second->getRequestMethodLines();
+            for (auto method : methods) {
+                auto it = commandsInQueue.find(method);
+                if (it != commandsInQueue.end()) {
+                    (it->second)++;
+                } else {
+                    commandsInQueue[method] = 1;
+                }
+            }
+            for (auto cmdPair : commandsInQueue) {
+                *(queueCountPair.first) += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
+            }
+        }
         SWARN("Graceful shutdown timed out. "
               << "Replication State: " << SQLiteNode::stateName(_replicationState.load()) << ". "
               << "Command queue size: " << _commandQueue.size() << ". "
+              << "Blocking command queue size: " << _blockingCommandQueue.size() << ". "
+              << "Commands queued: " << commandCounts << ". "
+              << "Blocking commands queued: " << blockingCommandCounts << ". "
               << "Killing non-gracefully.");
     }
 
@@ -1894,7 +1947,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
             _commandPort = nullptr;
         }
         _shutdownState.store(START_SHUTDOWN);
-        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
+        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
+              << ", blocking commands queued: " << _blockingCommandQueue.size());
     }
 }
 
