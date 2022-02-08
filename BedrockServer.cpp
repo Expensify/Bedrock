@@ -1058,7 +1058,7 @@ void BedrockServer::worker(int threadId)
                                        << " during worker commit. Rolling back transaction!");
                                 core.rollback();
                             } else {
-                                BedrockCore::AutoTimer(command, BedrockCommand::COMMIT_WORKER);
+                                BedrockCore::AutoTimer timer(command, BedrockCommand::COMMIT_WORKER);
                                 commitSuccess = core.commit(SQLiteNode::stateName(_replicationState));
                             }
                         }
