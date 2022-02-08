@@ -1119,7 +1119,7 @@ void BedrockServer::worker(int threadId)
                 --retry;
 
                 if (!retry) {
-                    SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue.");
+                    SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
                    _blockingCommandQueue.push(move(command));
                 }
             }
