@@ -1823,7 +1823,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "SetCheckpointIntervals") ||
-        SIEquals(command->request.methodLine, "EnableSQLTracing")
+        SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
+        SIEquals(command->request.methodLine, "EnableEscalateOverHTTP")
         ) {
         return true;
     }
