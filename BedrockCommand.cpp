@@ -234,7 +234,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // TODO: Remove when "escalate over HTTP" is enabled all the time, this is here to support only old-style
     // escalations.
-    if (!response.isSet("escalationTime")) {
+    if (escalationTimeUS && !response.isSet("escalationTime")) {
         response["escalationTime"] = to_string(escalationTimeUS);
     }
 }
