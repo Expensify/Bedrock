@@ -231,6 +231,12 @@ void BedrockCommand::finalizeTimingInfo() {
             response[p.first] = to_string(p.second);
         }
     }
+
+    // TODO: Remove when "escalate over HTTP" is enabled all the time, this is here to support only old-style
+    // escalations.
+    if (!response.isSet("escalationTime")) {
+        response["escalationTime"] = to_string(escalationTimeUS);
+    }
 }
 
 void BedrockCommand::prePoll(fd_map& fdm)
