@@ -106,6 +106,8 @@ class SQLiteNode : public STCPNode {
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 
+    void setCommandAddress(const string& commandAddress);
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
@@ -275,4 +277,8 @@ class SQLiteNode : public STCPNode {
     AutoTimer _legacyReplication;
     AutoTimer _onMessageTimer;
     AutoTimer _escalateTimer;
+
+    // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
+    // port".
+    atomic<string> _commandAddress;
 };

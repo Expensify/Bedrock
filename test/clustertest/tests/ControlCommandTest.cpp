@@ -5,7 +5,7 @@
 
 struct ControlCommandTest : tpunit::TestFixture {
     ControlCommandTest()
-        : tpunit::TestFixture("ControlCommandTest",
+        : tpunit::TestFixture("ControlCommand",
                               BEFORE_CLASS(ControlCommandTest::setup),
                               AFTER_CLASS(ControlCommandTest::teardown),
                               TEST(ControlCommandTest::testPreventAttach)) { }

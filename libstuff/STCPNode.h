@@ -101,6 +101,9 @@ struct STCPNode : public STCPManager {
         atomic<Response> transactionResponse;
         atomic<string> version;
 
+        // An address on which this peer can accept commands.
+        atomic<string> commandAddress;
+
         // Constructor.
         Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
         ~Peer();

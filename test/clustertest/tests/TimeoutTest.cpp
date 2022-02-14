@@ -4,7 +4,7 @@
 
 struct TimeoutTest : tpunit::TestFixture {
     TimeoutTest()
-        : tpunit::TestFixture("TimeoutTest",
+        : tpunit::TestFixture("Timeout",
                               BEFORE_CLASS(TimeoutTest::setup),
                               AFTER_CLASS(TimeoutTest::teardown),
                               TEST(TimeoutTest::test),

@@ -2,7 +2,7 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct EscalateTest : tpunit::TestFixture {
-    EscalateTest() : tpunit::TestFixture("EscalateTest", TEST(EscalateTest::test)) { }
+    EscalateTest() : tpunit::TestFixture("Escalate", TEST(EscalateTest::test)) { }
 
     // NOTE: This test relies on two processes (the leader and follower Bedrock nodes) both writing to the same temp
     // file at potentially the same time. It's not impossible that these two writes step on each other and this test

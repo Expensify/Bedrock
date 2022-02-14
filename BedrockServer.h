@@ -2,6 +2,7 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
+#include <sqlitecluster/SQLiteClusterMessenger.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
@@ -330,6 +331,10 @@ class BedrockServer : public SQLiteServer {
     // object.
     shared_ptr<SQLiteNode> _syncNode;
 
+    // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
+    // synchronization.
+    SQLiteClusterMessenger _clusterMessenger;
+
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
     void _status(unique_ptr<BedrockCommand>& command);
@@ -466,4 +471,7 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
+
+    // TODO: Remove once we've verified this all works.
+    atomic<bool> _escalateOverHTTP = false;
 };

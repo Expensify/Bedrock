@@ -59,6 +59,9 @@ class SStandaloneHTTPSManager : public STCPManager {
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
+
+    // Historically we only call _onRecv for `200 OK` responses. This allows manangers to handle all responses.
+    virtual bool handleAllResponses() { return false; }
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {
@@ -72,7 +75,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
         }
     };
 
-    void validate();
+    virtual void validate() override;
 
     protected:
     // Reference to the plugin that owns this object.

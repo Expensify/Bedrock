@@ -18,7 +18,7 @@
  */
 struct HTTPSTest : tpunit::TestFixture {
     HTTPSTest()
-        : tpunit::TestFixture("HTTPSTest",
+        : tpunit::TestFixture("HTTPS",
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
                               TEST(HTTPSTest::testMultipleRequests),
