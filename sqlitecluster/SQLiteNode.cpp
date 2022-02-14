@@ -1250,6 +1250,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     if (!message.isSet("Hash")) {
         STHROW("missing Hash");
     }
+    if (message.isSet("commandAddress")) {
+        peer->commandAddress = message["commandAddress"];
+    }
 
     peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
@@ -1962,6 +1965,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
+    messageCopy["commandAddress"] = _commandAddress;
     peer->socket->send(messageCopy.serialize());
 }
 
@@ -1974,6 +1978,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     if (!messageCopy.isSet("Hash")) {
         messageCopy["Hash"] = _db.getCommittedHash();
     }
+    messageCopy["commandAddress"] = _commandAddress;
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
@@ -2805,3 +2810,8 @@ bool SQLiteNode::hasQuorum() {
     }
     return (numFullFollowers * 2 >= numFullPeers);
 }
+
+void SQLiteNode::setCommandAddress(const string& commandAddress) {
+    _commandAddress = commandAddress;
+}
+

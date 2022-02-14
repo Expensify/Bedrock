@@ -3,7 +3,7 @@
 
 struct PermafollowerTest : tpunit::TestFixture {
     PermafollowerTest()
-        : tpunit::TestFixture("PermafollowerTest",
+        : tpunit::TestFixture("Permafollower",
                               TEST(PermafollowerTest::test)
                              ) { }
 

@@ -121,11 +121,11 @@ TestPluginCommand::~TestPluginCommand()
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
         if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
-            SASSERT(escalated);
+            // SASSERT(escalated); TODO: Remove this flag.
             string fileContents = fileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 
-            // Verifiy this all happened in the right order. We're running this on the follower, but it's feasible the
+            // Verify this all happened in the right order. We're running this on the follower, but it's feasible the
             // destructor on the leader hasn't happened yet. We verify everything up to the first destruction.
             if (!SStartsWith(fileContents, "Peeking testescalate (FOLLOWING)\n"
                                            "Peeking testescalate (LEADING)\n"

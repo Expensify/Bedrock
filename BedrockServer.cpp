@@ -194,10 +194,10 @@ void BedrockServer::sync()
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args.test("-parallelReplication")));
 
-    // This should be empty anyway, but let's make sure.
-    if (_completedCommands.size()) {
-        SWARN("_completedCommands not empty at startup of sync thread.");
-    }
+    // Control port and not command port so that followers can still escalate to leader when leader's command port is
+    // closed.
+    // TODO: Pass this in the constructor and make it const?
+    _syncNode->setCommandAddress(args["-controlPort"]);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -1016,11 +1016,32 @@ void BedrockServer::worker(int threadId)
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
 
-                        // We're not handling a writable command anymore.
-                        SINFO("Sending non-parallel command " << command->request.methodLine
-                              << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
-                              << " queued commands.");
-                        _syncNodeQueuedCommands.push(move(command));
+                        // TODO: When escalation over HTTP is totally vetted, remove this "else" block and just always
+                        // use the "if" case.
+                        if (_escalateOverHTTP) {
+                            if (state == SQLiteNode::LEADING) {
+                                SINFO("Sending non-parallel command " << command->request.methodLine
+                                      << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else if (state == SQLiteNode::STANDINGDOWN) {
+                                SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
+                                _standDownQueue.push(move(command));
+                            } else if (_clusterMessenger.sendToLeader(*command)) {
+                                SINFO("Escalating " << command->request.methodLine << " to leader.");
+                                waitForHTTPS(move(command));
+                            } else {
+                                // TODO: Something less naive that considers how these failures happen rather than a simple
+                                // endless loop of requeue and retry.
+                                SWARN("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
+                                _commandQueue.push(move(command));
+                            }
+                        } else {
+                            // We're not handling a writable command anymore.
+                            SINFO("Sending non-parallel command " << command->request.methodLine
+                                  << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
+                                  << " queued commands.");
+                            _syncNodeQueuedCommands.push(move(command));
+                        }
 
                         // Done with this command, look for the next one.
                         break;
@@ -1230,18 +1251,23 @@ void BedrockServer::_resetServer() {
     }
 }
 
-BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_) : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING)
+BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_)
+  : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING),
+    _syncNode(nullptr), _clusterMessenger(_syncNode)
 {}
 
 BedrockServer::BedrockServer(const SData& args_)
   : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _shutdownState(RUNNING),
+    _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0), _outstandingSocketThreads(0)
+    _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0), _outstandingSocketThreads(0),
+    _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
+
+    SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
@@ -1797,7 +1823,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "SetCheckpointIntervals") ||
-        SIEquals(command->request.methodLine, "EnableSQLTracing")
+        SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
+        SIEquals(command->request.methodLine, "EnableEscalateOverHTTP")
         ) {
         return true;
     }
@@ -1864,6 +1891,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             SQLite::enableTrace.store(command->request.test("enable"));
             response["newValue"] = SQLite::enableTrace ? "true" : "false";
         }
+    } else if (SIEquals(command->request.methodLine, "EnableEscalateOverHTTP")) {
+        if (command->request.isSet("enable")) {
+            bool oldValue = _escalateOverHTTP;
+            _escalateOverHTTP = command->request.test("enable");
+            if (_escalateOverHTTP == oldValue) {
+                command->response.methodLine = "200 No Change";
+            } else {
+                SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
+                command->response.methodLine = "200 "s + (_escalateOverHTTP ? "Enabled" : "Disabled");
+            }
+        }
     }
 }
 
@@ -1907,7 +1945,8 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         // If it finished all it's requests, put it back in the main queue.
         if (command->areHttpsRequestsComplete()) {
             SINFO("All HTTPS requests complete, returning to main queue.");
-            // Because set's contain only `const` data, they can't be moved-from without these weird `extract`
+
+            // Because sets contain only `const` data, they can't be moved-from without these weird `extract`
             // semantics. This invalidates our iterator, so we save the one we want before we break it.
             auto nextIt = next(it);
             _commandQueue.push(move(_outstandingHTTPSCommands.extract(it).value()));
