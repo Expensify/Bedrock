@@ -646,6 +646,10 @@ void BedrockServer::sync()
                         SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
                         _commandQueue.push(move(command));
                         break;
+                    } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
+                        SINFO("Server stopped leading, re-queueing commad");
+                        _commandQueue.push(move(command));
+                        break;
                     } else {
                         SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                     }
