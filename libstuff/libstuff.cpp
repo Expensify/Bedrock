@@ -1763,8 +1763,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         if (isPort) {
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
-            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable))) {
                 STHROW("couldn't set REUSEADDR");
+            }
+
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, (char*)&enable, sizeof(enable))) {
+                STHROW("couldn't set REUSEPORT");
+            }
 
             // Bind to the configured port
             sockaddr_in addr;
