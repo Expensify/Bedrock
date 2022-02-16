@@ -348,6 +348,7 @@ STCPManager::Port::Port(int _s, string _host) : s(_s), host(_host)
 STCPManager::Port::~Port()
 {
     if (s != -1) {
+        ::shutdown(s, SHUT_RDWR);
         ::close(s);
     }
 }
