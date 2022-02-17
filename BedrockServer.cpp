@@ -856,8 +856,18 @@ void BedrockServer::worker(int threadId)
             // of a `peek` operation, but more importantly, it skips any delays that might be introduced by waiting in
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
-                SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
-                _syncNodeQueuedCommands.push(move(command));
+                if (_escalateOverHTTP) {
+                    if (_clusterMessenger.sendToLeader(*command)) {
+                        SINFO("Immediately escalating " << command->request.methodLine << " to leader.");
+                        waitForHTTPS(move(command));
+                    } else {
+                        SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+                        _commandQueue.push(move(command));
+                    }
+                else {
+                    SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
+                    _syncNodeQueuedCommands.push(move(command));
+                }
                 continue;
             }
 
