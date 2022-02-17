@@ -864,7 +864,7 @@ void BedrockServer::worker(int threadId)
                         SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
                         _commandQueue.push(move(command));
                     }
-                else {
+                } else {
                     SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
                 }
