@@ -1536,8 +1536,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
-        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
+
+        // Locking here means that no commands can be running when we do these checks and then switch to
+        // `CLIENTS_RESPONDED` because we have a shared lock on this mutex in `handleSocket`. This means this check can
+        // only run between commands, and `_outstandingSocketThreads` will have been incremented already when we check
+        // it here. So, if the check below for `_outstandingSocketThreads` passes at this point, it means there are no
+        // commands at this point in time. However, new commands may still be received on the control port after this,
+        // if we are detaching.
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
+
+        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (!_outstandingSocketThreads || _gracefulShutdownTimeout.ringing()) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
@@ -2248,57 +2256,67 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
                     SINFO("No command from request, closing socket.");
                     socket.shutdown(Socket::CLOSED);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
-                    // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
-                    // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
-                    // If the command has a socket (it's this socket) then we need to wait for it to finish before
-                    // we can dequeue the next command, so that the responses all end up delivered in order.
-                    // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
-                    // command that was already responded to in `buildCommandFromRequest` and we can move on to the
-                    // next thing immediately.
-                    mutex m;
+                    // If it's a status or control command, we handle it specially above. If not, we'll queue it for
+                    // later processing below.
 
-                    // Defer locking until we actually have to.
-                    unique_lock<mutex> lock(m, defer_lock);
-                    condition_variable cv;
-
-                    function<void()> callback = [&m, &cv]() {
-                        // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
-                        // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
-                        // socket thread.
-                        lock_guard lock(m);
-                        cv.notify_all();
-                    };
-
-                    // Ok, none of above synchronization code gets called unless the command has a socket to respond
-                    // on.
-                    bool hasSocket = command->socket;
-                    if (hasSocket) {
-                        // Set the destructor callback for when the command finishes.
-                        command->destructionCallback = &callback;
-
-                        // And lock the mutex so the command can't complete until we are in `wait` below.
-                        lock.lock();
-                    }
-
-                    // Now we'll queue this command in one of three queues.
-                    auto _syncNodeCopy = atomic_load(&_syncNode);
-                    if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
-                        _standDownQueue.push(move(command));
+                    if (isControl && _shutdownState != RUNNING) {
+                        // Don't handle non-control commands on the control port if we're shutting down. As the control
+                        // port can remain open through shutdown (in the case of detaching) and can expect DB access,
+                        // which is being turned off, these could cause weird crashes. Instead, just return an error.
+                        command->response.methodLine = "500 Server Shutting Down";
+                        _reply(command);
                     } else {
-                        if (_version != _leaderVersion.load()) {
-                            SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                            _syncNodeQueuedCommands.push(move(command));
-                        } else {
-                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
-                        }
-                    }
+                        // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
+                        // If the command has a socket (it's this socket) then we need to wait for it to finish before
+                        // we can dequeue the next command, so that the responses all end up delivered in order.
+                        // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
+                        // command that was already responded to in `buildCommandFromRequest` and we can move on to the
+                        // next thing immediately.
+                        mutex m;
 
-                    // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
-                    // destructionCallback fires, this will stop blocking and we can move on to the next request.
-                    if (hasSocket) {
-                        cv.wait(lock);
+                        // Defer locking until we actually have to.
+                        unique_lock<mutex> lock(m, defer_lock);
+                        condition_variable cv;
+
+                        function<void()> callback = [&m, &cv]() {
+                            // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
+                            // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
+                            // socket thread.
+                            lock_guard lock(m);
+                            cv.notify_all();
+                        };
+
+                        // Ok, none of above synchronization code gets called unless the command has a socket to respond
+                        // on.
+                        bool hasSocket = command->socket;
+                        if (hasSocket) {
+                            // Set the destructor callback for when the command finishes.
+                            command->destructionCallback = &callback;
+
+                            // And lock the mutex so the command can't complete until we are in `wait` below.
+                            lock.lock();
+                        }
+
+                        // Now we'll queue this command in one of three queues.
+                        auto _syncNodeCopy = atomic_load(&_syncNode);
+                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                            _standDownQueue.push(move(command));
+                        } else {
+                            if (_version != _leaderVersion.load()) {
+                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else {
+                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                      << _commandQueue.size() << " commands already queued.");
+                                _commandQueue.push(move(command));
+                            }
+                        }
+
+                        // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
+                        // destructionCallback fires, this will stop blocking and we can move on to the next request.
+                        if (hasSocket) {
+                            cv.wait(lock);
+                        }
                     }
                 }
             } else {
