@@ -176,6 +176,8 @@ struct STCPNode : public STCPManager {
     // Inverse of the above function. If the peer is not found, returns 0.
     uint64_t getIDByPeer(Peer* peer);
 
+    unique_ptr<Port> port;
+
   private:
     // Override dead function
     void postPoll(fd_map& ignore) { SERROR("Don't call."); }
@@ -186,8 +188,6 @@ struct STCPNode : public STCPManager {
     AutoTimer _deserializeTimer;
     AutoTimer _sConsumeFrontTimer;
     AutoTimer _sAppendTimer;
-
-    unique_ptr<Port> port;
 };
 
 // serialization for Responses.

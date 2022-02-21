@@ -39,6 +39,8 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
 
     Socket* s = nullptr;
     try {
+        // TODO: Future improvement - socket pool so these are reused.
+        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
         s = new Socket(host, nullptr);
     } catch (const SException& exception) {
         lock_guard<mutex> lock(_transactionCommandMutex);

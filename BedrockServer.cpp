@@ -192,12 +192,7 @@ void BedrockServer::sync()
     // Initialize the shared pointer to our sync node object.
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
-                                                            _version, args.test("-parallelReplication")));
-
-    // Control port and not command port so that followers can still escalate to leader when leader's command port is
-    // closed.
-    // TODO: Pass this in the constructor and make it const?
-    _syncNode->setCommandAddress(args["-controlPort"]);
+                                                            _version, args.test("-parallelReplication"), args["-commandPortPrivate"]));
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -1254,7 +1249,8 @@ void BedrockServer::_resetServer() {
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
     _shutdownState = RUNNING;
     _shouldBackup = false;
-    _commandPort = nullptr;
+    _commandPortPublic = nullptr;
+    _commandPortPrivate = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
     _lastChance = 0;
@@ -1275,9 +1271,9 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0), _outstandingSocketThreads(0),
-    _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
+    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
+    _outstandingSocketThreads(0), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
 
@@ -1446,8 +1442,11 @@ void BedrockServer::prePoll(fd_map& fdm) {
     lock_guard<mutex> lock(_portMutex);
 
     // Add all our ports. There are no sockets directly managed here.
-    if (_commandPort) {
-        SFDset(fdm, _commandPort->s, SREADEVTS);
+    if (_commandPortPublic) {
+        SFDset(fdm, _commandPortPublic->s, SREADEVTS);
+    }
+    if (_commandPortPrivate) {
+        SFDset(fdm, _commandPortPrivate->s, SREADEVTS);
     }
     if (_controlPort) {
         SFDset(fdm, _controlPort->s, SREADEVTS);
@@ -1466,9 +1465,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         lock_guard<mutex> lock(_portMutex);
 
         // Open the port
-        if (!_commandPort) {
-            SINFO("Ready to process commands, opening command port on '" << args["-serverHost"] << "'");
-            _commandPort = openPort(args["-serverHost"]);
+        if (!_commandPortPublic) {
+            SINFO("Ready to process commands, opening public command port on '" << args["-serverHost"] << "'");
+            _commandPortPublic = openPort(args["-serverHost"]);
+        }
+        if (!_commandPortPrivate) {
+            SINFO("Ready to process commands, opening private command port on '" << args["-commandPortPrivate"] << "'");
+            _commandPortPrivate = openPort(args["-commandPortPrivate"]);
         }
         if (!_controlPort) {
             SINFO("Opening control port on '" << args["-controlPort"] << "'");
@@ -1653,7 +1656,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
         SHMMM("Suppressing command port");
         {
             lock_guard<mutex> lock(_portMutex);
-            _commandPort = nullptr;
+            _commandPortPublic = nullptr;
             _portPluginMap.clear();
         }
     } else {
@@ -2000,12 +2003,12 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // detaching. It needs to keep listening.
         {
             lock_guard<mutex> lock(_portMutex);
-            _commandPort = nullptr;
+            _commandPortPublic = nullptr;
+            _commandPortPrivate = nullptr;
             if (!_detach) {
                 _controlPort = nullptr;
             }
             _portPluginMap.clear();
-            _commandPort = nullptr;
         }
         _shutdownState.store(START_SHUTDOWN);
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
@@ -2074,7 +2077,7 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::_acceptSockets() {
     // Make a list of ports to accept on.
     // We'll check the control port, command port, and any plugin ports for new connections.
-    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPort, _controlPort};
+    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
 
     // Lock _portMutex so suppressing the port does not cause it to be null
     // in the middle of this function.
