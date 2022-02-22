@@ -1754,6 +1754,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
         content["host"]     = args["-nodeHost"];
+        content["escalateOverHTTP"] = _escalateOverHTTP ? "true" : "false";
 
         {
             // Make it known if anything is known to cause crashes.
@@ -1926,6 +1927,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                 SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
                 command->response.methodLine = "200 "s + (_escalateOverHTTP ? "Enabled" : "Disabled");
             }
+        } else {
+            command->response.methodLine = "400 Must Specify Enable";
         }
     }
 }
