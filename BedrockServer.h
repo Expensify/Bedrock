@@ -383,7 +383,7 @@ class BedrockServer : public SQLiteServer {
     // Pointers to the ports on which we accept commands.
     mutex _portMutex;
 
-    // The "control port" is intended to be open to privileged clients (i.e., localhost and other nodes i the Bedrock
+    // The "control port" is intended to be open to privileged clients (i.e., localhost and other nodes in the Bedrock
     // cluster) it can be used to run any command including commands meant for cluster operations, changing server
     // settings, etc. It is never closed except upon shutting down the server.
     // Note: In the future, two physical ports may need to be opened to support this, one on localhost, and one on an
