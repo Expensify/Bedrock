@@ -245,7 +245,7 @@ class BedrockServer : public SQLiteServer {
     const SData args;
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket&& s, bool isControl);
+    void handleSocket(Socket&& s, bool isControlPort);
 
   private:
     // The name of the sync thread.
@@ -382,8 +382,22 @@ class BedrockServer : public SQLiteServer {
 
     // Pointers to the ports on which we accept commands.
     mutex _portMutex;
+
+    // The "control port" is intended to be open to privileged clients (i.e., localhost and other nodes in the Bedrock
+    // cluster) it can be used to run any command including commands meant for cluster operations, changing server
+    // settings, etc. It is never closed except upon shutting down the server.
+    // Note: In the future, two physical ports may need to be opened to support this, one on localhost, and one on an
+    // externally available IP address.
     unique_ptr<Port> _controlPort;
-    unique_ptr<Port> _commandPort;
+
+    // Both of these commands ports act identically and accept unprivileged commands. One (public) should be made
+    // available to the network as a whole (i.e., clients in general), and the other should only be made available to
+    // other nodes in the bedrock cluster. The only difference between the two is that when calling
+    // `SuppressCommandPort`, only the public port is closed. The private port remains open so that inter-cluster
+    // traffic continues to flow. Suppressing the command port is intended to lower load by directing traffic away from
+    // a node, but the node may still need to receive commands from the rest of the cluster.
+    unique_ptr<Port> _commandPortPublic;
+    unique_ptr<Port> _commandPortPrivate;
 
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;

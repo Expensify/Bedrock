@@ -192,12 +192,7 @@ void BedrockServer::sync()
     // Initialize the shared pointer to our sync node object.
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
-                                                            _version, args.test("-parallelReplication")));
-
-    // Control port and not command port so that followers can still escalate to leader when leader's command port is
-    // closed.
-    // TODO: Pass this in the constructor and make it const?
-    _syncNode->setCommandAddress(args["-controlPort"]);
+                                                            _version, args.test("-parallelReplication"), args["-commandPortPrivate"]));
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -1254,7 +1249,8 @@ void BedrockServer::_resetServer() {
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
     _shutdownState = RUNNING;
     _shouldBackup = false;
-    _commandPort = nullptr;
+    _commandPortPublic = nullptr;
+    _commandPortPrivate = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
     _lastChance = 0;
@@ -1275,9 +1271,9 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPort(nullptr), _maxConflictRetries(3), _lastQuorumCommandTime(STimeNow()),
-    _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0), _outstandingSocketThreads(0),
-    _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
+    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
+    _outstandingSocketThreads(0), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
 
@@ -1446,8 +1442,11 @@ void BedrockServer::prePoll(fd_map& fdm) {
     lock_guard<mutex> lock(_portMutex);
 
     // Add all our ports. There are no sockets directly managed here.
-    if (_commandPort) {
-        SFDset(fdm, _commandPort->s, SREADEVTS);
+    if (_commandPortPublic) {
+        SFDset(fdm, _commandPortPublic->s, SREADEVTS);
+    }
+    if (_commandPortPrivate) {
+        SFDset(fdm, _commandPortPrivate->s, SREADEVTS);
     }
     if (_controlPort) {
         SFDset(fdm, _controlPort->s, SREADEVTS);
@@ -1466,9 +1465,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         lock_guard<mutex> lock(_portMutex);
 
         // Open the port
-        if (!_commandPort) {
-            SINFO("Ready to process commands, opening command port on '" << args["-serverHost"] << "'");
-            _commandPort = openPort(args["-serverHost"]);
+        if (!_commandPortPublic) {
+            SINFO("Ready to process commands, opening public command port on '" << args["-serverHost"] << "'");
+            _commandPortPublic = openPort(args["-serverHost"]);
+        }
+        if (!_commandPortPrivate) {
+            SINFO("Ready to process commands, opening private command port on '" << args["-commandPortPrivate"] << "'");
+            _commandPortPrivate = openPort(args["-commandPortPrivate"]);
         }
         if (!_controlPort) {
             SINFO("Opening control port on '" << args["-controlPort"] << "'");
@@ -1536,8 +1539,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
         }
-        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
+
+        // Locking here means that no commands can be running when we do these checks and then switch to
+        // `CLIENTS_RESPONDED` because we have a shared lock on this mutex in `handleSocket`. This means this check can
+        // only run between commands, and `_outstandingSocketThreads` will have been incremented already when we check
+        // it here. So, if the check below for `_outstandingSocketThreads` passes at this point, it means there are no
+        // commands at this point in time. However, new commands may still be received on the control port after this,
+        // if we are detaching.
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
+
+        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (!_outstandingSocketThreads || _gracefulShutdownTimeout.ringing()) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
@@ -1645,7 +1656,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
         SHMMM("Suppressing command port");
         {
             lock_guard<mutex> lock(_portMutex);
-            _commandPort = nullptr;
+            _commandPortPublic = nullptr;
             _portPluginMap.clear();
         }
     } else {
@@ -1743,6 +1754,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
         content["host"]     = args["-nodeHost"];
+        content["escalateOverHTTP"] = _escalateOverHTTP ? "true" : "false";
 
         {
             // Make it known if anything is known to cause crashes.
@@ -1915,6 +1927,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                 SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
                 command->response.methodLine = "200 "s + (_escalateOverHTTP ? "Enabled" : "Disabled");
             }
+        } else {
+            command->response.methodLine = "400 Must Specify Enable";
         }
     }
 }
@@ -1992,12 +2006,12 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // detaching. It needs to keep listening.
         {
             lock_guard<mutex> lock(_portMutex);
-            _commandPort = nullptr;
+            _commandPortPublic = nullptr;
+            _commandPortPrivate = nullptr;
             if (!_detach) {
                 _controlPort = nullptr;
             }
             _portPluginMap.clear();
-            _commandPort = nullptr;
         }
         _shutdownState.store(START_SHUTDOWN);
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
@@ -2066,7 +2080,7 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::_acceptSockets() {
     // Make a list of ports to accept on.
     // We'll check the control port, command port, and any plugin ports for new connections.
-    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPort, _controlPort};
+    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
 
     // Lock _portMutex so suppressing the port does not cause it to be null
     // in the middle of this function.
@@ -2167,9 +2181,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     return command;
 }
 
-void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
+void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
     shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
-    if (isControl) {
+    if (isControlPort) {
         controlPortLock.lock();
     }
     // Initialize and get a unique thread ID.
@@ -2248,57 +2262,67 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
                     SINFO("No command from request, closing socket.");
                     socket.shutdown(Socket::CLOSED);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
-                    // If it's a status or control command, we handle it specially here. If not, we'll queue it for later
-                    // processing. If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
-                    // If the command has a socket (it's this socket) then we need to wait for it to finish before
-                    // we can dequeue the next command, so that the responses all end up delivered in order.
-                    // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
-                    // command that was already responded to in `buildCommandFromRequest` and we can move on to the
-                    // next thing immediately.
-                    mutex m;
+                    // If it's a status or control command, we handle it specially above. If not, we'll queue it for
+                    // later processing below.
 
-                    // Defer locking until we actually have to.
-                    unique_lock<mutex> lock(m, defer_lock);
-                    condition_variable cv;
-
-                    function<void()> callback = [&m, &cv]() {
-                        // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
-                        // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
-                        // socket thread.
-                        lock_guard lock(m);
-                        cv.notify_all();
-                    };
-
-                    // Ok, none of above synchronization code gets called unless the command has a socket to respond
-                    // on.
-                    bool hasSocket = command->socket;
-                    if (hasSocket) {
-                        // Set the destructor callback for when the command finishes.
-                        command->destructionCallback = &callback;
-
-                        // And lock the mutex so the command can't complete until we are in `wait` below.
-                        lock.lock();
-                    }
-
-                    // Now we'll queue this command in one of three queues.
-                    auto _syncNodeCopy = atomic_load(&_syncNode);
-                    if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
-                        _standDownQueue.push(move(command));
+                    if (isControlPort && _shutdownState != RUNNING) {
+                        // Don't handle non-control commands on the control port if we're shutting down. As the control
+                        // port can remain open through shutdown (in the case of detaching) and can expect DB access,
+                        // which is being turned off, these could cause weird crashes. Instead, just return an error.
+                        command->response.methodLine = "500 Server Shutting Down";
+                        _reply(command);
                     } else {
-                        if (_version != _leaderVersion.load()) {
-                            SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                            _syncNodeQueuedCommands.push(move(command));
-                        } else {
-                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
-                        }
-                    }
+                        // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
+                        // If the command has a socket (it's this socket) then we need to wait for it to finish before
+                        // we can dequeue the next command, so that the responses all end up delivered in order.
+                        // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
+                        // command that was already responded to in `buildCommandFromRequest` and we can move on to the
+                        // next thing immediately.
+                        mutex m;
 
-                    // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
-                    // destructionCallback fires, this will stop blocking and we can move on to the next request.
-                    if (hasSocket) {
-                        cv.wait(lock);
+                        // Defer locking until we actually have to.
+                        unique_lock<mutex> lock(m, defer_lock);
+                        condition_variable cv;
+
+                        function<void()> callback = [&m, &cv]() {
+                            // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
+                            // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
+                            // socket thread.
+                            lock_guard lock(m);
+                            cv.notify_all();
+                        };
+
+                        // Ok, none of above synchronization code gets called unless the command has a socket to respond
+                        // on.
+                        bool hasSocket = command->socket;
+                        if (hasSocket) {
+                            // Set the destructor callback for when the command finishes.
+                            command->destructionCallback = &callback;
+
+                            // And lock the mutex so the command can't complete until we are in `wait` below.
+                            lock.lock();
+                        }
+
+                        // Now we'll queue this command in one of three queues.
+                        auto _syncNodeCopy = atomic_load(&_syncNode);
+                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                            _standDownQueue.push(move(command));
+                        } else {
+                            if (_version != _leaderVersion.load()) {
+                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
+                                _syncNodeQueuedCommands.push(move(command));
+                            } else {
+                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                      << _commandQueue.size() << " commands already queued.");
+                                _commandQueue.push(move(command));
+                            }
+                        }
+
+                        // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
+                        // destructionCallback fires, this will stop blocking and we can move on to the next request.
+                        if (hasSocket) {
+                            cv.wait(lock);
+                        }
                     }
                 }
             } else {

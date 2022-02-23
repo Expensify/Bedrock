@@ -107,5 +107,6 @@ class BedrockTester {
     uint16_t _serverPort;
     uint16_t _nodePort;
     uint16_t _controlPort;
+    uint16_t _commandPortPrivate;
 };
 
