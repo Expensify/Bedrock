@@ -296,6 +296,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-db", "bedrock.db");
     SETDEFAULT("-serverHost", "localhost:8888");
     SETDEFAULT("-nodeHost", "localhost:8889");
+    SETDEFAULT("-commandPortPrivate", "localhost:8890");
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.

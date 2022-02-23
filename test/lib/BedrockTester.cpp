@@ -40,7 +40,8 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately) :
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
-    _controlPort(controlPort ?: ports.getPort())
+    _controlPort(controlPort ?: ports.getPort()),
+    _commandPortPrivate(ports.getPort())
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
@@ -59,6 +60,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
         {"-controlPort", "localhost:" + to_string(_controlPort)},
+        {"-commandPortPrivate", "0.0.0.0:" + to_string(_commandPortPrivate)},
         {"-priority", "200"},
         {"-plugins", "db"},
         {"-workerThreads", "8"},
@@ -67,6 +69,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-v", ""},
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
+        {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?

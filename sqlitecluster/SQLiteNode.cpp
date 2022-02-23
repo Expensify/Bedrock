@@ -95,7 +95,7 @@ const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
-                       const string& version, const bool useParallelReplication)
+                       const string& version, const bool useParallelReplication, const string& commandPort)
     : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
@@ -111,7 +111,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _multiReplicationThreadSpawn("multi-replication"),
       _legacyReplication("legacy-replication"),
       _onMessageTimer("_onMESSAGE"),
-      _escalateTimer("escalateCommand")
+      _escalateTimer("escalateCommand"),
+      _commandAddress(replaceAddressPort(port->host, commandPort))
     {
 
     SASSERT(priority >= 0);
@@ -2811,7 +2812,15 @@ bool SQLiteNode::hasQuorum() {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-void SQLiteNode::setCommandAddress(const string& commandAddress) {
-    _commandAddress = commandAddress;
+string SQLiteNode::replaceAddressPort(const string& hostPart, const string& portPart) {
+    string hostToUse;
+    string hostToDiscard;
+    uint16_t portToUse = 0;
+    uint16_t portToDiscard = 0;
+    if (!SParseHost(hostPart, hostToUse, portToDiscard) || !SParseHost(portPart, hostToDiscard, portToUse)) {
+        STHROW("Couldn't combine " + hostPart + " with " + portPart);
+    }
+    string result = hostToUse + ":" + to_string(portToUse);
+    SINFO("Combined " << hostPart << " and " << portPart << " to get " << result);
+    return result;
 }
-

@@ -41,7 +41,8 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false,
+               const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
     const vector<Peer*> initPeers(const string& peerList);
@@ -106,7 +107,9 @@ class SQLiteNode : public STCPNode {
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 
-    void setCommandAddress(const string& commandAddress);
+    // Takes two string in the form of `host:port` (i.e., `www.expensify.com:80` or `127.0.0.1:443`) and creates a
+    // similar string with the host from hostPart and the port from portPart .
+    string replaceAddressPort(const string& hostPart, const string& portPart);
 
   private:
     // STCPNode API: Peer handling framework functions
@@ -280,5 +283,5 @@ class SQLiteNode : public STCPNode {
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
     // port".
-    atomic<string> _commandAddress;
+    const string _commandAddress;
 };
