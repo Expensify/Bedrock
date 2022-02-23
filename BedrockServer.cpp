@@ -2181,9 +2181,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     return command;
 }
 
-void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
+void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
     shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
-    if (isControl) {
+    if (isControlPort) {
         controlPortLock.lock();
     }
     // Initialize and get a unique thread ID.
@@ -2265,7 +2265,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControl) {
                     // If it's a status or control command, we handle it specially above. If not, we'll queue it for
                     // later processing below.
 
-                    if (isControl && _shutdownState != RUNNING) {
+                    if (isControlPort && _shutdownState != RUNNING) {
                         // Don't handle non-control commands on the control port if we're shutting down. As the control
                         // port can remain open through shutdown (in the case of detaching) and can expect DB access,
                         // which is being turned off, these could cause weird crashes. Instead, just return an error.

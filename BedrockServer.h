@@ -245,7 +245,7 @@ class BedrockServer : public SQLiteServer {
     const SData args;
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket&& s, bool isControl);
+    void handleSocket(Socket&& s, bool isControlPort);
 
   private:
     // The name of the sync thread.
