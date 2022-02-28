@@ -15,7 +15,7 @@ STCPNode::STCPNode(const string& name_, const string& host, const vector<Peer*> 
 {
     // Initialize
     if (!host.empty()) {
-        port = openPort(host);
+        port = openPort(host, 30);
     }
 }
 
