@@ -84,5 +84,5 @@ struct STCPManager {
     static void prePoll(fd_map& fdm, Socket& socket);
     static void postPoll(fd_map& fdm, Socket& socket);
 
-    static unique_ptr<Port> openPort(const string& host);
+    static unique_ptr<Port> openPort(const string& host, int remainingTries = 1);
 };
