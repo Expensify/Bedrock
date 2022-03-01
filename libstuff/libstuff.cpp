@@ -2017,9 +2017,6 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
         SINFO("Sending an ESCALATE_RESPONSE for id " << id);
     }
 
-    // Timer for tracking how long the call to send is taking to debug slow ESCALATE_RESPONSEs
-    chrono::steady_clock::time_point start = chrono::steady_clock::now();
-
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
     string errorMessage;

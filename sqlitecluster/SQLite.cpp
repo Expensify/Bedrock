@@ -745,7 +745,7 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    DEBUG("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
+    SDEBUG("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
