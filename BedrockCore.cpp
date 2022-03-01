@@ -98,7 +98,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
-                SINFO("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
+                SDEBUG("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
                 _db.resetTiming();
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;

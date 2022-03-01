@@ -826,7 +826,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         if (!retriableJobs.empty()) {
             for (auto job : retriableJobs) {
-                SINFO("Updating job with retryAfter " << job["jobID"]);
+                SDEBUG("Updating job with retryAfter " << job["jobID"]);
                 STable jobData = SParseJSONObject(job["data"]);
                 if (SToInt(jobData["retryAfterCount"]) >= 10) {
                     SINFO("Job " << job["jobID"] << " has retried 10 times, marking it as FAILED.");

@@ -153,7 +153,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
         // These make the logging macros work, as they expect these variables to be in scope.
         auto _state = node._state.load();
         string name = node.name;
-        SINFO("Replicate thread started: " << command.methodLine);
+        SDEBUG("Replicate thread started: " << command.methodLine);
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
             uint64_t newCount = command.calcU64("NewCount");
             uint64_t currentCount = newCount - 1;
@@ -163,7 +163,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
             // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
+            SDEBUG("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
                 SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount, false);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
@@ -187,7 +187,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
-                    SINFO("BEGIN for commit " << newCount);
+                    SDEBUG("BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
                         node.handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
@@ -203,7 +203,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                             // Let's see if we can verify that happened.
                             // Yes, we get this line logged 4 times from four threads as their last activity and then:
                             // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                            SDEBUG("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
                             SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount, true);
                             if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
                                 SINFO("Replication canceled mid-transaction, stopping.");
@@ -1641,10 +1641,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
-                SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+                SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 AutoTimerTime time(_multiReplicationThreadSpawn);
                 thread(replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
-                SINFO("Done spawning concurrent replicate thread: " << threadID);
+                SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {
             AutoTimerTime time(_legacyReplication);
@@ -2529,7 +2529,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
             }
             _sendToPeer(_leadPeer, response);
         } else {
-            PINFO("Skipping " << verb << " for ASYNC command.");
+            SDEBUG("Skipping " << verb << " for ASYNC command.");
         }
     } else {
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
