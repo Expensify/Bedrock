@@ -1615,13 +1615,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            SINFO("About to reply to command " << command->request.methodLine);
+            SDEBUG("About to reply to command " << command->request.methodLine);
             if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
             } else {
-                SINFO("Replied");
+                SDEBUG("Replied");
             }
         }
 
@@ -2165,7 +2165,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
-    SINFO("Deserialized command " << command->request.methodLine);
+    SDEBUG("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : &socket;
 
     if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {

@@ -676,7 +676,7 @@ int SQLite::commit(const string& description) {
         int framesCheckpointed = 0;
         uint64_t start = STimeNow();
         int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
-        SINFO("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
+        SDEBUG("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
               << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
@@ -745,7 +745,7 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    SINFO("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
+    DEBUG("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
