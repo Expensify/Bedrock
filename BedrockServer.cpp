@@ -1460,8 +1460,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
-    lock_guard<mutex> lock(_portMutex);
     {
+        lock_guard<mutex> lock(_portMutex);
         if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) && _shutdownState.load() == RUNNING) {
 
             // Open the port
