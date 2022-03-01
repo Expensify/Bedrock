@@ -1972,8 +1972,6 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 
     if (ret < 0) {
         SHMMM("Unable to get length of socket buffer error: " << strerror(S_errno));
-    } else {
-        SINFO("[performance] " << bytesInBuffer << " bytes in the socket buffer before receiving.");
     }
 
     // Keep trying to receive as long as we can
@@ -2019,17 +2017,12 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
         SINFO("Sending an ESCALATE_RESPONSE for id " << id);
     }
 
-    // Timer for tracking how long the call to send is taking to debug slow ESCALATE_RESPONSEs
-    chrono::steady_clock::time_point start = chrono::steady_clock::now();
-
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
     string errorMessage;
     if (numSent == -1) {
         errorMessage = " Error: "s + strerror(errno);
     }
-    SINFO("[performance] Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
-        << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
         sendBuffer.consumeFront(numSent);

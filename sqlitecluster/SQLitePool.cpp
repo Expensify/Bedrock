@@ -44,7 +44,7 @@ size_t SQLitePool::getIndex(bool createHandle) {
             size_t index = *frontIt;
             _inUseHandles.insert(index);
             _availableHandles.erase(frontIt);
-            SINFO("Returning existing DB handle");
+            SDEBUG("Returning existing DB handle");
             return index;
         } else if (_availableHandles.size() + _inUseHandles.size() < (_maxDBs - 1)) {
             size_t index = _availableHandles.size() + _inUseHandles.size();
@@ -82,7 +82,7 @@ void SQLitePool::returnToPool(size_t index) {
         lock_guard<mutex> lock(_sync);
         _availableHandles.insert(index);
         _inUseHandles.erase(index);
-        SINFO("DB handle returned to pool.");
+        SDEBUG("DB handle returned to pool.");
     }
     _wait.notify_one();
 }
