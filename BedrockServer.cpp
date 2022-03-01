@@ -2004,6 +2004,9 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
 
         // Close our listening ports, we won't accept any new connections on them, except the control port, if we're
         // detaching. It needs to keep listening.
+        // We lock around changing the shutdown state because `postPoll` will open these ports if we're not shutting
+        // down, so otherwise there's a race condition where that happens just after we close them but before we
+        // change the state.
         {
             lock_guard<mutex> lock(_portMutex);
             _commandPortPublic = nullptr;
@@ -2012,8 +2015,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
                 _controlPort = nullptr;
             }
             _portPluginMap.clear();
+            _shutdownState.store(START_SHUTDOWN);
         }
-        _shutdownState.store(START_SHUTDOWN);
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
               << ", blocking commands queued: " << _blockingCommandQueue.size());
     }
