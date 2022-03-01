@@ -1460,40 +1460,41 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
     SQLiteNode::State state = _replicationState.load();
-    if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) &&
-        _shutdownState.load() == RUNNING) {
-        lock_guard<mutex> lock(_portMutex);
+    lock_guard<mutex> lock(_portMutex);
+    {
+        if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) && _shutdownState.load() == RUNNING) {
 
-        // Open the port
-        if (!_commandPortPublic) {
-            SINFO("Ready to process commands, opening public command port on '" << args["-serverHost"] << "'");
-            _commandPortPublic = openPort(args["-serverHost"]);
-        }
-        if (!_commandPortPrivate) {
-            SINFO("Ready to process commands, opening private command port on '" << args["-commandPortPrivate"] << "'");
-            _commandPortPrivate = openPort(args["-commandPortPrivate"]);
-        }
-        if (!_controlPort) {
-            SINFO("Opening control port on '" << args["-controlPort"] << "'");
-            _controlPort = openPort(args["-controlPort"]);
-        }
+            // Open the port
+            if (!_commandPortPublic) {
+                SINFO("Ready to process commands, opening public command port on '" << args["-serverHost"] << "'");
+                _commandPortPublic = openPort(args["-serverHost"]);
+            }
+            if (!_commandPortPrivate) {
+                SINFO("Ready to process commands, opening private command port on '" << args["-commandPortPrivate"] << "'");
+                _commandPortPrivate = openPort(args["-commandPortPrivate"]);
+            }
+            if (!_controlPort) {
+                SINFO("Opening control port on '" << args["-controlPort"] << "'");
+                _controlPort = openPort(args["-controlPort"]);
+            }
 
-        // Open any plugin ports on enabled plugins
-        for (auto plugin : plugins) {
-            string portHost = plugin.second->getPort();
-            if (!portHost.empty()) {
-                bool alreadyOpened = false;
-                for (auto& pluginPorts : _portPluginMap) {
-                    if (pluginPorts.second == plugin.second) {
-                        // We've already got this one.
-                        alreadyOpened = true;
-                        break;
+            // Open any plugin ports on enabled plugins
+            for (auto plugin : plugins) {
+                string portHost = plugin.second->getPort();
+                if (!portHost.empty()) {
+                    bool alreadyOpened = false;
+                    for (auto& pluginPorts : _portPluginMap) {
+                        if (pluginPorts.second == plugin.second) {
+                            // We've already got this one.
+                            alreadyOpened = true;
+                            break;
+                        }
                     }
-                }
-                // Open the port and associate it with the plugin
-                if (!alreadyOpened) {
-                    SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
-                    _portPluginMap[openPort(portHost)] = plugin.second;
+                    // Open the port and associate it with the plugin
+                    if (!alreadyOpened) {
+                        SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
+                        _portPluginMap[openPort(portHost)] = plugin.second;
+                    }
                 }
             }
         }
