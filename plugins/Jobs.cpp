@@ -851,7 +851,16 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
                 if (!db.writeIdempotent(updateQuery)) {
-                    STHROW("502 Update failed");
+                    // Something went wrong with the query to update the retryAfter,
+                    // Let's not throw an exception here but instead update the job to failed and log a Bugbot.
+                    // This is to avoid causing GetJobs to error thereby rendering BWM unable to fetch any jobs that need to be run.
+                    SINFO("Setting retryAfter for job " << job["jobID"] << " has errored, marking it as FAILED.");
+                    if (!db.writeIdempotent("UPDATE jobs "
+                                            "SET state='FAILED' "
+                                            "WHERE jobID = " + SQ(job["jobID"]) + ";")) {
+                        STHROW("502 Update failed");
+                    }
+                    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
                 }
             }
         }
