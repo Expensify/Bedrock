@@ -9,6 +9,13 @@ ifeq ($(CXX),g++)
 CXX = g++-9
 endif
 
+ifdef ARCH
+ifeq ($(ARCH), aarch64)
+    CC = aarch64-linux-gnu-gcc-9
+    CXX = aarch64-linux-gnu-g++-9
+endif
+endif
+
 # Set the optimization level from the environment, or default to -O2.
 ifndef BEDROCK_OPTIM_COMPILE_FLAG
 	BEDROCK_OPTIM_COMPILE_FLAG = -O2
