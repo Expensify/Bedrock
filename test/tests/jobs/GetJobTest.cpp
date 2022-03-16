@@ -819,10 +819,10 @@ struct GetJobTest : tpunit::TestFixture {
         string jobID = response["jobID"];
 
         // Set an invalid nextRun date time
-        string date = SUNQUOTED_CURRENT_TIMESTAMP(); // 2020-11-02 00:00:00
+        string date = SUNQUOTED_CURRENT_TIMESTAMP();
         command.clear();
         command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET nextRun = '2022-01-01 00' WHERE jobID = " + jobID + ";";
+        command["query"] = "UPDATE jobs SET nextRun = '" + date.substr(0, 13) + "' WHERE jobID = " + jobID + ";";
         tester->executeWaitVerifyContent(command);
 
         // Get the job
