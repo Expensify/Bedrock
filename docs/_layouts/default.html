@@ -322,15 +322,9 @@
 
             @media (max-width: 849px) {
                 	.toc__logo {
-                		-moz-transition:background .5s cubic-bezier(0.18,0.75,0.52,0.94);
-                		-o-transition:background .5s cubic-bezier(0.18,0.75,0.52,0.94);
-                		-webkit-transition:background .5s cubic-bezier(0.18,0.75,0.52,0.94);
                 		transition:background .5s cubic-bezier(0.18,0.75,0.52,0.94);
-                		-moz-box-sizing:border-box;
-                		-webkit-box-sizing:border-box;
                 		box-sizing:border-box;
                 		position:fixed;
-                		background-image:linear-gradient(90deg,#4f5e68 0%,#39444b 100%);
                 		width:100%;
                 		height:60px;
                 		top:0;
@@ -340,14 +334,11 @@
                 	}
 
                 	.toc__logo::after {
-                		-moz-transition:all .5s cubic-bezier(0.18,0.75,0.52,0.94);
-                		-o-transition:all .5s cubic-bezier(0.18,0.75,0.52,0.94);
-                		-webkit-transition:all .5s cubic-bezier(0.18,0.75,0.52,0.94);
                 		transition:all .5s cubic-bezier(0.18,0.75,0.52,0.94);
                 		content:'';
                 		display:block;
                 		position:absolute;
-                		background:rgba(255,255,255,0.5);
+                		background: rgba(255,255,255,0.5);
                 		width:0;
                 		height:1px;
                 		bottom:0;
@@ -385,6 +376,7 @@
                 	.logo {
                 		top:0;
                 		height:22px;
+                		width: 97px;
                 	}
             }
 
@@ -492,11 +484,21 @@
 
             .content-card__inner > table {
                 margin-bottom: var(--spacing-default);
+                white-space: nowrap;
             }
 
             .content-card__inner > table td a {
                 display: inline-block;
                 margin: 0 10px 10px 0;
+            }
+
+            @media only screen and (max-width: 700px) {
+                td {
+                    position: relative;
+                    display: block;
+                    float: left;
+                    width: 50%;
+                }
             }
         </style>
     </head>
