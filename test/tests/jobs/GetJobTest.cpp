@@ -41,6 +41,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testPriorityParameter),
                               TEST(GetJobTest::testInvalidJobPriority),
                               TEST(GetJobTest::testRetryableParentJobs),
+                              TEST(GetJobTest::testInvalidNextRun),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 

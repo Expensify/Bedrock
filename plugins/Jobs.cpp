@@ -852,18 +852,13 @@ void BedrockJobsCommand::process(SQLite& db) {
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
 
                 try {
-                    db.writeIdempotent(updateQuery);
-                } catch (const SQLite::constraint_error& e) {
-                    // Something went wrong with the query to update the retryAfter,
-                    // Let's not throw an exception here but instead update the job to failed and log a Bugbot.
-                    // This is to avoid causing GetJobs to error thereby rendering BWM unable to fetch any jobs that need to be run.
-                    SINFO("Setting retryAfter for job " << job["jobID"] << " has errored, marking it as FAILED.");
-                    if (!db.writeIdempotent("UPDATE jobs "
-                                            "SET state='FAILED' "
-                                            "WHERE jobID = " + SQ(job["jobID"]) + ";")) {
-                        STHROW("502 Update failed");
+                    if (!db.writeIdempotent(updateQuery)) {
+                        _handleFailedRetryAfterQuery(db, job["jobID"]);
+                        continue;
                     }
-                    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
+                } catch (const SQLite::constraint_error& e) {
+                    _handleFailedRetryAfterQuery(db, job["jobID"]);
+                    continue;
                 }
             }
         }
@@ -1429,6 +1424,16 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
     if (!SContains(validPriorities, priority)) {
         STHROW("402 Invalid priority value");
     }
+}
+
+void BedrockJobsCommand::_handleFailedRetryAfterQuery(SQLite& db, const string& jobID) {
+    SDEBUG("Setting retryAfter for job " << jobID << " has errored, marking it as FAILED.");
+    if (!db.writeIdempotent("UPDATE jobs "
+                            "SET state='FAILED' "
+                            "WHERE jobID = " + SQ(jobID) + ";")) {
+        STHROW("502 Update failed");
+    }
+    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
 }
 
 void BedrockJobsCommand::handleFailedReply() {
