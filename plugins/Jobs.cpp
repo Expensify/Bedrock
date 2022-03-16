@@ -850,7 +850,10 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
                                          (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
-                if (!db.writeIdempotent(updateQuery)) {
+
+                try {
+                    db.writeIdempotent(updateQuery);
+                } catch (const SQLite::constraint_error& e) {
                     // Something went wrong with the query to update the retryAfter,
                     // Let's not throw an exception here but instead update the job to failed and log a Bugbot.
                     // This is to avoid causing GetJobs to error thereby rendering BWM unable to fetch any jobs that need to be run.
