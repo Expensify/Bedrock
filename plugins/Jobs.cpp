@@ -1427,13 +1427,12 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
 }
 
 void BedrockJobsCommand::_handleFailedRetryAfterQuery(SQLite& db, const string& jobID) {
-    SDEBUG("Setting retryAfter for job " << jobID << " has errored, marking it as FAILED.");
+    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
     if (!db.writeIdempotent("UPDATE jobs "
-                            "SET state='FAILED' "
+                            "SET state = 'FAILED' "
                             "WHERE jobID = " + SQ(jobID) + ";")) {
         STHROW("502 Update failed");
     }
-    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
 }
 
 void BedrockJobsCommand::handleFailedReply() {
