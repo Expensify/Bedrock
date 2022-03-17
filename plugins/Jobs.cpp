@@ -1427,7 +1427,7 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
 }
 
 void BedrockJobsCommand::_handleFailedRetryAfterQuery(SQLite& db, const string& jobID) {
-    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter");
+    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter. JobID: " << jobID);
     if (!db.writeIdempotent("UPDATE jobs "
                             "SET state = 'FAILED' "
                             "WHERE jobID = " + SQ(jobID) + ";")) {
