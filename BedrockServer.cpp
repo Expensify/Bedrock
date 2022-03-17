@@ -767,7 +767,7 @@ void BedrockServer::worker(int threadId)
             command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
-            SINFO("Dequeued command " << command->request.methodLine << " in worker, "
+            SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
             // Set the function that lets the signal handler know which command caused a problem, in case that happens.
