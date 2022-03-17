@@ -1922,22 +1922,6 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
 
 bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
     switch (errornumber) {
-        // These cases are interesting enough to warn.
-        case S_NOTINITIALISED:
-        case S_ENETDOWN:
-        case S_EACCES:
-        case S_EFAULT:
-        case S_ENETRESET:
-        case S_ENOBUFS:
-        case S_ENOTSOCK:
-        case S_EOPNOTSUPP:
-        case S_EMSGSIZE:
-        case S_EHOSTUNREACH:
-        case S_EINVAL:
-        default:
-            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
-            return false; // Socket died
-
         // These are only interesting enough for an info line.
         case S_ECONNABORTED:
         case S_ETIMEDOUT:
@@ -1952,8 +1936,13 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         case S_EINTR:
         case S_EINPROGRESS:
         case S_ESHUTDOWN:
-        case S_EWOULDBLOCK: // Same as S_EAGAIN in some distros (including Ubuntu)
+        case S_EWOULDBLOCK: // Same as S_EAGAIN in Linux.
             return true; // Socket still alive
+
+        // Anything else is interesting enough to warn.
+        default:
+            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
     }
 }
 
