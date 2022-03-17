@@ -51,6 +51,7 @@
 #undef S_NOTINITIALISED
 #define S_NOTINITIALISED INT_MAX
 #endif
+#define S_EAGAIN EAGAIN
 #define S_ENETDOWN ENETDOWN
 #define S_EFAULT EFAULT
 #define S_ENETRESET ENETRESET
@@ -1920,7 +1921,7 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
 }
 
 bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
-    switch (S_errno) {
+    switch (errornumber) {
         // These cases are interesting enough to warn.
         case S_NOTINITIALISED:
         case S_ENETDOWN:
@@ -1951,7 +1952,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         case S_EINTR:
         case S_EINPROGRESS:
         case S_ESHUTDOWN:
-        case S_EWOULDBLOCK: // Same as S_EAGAIN in some distros (including Ubuntu)
+        case S_EAGAIN:
             return true; // Socket still alive
     }
 }
