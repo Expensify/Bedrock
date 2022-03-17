@@ -1952,6 +1952,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         case S_EINTR:
         case S_EINPROGRESS:
         case S_ESHUTDOWN:
+        case S_EWOULDBLOCK:
         case S_EAGAIN:
             return true; // Socket still alive
     }
