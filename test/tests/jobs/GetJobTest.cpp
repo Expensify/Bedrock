@@ -41,6 +41,7 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testPriorityParameter),
                               TEST(GetJobTest::testInvalidJobPriority),
                               TEST(GetJobTest::testRetryableParentJobs),
+                              TEST(GetJobTest::testInvalidNextRun),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass)) { }
 
@@ -806,6 +807,34 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stoi(childCount), 0);
         string parentCount = tester->readDB("SELECT COUNT() FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
         ASSERT_EQUAL(stoi(parentCount), 0);
+    }
+
+    void testInvalidNextRun() {
+        SData command("CreateJob");
+        command["name"] = "jobWithInvalidNextRun";
+        command["firstRun"] = SUNQUOTED_CURRENT_TIMESTAMP();
+        command["retryAfter"] = "+1 SECOND";
+        command["repeat"] = "SCHEDULED, +1 MINUTES";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Set an invalid nextRun date time
+        string date = SUNQUOTED_CURRENT_TIMESTAMP();
+        command.clear();
+        command.methodLine = "Query";
+        command["query"] = "UPDATE jobs SET nextRun = '" + date.substr(0, 13) + "' WHERE jobID = " + jobID + ";";
+        tester->executeWaitVerifyContent(command);
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "jobWithInvalidNextRun";
+        tester->executeWaitVerifyContent(command);
+
+        // Verify the job is marked as failed
+        SQResult jobData;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        ASSERT_EQUAL(jobData[0][0], "FAILED");
     }
 
 } __GetJobTest;

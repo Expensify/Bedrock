@@ -850,8 +850,15 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
                                          (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
-                if (!db.writeIdempotent(updateQuery)) {
-                    STHROW("502 Update failed");
+
+                try {
+                    if (!db.writeIdempotent(updateQuery)) {
+                        _handleFailedRetryAfterQuery(db, job["jobID"]);
+                        continue;
+                    }
+                } catch (const SQLite::constraint_error& e) {
+                    _handleFailedRetryAfterQuery(db, job["jobID"]);
+                    continue;
                 }
             }
         }
@@ -1416,6 +1423,15 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
     list<int64_t> validPriorities = {0, 250, 500, 750, 850, 1000};
     if (!SContains(validPriorities, priority)) {
         STHROW("402 Invalid priority value");
+    }
+}
+
+void BedrockJobsCommand::_handleFailedRetryAfterQuery(SQLite& db, const string& jobID) {
+    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter. JobID: " << jobID);
+    if (!db.writeIdempotent("UPDATE jobs "
+                            "SET state = 'FAILED' "
+                            "WHERE jobID = " + SQ(jobID) + ";")) {
+        STHROW("502 Update failed");
     }
 }
 
