@@ -37,12 +37,17 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
         _transactionCommands[transaction] = make_pair(&command, STimeNow());
     }
 
+    // Start our escalation.
+    command.escalationTimeUS = STimeNow();
+
     Socket* s = nullptr;
     try {
         // TODO: Future improvement - socket pool so these are reused.
         // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
         s = new Socket(host, nullptr);
     } catch (const SException& exception) {
+        // Finish our escalation.
+        command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
         lock_guard<mutex> lock(_transactionCommandMutex);
         _transactionCommands.erase(transaction);
         delete transaction;
@@ -75,6 +80,9 @@ bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
         command->response["escalationTime"] = to_string(STimeNow() - cmdIt->second.second);
         command->complete = true;
         _transactionCommands.erase(cmdIt);
+
+        // Finish our escalation.
+        command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
     }
     return false;
 }
