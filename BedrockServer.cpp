@@ -1952,10 +1952,22 @@ void BedrockServer::_prePollCommands(fd_map& fdm) {
     for (auto& command : _outstandingHTTPSCommands) {
         command->prePoll(fdm);
     }
+
+    // Make sure that waiting for an HTTPS command interrupts the current `poll` in the sync thread.
+    _newCommandsWaiting.prePoll(fdm);
 }
 
 void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
+
+    // Just clear this, it doesn't matter what the contents are.
+    _newCommandsWaiting.postPoll(fdm);
+    try {
+        while (true) {
+            _newCommandsWaiting.pop();
+        }
+    } catch (const out_of_range& e) {
+    }
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.
     auto it = _outstandingHTTPSCommands.begin();
@@ -2359,6 +2371,9 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
     SAUTOPREFIX(command->request);
     lock_guard<mutex> lock(_httpsCommandMutex);
     _outstandingHTTPSCommands.insert(move(command));
+
+    // Interrupt `poll` in the sync thread.
+    _newCommandsWaiting.push(true);
 }
 
 const atomic<SQLiteNode::State>& BedrockServer::getState() const {
