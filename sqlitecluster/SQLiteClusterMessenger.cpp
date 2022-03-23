@@ -56,14 +56,12 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
 
     SData request = command.request;
     request.nameValueMap["ID"] = command.id;
-
     transaction->s = s;
     transaction->fullRequest = request.serialize();
-
     command.httpsRequests.push_back(transaction);
 
     // Ship it.
-    transaction->s->send(command.request.serialize());
+    transaction->s->send(transaction->fullRequest);
 
     return true;
 }
