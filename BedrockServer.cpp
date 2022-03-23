@@ -2151,8 +2151,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
             SINFO("Not queuing future command '" << request.methodLine << "' while shutting down.");
             return nullptr;
         }
-    } else {
-        SINFO("Waiting for '" << request.methodLine << "' to complete.");
     }
 
     // Get the source ip of the command.
@@ -2176,7 +2174,15 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // This is important! All commands passed through the entire cluster must have unique IDs, or they
     // won't get routed properly from follower to leader and back.
-    command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
+    // If the command specifies an ID header (for HTTP escalations) use that, otherwise generate one.
+    auto existingID = request.nameValueMap.find("ID");
+    if (existingID != request.nameValueMap.end()) {
+        command->id = existingID->second;
+    } else {
+        command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
+    }
+
+    SINFO("Waiting for '" << request.methodLine << "' to complete.");
 
     // And we and keep track of the client that initiated this command, so we can respond later, except
     // if we received connection:forget in which case we don't respond later
