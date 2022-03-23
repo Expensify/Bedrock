@@ -61,7 +61,7 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     command.httpsRequests.push_back(transaction);
 
     // Ship it.
-    transaction->s->send(transaction->fullRequest);
+    transaction->s->send(transaction->fullRequest.serialize());
 
     return true;
 }
