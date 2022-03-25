@@ -203,8 +203,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             if (socket->recvBuffer.empty() && socket->sendBufferEmpty()) {
                 SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
             } else {
-                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), recv='"
-                      << socket->recvBuffer << "', send='" << socket->sendBufferCopy() << "'");
+                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), send='" << socket->sendBufferCopy() << "'");
             }
             socketList.remove(socket);
             acceptedSocketList.erase(socketIt);
