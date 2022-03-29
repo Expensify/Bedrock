@@ -412,6 +412,11 @@ class BedrockServer : public SQLiteServer {
     // requests are complete.
     void waitForHTTPS(unique_ptr<BedrockCommand>&& command);
 
+    // This doesn't really do anything in itself, but when we need to add new sockets to a poll loop (like when we
+    // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
+    // allows it to start again and pick up the new socket we just created.
+    SSynchronizedQueue<bool> _newCommandsWaiting;
+
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
     void _finishPeerCommand(unique_ptr<BedrockCommand>& command);
 
