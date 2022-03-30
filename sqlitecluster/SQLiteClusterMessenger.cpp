@@ -1,9 +1,12 @@
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <libstuff/SHTTPSManager.h>
 
 #include <unistd.h>
 #include <fcntl.h>
+
+atomic<bool> SQLiteClusterMessenger::shuttingDown(true);
 
 SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
  : _node(node)
@@ -16,11 +19,12 @@ void __setErrorResponse(BedrockCommand& command) {
     command.response.methodLine = "500 Internal Server Error";
     command.response.nameValueMap.clear();
     command.response.content.clear();
+    command.complete = true;
 }
 
 
 // Returns true on ready or false on error or timeout.
-bool __waitForReady(pollfd& fdspec, int timeoutMS) {
+bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, int timeoutMS) {
     static const map <int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
@@ -33,6 +37,10 @@ bool __waitForReady(pollfd& fdspec, int timeoutMS) {
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
+            if (shuttingDown) {
+                SINFO("[HTTPESC] Giving up because shutting down.");
+                return false;
+            }
             // TODO: Check command timeout.
             SINFO("[HTTPESC] Socket waiting to be ready (" << type << ").");
         } else if (result == 1) {
@@ -61,7 +69,7 @@ bool __waitForReady(pollfd& fdspec, int timeoutMS) {
     }
 }
 
-bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
+bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     string leaderAddress;
     auto _nodeCopy = atomic_load(&_node);
     if (_nodeCopy) {
@@ -87,12 +95,11 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     command.escalationTimeUS = STimeNow();
 
     SINFO("[HTTPESC] Socket opening.");
-    // TODO: RAII delete this.
-    Socket* s = nullptr;
+    unique_ptr<SHTTPSManager::Socket> s;
     try {
         // TODO: Future improvement - socket pool so these are reused.
         // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-        s = new Socket(host, nullptr);
+        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
     } catch (const SException& exception) {
         // Finish our escalation.
         command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
@@ -109,8 +116,7 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     // We only have one FD to poll.
     pollfd fdspec = {s->s, POLLOUT, 0};
     while (true) {
-        if (!__waitForReady(fdspec, 0)) {
-            // TODO: Delete socket.
+        if (!waitForReady(fdspec, 0)) {
             return false;
         }
 
@@ -124,7 +130,6 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
                     break;
                 default:
                     SINFO("Got error (send): " << errno << ", fatal.");
-                    __setErrorResponse(command);
                     return false;
             }
         } else {
@@ -136,67 +141,52 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
         }
     }
 
+    // If we fail before here, we can try again. If we fail after here, we should return an error.
+
     // Ok, now we need to receive the response.
     fdspec.events = POLLIN;
     string responseStr;
     char response[4096] = {0};
     while (true) {
-        if (!__waitForReady(fdspec, 0)) {
-            // TODO: Delete socket.
+        if (!waitForReady(fdspec, 0)) {
+            __setErrorResponse(command);
             return false;
         }
 
         ssize_t bytesRead = recv(s->s, response, 4096, 0);
-        SINFO("[HTTPESC] Socket read bytes:" << bytesRead);
-        // TODO: Check errors above.
+        if (bytesRead == -1) {
+            switch (errno) {
+                case EAGAIN:
+                case EINTR:
+                    // these are ok. try again.
+                    SINFO("Got error (recv): " << errno << ", trying again.");
+                    break;
+                default:
+                    SINFO("Got error (recv): " << errno << ", fatal.");
+                    __setErrorResponse(command);
+                    return false;
+            }
+        } else {
+            // Save the response.
+            responseStr.append(response, bytesRead);
 
-        // Save the response.
-        responseStr.append(response, bytesRead);
-
-        // Are we done? We've only sent one command so we can only get one response.
-        int size = SParseHTTP(responseStr, command.response.methodLine, command.response.nameValueMap, command.response.content);
-        if (size) {
-            SINFO("[HTTPESC] response size:" << size);
-            break;
+            // Are we done? We've only sent one command so we can only get one response.
+            int size = SParseHTTP(responseStr, command.response.methodLine, command.response.nameValueMap, command.response.content);
+            if (size) {
+                SINFO("[HTTPESC] response size:" << size);
+                break;
+            }
         }
     }
 
-    delete s;
-
-    SINFO("Command complete");
+    // If we got here, the command is complete.
     command.complete = true;
 
-    // Finish our escalation.
+    // Finish our escalation timing.
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
     return true;
 }
 
-
 // TODO:: Add shuttingDown flag that BedrockServer can set.
 
-bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
-{
-    // Bedrock returns responses like `200 OK` rather than `HTTP/1.1 200 OK`, so we don't use getHTTPResponseCode
-    transaction->response = SToInt(transaction->fullResponse.methodLine);
-
-    // TODO: Demote this to DEBUG after we're confident in this code.
-    SINFO("Finished HTTP escalation of " << transaction->fullRequest.methodLine << " command with response " << transaction->response);
-    lock_guard<mutex> lock(_transactionCommandMutex);
-    auto cmdIt = _transactionCommands.find(transaction);
-    if (cmdIt != _transactionCommands.end()) {
-        BedrockCommand* command = cmdIt->second.first;
-        command->response = transaction->fullResponse;
-        command->response["escalationTime"] = to_string(STimeNow() - cmdIt->second.second);
-        command->complete = true;
-        _transactionCommands.erase(cmdIt);
-
-        // Finish our escalation.
-        command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
-    }
-    return false;
-}
-
-bool SQLiteClusterMessenger::handleAllResponses() {
-    return true;
-}

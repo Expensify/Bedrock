@@ -853,7 +853,7 @@ void BedrockServer::worker(int threadId)
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
                     SINFO("Beginning immediately escalating " << command->request.methodLine << " to leader.");
-                    if (_clusterMessenger.sendToLeader(*command)) {
+                    if (_clusterMessenger.runOnLeader(*command)) {
                         // command->complete is now true for this command. It will get handled a few lines below.
                         SINFO("Finished immediately escalating " << command->request.methodLine << " to leader.");
                     } else {
@@ -1037,9 +1037,8 @@ void BedrockServer::worker(int threadId)
                             } else if (state == SQLiteNode::STANDINGDOWN) {
                                 SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                                 _standDownQueue.push(move(command));
-                            } else if (_clusterMessenger.sendToLeader(*command)) {
+                            } else if (_clusterMessenger.runOnLeader(*command)) {
                                 SINFO("Escalated " << command->request.methodLine << " to leader and re-queueing.");
-                                command->complete = true;
                                 _commandQueue.push(move(command));
                             } else {
                                 // TODO: Something less naive that considers how these failures happen rather than a simple
@@ -2353,6 +2352,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
             } else {
                 // If we weren't able to deserialize a complete request, and we're shutting down, give up.
                 if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
+                    SQLiteClusterMessenger::shuttingDown.store(true);
                     SINFO("Closing socket " << socket.id << " with incomplete data and no pending command: shutting down.");
                 }
             }
