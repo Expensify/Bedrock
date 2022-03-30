@@ -852,18 +852,20 @@ void BedrockServer::worker(int threadId)
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
+                    SINFO("Beginning immediately escalating " << command->request.methodLine << " to leader.");
                     if (_clusterMessenger.sendToLeader(*command)) {
-                        SINFO("Immediately escalating " << command->request.methodLine << " to leader.");
-                        waitForHTTPS(move(command));
+                        // command->complete is now true for this command. It will get handled a few lines below.
+                        SINFO("Finished immediately escalating " << command->request.methodLine << " to leader.");
                     } else {
                         SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
                         _commandQueue.push(move(command));
+                        continue;
                     }
                 } else {
                     SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
+                    continue;
                 }
-                continue;
             }
 
             // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
@@ -1036,8 +1038,9 @@ void BedrockServer::worker(int threadId)
                                 SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                                 _standDownQueue.push(move(command));
                             } else if (_clusterMessenger.sendToLeader(*command)) {
-                                SINFO("Escalating " << command->request.methodLine << " to leader.");
-                                waitForHTTPS(move(command));
+                                SINFO("Escalated " << command->request.methodLine << " to leader and re-queueing.");
+                                command->complete = true;
+                                _commandQueue.push(move(command));
                             } else {
                                 // TODO: Something less naive that considers how these failures happen rather than a simple
                                 // endless loop of requeue and retry.

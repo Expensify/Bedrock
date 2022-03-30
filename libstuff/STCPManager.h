@@ -21,7 +21,7 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, SX509* x509 = nullptr);
+        Socket(const string& host, SX509* x509 = nullptr, bool isBlocking = false);
         Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
         Socket(Socket&& from);
         ~Socket();
