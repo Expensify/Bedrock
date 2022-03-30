@@ -1038,8 +1038,8 @@ void BedrockServer::worker(int threadId)
                                 SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                                 _standDownQueue.push(move(command));
                             } else if (_clusterMessenger.runOnLeader(*command)) {
-                                SINFO("Escalated " << command->request.methodLine << " to leader and re-queueing.");
-                                _commandQueue.push(move(command));
+                                SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
+                                _reply(command);
                             } else {
                                 // TODO: Something less naive that considers how these failures happen rather than a simple
                                 // endless loop of requeue and retry.
@@ -1435,6 +1435,8 @@ bool BedrockServer::shutdownComplete() {
               << "Commands queued: " << commandCounts << ". "
               << "Blocking commands queued: " << blockingCommandCounts << ". "
               << "Killing non-gracefully.");
+
+        return true;
     }
 
     // We wait until the sync thread returns.

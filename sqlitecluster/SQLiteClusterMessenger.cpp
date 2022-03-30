@@ -49,10 +49,10 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
             }
             SINFO("[HTTPESC] Socket waiting to be ready (" << type << ").");
         } else if (result == 1) {
-            if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP) {
+            if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
                 return false;
-            } else if (fdspec.revents & POLLIN || fdspec.revents & POLLOUT) {
+            } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
                 // Expected case.
                 return true;
             } else {
@@ -171,7 +171,12 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                     setErrorResponse(command);
                     return false;
             }
+        } else if (bytesRead == 0) {
+            SINFO("[HTTPESC] disconnected.");
+            setErrorResponse(command);
+            return false;
         } else {
+            SINFO("[HTTPESC] read " << bytesRead << " bytes.");
             // Save the response.
             responseStr.append(response, bytesRead);
 
