@@ -228,7 +228,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                        }
                    }
                    tpunit_detail_do_methods(f->_before_classes);
-                   tpunit_detail_do_tests(f);
+                   tpunit_detail_do_tests(f, currentTestName);
                    tpunit_detail_do_methods(f->_after_classes);
                 }
             } catch (ShutdownException se) {
@@ -389,11 +389,15 @@ void tpunit::TestFixture::tpunit_detail_do_methods(tpunit::TestFixture::method* 
     }
 }
 
-void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
+void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f, string testName) {
     method* t = f->_tests;
     list<thread> testThreads;
     while(t) {
-        testThreads.push_back(thread([t, f]() {
+        testThreads.push_back(thread([t, f, testName]() {
+            if (testName.size()) {
+                lock_guard<mutex> l(currentTestNameMutex);
+                currentTestName = testName;
+            }
             recursive_mutex& m = *(f->_mutex);
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;

@@ -369,7 +369,7 @@ namespace tpunit {
 
          static void tpunit_detail_do_methods(method* m);
 
-         static void tpunit_detail_do_tests(TestFixture* f);
+         static void tpunit_detail_do_tests(TestFixture* f, string testName = "");
 
          static stats& tpunit_detail_stats();
 
