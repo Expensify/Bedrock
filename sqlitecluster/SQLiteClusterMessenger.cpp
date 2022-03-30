@@ -10,6 +10,57 @@ SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
 {
 }
 
+void __setErrorResponse(BedrockCommand& command) {
+    // TODO: Do we use this to say we couldn't escalate a command, or do we just clear everything and let the caller
+    // figure it out?
+    command.response.methodLine = "500 Internal Server Error";
+    command.response.nameValueMap.clear();
+    command.response.content.clear();
+}
+
+
+// Returns true on ready or false on error or timeout.
+bool __waitForReady(pollfd& fdspec, int timeoutMS) {
+    static const map <int, string> labels = {
+        {POLLOUT, "send"},
+        {POLLIN, "recv"},
+    };
+    string type = "UNKNOWN";
+    try {
+        type = labels.at(fdspec.events);
+    } catch (const out_of_range& e) {}
+
+    while (true) {
+        int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
+        if (!result) {
+            // TODO: Check command timeout.
+            SINFO("[HTTPESC] Socket waiting to be ready (" << type << ").");
+        } else if (result == 1) {
+            if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP) {
+                SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
+                return false;
+            } else if (fdspec.revents & POLLIN || fdspec.revents & POLLOUT) {
+                // Expected case.
+                return true;
+            } else {
+                SWARN("[HTTPESC] Neither error nor success?? (" << type << ").");
+                return false;
+            }
+        } else if (result < 0) {
+            if (errno == EAGAIN || errno == EINTR) {
+                // might work on a second try.
+                SWARN("[HTTPESC] poll error (" << type << "): " << errno << ", retrying.");
+            } else {
+                // Anything else should be fatal.
+                SWARN("[HTTPESC] poll error (" << type << "): " << errno);
+                return false;
+            }
+        } else {
+            SERROR("We have more than 1 file ready????");
+        }
+    }
+}
+
 bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     string leaderAddress;
     auto _nodeCopy = atomic_load(&_node);
@@ -32,18 +83,11 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
         return false;
     }
 
-    // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
-    //Transaction* transaction = new Transaction(*this);
-
-    //{
-    //    lock_guard<mutex> lock(_transactionCommandMutex);
-    //    _transactionCommands[transaction] = make_pair(&command, STimeNow());
-    //}
-
-    // Start our escalation.
+    // Start our escalation timing.
     command.escalationTimeUS = STimeNow();
 
     SINFO("[HTTPESC] Socket opening.");
+    // TODO: RAII delete this.
     Socket* s = nullptr;
     try {
         // TODO: Future improvement - socket pool so these are reused.
@@ -52,53 +96,43 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     } catch (const SException& exception) {
         // Finish our escalation.
         command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-        //lock_guard<mutex> lock(_transactionCommandMutex);
-        //_transactionCommands.erase(transaction);
-        //delete transaction;
+        SINFO("[HTTPESC] Socket failed to open.");
         return false;
     }
     SINFO("[HTTPESC] Socket opened.");
 
+    // This is what we need to send.
     SData request = command.request;
     request.nameValueMap["ID"] = command.id;
-    //transaction->s = s;
-    //transaction->fullRequest = request.serialize();
-    //command.httpsRequests.push_back(transaction);
-
-    // Ship it.
-    // TODO: remove transaction->s->send(transaction->fullRequest.serialize());
-
-    pollfd fdspec = {s->s, POLLOUT, 0};
-    
-    // This is what we need to send.
     SFastBuffer buf(request.serialize());
 
+    // We only have one FD to poll.
+    pollfd fdspec = {s->s, POLLOUT, 0};
     while (true) {
-        // First we wait until we can send (connect is complete).
-        while (true) {
-            int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
-            if (!result) {
-                // still waiting to be able to write.
-                // TODO: Check timeout and errors.
-                SINFO("[HTTPESC] Socket waiting to write.");
-            } else if (result == 1) {
-                SINFO("[HTTPESC] 1 file ready (send)");
-                break;
-            } else if (result < 0) {
-                SWARN("[HTTPESC] poll error (send): " << errno);
+        if (!__waitForReady(fdspec, 0)) {
+            // TODO: Delete socket.
+            return false;
+        }
+
+        ssize_t bytesSent = send(s->s, buf.c_str(), buf.size(), 0);
+        if (bytesSent == -1) {
+            switch (errno) {
+                case EAGAIN:
+                case EINTR:
+                    // these are ok. try again.
+                    SINFO("Got error (send): " << errno << ", trying again.");
+                    break;
+                default:
+                    SINFO("Got error (send): " << errno << ", fatal.");
+                    __setErrorResponse(command);
+                    return false;
+            }
+        } else {
+            buf.consumeFront(bytesSent);
+            if (buf.empty()) {
+                // Everything has sent, we're done with this loop.
                 break;
             }
-        }
-        SINFO("[HTTPESC] Socket writeable.");
-
-        // Now we know we can send, so let's do so.
-        ssize_t bytesSent = send(s->s, buf.c_str(), buf.size(), 0);
-        // TODO: Check errors above.
-        buf.consumeFront(bytesSent);
-        SINFO("[HTTPESC] Socket sent bytes:" << bytesSent);
-        if (buf.empty()) {
-            // Everything has sent, we're done with this loop.
-            break;
         }
     }
 
@@ -107,24 +141,11 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     string responseStr;
     char response[4096] = {0};
     while (true) {
-        // First we wait until we can receive (there's some data to read)
-        while (true) {
-            int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
-            if (!result) {
-                // still waiting to be able to read.
-                // TODO: Check timeout and errors.
-                SINFO("[HTTPESC] Socket waiting to read.");
-            } else if (result == 1) {
-                SINFO("[HTTPESC] 1 file ready (recv)");
-                break;
-            } else if (result < 0) {
-                SWARN("[HTTPESC] poll error (recv): " << errno);
-                break;
-            }
+        if (!__waitForReady(fdspec, 0)) {
+            // TODO: Delete socket.
+            return false;
         }
-        SINFO("[HTTPESC] Socket readable.");
 
-        // Now we know we can recv, so let's do so.
         ssize_t bytesRead = recv(s->s, response, 4096, 0);
         SINFO("[HTTPESC] Socket read bytes:" << bytesRead);
         // TODO: Check errors above.
@@ -145,8 +166,14 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
     SINFO("Command complete");
     command.complete = true;
 
+    // Finish our escalation.
+    command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+
     return true;
 }
+
+
+// TODO:: Add shuttingDown flag that BedrockServer can set.
 
 bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
 {
