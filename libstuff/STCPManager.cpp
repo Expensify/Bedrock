@@ -204,13 +204,13 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* 
     sentBytes(0), recvBytes(0)
 { }
 
-STCPManager::Socket::Socket(const string& host, SX509* x509, bool isBlocking)
+STCPManager::Socket::Socket(const string& host, SX509* x509)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509),
     sentBytes(0), recvBytes(0)
 {
     SASSERT(SHostIsValid(host));
-    s = S_socket(host, true, false, isBlocking);
+    s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
