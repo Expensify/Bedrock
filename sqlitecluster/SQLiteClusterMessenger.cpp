@@ -99,6 +99,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // Start our escalation timing.
     command.escalationTimeUS = STimeNow();
 
+    // TODO: remove the super-verbose logging before this is in normal production.
     SINFO("[HTTPESC] Socket opening.");
     unique_ptr<SHTTPSManager::Socket> s;
     try {
@@ -176,14 +177,12 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             setErrorResponse(command);
             return false;
         } else {
-            SINFO("[HTTPESC] read " << bytesRead << " bytes.");
             // Save the response.
             responseStr.append(response, bytesRead);
 
             // Are we done? We've only sent one command so we can only get one response.
             int size = SParseHTTP(responseStr, command.response.methodLine, command.response.nameValueMap, command.response.content);
             if (size) {
-                SINFO("[HTTPESC] response size:" << size);
                 break;
             }
         }
