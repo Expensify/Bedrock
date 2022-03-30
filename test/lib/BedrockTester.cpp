@@ -48,11 +48,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         _testers.insert(this);
     }
 
-    string currentTestName;
-    {
-        lock_guard<mutex> lock(tpunit::currentTestNameMutex);
-        currentTestName = tpunit::currentTestName;
-    }
+    string currentTestName = tpunit::currentTestName;
 
     map <string, string> defaultArgs = {
         {"-db", getTempFileName()},
