@@ -1256,6 +1256,7 @@ void BedrockServer::_resetServer() {
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
     _lastChance = 0;
+    _clusterMessenger.reset();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1541,6 +1542,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (_shutdownState.load() == START_SHUTDOWN) {
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
+            _clusterMessenger.shutdownBy(_lastChance);
         }
 
         // Locking here means that no commands can be running when we do these checks and then switch to
@@ -2352,7 +2354,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
             } else {
                 // If we weren't able to deserialize a complete request, and we're shutting down, give up.
                 if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
-                    SQLiteClusterMessenger::shuttingDown.store(true);
                     SINFO("Closing socket " << socket.id << " with incomplete data and no pending command: shutting down.");
                 }
             }

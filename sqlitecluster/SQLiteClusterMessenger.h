@@ -14,9 +14,15 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
-    static atomic<bool> shuttingDown;
+    void shutdownBy(uint64_t shutdownTimestamp);
+    void reset();
 
   private:
-    bool waitForReady(pollfd& fdspec, int timeoutMS);
+    bool waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
+
+    void setErrorResponse(BedrockCommand& command);
+
     shared_ptr<SQLiteNode>& _node;
+
+    atomic<uint64_t> _shutDownBy = 0;
 };

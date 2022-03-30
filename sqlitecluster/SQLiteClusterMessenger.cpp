@@ -6,25 +6,28 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-atomic<bool> SQLiteClusterMessenger::shuttingDown(true);
-
 SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
  : _node(node)
 {
 }
 
-void __setErrorResponse(BedrockCommand& command) {
-    // TODO: Do we use this to say we couldn't escalate a command, or do we just clear everything and let the caller
-    // figure it out?
+void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
     command.response.methodLine = "500 Internal Server Error";
     command.response.nameValueMap.clear();
     command.response.content.clear();
     command.complete = true;
 }
 
+void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
+    _shutDownBy = shutdownTimestamp;
+}
+
+void SQLiteClusterMessenger::reset() {
+    _shutDownBy = 0;
+}
 
 // Returns true on ready or false on error or timeout.
-bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, int timeoutMS) {
+bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) {
     static const map <int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
@@ -37,11 +40,13 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, int timeoutMS) {
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
-            if (shuttingDown) {
+            if (_shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
                 return false;
+            } else if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
+                SINFO("[HTTPESC] Timeout waiting for socket.");
+                return false;
             }
-            // TODO: Check command timeout.
             SINFO("[HTTPESC] Socket waiting to be ready (" << type << ").");
         } else if (result == 1) {
             if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP) {
@@ -64,7 +69,7 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, int timeoutMS) {
                 return false;
             }
         } else {
-            SERROR("We have more than 1 file ready????");
+            SERROR("[HTTPESC] We have more than 1 file ready????");
         }
     }
 }
@@ -116,7 +121,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // We only have one FD to poll.
     pollfd fdspec = {s->s, POLLOUT, 0};
     while (true) {
-        if (!waitForReady(fdspec, 0)) {
+        if (!waitForReady(fdspec, command.timeout())) {
             return false;
         }
 
@@ -126,10 +131,10 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                 case EAGAIN:
                 case EINTR:
                     // these are ok. try again.
-                    SINFO("Got error (send): " << errno << ", trying again.");
+                    SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
                     break;
                 default:
-                    SINFO("Got error (send): " << errno << ", fatal.");
+                    SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
                     return false;
             }
         } else {
@@ -148,8 +153,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     string responseStr;
     char response[4096] = {0};
     while (true) {
-        if (!waitForReady(fdspec, 0)) {
-            __setErrorResponse(command);
+        if (!waitForReady(fdspec, command.timeout())) {
+            setErrorResponse(command);
             return false;
         }
 
@@ -159,11 +164,11 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                 case EAGAIN:
                 case EINTR:
                     // these are ok. try again.
-                    SINFO("Got error (recv): " << errno << ", trying again.");
+                    SINFO("[HTTPESC] Got error (recv): " << errno << ", trying again.");
                     break;
                 default:
-                    SINFO("Got error (recv): " << errno << ", fatal.");
-                    __setErrorResponse(command);
+                    SINFO("[HTTPESC] Got error (recv): " << errno << ", fatal.");
+                    setErrorResponse(command);
                     return false;
             }
         } else {
@@ -187,6 +192,3 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     return true;
 }
-
-// TODO:: Add shuttingDown flag that BedrockServer can set.
-
