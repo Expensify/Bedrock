@@ -852,18 +852,20 @@ void BedrockServer::worker(int threadId)
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
-                    if (_clusterMessenger.sendToLeader(*command)) {
-                        SINFO("Immediately escalating " << command->request.methodLine << " to leader.");
-                        waitForHTTPS(move(command));
+                    SINFO("Beginning immediately escalating " << command->request.methodLine << " to leader.");
+                    if (_clusterMessenger.runOnLeader(*command)) {
+                        // command->complete is now true for this command. It will get handled a few lines below.
+                        SINFO("Finished immediately escalating " << command->request.methodLine << " to leader.");
                     } else {
                         SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
                         _commandQueue.push(move(command));
+                        continue;
                     }
                 } else {
                     SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
+                    continue;
                 }
-                continue;
             }
 
             // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
@@ -1035,9 +1037,9 @@ void BedrockServer::worker(int threadId)
                             } else if (state == SQLiteNode::STANDINGDOWN) {
                                 SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                                 _standDownQueue.push(move(command));
-                            } else if (_clusterMessenger.sendToLeader(*command)) {
-                                SINFO("Escalating " << command->request.methodLine << " to leader.");
-                                waitForHTTPS(move(command));
+                            } else if (_clusterMessenger.runOnLeader(*command)) {
+                                SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
+                                _reply(command);
                             } else {
                                 // TODO: Something less naive that considers how these failures happen rather than a simple
                                 // endless loop of requeue and retry.
@@ -1254,6 +1256,7 @@ void BedrockServer::_resetServer() {
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
     _lastChance = 0;
+    _clusterMessenger.reset();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1432,6 +1435,8 @@ bool BedrockServer::shutdownComplete() {
               << "Commands queued: " << commandCounts << ". "
               << "Blocking commands queued: " << blockingCommandCounts << ". "
               << "Killing non-gracefully.");
+
+        return true;
     }
 
     // We wait until the sync thread returns.
@@ -1539,6 +1544,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (_shutdownState.load() == START_SHUTDOWN) {
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
+            _clusterMessenger.shutdownBy(_lastChance);
         }
 
         // Locking here means that no commands can be running when we do these checks and then switch to
