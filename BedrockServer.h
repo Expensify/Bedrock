@@ -2,6 +2,7 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
+#include <sqlitecluster/SQLiteClusterMessenger.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
@@ -243,12 +244,8 @@ class BedrockServer : public SQLiteServer {
     // Arguments passed on the command line.
     const SData args;
 
-    // This does the same as STCPManager::acceptSocket, but does not put the new socket in `socketList` because it
-    // will not be managed by that poll loop, instead, it starts a new thread.
-    STCPManager::Socket* acceptUnlistedSocket(Port*& portOut);
-
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket* s, bool isControl);
+    void handleSocket(Socket&& s, bool isControlPort);
 
   private:
     // The name of the sync thread.
@@ -284,7 +281,7 @@ class BedrockServer : public SQLiteServer {
     bool _suppressCommandPortManualOverride;
 
     // This is a map of open listening ports to the plugin objects that created them.
-    map<Port*, BedrockPlugin*> _portPluginMap;
+    map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
 
     // The server version. This may be fake if the arguments contain a `versionOverride` value.
     string _version;
@@ -298,8 +295,9 @@ class BedrockServer : public SQLiteServer {
     bool _upgradeDB(SQLite& db);
 
     // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
-    void _prePollPlugins(fd_map& fdm);
-    void _postPollPlugins(fd_map& fdm, uint64_t nextActivity);
+    // TODO: Can we kill `nextActivity`?
+    void _prePollCommands(fd_map& fdm);
+    void _postPollCommands(fd_map& fdm, uint64_t nextActivity);
 
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();
@@ -332,6 +330,10 @@ class BedrockServer : public SQLiteServer {
     // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
     shared_ptr<SQLiteNode> _syncNode;
+
+    // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
+    // synchronization.
+    SQLiteClusterMessenger _clusterMessenger;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
@@ -379,40 +381,41 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
-    Port* _controlPort;
-    Port* _commandPort;
+    mutex _portMutex;
+
+    // The "control port" is intended to be open to privileged clients (i.e., localhost and other nodes in the Bedrock
+    // cluster) it can be used to run any command including commands meant for cluster operations, changing server
+    // settings, etc. It is never closed except upon shutting down the server.
+    // Note: In the future, two physical ports may need to be opened to support this, one on localhost, and one on an
+    // externally available IP address.
+    unique_ptr<Port> _controlPort;
+
+    // Both of these commands ports act identically and accept unprivileged commands. One (public) should be made
+    // available to the network as a whole (i.e., clients in general), and the other should only be made available to
+    // other nodes in the bedrock cluster. The only difference between the two is that when calling
+    // `SuppressCommandPort`, only the public port is closed. The private port remains open so that inter-cluster
+    // traffic continues to flow. Suppressing the command port is intended to lower load by directing traffic away from
+    // a node, but the node may still need to receive commands from the rest of the cluster.
+    unique_ptr<Port> _commandPortPublic;
+    unique_ptr<Port> _commandPortPrivate;
 
     // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
     atomic<int> _maxConflictRetries;
 
-    // This is a map of HTTPS requests to the commands that contain them. We use this to quickly look up commands when
-    // their HTTPS requests finish and move them back to the main queue.
-    map<SHTTPSManager::Transaction*, BedrockCommand*> _outstandingHTTPSRequests;
     mutex _httpsCommandMutex;
-
-    // Comparison class to sort command pointers based on their timeout rather than pointer address. This lets us keep
-    // commands ordered such that the first ones to time out are at the front.
-    struct compareCommandByTimeout {
-        bool operator() (BedrockCommand* a, BedrockCommand* b) const {
-            if (a->timeout() == b->timeout()) {
-                // Tiebreaker so that two commands with the same timeout don't appear equivalent.
-                return a < b;
-            }
-            return a->timeout() < b->timeout();
-        }
-    };
 
     // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
     // copy of each command, even if it has multiple requests. Sorted with the above `compareCommandByTimeout`.
-    set<BedrockCommand*, compareCommandByTimeout> _outstandingHTTPSCommands;
+    set<unique_ptr<BedrockCommand>> _outstandingHTTPSCommands;
 
     // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
     // requests are complete.
     void waitForHTTPS(unique_ptr<BedrockCommand>&& command);
 
-    // Takes a list of completed HTTPS requests, and move those commands back to the main queue (as long as they don't
-    // have any other incomplete requests).
-    int finishWaitingForHTTPS(list<SHTTPSManager::Transaction*>& completedHTTPSRequests);
+    // This doesn't really do anything in itself, but when we need to add new sockets to a poll loop (like when we
+    // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
+    // allows it to start again and pick up the new socket we just created.
+    SSynchronizedQueue<bool> _newCommandsWaiting;
 
     // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
     void _finishPeerCommand(unique_ptr<BedrockCommand>& command);
@@ -463,7 +466,7 @@ class BedrockServer : public SQLiteServer {
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 
     // Setup a new command from a bare request.
-    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket* s);
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s);
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
@@ -487,4 +490,7 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
+
+    // TODO: Remove once we've verified this all works.
+    atomic<bool> _escalateOverHTTP = false;
 };

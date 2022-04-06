@@ -10,6 +10,7 @@
 #include <libstuff/SFastBuffer.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
+#include <test/lib/tpunit++.hpp>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -39,11 +40,18 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately) :
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
-    _controlPort(controlPort ?: ports.getPort())
+    _controlPort(controlPort ?: ports.getPort()),
+    _commandPortPrivate(ports.getPort())
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
+    }
+
+    string currentTestName;
+    {
+        lock_guard<mutex> lock(tpunit::currentTestNameMutex);
+        currentTestName = tpunit::currentTestName;
     }
 
     map <string, string> defaultArgs = {
@@ -52,6 +60,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
         {"-controlPort", "localhost:" + to_string(_controlPort)},
+        {"-commandPortPrivate", "0.0.0.0:" + to_string(_commandPortPrivate)},
         {"-priority", "200"},
         {"-plugins", "db"},
         {"-workerThreads", "8"},
@@ -60,10 +69,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-v", ""},
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
+        {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
+        {"-testName", currentTestName},
     };
 
     // Set defaults.
@@ -107,9 +118,11 @@ BedrockTester::~BedrockTester() {
     if (_serverPID) {
         stopServer();
     }
+
     SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
     SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
     SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
+    SFileExists((_args["-db"] + "-wal2").c_str()) && unlink((_args["-db"] + "-wal2").c_str());
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
@@ -489,7 +502,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1);
+        // Assumes wal2 mode.
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, false);
     }
     return *_db;
 }

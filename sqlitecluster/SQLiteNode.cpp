@@ -57,7 +57,7 @@
 #define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateName(_state) << "} "
 
 // Initializations for static vars.
-const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 5;
+const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 1;
 const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
 uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
@@ -95,7 +95,7 @@ const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
-                       const string& version, const bool useParallelReplication)
+                       const string& version, const bool useParallelReplication, const string& commandPort)
     : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
@@ -111,7 +111,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _multiReplicationThreadSpawn("multi-replication"),
       _legacyReplication("legacy-replication"),
       _onMessageTimer("_onMESSAGE"),
-      _escalateTimer("escalateCommand")
+      _escalateTimer("escalateCommand"),
+      _commandAddress(replaceAddressPort(port->host, commandPort))
     {
 
     SASSERT(priority >= 0);
@@ -128,20 +129,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
 
     // Get this party started
     _changeState(SEARCHING);
-
-    // Make sure we get notified when the DB needs to checkpoint.
-    _dbPool->getBase().addCheckpointListener(_localCommitNotifier);
-    _dbPool->getBase().addCheckpointListener(_leaderCommitNotifier);
 }
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
-
-    // Don't notify these, they won't exist anymore.
-    _dbPool->getBase().removeCheckpointListener(_localCommitNotifier);
-    _dbPool->getBase().removeCheckpointListener(_leaderCommitNotifier);
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
@@ -160,7 +153,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
         // These make the logging macros work, as they expect these variables to be in scope.
         auto _state = node._state.load();
         string name = node.name;
-        SINFO("Replicate thread started: " << command.methodLine);
+        SDEBUG("Replicate thread started: " << command.methodLine);
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
             uint64_t newCount = command.calcU64("NewCount");
             uint64_t currentCount = newCount - 1;
@@ -170,7 +163,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
             // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SINFO("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
+            SDEBUG("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
                 SQLiteSequentialNotifier::RESULT result = node._localCommitNotifier.waitFor(waitForCount, false);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
@@ -182,10 +175,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                 } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
                     SINFO("_localCommitNotifier.waitFor canceled early, returning.");
                     return;
-                } else if (result == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                    SINFO("Checkpoint required while waiting for DB to come up-to-date. Waiting for checkpoint.");
-                    db.waitForCheckpoint();
-                    continue;
                 } else {
                     SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
                 }
@@ -198,7 +187,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
-                    SINFO("BEGIN for commit " << newCount);
+                    SDEBUG("BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
                         node.handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
@@ -214,17 +203,12 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                             // Let's see if we can verify that happened.
                             // Yes, we get this line logged 4 times from four threads as their last activity and then:
                             // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
-                            SINFO("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                            SDEBUG("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
                             SQLiteSequentialNotifier::RESULT waitResult = node._localCommitNotifier.waitFor(currentCount, true);
                             if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
                                 SINFO("Replication canceled mid-transaction, stopping.");
                                 db.rollback();
                                 break;
-                            } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                                SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                                db.rollback();
-                                db.waitForCheckpoint();
-                                continue;
                             }
                         }
 
@@ -249,11 +233,6 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         SINFO("Replication canceled mid-transaction, stopping.");
                         db.rollback();
                         break;
-                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CHECKPOINT_REQUIRED) {
-                        SINFO("Checkpoint required in replication, waiting for checkpoint and restarting transaction.");
-                        db.rollback();
-                        db.waitForCheckpoint();
-                        continue;
                     }
 
                     // Leader says it has committed this transaction, so we can too.
@@ -1272,6 +1251,9 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
     if (!message.isSet("Hash")) {
         STHROW("missing Hash");
     }
+    if (message.isSet("commandAddress")) {
+        peer->commandAddress = message["commandAddress"];
+    }
 
     peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
@@ -1659,10 +1641,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
-                SINFO("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+                SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 AutoTimerTime time(_multiReplicationThreadSpawn);
                 thread(replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
-                SINFO("Done spawning concurrent replicate thread: " << threadID);
+                SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {
             AutoTimerTime time(_legacyReplication);
@@ -1984,6 +1966,7 @@ void SQLiteNode::_sendToPeer(Peer* peer, const SData& message) {
     SData messageCopy = message;
     messageCopy["CommitCount"] = to_string(_db.getCommitCount());
     messageCopy["Hash"] = _db.getCommittedHash();
+    messageCopy["commandAddress"] = _commandAddress;
     peer->socket->send(messageCopy.serialize());
 }
 
@@ -1996,6 +1979,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     if (!messageCopy.isSet("Hash")) {
         messageCopy["Hash"] = _db.getCommittedHash();
     }
+    messageCopy["commandAddress"] = _commandAddress;
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
@@ -2251,7 +2235,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
         // because the second try will be blocked on the checkpoint.
         while (true) {
             try {
-                _db.waitForCheckpoint();
                 if (!_db.beginTransaction()) {
                     STHROW("failed to begin transaction");
                 }
@@ -2272,9 +2255,6 @@ void SQLiteNode::_recvSynchronize(Peer* peer, const SData& message) {
                 // **FIXME: Remove the above line once we can automatically handle?
                 _db.rollback();
                 throw e;
-            } catch (const SQLite::checkpoint_required_error& e) {
-                _db.rollback();
-                SINFO("[checkpoint] Retrying synchronize after checkpoint.");
             }
         }
 
@@ -2370,7 +2350,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
     if (peer->socket) {
         // Reset
         SHMMM("Reconnecting to '" << peer->name << "'");
-        shutdownSocket(peer->socket);
+        peer->socket->shutdown();
         peer->loggedIn = false;
     }
 }
@@ -2460,9 +2440,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            SINFO("Waiting for checkpoint");
-            db.waitForCheckpoint();
-            SINFO("Done waiting for checkpoint");
             // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
             // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
             // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
@@ -2485,9 +2462,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 }
@@ -2535,9 +2509,6 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 
@@ -2558,7 +2529,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
             }
             _sendToPeer(_leadPeer, response);
         } else {
-            PINFO("Skipping " << verb << " for ASYNC command.");
+            SDEBUG("Skipping " << verb << " for ASYNC command.");
         }
     } else {
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
@@ -2684,7 +2655,6 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
     // because the second try will be blocked on the checkpoint.
     while (true) {
         try {
-            _db.waitForCheckpoint();
             if (!_db.beginTransaction()) {
                 STHROW("failed to begin transaction");
             }
@@ -2716,9 +2686,6 @@ void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) 
 
             // This is a fatal error case.
             break;
-        } catch (const SQLite::checkpoint_required_error& e) {
-            _db.rollback();
-            SINFO("[checkpoint] Retrying beginTransaction after checkpoint.");
         }
     }
 
@@ -2843,4 +2810,17 @@ bool SQLiteNode::hasQuorum() {
         }
     }
     return (numFullFollowers * 2 >= numFullPeers);
+}
+
+string SQLiteNode::replaceAddressPort(const string& hostPart, const string& portPart) {
+    string hostToUse;
+    string hostToDiscard;
+    uint16_t portToUse = 0;
+    uint16_t portToDiscard = 0;
+    if (!SParseHost(hostPart, hostToUse, portToDiscard) || !SParseHost(portPart, hostToDiscard, portToUse)) {
+        STHROW("Couldn't combine " + hostPart + " with " + portPart);
+    }
+    string result = hostToUse + ":" + to_string(portToUse);
+    SINFO("Combined " << hostPart << " and " << portPart << " to get " << result);
+    return result;
 }

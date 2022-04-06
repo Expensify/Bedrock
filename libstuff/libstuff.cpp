@@ -51,6 +51,7 @@
 #undef S_NOTINITIALISED
 #define S_NOTINITIALISED INT_MAX
 #endif
+#define S_EAGAIN EAGAIN
 #define S_ENETDOWN ENETDOWN
 #define S_EFAULT EFAULT
 #define S_ENETRESET ENETRESET
@@ -1920,23 +1921,7 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
 }
 
 bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
-    switch (S_errno) {
-        // These cases are interesting enough to warn.
-        case S_NOTINITIALISED:
-        case S_ENETDOWN:
-        case S_EACCES:
-        case S_EFAULT:
-        case S_ENETRESET:
-        case S_ENOBUFS:
-        case S_ENOTSOCK:
-        case S_EOPNOTSUPP:
-        case S_EMSGSIZE:
-        case S_EHOSTUNREACH:
-        case S_EINVAL:
-        default:
-            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
-            return false; // Socket died
-
+    switch (errornumber) {
         // These are only interesting enough for an info line.
         case S_ECONNABORTED:
         case S_ETIMEDOUT:
@@ -1951,8 +1936,13 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
         case S_EINTR:
         case S_EINPROGRESS:
         case S_ESHUTDOWN:
-        case S_EWOULDBLOCK: // Same as S_EAGAIN in some distros (including Ubuntu)
+        case S_EWOULDBLOCK: // Same as S_EAGAIN in Linux.
             return true; // Socket still alive
+
+        // Anything else is interesting enough to warn.
+        default:
+            SWARN(logPrefix << "(" << peer << ") failed with response '" << strerror(errornumber) << "' (#" << errornumber << "), closing.");
+            return false; // Socket died
     }
 }
 
@@ -1972,8 +1962,6 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 
     if (ret < 0) {
         SHMMM("Unable to get length of socket buffer error: " << strerror(S_errno));
-    } else {
-        SINFO("[performance] " << bytesInBuffer << " bytes in the socket buffer before receiving.");
     }
 
     // Keep trying to receive as long as we can
@@ -2019,17 +2007,12 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
         SINFO("Sending an ESCALATE_RESPONSE for id " << id);
     }
 
-    // Timer for tracking how long the call to send is taking to debug slow ESCALATE_RESPONSEs
-    chrono::steady_clock::time_point start = chrono::steady_clock::now();
-
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
     string errorMessage;
     if (numSent == -1) {
         errorMessage = " Error: "s + strerror(errno);
     }
-    SINFO("[performance] Send() took " << chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count()
-        << " ms and sent " << numSent << " of " << sendBuffer.size() << " bytes." << errorMessage);
 
     if (numSent > 0) {
         sendBuffer.consumeFront(numSent);

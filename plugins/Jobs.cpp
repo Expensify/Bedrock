@@ -500,8 +500,10 @@ void BedrockJobsCommand::process(SQLite& db) {
                 SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
             }
 
+            const string& currentTime = SCURRENT_TIMESTAMP();
+
             // If no "firstRun" was provided, use right now
-            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SCURRENT_TIMESTAMP() : SQ(job["firstRun"]);
+            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? currentTime : SQ(job["firstRun"]);
 
             // If no data was provided, use an empty object
             const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
@@ -597,7 +599,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
                             SQ(jobIDToUse) + ", " +
-                            SCURRENT_TIMESTAMP() + ", " +
+                            currentTime + ", " +
                             SQ(initialState) + ", " +
                             SQ(job["name"]) + ", " +
                             safeFirstRun + ", " +
@@ -672,7 +674,40 @@ void BedrockJobsCommand::process(SQLite& db) {
                         "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
                         "FROM jobs "
                         "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=850 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=750 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                             "AND priority=500 "
+                            "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                            "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
+                            string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                        "ORDER BY nextRun ASC LIMIT " + safeNumResults +
+                    ") "
+                "UNION ALL "
+                    "SELECT * FROM ("
+                        "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                        "FROM jobs "
+                        "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                            "AND priority=250 "
                             "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                             "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                             string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
@@ -791,7 +826,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         if (!retriableJobs.empty()) {
             for (auto job : retriableJobs) {
-                SINFO("Updating job with retryAfter " << job["jobID"]);
+                SDEBUG("Updating job with retryAfter " << job["jobID"]);
                 STable jobData = SParseJSONObject(job["data"]);
                 if (SToInt(jobData["retryAfterCount"]) >= 10) {
                     SINFO("Job " << job["jobID"] << " has retried 10 times, marking it as FAILED.");
@@ -815,8 +850,15 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
                                          (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
-                if (!db.writeIdempotent(updateQuery)) {
-                    STHROW("502 Update failed");
+
+                try {
+                    if (!db.writeIdempotent(updateQuery)) {
+                        _handleFailedRetryAfterQuery(db, job["jobID"]);
+                        continue;
+                    }
+                } catch (const SQLite::constraint_error& e) {
+                    _handleFailedRetryAfterQuery(db, job["jobID"]);
+                    continue;
                 }
             }
         }
@@ -920,12 +962,12 @@ void BedrockJobsCommand::process(SQLite& db) {
 
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob( jobID, [delay], [nextRun], [name], [data] )
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat] )
         //
         //     Re-queues a RUNNING job.
         //     The nextRun logic for the job is decided in the following way
-        //      - If the job is configured to "repeat" it will schedule
-        //     the job for the next repeat time.
+        //      - If the job is configured to "repeat", and we are not passed
+        //     an ignoreRepeat param, it will schedule the job for the next repeat time.
         //     - Else, if "nextRun" is set, it will schedule the job to run at that time
         //     - Else, if "delay" is set, it will schedule the job to run in "delay" seconds
         //
@@ -936,12 +978,13 @@ void BedrockJobsCommand::process(SQLite& db) {
         //     interrupted in a non-fatal way.
         //
         //     Parameters:
-        //     - jobID       - ID of the job to requeue
-        //     - delay       - Number of seconds to wait before retrying
-        //     - nextRun     - datetime of next scheduled run
-        //     - name        - An arbitrary string identifier (case insensitive)
-        //     - data        - Data to associate with this job
-        //     - jobPriority - The new priority to set for this job
+        //     - jobID        - ID of the job to requeue
+        //     - delay        - Number of seconds to wait before retrying
+        //     - nextRun      - datetime of next scheduled run
+        //     - name         - An arbitrary string identifier (case insensitive)
+        //     - data         - Data to associate with this job
+        //     - jobPriority  - The new priority to set for this job
+        //     - ignoreRepeat - Ignore the job's repeat param when figuring out when to retry the job
         //
         // - FinishJob( jobID, [data] )
         //
@@ -1072,7 +1115,11 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         // If this is set to repeat, get the nextRun value
         string safeNewNextRun = "";
-        if (!repeat.empty()) {
+
+        // If passed ignoreRepeat, we want to fall back to the logic of using nextRun or delay instead of the jobs
+        // repeat param
+        bool ignoreRepeat = request.test("ignoreRepeat");
+        if (!repeat.empty() && !ignoreRepeat) {
             // For all jobs, the last time at which they were scheduled is the currently stored 'nextRun' time
             string lastScheduled = nextRun;
 
@@ -1373,8 +1420,18 @@ void BedrockJobsCommand::_validatePriority(const int64_t priority) {
     // here so that the caller can know that he did something wrong rather
     // than having his job sit unprocessed in the queue forever. Hopefully
     // we can remove this restriction in the future.
-    if (priority != 0 && priority != 500 && priority != 1000) {
+    list<int64_t> validPriorities = {0, 250, 500, 750, 850, 1000};
+    if (!SContains(validPriorities, priority)) {
         STHROW("402 Invalid priority value");
+    }
+}
+
+void BedrockJobsCommand::_handleFailedRetryAfterQuery(SQLite& db, const string& jobID) {
+    SALERT("ENSURE_BUGBOT Query error when updating job with retryAfter. JobID: " << jobID);
+    if (!db.writeIdempotent("UPDATE jobs "
+                            "SET state = 'FAILED' "
+                            "WHERE jobID = " + SQ(jobID) + ";")) {
+        STHROW("502 Update failed");
     }
 }
 

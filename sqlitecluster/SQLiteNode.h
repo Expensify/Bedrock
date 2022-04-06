@@ -41,7 +41,8 @@ class SQLiteNode : public STCPNode {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false);
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false,
+               const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
     const vector<Peer*> initPeers(const string& peerList);
@@ -105,6 +106,10 @@ class SQLiteNode : public STCPNode {
 
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
+
+    // Takes two string in the form of `host:port` (i.e., `www.expensify.com:80` or `127.0.0.1:443`) and creates a
+    // similar string with the host from hostPart and the port from portPart .
+    string replaceAddressPort(const string& hostPart, const string& portPart);
 
   private:
     // STCPNode API: Peer handling framework functions
@@ -243,9 +248,7 @@ class SQLiteNode : public STCPNode {
     // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
     // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
     // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
-    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading. Also worth
-    // noting is that a checkpoint can interrupt a transaction, forcing it to restart. See
-    // SQLite::CheckpointRequiredListener for more information on that process.
+    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
@@ -277,4 +280,8 @@ class SQLiteNode : public STCPNode {
     AutoTimer _legacyReplication;
     AutoTimer _onMessageTimer;
     AutoTimer _escalateTimer;
+
+    // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
+    // port".
+    const string _commandAddress;
 };

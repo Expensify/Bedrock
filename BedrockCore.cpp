@@ -29,7 +29,7 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command) {
+uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
 
@@ -43,19 +43,19 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     processTimeout *= 1000;
 
     // Already expired.
-    if (adjustedTimeout <= 0 || processTimeout <= 0) {
+    if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
         SALERT("Command " << command->request.methodLine << " timed out after "
                << ((now - command->request.calc64("commandExecuteTime")) / 1000) << "ms.");
         STHROW("555 Timeout");
     }
 
     // Both of these are positive, return the lowest remaining.
-    return min(processTimeout, adjustedTimeout);
+    return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
 }
 
 bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     try {
-        _getRemainingTime(command);
+        _getRemainingTime(command, false);
     } catch (const SException& e) {
         // Yep, timed out.
         _handleCommandException(command, e);
@@ -79,15 +79,12 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     RESULT returnValue = RESULT::COMPLETE;
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
-        uint64_t timeout = _getRemainingTime(command);
+        uint64_t timeout = _getRemainingTime(command, false);
         command->peekCount++;
 
         _db.startTiming(timeout);
 
         try {
-            if (request.test("disableCheckpointInterrupt")) {
-                _db.disableCheckpointInterruptForNextTransaction();
-            }
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
@@ -101,7 +98,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
-                SINFO("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
+                SDEBUG("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
                 _db.resetTiming();
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;
@@ -142,10 +139,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         command->repeek = false;
         returnValue = RESULT::SHOULD_PROCESS;
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
-    } catch (const SQLite::checkpoint_required_error& e) {
-        command->repeek = false;
-        returnValue = RESULT::ABANDONED_FOR_CHECKPOINT;
-        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (peek) for checkpoint");
     } catch (...) {
         command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
@@ -188,16 +181,12 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getRemainingTime(command);
+        uint64_t timeout = _getRemainingTime(command, true);
         command->processCount++;
 
         // Time in US.
         _db.startTiming(timeout);
         if (!_db.insideTransaction()) {
-            if (request.test("disableCheckpointInterrupt")) {
-                _db.disableCheckpointInterruptForNextTransaction();
-            }
-
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
             // case we need to open a new transaction.
@@ -256,13 +245,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         _handleCommandException(command, e);
         _db.rollback();
         needsCommit = false;
-    } catch (const SQLite::checkpoint_required_error& e) {
-        _db.rollback();
-        _db.setUpdateNoopMode(false);
-        _db.resetTiming();
-        command->complete = false;
-        SINFO("[checkpoint] Command " << command->request.methodLine << " abandoned (process) for checkpoint");
-        return RESULT::ABANDONED_FOR_CHECKPOINT;
     } catch (const SQLite::constraint_error& e) {
         SWARN("Unique Constraints Violation, command: " << request.methodLine);
         command->response.methodLine = "400 Unique Constraints Violation";

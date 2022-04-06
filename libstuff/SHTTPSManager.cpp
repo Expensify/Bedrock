@@ -34,31 +34,14 @@ SStandaloneHTTPSManager::SStandaloneHTTPSManager(const string& pem, const string
 }
 
 SStandaloneHTTPSManager::~SStandaloneHTTPSManager() {
-    SAUTOLOCK(_listMutex);
-
-    // Clean up outstanding transactions
-    SASSERTWARN(_activeTransactionList.empty());
-    while (!_activeTransactionList.empty()) {
-        closeTransaction(_activeTransactionList.front());
-    }
-    SASSERTWARN(_completedTransactionList.empty());
-    while (!_completedTransactionList.empty()) {
-        closeTransaction(_completedTransactionList.front());
-    }
 }
 
 void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     if (transaction == nullptr) {
         return;
     }
-    SAUTOLOCK(_listMutex);
 
-    // Clean up the socket and done
-    _activeTransactionList.remove(transaction);
-    _completedTransactionList.remove(transaction);
-    if (transaction->s) {
-        closeSocket(transaction->s);
-    }
+    delete transaction->s;
     transaction->s = nullptr;
     delete transaction;
 }
@@ -80,99 +63,72 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-SStandaloneHTTPSManager::Socket* SStandaloneHTTPSManager::openSocket(const string& host, SX509* x509) {
-    // Just call the base class function but in a thread-safe way.
-    return STCPManager::openSocket(host, x509, &_listMutex);
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction) {
+    if (!transaction.s || transaction.finished) {
+        // If there's no socket, or we're done, skip.
+        return;
+    }
+    STCPManager::prePoll(fdm, *transaction.s);
 }
 
-void SStandaloneHTTPSManager::closeSocket(Socket* socket) {
-    // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    STCPManager::closeSocket(socket);
-}
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
+    if (!transaction.s || transaction.finished) {
+        // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
+        // have finished (because commands may finish one transaction but not another), or transactions that have not
+        // started yet and have no socket (for instance, Stripe's rate limiting means sockets are built asynchronously
+        // after the commands are created).
+        //
+        // TODO: We may want to be able to time out these transactions regardless, for instance at shutdown. We wont
+        // hit the command timeouts in peek and process until there's no outstanding network requests for the command.
+        return;
+    }
+    SAUTOPREFIX(transaction.requestID);
 
-void SStandaloneHTTPSManager::prePoll(fd_map& fdm) {
-    // Just call the base class function but in a thread-safe way.
-    SAUTOLOCK(_listMutex);
-    return STCPManager::prePoll(fdm);
-}
+    // Do the postPoll on the socket
+    STCPManager::postPoll(fdm, *transaction.s);
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    list<SStandaloneHTTPSManager::Transaction*> completedRequests;
-    map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
-}
+    //See if we got a response.
+    uint64_t now = STimeNow();
+    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    if (size) {
+        // Consume how much we read.
+        transaction.s->recvBuffer.consumeFront(size);
+        transaction.finished = now;
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests) {
-    map<Transaction*, uint64_t> transactionTimeouts;
-    postPoll(fdm, nextActivity, completedRequests, transactionTimeouts);
-}
+        // Shut down the socket, we're done with it.
+        transaction.s->shutdown(Socket::CLOSED);
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, uint64_t& nextActivity, list<SStandaloneHTTPSManager::Transaction*>& completedRequests, map<Transaction*, uint64_t>& transactionTimeouts, uint64_t timeoutMS) {
-    SAUTOLOCK(_listMutex);
-
-    // Let the base class do its thing
-    STCPManager::postPoll(fdm);
-
-    // Update each of the active requests
-    uint64_t timeout = timeoutMS * 1000;
-    list<Transaction*>::iterator nextIt = _activeTransactionList.begin();
-    while (nextIt != _activeTransactionList.end()) {
-        // Did we get any responses?
-        list<Transaction*>::iterator activeIt = nextIt++;
-        Transaction* active = *activeIt;
-        SAUTOPREFIX(active->requestID);
-        if (active->isDelayedSend && !active->sentTime) {
-            // This transaction was created, queued, and then meant to be sent later.
-            // As such we'll use STimeNow() as it's "created" time for time.
-            SINFO("Transaction is marked for delayed sending, setting sentTime for timeout.");
-            active->sentTime = STimeNow();
-        }
-        uint64_t timeoutFromTime = active->sentTime ? active->sentTime : active->created;
-        uint64_t now = STimeNow();
-        uint64_t elapsed = now - timeoutFromTime;
-        int size = active->fullResponse.deserialize(active->s->recvBuffer);
-        auto timeoutIt = transactionTimeouts.find(active);
-        bool specificallyTimedOut = timeoutIt != transactionTimeouts.end() && timeoutIt->second < now;
-        if (size) {
-            // Consume how much we read.
-            active->s->recvBuffer.consumeFront(size);
-
-            // 200OK or any content?
-            active->finished = now;
-            if (SContains(active->fullResponse.methodLine, " 200 ") || active->fullResponse.content.size()) {
-                // Pass the transaction down to the subclass.
-                if (_onRecv(active)) {
-                    // If true, then the transaction was closed in onRecv.
-                    continue;
-                }
-                SASSERT(active->response);
-            } else {
-                // Error, failed to authenticate or receive a valid server response.
-                SWARN("Message failed: '" << active->fullResponse.methodLine << "'");
-                active->response = 500;
-            }
-        } else if (active->s->state.load() > Socket::CONNECTED || elapsed > timeout || specificallyTimedOut) {
-            // Net problem. Did this transaction end in an inconsistent state?
-            SWARN("Connection " << (elapsed > timeout ? "timed out" : "died prematurely") << " after " << elapsed / 1000 << "ms");
-            active->response = active->s->sendBufferEmpty() ? 501 : 500;
-            if (active->response == 501) {
-                SHMMM("SStandaloneHTTPSManager: '" << active->fullRequest.methodLine
-                      << "' timed out receiving response in " << (elapsed / 1000) << "ms.");
-            }
+        // This is supposed to check for a "200 OK" response, which it does very poorly. It also checks for message
+        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
+        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
+        // the existing behavior, which is an exercise for later.
+        if (handleAllResponses() || SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
+            // Pass the transaction down to the subclass.
+            _onRecv(&transaction);
         } else {
-            // Haven't timed out yet, let the caller know how long until we do.
-            nextActivity = min(nextActivity, timeoutFromTime + timeout);
+            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
+            SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
+            transaction.response = 500;
         }
-
-        // If we're done, remove from the active and add to completed
-        if (active->response) {
-            // Switch lists
-            SINFO("Completed request '" << active->fullRequest.methodLine << "' to '" << active->fullRequest["Host"]
-                  << "' with response '" << active->response << "' in '" << elapsed / 1000 << "'ms");
-            _activeTransactionList.erase(activeIt);
-            _completedTransactionList.push_back(active);
-            completedRequests.push_back(active);
+    } else {
+        // If we don't have a response, we need to check for a timeout, or a disconnection.
+        // The disconnection check is straightforward, we just check the socket state.
+        // The timeout is a little less so, because we have two different ways to time out:
+        //
+        // 1. If it's been more than `timeoutMS` since the last time we sent any data on our socket. This number can
+        //    change with each call to this function, because we shorten our timeouts at shutdown to avoid holding up
+        //    the whole server on a single stuck network request.
+        // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
+        if ((transaction.s->state.load() > Socket::CONNECTED) ||
+            (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
+            (now > transaction.timeoutAt)) {
+            SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+            transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+        } else {
+            // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
+            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
+            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt - now;
+            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
         }
     }
 }
@@ -181,9 +137,9 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     s(nullptr),
     created(STimeNow()),
     finished(0),
+    timeoutAt(0),
     response(0),
     manager(manager_),
-    isDelayedSend(0),
     sentTime(0),
     requestID(SThreadLogPrefix)
 {
@@ -201,8 +157,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
-    SAUTOLOCK(_listMutex);
-    _completedTransactionList.push_front(transaction);
     return transaction;
 }
 
@@ -222,8 +176,10 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
-    Socket* s = openSocket(host, x509);
-    if (!s) {
+    Socket* s = nullptr;
+    try {
+        s = new Socket(host, x509);
+    } catch (const SException& exception) {
         delete transaction;
         delete x509;
         return _createErrorTransaction();
@@ -236,8 +192,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     transaction->s->send(request.serialize());
 
     // Keep track of the transaction.
-    SAUTOLOCK(_listMutex);
-    _activeTransactionList.push_front(transaction);
     return transaction;
 }
 

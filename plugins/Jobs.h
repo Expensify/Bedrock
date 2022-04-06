@@ -38,6 +38,11 @@ class BedrockJobsCommand : public BedrockCommand {
     bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
     void _validatePriority(const int64_t priority);
 
+    // Do not throw an exception when something goes wrong with the query to update a job's retryAfter.
+    // Update the job to the failed state and log a Bugbot instead.
+    // This is to avoid causing GetJob(s) to error which will render BWM unable to fetch any jobs that need to be run.
+    void _handleFailedRetryAfterQuery(SQLite& db, const string& jobID);
+
     bool mockRequest;
 
     // Returns true if this command can skip straight to leader for process.

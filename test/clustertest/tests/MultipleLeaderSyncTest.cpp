@@ -3,7 +3,7 @@
 
 struct MultipleLeaderSyncTest : tpunit::TestFixture {
     MultipleLeaderSyncTest()
-        : tpunit::TestFixture("MultipleLeaderSyncTest",
+        : tpunit::TestFixture("MultipleLeaderSync",
                               TEST(MultipleLeaderSyncTest::test)
                              ) { }
 
@@ -96,7 +96,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node4.waitForState("FOLLOWING"));
 
         // Bring leaders back up in reverse order, confirm priority, should go quickly to SYNCHRONIZING
-        // There's a race in the below flow, to confirm primary master is up and syncing before secondary master gets synced up.
+        // There's a race in the below flow, to confirm primary leader is up and syncing before secondary leader gets synced up.
         tester.startNodeDontWait(1);
         ASSERT_TRUE(node1.waitForStatusTerm("Priority", "-1", 5'000'000));
         ASSERT_TRUE(node1.waitForState("SYNCHRONIZING", 10'000'000));
