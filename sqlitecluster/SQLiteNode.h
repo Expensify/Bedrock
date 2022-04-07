@@ -117,8 +117,6 @@ class SQLiteNode : public STCPNode {
     // similar string with the host from hostPart and the port from portPart .
     string replaceAddressPort(const string& hostPart, const string& portPart);
 
-    SQLiteSequentialNotifier::RESULT waitForCommit(uint64_t commitNum);
-
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
@@ -293,8 +291,7 @@ class SQLiteNode : public STCPNode {
     // port".
     const string _commandAddress;
 
-    // This doesn't really do anything in itself, but when we need to add new sockets to a poll loop (like when we
-    // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
-    // allows it to start again and pick up the new socket we just created.
+    // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
+    // to wait up to a full second for them.
     SSynchronizedQueue<bool> _commitsToSend;
 };
