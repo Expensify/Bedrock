@@ -1972,12 +1972,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
 
     // Just clear this, it doesn't matter what the contents are.
     _newCommandsWaiting.postPoll(fdm);
-    try {
-        while (true) {
-            _newCommandsWaiting.pop();
-        }
-    } catch (const out_of_range& e) {
-    }
+    _newCommandsWaiting.clear();
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.
     auto it = _outstandingHTTPSCommands.begin();

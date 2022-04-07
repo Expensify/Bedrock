@@ -1,4 +1,6 @@
 #pragma once
+#include <libstuff/libstuff.h>
+#include <libstuff/SSynchronizedQueue.h>
 #include <libstuff/STCPNode.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
@@ -71,6 +73,10 @@ class SQLiteNode : public STCPNode {
 
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
+
+    // Override the base class.
+    virtual void prePoll(fd_map& fdm) override;
+    virtual void postPoll(fd_map& fdm, uint64_t& nextActivity) override;
 
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
@@ -286,4 +292,9 @@ class SQLiteNode : public STCPNode {
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
     // port".
     const string _commandAddress;
+
+    // This doesn't really do anything in itself, but when we need to add new sockets to a poll loop (like when we
+    // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
+    // allows it to start again and pick up the new socket we just created.
+    SSynchronizedQueue<bool> _commitsToSend;
 };

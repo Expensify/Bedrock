@@ -900,6 +900,7 @@ bool SQLiteNode::update() {
         // should never be any commits in here while a commit is in progress anyway, since all commits except the one
         // running are blocked until that one finishes.
         if (!commitInProgress()) {
+            // This only gets called when the sync thread isn't polling.
             _sendOutstandingTransactions();
         }
 
@@ -2826,6 +2827,19 @@ string SQLiteNode::replaceAddressPort(const string& hostPart, const string& port
 }
 
 SQLiteSequentialNotifier::RESULT SQLiteNode::waitForCommit(uint64_t commitNum) {
+    // Needs to support a timeout.
     return _localCommitNotifier.waitFor(commitNum, false);
 }
 
+void SQLiteNode::prePoll(fd_map& fdm) {
+    STCPNode::prePoll(fdm);
+    _commitsToSend.prePoll(fdm);
+}
+
+void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    STCPNode::postPoll(fdm, nextActivity);
+
+    // Just clear this, it doesn't matter what the contents are.
+    _commitsToSend.postPoll(fdm);
+    _commitsToSend.clear();
+}
