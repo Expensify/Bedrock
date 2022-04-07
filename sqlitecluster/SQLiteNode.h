@@ -117,6 +117,10 @@ class SQLiteNode : public STCPNode {
     // similar string with the host from hostPart and the port from portPart .
     string replaceAddressPort(const string& hostPart, const string& portPart);
 
+    // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
+    // for data, and send the new commit.
+    void notifyCommit();
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);

@@ -2837,3 +2837,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     _commitsToSend.postPoll(fdm);
     _commitsToSend.clear();
 }
+
+void SQLiteNode::notifyCommit() {
+    _commitsToSend.push(true);
+}
