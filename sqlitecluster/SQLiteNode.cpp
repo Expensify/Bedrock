@@ -2824,3 +2824,8 @@ string SQLiteNode::replaceAddressPort(const string& hostPart, const string& port
     SINFO("Combined " << hostPart << " and " << portPart << " to get " << result);
     return result;
 }
+
+SQLiteSequentialNotifier::RESULT SQLiteNode::waitForCommit(uint64_t commitNum) {
+    return _localCommitNotifier.waitFor(commitNum, false);
+}
+

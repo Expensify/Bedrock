@@ -917,18 +917,22 @@ void BedrockServer::worker(int threadId)
             uint64_t commitCount = db.getCommitCount();
             uint64_t commandCommitCount = command->request.calcU64("commitCount");
             if (commandCommitCount > commitCount) {
-                SAUTOLOCK(_futureCommitCommandMutex);
-                auto newQueueSize = _futureCommitCommands.size() + 1;
-                SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
-                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
-                _futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
-                _futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
-
-                // Don't count this as `in progress`, it's just sitting there.
-                if (newQueueSize > 100) {
-                    SHMMM("_futureCommitCommands.size() == " << newQueueSize);
+                auto _syncNodeCopy = atomic_load(&_syncNode);
+                if (_syncNodeCopy) {
+                    uint64_t start = STimeNow();
+                    SQLiteSequentialNotifier::RESULT result = _syncNodeCopy->waitForCommit(commandCommitCount);
+                    if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
+                        SINFO("_localCommitNotifier.waitFor canceled early, returning.");
+                        _commandQueue.push(move(command));
+                        continue;
+                    }
+                    SASSERT(result == SQLiteSequentialNotifier::RESULT::COMPLETED);
+                    uint64_t elapsed = (STimeNow() - start)/1000;
+                    SINFO("Command (" << command->request.methodLine << ") waited " << elapsed << "ms for commit " << commandCommitCount << ".");
+                } else {
+                    SWARN("Attempted to load sync node with none. Re-queueing command.");
+                    _commandQueue.push(move(command));
                 }
-                continue;
             }
 
             if (command->request.isSet("mockRequest")) {
@@ -2100,6 +2104,14 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_acceptSockets() {
+
+    // We've been experimenting with _escalateOverHTTP and it seems to slow down when a lot of sockets are being
+    // escalated. We're adding timing here to see if we can narrow down if the `accept` call takes a while.
+    uint64_t start = 0;
+    if (_escalateOverHTTP) {
+        start = STimeNow();
+    }
+
     // Make a list of ports to accept on.
     // We'll check the control port, command port, and any plugin ports for new connections.
     list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
@@ -2111,6 +2123,9 @@ void BedrockServer::_acceptSockets() {
     for (auto& p : _portPluginMap) {
         portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
     }
+
+    // Keep track of how many sockets we accept for performance testing.
+    size_t acceptedSockets = 0;
 
     // Try each port.
     for (auto portWrapper : portList) {
@@ -2131,6 +2146,9 @@ void BedrockServer::_acceptSockets() {
                 break;
             }
 
+            // Count how many sockets we accepted.
+            acceptedSockets++;
+
             // Otherwise create the object for this new socket.
             SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
             Socket socket(s, Socket::CONNECTED);
@@ -2146,6 +2164,12 @@ void BedrockServer::_acceptSockets() {
             _outstandingSocketThreads++;
             thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort).detach();
         }
+    }
+
+    // Log how quickly we accepted sockets if that's a thing we're doing.
+    if (_escalateOverHTTP && acceptedSockets) {
+        uint64_t elapsed = STimeNow() - start;
+        SINFO("Accepted " << acceptedSockets << " sockets in " << elapsed << "us.");
     }
 }
 

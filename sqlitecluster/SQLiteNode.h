@@ -111,6 +111,8 @@ class SQLiteNode : public STCPNode {
     // similar string with the host from hostPart and the port from portPart .
     string replaceAddressPort(const string& hostPart, const string& portPart);
 
+    SQLiteSequentialNotifier::RESULT waitForCommit(uint64_t commitNum);
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
